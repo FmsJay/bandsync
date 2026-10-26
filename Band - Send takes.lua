@@ -61,7 +61,7 @@ for n, it in ipairs(items) do
       session_version = tonumber(b.version), sent = os.date("!%Y-%m-%dT%H:%M:%SZ"), full = id .. ".flac",
     }
     -- preview first, then the manifest, then the full file: the host can place the take as soon as the small file lands
-    if reaper.file_exists(prev) then
+    if (band.size(prev) or math.huge) < band.size(full) then -- a preview only helps if it is smaller
       band.copy_atomic(prev, takes .. "/" .. id .. ".opus")
       manifest.preview = id .. ".opus"
     end

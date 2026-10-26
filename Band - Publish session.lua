@@ -69,8 +69,14 @@ elseif mode ~= "none" then
   for _, tr in ipairs(picked) do
     local base = by_number[math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER"))]
     if base then -- silent tracks were skipped by the render
-      stems[#stems + 1] = { name = select(2, reaper.GetTrackName(tr)), file = "stems/" .. base .. ".flac",
-        preview = "stems/" .. base .. ".opus" }
+      local st = { name = select(2, reaper.GetTrackName(tr)), file = "stems/" .. base .. ".flac" }
+      local prev = stems_dir .. "/" .. base .. ".opus"
+      if (band.size(prev) or math.huge) < band.size(stems_dir .. "/" .. base .. ".flac") then
+        st.preview = "stems/" .. base .. ".opus" -- a preview only helps if it is smaller
+      else
+        os.remove(prev)
+      end
+      stems[#stems + 1] = st
     end
   end
 end

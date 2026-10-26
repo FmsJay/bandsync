@@ -53,7 +53,7 @@ same timeline without cluttering main. The host receives every room; each room's
 | **Band - Publish session**: song name and stems mode (`none` / `mix` / `grouped` / `tracks`). Save. | |
 | **Band - Take inbox**: leave running. | **Band - Open session**: pick the song and a room. |
 | | Record on a track named like the host's (e.g. `Bass`) to land in that track's lanes; any other name becomes a new track on the host. |
-| Takes appear as lanes. Preview first, then full quality. | **Band - Send takes**: selected items, or everything not sent yet. |
+| Takes appear as lanes. Preview first, then full quality. To send a part of your own to guests, select it first: in a host project, every item counts as unsent. | **Band - Send takes**: everything not sent yet, or just the selection. It asks when a selection would leave other new takes behind. |
 | Changed the tempo or arrangement? Publish again. | Run **Open session** again to refresh. **Take inbox** on a guest receives bandmates' takes from the same room on `Takes - <name>` tracks and upgrades preview stems to FLAC. |
 
 Stems modes: `none` sends only the timeline (for when you're streaming audio instead, e.g. with

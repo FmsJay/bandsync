@@ -236,10 +236,17 @@ function band.find_track(proj, name, skip_stems)
   end
 end
 
--- Append a track to the end of proj (InsertTrackAtIndex only works on the active project).
+-- Append a track to the end of proj, which may be a background tab (the inbox runs on one).
+-- Before 7.18 tracks can only be added to the active tab: return nil and the caller retries later.
 function band.new_track(proj, name)
   local n = reaper.CountTracks(proj)
-  reaper.InsertTrackAtIndex(n, true)
+  if reaper.InsertTrackInProject then
+    reaper.InsertTrackInProject(proj, n, 1)
+  elseif proj == reaper.EnumProjects(-1) then
+    reaper.InsertTrackAtIndex(n, true)
+  else
+    return nil
+  end
   local tr = reaper.GetTrack(proj, n)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", name, true)
   return tr
@@ -314,7 +321,7 @@ local function target(proj, t, mode)
     local tr = band.find_track(proj, "Band inbox")
     if not tr then
       tr = band.new_track(proj, "Band inbox")
-      reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1)
+      if tr then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
     end
     return tr
   end
@@ -336,6 +343,7 @@ function band.place_take(proj, t, path, mode)
   if item then return band.swap_source(item, path) end
   local label = string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))
   local tr, lane = target(proj, t, mode)
+  if not tr then return false end
   item = band.add_item(tr, path, t.pos, t.len)
   if not item then return false end
   band.set_item_ext(item, "band_take", t.id)

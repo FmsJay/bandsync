@@ -12,18 +12,25 @@ local b = band.binding(proj)
 if not b then return band.msg("Run 'Band - Open session' first.") end
 
 local function sendable(it) return band.track_ext(reaper.GetMediaItem_Track(it), "band_stem") == "" end
-local items = {}
+local items, unsent = {}, {}
 for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do
   local it = reaper.GetSelectedMediaItem(proj, i)
   if sendable(it) then items[#items + 1] = it end
 end
-if #items == 0 then
-  for i = 0, reaper.CountMediaItems(proj) - 1 do
-    local it = reaper.GetMediaItem(proj, i)
-    if sendable(it) and band.item_ext(it, "band_sent") == "" and band.item_ext(it, "band_take") == "" then
-      items[#items + 1] = it
-    end
+for i = 0, reaper.CountMediaItems(proj) - 1 do
+  local it = reaper.GetMediaItem(proj, i)
+  if sendable(it) and band.item_ext(it, "band_sent") == "" and band.item_ext(it, "band_take") == "" then
+    unsent[#unsent + 1] = it
   end
+end
+-- REAPER leaves the last recorded item selected, so a selection may silently hide other new takes
+if #items > 0 and #unsent > 0 and #unsent ~= #items then
+  local r = reaper.MB(string.format("Send all %d unsent take(s)?\n\nYes = all unsent, No = only the %d selected.",
+    #unsent, #items), "Band Session", 3)
+  if r == 2 then return end
+  if r == 6 then items = unsent end
+elseif #items == 0 then
+  items = unsent
 end
 if #items == 0 then return band.msg("Nothing to send: select takes, or record something new.") end
 
@@ -41,7 +48,7 @@ reaper.RecursiveCreateDirectory(takes, 0)
 
 local was_selected = {}
 for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do was_selected[#was_selected + 1] = reaper.GetSelectedMediaItem(proj, i) end
-local stamp, sent = os.date("%Y%m%d-%H%M%S"), 0
+local stamp, sent = os.date("!%Y%m%d-%H%M%SZ"), 0 -- UTC, like the manifest's "sent"
 
 for n, it in ipairs(items) do
   local id = string.format("%s-%s-%d", (cfg.user:gsub(" ", "_")), stamp, n)
@@ -78,4 +85,6 @@ end
 reaper.SelectAllMediaItems(proj, false)
 for _, it in ipairs(was_selected) do reaper.SetMediaItemSelected(it, true) end
 reaper.UpdateArrange()
+-- save so the sent tags survive a crash (otherwise the same takes go out again under new IDs)
+if sent > 0 and select(2, reaper.EnumProjects(-1)) ~= "" then reaper.Main_SaveProject(proj, false) end
 band.msg(string.format("Sent %d take(s) to room '%s' of '%s'.", sent, b.room, b.song))

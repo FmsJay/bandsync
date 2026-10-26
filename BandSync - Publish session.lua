@@ -1,4 +1,4 @@
--- @description Band Session: publish this project (tempo map, markers, stems) to the shared folder
+-- @description BandSync: publish this project (tempo map, markers, stems) to the shared folder
 -- Whoever publishes a song is its host. Re-run after changing tempo, markers or the arrangement.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
@@ -12,7 +12,7 @@ local b = band.binding(proj) or {}
 local projname = reaper.GetProjectName(proj)
 local song = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 local MODES = { none = true, mix = true, grouped = true, tracks = true }
-local ok, csv = reaper.GetUserInputs("Band Session: publish", 2,
+local ok, csv = reaper.GetUserInputs("BandSync: publish", 2,
   "Song name,Stems (none/mix/grouped/tracks),separator=|,extrawidth=150", song .. "|" .. (b.stem_mode or "grouped"))
 if not ok then return end
 local name, mode = csv:match("^(.-)|(.*)$")
@@ -22,16 +22,29 @@ if song == "" or not MODES[mode] then return band.msg("Need a song name and one 
 local sdir = band.song_dir(cfg, song)
 local old = band.read_json(band.session_path(cfg, song))
 if old and old.host ~= cfg.user and b.role ~= "host" then
-  if reaper.MB(old.host .. " is hosting '" .. song .. "'. Take over as host?", "Band Session", 4) ~= 6 then return end
+  if reaper.MB(old.host .. " is hosting '" .. song .. "'. Take over as host?", "BandSync", 4) ~= 6 then return end
 end
 
--- Stems: render to stems/<n>.flac plus an .opus preview that syncs first.
-local stems_dir = sdir .. "/stems"
+-- Stems: render to stems/v<version>/<n>.flac plus an .opus preview that syncs first. A fresh folder per
+-- publish, because guests (and sync clients) hold the previous version's files open and Windows locks them.
+local version = (old and old.version or 0) + 1
+local rel = "stems/v" .. version
+local stems_dir = sdir .. "/" .. rel
 reaper.RecursiveCreateDirectory(stems_dir, 0)
 reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, "main"), 0)
 for _, f in ipairs(band.files(stems_dir)) do os.remove(stems_dir .. "/" .. f) end
 
 local stems = {}
+local function add_stem(name, base)
+  local st = { name = name, file = rel .. "/" .. base .. ".flac" }
+  local prev = stems_dir .. "/" .. base .. ".opus"
+  if (band.size(prev) or math.huge) < band.size(stems_dir .. "/" .. base .. ".flac") then
+    st.preview = rel .. "/" .. base .. ".opus" -- a preview only helps if it is smaller
+  else
+    os.remove(prev)
+  end
+  stems[#stems + 1] = st
+end
 local length = reaper.GetProjectLength(proj)
 local render_n = { RENDER_BOUNDSFLAG = 0, RENDER_STARTPOS = 0, RENDER_ENDPOS = length + 2, RENDER_SRATE = 0,
   RENDER_CHANNELS = 2, RENDER_TAILFLAG = 0, RENDER_ADDTOPROJ = 2 } -- &2: skip likely-silent files
@@ -40,7 +53,7 @@ local render_s = { RENDER_FILE = stems_dir, RENDER_FORMAT = band.FLAC, RENDER_FO
 if mode == "mix" then
   render_n.RENDER_SETTINGS, render_s.RENDER_PATTERN = 0, "mix"
   band.render(render_n, render_s)
-  stems[1] = { name = "Mix", file = "stems/mix.flac", preview = "stems/mix.opus" }
+  if reaper.file_exists(stems_dir .. "/mix.flac") then add_stem("Mix", "mix") end
 elseif mode ~= "none" then
   -- grouped = each top-level track (a folder renders with its children); tracks = every non-folder track
   local picked, depth = {}, 0
@@ -68,16 +81,7 @@ elseif mode ~= "none" then
   end
   for _, tr in ipairs(picked) do
     local base = by_number[math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER"))]
-    if base then -- silent tracks were skipped by the render
-      local st = { name = select(2, reaper.GetTrackName(tr)), file = "stems/" .. base .. ".flac" }
-      local prev = stems_dir .. "/" .. base .. ".opus"
-      if (band.size(prev) or math.huge) < band.size(stems_dir .. "/" .. base .. ".flac") then
-        st.preview = "stems/" .. base .. ".opus" -- a preview only helps if it is smaller
-      else
-        os.remove(prev)
-      end
-      stems[#stems + 1] = st
-    end
+    if base then add_stem(select(2, reaper.GetTrackName(tr)), base) end -- silent tracks were skipped
   end
 end
 
@@ -87,7 +91,6 @@ for i = 0, reaper.CountTracks(proj) - 1 do
   if band.track_ext(tr, "band_stem") == "" then tracks[#tracks + 1] = select(2, reaper.GetTrackName(tr)) end
 end
 
-local version = (old and old.version or 0) + 1
 band.write_json(band.session_path(cfg, song), {
   format = band.FORMAT, song = song, host = cfg.user, version = version,
   published = os.date("!%Y-%m-%dT%H:%M:%SZ"), srate = band.srate(proj), length = length,
@@ -97,5 +100,14 @@ band.write_json(band.session_path(cfg, song), {
 band.bind(proj, { role = "host", song = song, room = "main", version = version, stem_mode = mode })
 reaper.MarkProjectDirty(proj)
 
-band.msg(string.format("Published '%s' v%d with %d stem(s).\n\nSave this project, then run 'Band - Take inbox' to receive takes.",
+-- Best effort: drop older stem versions. Files still open somewhere fail to delete and are retried next publish.
+local all_stems = sdir .. "/stems"
+for _, f in ipairs(band.files(all_stems)) do os.remove(all_stems .. "/" .. f) end -- pre-versioning layout
+for _, d in ipairs(band.subdirs(all_stems)) do
+  if d ~= "v" .. version then
+    for _, f in ipairs(band.files(all_stems .. "/" .. d)) do os.remove(all_stems .. "/" .. d .. "/" .. f) end
+  end
+end
+
+band.msg(string.format("Published '%s' v%d with %d stem(s).\n\nSave this project, then run 'BandSync - Take inbox' to receive takes.",
   song, version, #stems))

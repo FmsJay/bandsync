@@ -1,7 +1,7 @@
--- Band Session shared library: settings, song folders, session.json, stems and take placement.
+-- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { FORMAT = 1, SECTION = "BandSession", TAKES = "BandSession.takes" }
+local band = { FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- ---- small helpers --------------------------------------------------------------------------
 
@@ -9,8 +9,8 @@ function band.clean(s) return (s:gsub("[^%w%-_ ]", ""):match("^%s*(.-)%s*$")) en
 local function norm(p) return (p:gsub("\\", "/"):gsub("/+$", "")) end
 band.norm = norm
 
-function band.msg(text) reaper.MB(text, "Band Session", 0) end
-function band.log(text) reaper.ShowConsoleMsg("[band] " .. text .. "\n") end
+function band.msg(text) reaper.MB(text, "BandSync", 0) end
+function band.log(text) reaper.ShowConsoleMsg("[bandsync] " .. text .. "\n") end
 
 function band.read(path)
   local f = io.open(path, "rb")
@@ -88,10 +88,10 @@ function band.settings(force)
   local user = reaper.GetExtState(band.SECTION, "user")
   if force or root == "" or user == "" then
     if root == "" and reaper.JS_Dialog_BrowseForFolder then
-      local ok, picked = reaper.JS_Dialog_BrowseForFolder("Band Session: pick the shared (Syncthing) folder", "")
+      local ok, picked = reaper.JS_Dialog_BrowseForFolder("BandSync: pick the shared (Syncthing) folder", "")
       if ok == 1 then root = picked end
     end
-    local ok, csv = reaper.GetUserInputs("Band Session settings", 2,
+    local ok, csv = reaper.GetUserInputs("BandSync settings", 2,
       "Shared folder (Syncthing),Your name,separator=|,extrawidth=250", root .. "|" .. user)
     if not ok then return nil end
     root, user = csv:match("^(.-)|(.*)$")
@@ -312,15 +312,15 @@ function band.find_take_item(proj, id)
 end
 
 -- Where a take lands. mode: "lanes" (new fixed lane on the matching track), "person"
--- ("Takes - <user>" track) or "inbox" (one muted "Band inbox" track).
+-- ("Takes - <user>" track) or "inbox" (one muted "BandSync inbox" track).
 local function target(proj, t, mode)
   if mode == "person" then
     local name = "Takes - " .. t.user
     return band.find_track(proj, name) or band.new_track(proj, name)
   elseif mode == "inbox" then
-    local tr = band.find_track(proj, "Band inbox")
+    local tr = band.find_track(proj, "BandSync inbox")
     if not tr then
-      tr = band.new_track(proj, "Band inbox")
+      tr = band.new_track(proj, "BandSync inbox")
       if tr then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
     end
     return tr

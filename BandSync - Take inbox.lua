@@ -1,4 +1,4 @@
--- @description Band Session: receive takes into this project (background, toggle to stop)
+-- @description BandSync: receive takes into this project (background, toggle to stop)
 -- Host: takes from every room land as lanes on the matching track (or per the take landing setting).
 -- Guest: takes from bandmates in your room land on "Takes - <name>" tracks, and preview stems are
 -- upgraded to full quality as the FLACs arrive. Never touches the project while recording.
@@ -46,7 +46,7 @@ local function poll()
           if want then
             reaper.Undo_BeginBlock2(proj)
             local ok = band.place_take(proj, t, path, mode)
-            reaper.Undo_EndBlock2(proj, "Band Session: " .. want .. " take from " .. t.user, -1)
+            reaper.Undo_EndBlock2(proj, "BandSync: " .. want .. " take from " .. t.user, -1)
             if ok then
               band.set_take_state(proj, t.id, want)
               band.log(string.format("%s take from %s (%s) -> %s", want, t.user, room, t.track))
@@ -62,7 +62,7 @@ local function poll()
     if band.sync_stems(proj, cfg, b.song, s, true) > 0 then band.log("upgraded stems to full quality") end
     if tostring(s.version) ~= tostring(b.version) and warned_version ~= s.version then
       warned_version = s.version
-      band.log(s.host .. " published v" .. s.version .. ": run 'Band - Open session' to refresh")
+      band.log(s.host .. " published v" .. s.version .. ": run 'BandSync - Open session' to refresh")
     end
   end
   reaper.TrackList_AdjustWindows(false)

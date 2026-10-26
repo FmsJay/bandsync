@@ -1,4 +1,4 @@
-# Band Session
+# BandSync
 
 Remote band collaboration for REAPER, phase 1. One person hosts a song; everyone else records
 locally against the host's tempo map and stems, with no latency, and their takes land in the
@@ -13,13 +13,13 @@ They talk only through a shared folder (Syncthing or a cloud drive).
 <shared folder>/
   <Song>/
     session.json             tempo map, markers, sample rate, stems list, host, version
-    stems/NN.flac + NN.opus  one per track/group; the small .opus syncs first
+    stems/vN/NN.flac + .opus one folder per publish (open files are never overwritten); .opus syncs first
     rooms/<room>/takes/      <id>.json manifest + <id>.opus preview + <id>.flac full take
 ```
 
 - **Publish** (host) writes `session.json` and renders stems. Whoever publishes is the host.
 - **Open** (guest) builds a local project with the same sample rate, tempo map, markers and
-  stems, saved to a local folder (`<REAPER resource path>/BandSession/<Song>/`). Running it again
+  stems, saved to a local folder (`<REAPER resource path>/BandSync/<Song>/`). Running it again
   refreshes the project from the latest publish.
 - **Send** renders each take dry (no track FX) to a 24-bit FLAC and a ~128 kbps Opus preview,
   stamped with its timeline position, and writes them to the room's `takes/` folder.
@@ -39,8 +39,8 @@ same timeline without cluttering main. The host receives every room; each room's
      online at the same time.
    - **Google Drive / Dropbox**: always on. Fine for a start.
 2. Copy this folder into REAPER's `Scripts/` folder (`Options > Show REAPER resource path`), then
-   *Actions > Show action list > New action > Load ReaScript* and load the five `Band - *.lua` files.
-3. Run **Band - Settings**: choose the shared folder and enter your name.
+   *Actions > Show action list > New action > Load ReaScript* and load the five `BandSync - *.lua` files.
+3. Run **BandSync - Settings**: choose the shared folder and enter your name.
 4. **Calibrate recording latency** (important): record a loopback (output → input cable) of a
    click and check that it lines up. If it doesn't, set
    *Preferences > Audio > Recording > Use audio driver reported latency* plus a manual offset.
@@ -50,18 +50,18 @@ same timeline without cluttering main. The host receives every room; each room's
 
 | Host | Guest |
 |---|---|
-| **Band - Publish session**: song name and stems mode (`none` / `mix` / `grouped` / `tracks`). Save. | |
-| **Band - Take inbox**: leave running. | **Band - Open session**: pick the song and a room. |
+| **BandSync - Publish session**: song name and stems mode (`none` / `mix` / `grouped` / `tracks`). Save. | |
+| **BandSync - Take inbox**: leave running. | **BandSync - Open session**: pick the song and a room. |
 | | Record on a track named like the host's (e.g. `Bass`) to land in that track's lanes; any other name becomes a new track on the host. |
-| Takes appear as lanes. Preview first, then full quality. To send a part of your own to guests, select it first: in a host project, every item counts as unsent. | **Band - Send takes**: everything not sent yet, or just the selection. It asks when a selection would leave other new takes behind. |
+| Takes appear as lanes. Preview first, then full quality. To send a part of your own to guests, select it first: in a host project, every item counts as unsent. | **BandSync - Send takes**: everything not sent yet, or just the selection. It asks when a selection would leave other new takes behind. |
 | Changed the tempo or arrangement? Publish again. | Run **Open session** again to refresh. **Take inbox** on a guest receives bandmates' takes from the same room on `Takes - <name>` tracks and upgrades preview stems to FLAC. |
 
 Stems modes: `none` sends only the timeline (for when you're streaming audio instead, e.g. with
 SonoBus), `mix` sends one master bounce (use your own metronome for the click), `grouped` sends one
 stem per top-level track or folder, `tracks` sends every non-folder track.
 
-**Band - Settings** also sets where takes land in the current project: `lanes` (host default),
-`person` (a `Takes - <name>` track; guest default) or `inbox` (one muted `Band inbox` track
+**BandSync - Settings** also sets where takes land in the current project: `lanes` (host default),
+`person` (a `Takes - <name>` track; guest default) or `inbox` (one muted `BandSync inbox` track
 to review first).
 
 ## Limits (phase 1)

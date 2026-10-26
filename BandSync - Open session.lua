@@ -1,4 +1,4 @@
--- @description Band Session: join a published song, or refresh this project from the latest publish
+-- @description BandSync: join a published song, or refresh this project from the latest publish
 -- Builds a local project with the host's sample rate, tempo map, markers and stems, so you record
 -- on the same timeline with no latency. Re-run any time to pick up a new publish.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -40,16 +40,16 @@ reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, b.room), 0)
 reaper.PreventUIRefresh(-1)
 reaper.TrackList_AdjustWindows(false)
 reaper.UpdateArrange()
-reaper.Undo_EndBlock2(proj, "Band Session: open " .. song .. " v" .. s.version, -1)
+reaper.Undo_EndBlock2(proj, "BandSync: open " .. song .. " v" .. s.version, -1)
 
 -- First open: save into a local (not synced) folder so recordings stay off the shared drive until sent.
 local _, projfile = reaper.EnumProjects(-1)
 if projfile == "" then
-  local local_dir = reaper.GetResourcePath() .. "/BandSession/" .. song
+  local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
   reaper.RecursiveCreateDirectory(local_dir, 0)
   reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
 end
 
 band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
   "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..
-  "Record, then run 'Band - Send takes'.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))
+  "Record, then run 'BandSync - Send takes'.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))

@@ -1,4 +1,4 @@
--- @description Band Session: send recorded takes to the session's room
+-- @description BandSync: send recorded takes to the session's room
 -- Sends the selected items, or if none are selected, every item not sent yet (stem tracks excluded).
 -- Each take goes out as a small .opus preview first, then the full-quality .flac.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -9,7 +9,7 @@ local cfg = band.settings()
 if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("Run 'Band - Open session' first.") end
+if not b then return band.msg("Run 'BandSync - Open session' first.") end
 
 local function sendable(it) return band.track_ext(reaper.GetMediaItem_Track(it), "band_stem") == "" end
 local items, unsent = {}, {}
@@ -26,7 +26,7 @@ end
 -- REAPER leaves the last recorded item selected, so a selection may silently hide other new takes
 if #items > 0 and #unsent > 0 and #unsent ~= #items then
   local r = reaper.MB(string.format("Send all %d unsent take(s)?\n\nYes = all unsent, No = only the %d selected.",
-    #unsent, #items), "Band Session", 3)
+    #unsent, #items), "BandSync", 3)
   if r == 2 then return end
   if r == 6 then items = unsent end
 elseif #items == 0 then
@@ -37,7 +37,7 @@ if #items == 0 then return band.msg("Nothing to send: select takes, or record so
 local s = band.read_json(band.session_path(cfg, b.song)) or {}
 if s.version and tostring(s.version) ~= tostring(b.version) then
   if reaper.MB("The host published v" .. s.version .. " since you opened v" .. b.version ..
-      ". If the tempo changed, these takes may land off-grid. Send anyway?", "Band Session", 4) ~= 6 then return end
+      ". If the tempo changed, these takes may land off-grid. Send anyway?", "BandSync", 4) ~= 6 then return end
 end
 
 local out = select(2, reaper.EnumProjects(-1)):match("^(.*)[/\\]") or reaper.GetResourcePath()

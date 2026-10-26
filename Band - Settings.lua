@@ -1,0 +1,20 @@
+-- @description Band Session: change shared folder, your name, and where takes land in this project
+local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
+package.path = dir .. "/lib/?.lua;" .. package.path
+local band = require("band")
+
+if not band.settings(true) then return end
+local proj = reaper.EnumProjects(-1)
+local b = band.binding(proj)
+if not b then return end
+
+local MODES = { lanes = true, person = true, inbox = true }
+local current = b.take_mode or (b.role == "host" and "lanes" or "person")
+local ok, mode = reaper.GetUserInputs("Band Session: " .. b.song, 1,
+  "Takes land as (lanes/person/inbox),extrawidth=80", current)
+mode = ok and mode:lower():gsub("%s", "")
+if mode and MODES[mode] then
+  band.bind(proj, { take_mode = mode })
+  reaper.MarkProjectDirty(proj)
+  band.msg("Takes now land as '" .. mode .. "'. Restart 'Band - Take inbox' if it is running.")
+end

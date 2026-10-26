@@ -1,0 +1,55 @@
+-- @description Band Session: join a published song, or refresh this project from the latest publish
+-- Builds a local project with the host's sample rate, tempo map, markers and stems, so you record
+-- on the same timeline with no latency. Re-run any time to pick up a new publish.
+local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
+package.path = dir .. "/lib/?.lua;" .. package.path
+local band = require("band")
+
+local cfg = band.settings()
+if not cfg then return end
+local b = band.binding(0)
+if b and b.role == "host" then
+  return band.msg("This is the host project for '" .. b.song .. "'. Open the session in a new project tab instead.")
+end
+
+local song = b and b.song or band.pick(band.songs(cfg))
+if not song then return band.msg("No published songs found in " .. cfg.root) end
+local s = band.read_json(band.session_path(cfg, song))
+if not s then return band.msg("Couldn't read session.json for '" .. song .. "' (still syncing?).") end
+
+if not b then
+  local ok, room = reaper.GetUserInputs("Join " .. song, 1, "Room (main, or a new side room),extrawidth=100", "main")
+  if not ok then return end
+  room = band.clean(room)
+  if room == "" then room = "main" end
+  if reaper.CountTracks(0) > 0 then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
+  b = { role = "guest", song = song, room = room }
+end
+
+local proj = reaper.EnumProjects(-1)
+reaper.Undo_BeginBlock2(proj)
+reaper.PreventUIRefresh(1)
+reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", s.srate, true)
+reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
+band.apply_tempo(proj, s.tempo)
+band.apply_markers(proj, s.markers)
+local n = band.sync_stems(proj, cfg, song, s)
+b.version = s.version
+band.bind(proj, b)
+reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, b.room), 0)
+reaper.PreventUIRefresh(-1)
+reaper.TrackList_AdjustWindows(false)
+reaper.UpdateArrange()
+reaper.Undo_EndBlock2(proj, "Band Session: open " .. song .. " v" .. s.version, -1)
+
+-- First open: save into a local (not synced) folder so recordings stay off the shared drive until sent.
+local _, projfile = reaper.EnumProjects(-1)
+if projfile == "" then
+  local local_dir = reaper.GetResourcePath() .. "/BandSession/" .. song
+  reaper.RecursiveCreateDirectory(local_dir, 0)
+  reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
+end
+
+band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
+  "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..
+  "Record, then run 'Band - Send takes'.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))

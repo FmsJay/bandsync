@@ -68,6 +68,7 @@ for n, it in ipairs(items) do
     band.write_json(takes .. "/" .. id .. ".json", manifest)
     band.copy_atomic(full, takes .. "/" .. id .. ".flac")
     band.set_item_ext(it, "band_sent", id)
+    band.set_take_state(proj, id, "full") -- this project already has it; keep its own inbox from re-importing
     sent = sent + 1
   else
     band.log("render failed for take " .. id)

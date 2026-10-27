@@ -21,11 +21,13 @@ end
 local view = {}
 local function gather()
   local s = band.read_json(band.session_path(cfg, b.song)) or {}
-  local takes, total, mine = {}, 0, 0
+  local takes, total, mine, newest = {}, 0, 0, band.VERSION
+  local function note_version(v) if v and band.compare_versions(v, newest) > 0 then newest = v end end
   for _, f in ipairs(band.files(band.takes_dir(cfg, b.song, b.room), ".json")) do
     local t = band.read_json(band.takes_dir(cfg, b.song, b.room) .. "/" .. f)
     if t and t.id then
       takes[t.id:lower()] = { rev = t.rev or 1, user = t.user }
+      note_version(t.bandsync)
       total = total + 1
       if t.user == cfg.user then mine = mine + 1 end
     end
@@ -43,6 +45,7 @@ local function gather()
     local st = band.read_json(sync.room_dir(cfg, b.song, b.room) .. "/status/" .. f)
     if st and st.user then
       seen[st.user] = true
+      if st.user ~= cfg.user then note_version(st.version) end
       if st.user == cfg.user then view.my_age = age(st.time) else
         local a, missing = age(st.time), count(st.takes or {})
         rows[#rows + 1] = { name = st.user, age = a, version = st.version or "?", missing = missing,
@@ -59,6 +62,7 @@ local function gather()
   end
   table.sort(rows, function(x, y) return x.name < y.name end)
   view.rows, view.total, view.mine = rows, total, mine
+  view.newer = band.compare_versions(newest, band.VERSION) > 0 and newest or nil
   view.my_missing = count(me)
   view.driver = sync.driver(cfg, b.song, b.room, s)
   view.print = s.print or "wet"
@@ -86,6 +90,10 @@ local function draw()
     running and "running" or "NOT running (start BandSync - Live sync)"), COLORS[me_state])
   local cols = { 14, 170, 290, 400, 500, 620 }
   local y = 72
+  if view.newer then
+    text(14, 62, string.format("BandSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["catching up"])
+    y = 92
+  end
   for i, h in ipairs({ "Bandmate", "State", "Last seen", "Has", "Missing yours", "Version" }) do text(cols[i], y, h, dim) end
   y = y + 24
   if #view.rows == 0 then text(14, y, "Nobody else has synced in this room yet.", dim) end

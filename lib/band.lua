@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.4.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.4.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -26,13 +26,16 @@ function band.age(iso, now)
   return os.time(t) - os.time({ year = y, month = m, day = d, hour = H, min = M, sec = S, isdst = false })
 end
 
--- Warn once per run when a bandmate's file was made with a newer BandSync than this one.
+-- Warn once per run when a bandmate's file was made with a newer BandSync than this one. Background loops
+-- pass quiet = true: a modal dialog would pause every defer script until someone clicks it (it froze a
+-- Live sync for 3 minutes), so they log instead and the Status window shows a banner.
 local warned = {}
-function band.check_version(theirs, what)
+function band.check_version(theirs, what, quiet)
   if theirs and band.compare_versions(theirs, band.VERSION) > 0 and not warned[theirs] then
     warned[theirs] = true
-    band.msg(string.format("%s was made with BandSync %s; you have %s.\n\nRun 'BandSync - Update' so everyone stays compatible.",
-      what, theirs, band.VERSION))
+    local text = string.format("%s was made with BandSync %s; you have %s. Run 'BandSync - Update' so everyone stays compatible.",
+      what, theirs, band.VERSION)
+    if quiet then band.log(text) else band.msg(text) end
   end
 end
 

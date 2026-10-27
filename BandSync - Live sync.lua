@@ -42,7 +42,7 @@ local function import(room)
   for _, f in ipairs(band.files(tdir, ".json")) do
     local t = band.read_json(tdir .. "/" .. f)
     if t and t.id and t.full then
-      band.check_version(t.bandsync, "A take from " .. t.user)
+      band.check_version(t.bandsync, "A take from " .. t.user, true)
       local state = band.take_state(proj, t.id)
       local full, prev = tdir .. "/" .. t.full, t.preview and (tdir .. "/" .. t.preview)
       local dry = t.dry and (tdir .. "/" .. t.dry)
@@ -113,7 +113,7 @@ local function poll()
     sync.write_status(proj, cfg, b.song, b.room, info)
   end
 
-  if s then band.check_version(s.bandsync, "'" .. b.song .. "'") end
+  if s then band.check_version(s.bandsync, "'" .. b.song .. "'", true) end
   if s and not host then
     if band.sync_stems(proj, cfg, b.song, s, true) > 0 then band.log("upgraded stems to full quality") end
     if tostring(s.version) ~= tostring(b.version) and warned_version ~= s.version then

@@ -12,6 +12,8 @@ local sync = {
   TRACKS = "BandSync.tracks",   -- track GUID -> "name|mute|solo|colour|icon" as last seen/applied
   ITEMS = "BandSync.items",     -- id -> item state chunk of our own sent takes (recall points rebuild them)
   PENDING = "BandSync.pending", -- id -> where a revived take must sit once it has been imported again
+  PRINTER = "BandSync.printer", -- id -> who made the current print (someone may print a take with their own instrument)
+  MIDIHASH = "BandSync.midi",   -- id -> hash of the MIDI copy's notes as last seen/applied
   MIN_LEN = 0.5,                -- shorter items are recording slivers, not takes
 }
 
@@ -135,6 +137,8 @@ local function speaks_for_name(proj, tr)
 end
 sync.speaks_for_name = speaks_for_name
 
+function sync.midi_seen(proj, id, tk) setext(proj, sync.MIDIHASH, id, select(2, reaper.MIDI_GetHash(tk, false, ""))) end
+
 -- Everything that changes how a print sounds: FX (names, bypass, every parameter), volumes, pan, fades.
 -- Track-level parts only matter for wet prints.
 local function fxhash(it, tk, wet)
@@ -148,6 +152,7 @@ local function fxhash(it, tk, wet)
     end
   end
   fx(reaper.TakeFX_GetCount, reaper.TakeFX_GetFXName, reaper.TakeFX_GetEnabled, reaper.TakeFX_GetNumParams, reaper.TakeFX_GetParamNormalized, tk)
+  if reaper.TakeIsMIDI(tk) then parts[#parts + 1] = select(2, reaper.MIDI_GetHash(tk, false, "")) end -- edited notes sound different
   if wet then
     parts[#parts + 1] = reaper.GetMediaTrackInfo_Value(tr, "D_VOL") .. "/" .. reaper.GetMediaTrackInfo_Value(tr, "D_PAN") ..
       "/" .. reaper.GetMediaTrackInfo_Value(tr, "I_FXEN")
@@ -235,7 +240,7 @@ function sync.own_takes(proj, opts)
         band.set_item_ext(it, "band_sent", "")
       end
       local function add(tk)
-        if not tk or band.take_ext(tk, "band_take") ~= "" or band.take_ext(tk, "band_dry") ~= "" then return end
+        if not tk or band.take_ext(tk, "band_take") ~= "" or band.take_ext(tk, "band_dry") ~= "" or band.take_ext(tk, "band_midi") ~= "" then return end
         if reaper.GetMediaItemInfo_Value(it, "D_LENGTH") < (opts.min_len or 0) then return end
         if opts.unsent then
           if band.take_ext(tk, "band_sent") ~= "" or band.take_ext(tk, "band_base") ~= "" then return end
@@ -270,7 +275,8 @@ end
 -- Render source 32 ("selected media items") runs the item through its TRACK (FX, volume, pan; verified
 -- 7.83), so a dry print bypasses the track's FX and neutralises its volume/pan for the render.
 -- Works on the active tab only (REAPER renders the active project).
-local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes)
+-- `twin`: printing someone's MIDI copy with our own instrument; it's the original track's name.
+local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twin)
   local tr = reaper.GetMediaItem_Track(it)
   local suffix = rev > 1 and ("-r" .. rev) or ""
   local nch = reaper.GetMediaSourceNumChannels(reaper.GetMediaItemTake_Source(take))
@@ -315,7 +321,21 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes)
     sent = os.date("!%Y-%m-%dT%H:%M:%SZ"), full = id .. suffix .. ".flac", print = mode, wet = mode ~= "dry",
     group = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)), -- passes of one item stay one item
     lane = lane, lane_name = lane and select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, "", false)) or nil,
+    printed_by = cfg.user,
   }
+  local old = twin and band.read_json(takes .. "/" .. id .. ".json")
+  if old then -- printed from a MIDI copy: still the original's take (whose, which track, lane, item)
+    for _, k in ipairs({ "user", "room", "track", "group", "lane", "lane_name", "session_version" }) do m[k] = old[k] end
+  elseif twin then
+    m.track = twin
+  end
+  if reaper.TakeIsMIDI(take) then -- the notes travel with the print, so anyone may edit them or print them with their own instrument
+    local ok, buf = reaper.MIDI_GetAllEvts(take, "")
+    if ok then
+      band.write_atomic(takes .. "/" .. id .. suffix .. ".midibuf", buf)
+      m.midi, m.midi_offs = id .. suffix .. ".midibuf", reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+    end
+  end
   if (band.size(main .. ".opus") or math.huge) < band.size(main .. ".flac") then -- a preview only helps if smaller
     band.copy_atomic(main .. ".opus", takes .. "/" .. id .. suffix .. ".opus")
     m.preview = id .. suffix .. ".opus"
@@ -326,15 +346,21 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes)
   end
   if rev > 1 then -- receivers keep local copies, so the previous revision's shared files can go
     local old = rev > 2 and ("-r" .. (rev - 1)) or ""
-    for _, f in ipairs({ id .. old .. ".flac", id .. old .. ".opus", id .. "-dry" .. old .. ".flac" }) do os.remove(takes .. "/" .. f) end
+    for _, f in ipairs({ id .. old .. ".flac", id .. old .. ".opus", id .. "-dry" .. old .. ".flac", id .. old .. ".midibuf" }) do os.remove(takes .. "/" .. f) end
   end
   band.write_json(takes .. "/" .. id .. ".json", m) -- one manifest per take, rewritten for each revision
   band.copy_atomic(main .. ".flac", takes .. "/" .. m.full)
-  band.set_take_ext(take, "band_sent", id)
+  setext(proj, sync.REV, id, tostring(rev))
+  setext(proj, sync.PRINTER, id, cfg.user)
   band.set_take_ext(take, "band_fxhash", fxhash(it, take, mode ~= "dry"))
+  if reaper.TakeIsMIDI(take) then sync.midi_seen(proj, id, take) end
+  if twin then -- a MIDI copy printed with our instrument stays a copy; the print we hold becomes ours
+    band.update_take(proj, m, takes .. "/" .. m.full, m.dry and (takes .. "/" .. m.dry))
+    return m
+  end
+  band.set_take_ext(take, "band_sent", id)
   band.mark_base(take)
   band.set_take_state(proj, id, "full") -- this project already has it: its own sync must not re-import it
-  setext(proj, sync.REV, id, tostring(rev))
   setext(proj, sync.SENTKEYS, content_key(it, take), id)
   sync.remember(proj, id, it, take)
   return m
@@ -376,8 +402,16 @@ function sync.reprint(proj, cfg, b, mode)
     local it = reaper.GetMediaItem(proj, i)
     for k = 0, reaper.CountTakes(it) - 1 do
       local tk = reaper.GetTake(it, k)
-      local id = band.take_ext(tk, "band_sent")
-      if id ~= "" and band.take_ext(tk, "band_fxhash") ~= fxhash(it, tk, mode ~= "dry") then todo[#todo + 1] = { it, tk, id } end
+      local id, twin = band.take_ext(tk, "band_sent"), nil
+      if id == "" then -- a MIDI copy we printed with our own instrument: we keep that print current
+        id, twin = band.take_ext(tk, "band_midi"), band.track_ext(reaper.GetMediaItem_Track(it), "band_midi_track")
+      end
+      local printer = id ~= "" and ext(proj, sync.PRINTER, id) or ""
+      -- once someone else has printed this take with their own instrument, their print stands: we don't
+      -- overwrite it with ours (our note edits still reach them as MIDI)
+      if id ~= "" and (printer == cfg.user or (printer == "" and not twin)) and band.take_ext(tk, "band_fxhash") ~= fxhash(it, tk, mode ~= "dry") then
+        todo[#todo + 1] = { it, tk, id, twin }
+      end
     end
   end
   if #todo == 0 then return 0 end
@@ -385,7 +419,21 @@ function sync.reprint(proj, cfg, b, mode)
   local sel, n = selection(proj), 0
   for _, u in ipairs(todo) do
     local rev = (tonumber(ext(proj, sync.REV, u[3])) or 1) + 1
-    if print_take(proj, cfg, b, u[1], u[2], u[3], rev, mode, out, takes) then n = n + 1 end
+    if print_take(proj, cfg, b, u[1], u[2], u[3], rev, mode, out, takes, u[4]) then n = n + 1 end
+  end
+  finish(proj, sel)
+  return n
+end
+
+-- "Print my MIDI": render MIDI copies through this person's "(MIDI)" track and instrument, and post each
+-- as the take's next revision; everyone hears the new print, and they keep it current from then on.
+-- units: { item, take, id, original track name }.
+function sync.print_midi(proj, cfg, b, units, mode)
+  local out, takes = dirs(proj, cfg, b)
+  local sel, n = selection(proj), 0
+  for _, u in ipairs(units) do
+    local rev = (tonumber(ext(proj, sync.REV, u[3])) or 1) + 1
+    if print_take(proj, cfg, b, u[1], u[2], u[3], rev, mode, out, takes, u[4]) then n = n + 1 end
   end
   finish(proj, sel)
   return n
@@ -568,13 +616,29 @@ end
 
 -- Apply one event from whoever may make it. False means retry later (its take hasn't arrived, or a
 -- delete needs this tab in front).
-function sync.apply(proj, ev)
+-- `dir`: the room's folder (where "midi" events keep their note files).
+function sync.apply(proj, ev, dir)
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
   local it, tk = band.find_take(proj, ev.take)
+  local mit, mtk = band.find_midi(proj, ev.take)
   if it then reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0) end -- view-only locks are for people, not for sync
+  if mit then reaper.SetMediaItemInfo_Value(mit, "C_LOCK", 0) end
+  if ev.type == "midi" then -- someone edited the notes: our MIDI copy follows, and so does the original's source
+    local buf = dir and band.read(dir .. "/midi/" .. ev.file)
+    if not buf then return false end -- not synced here yet
+    for _, t2 in pairs({ mtk or false, tk and reaper.TakeIsMIDI(tk) and tk }) do
+      if t2 then
+        reaper.MIDI_SetAllEvts(t2, buf)
+        reaper.MIDI_Sort(t2)
+        sync.midi_seen(proj, ev.take, t2) -- applied, not a local edit (Live sync reprints if the print is ours)
+      end
+    end
+    return true
+  end
   if ev.type == "delete" then
     band.set_take_state(proj, ev.take, "deleted") -- also stops a late arrival from being imported
+    if mit then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(mit), mit) end
     if not it then return true end
     return delete_take(proj, it, tk, ev.take)
   elseif ev.type == "undelete" then -- a recall point brought it back: import it again
@@ -603,6 +667,12 @@ function sync.apply(proj, ev)
     end
     reaper.UpdateItemInProject(it)
     sync.remember(proj, band.take_id(tk) or ev.take, it, tk) -- so this change isn't seen as a local edit
+    if mit then -- the MIDI copy keeps sitting under its print
+      reaper.SetMediaItemInfo_Value(mit, "D_POSITION", ev.pos)
+      reaper.SetMediaItemInfo_Value(mit, "D_LENGTH", ev.len)
+      reaper.SetMediaItemTakeInfo_Value(mtk, "D_STARTOFFS", band.base_offs(mtk) + (ev.offs or 0))
+      reaper.UpdateItemInProject(mit)
+    end
     return true
   end
   return true -- unknown types from newer versions are skipped
@@ -629,6 +699,8 @@ function sync.watch(proj, cfg, song, room, can)
         for v in (snap .. "|"):gmatch("([^|]*)|") do f[#f + 1] = v end -- id|pos|len|offs|lane|mute|track
         local pos, track = tonumber(f[2]), f[7]
         band.set_take_state(proj, sid, "deleted")
+        local mit = band.find_midi(proj, sid) -- its MIDI copy goes with it
+        if mit then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(mit), mit) end
         if can(me, track, pos) then
           sync.post(cfg, song, room, { type = "delete", take = sid, track = track, pos = pos })
           sync.trash(cfg, song, room, sid)
@@ -677,6 +749,33 @@ function sync.watch(proj, cfg, song, room, can)
       end
     end
   end
+  -- note edits: on a MIDI copy, or on our own MIDI take once someone else prints it (else our reprint carries them)
+  for i = 0, reaper.CountMediaItems(proj) - 1 do
+    local it = reaper.GetMediaItem(proj, i)
+    local tk = reaper.GetActiveTake(it)
+    local id, track = tk and band.take_ext(tk, "band_midi") or "", nil
+    if id ~= "" then
+      track = band.track_ext(reaper.GetMediaItem_Track(it), "band_midi_track")
+    elseif tk and reaper.TakeIsMIDI(tk) and band.take_ext(tk, "band_sent") ~= "" then
+      id = band.take_ext(tk, "band_sent")
+      local printer = ext(proj, sync.PRINTER, id)
+      if printer ~= "" and printer ~= me then track = track_name(it) end
+    end
+    local before = track and ext(proj, sync.MIDIHASH, id)
+    if before and before ~= select(2, reaper.MIDI_GetHash(tk, false, "")) then
+      local pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+      if before ~= "" and can(me, track, pos) then
+        local ok, buf = reaper.MIDI_GetAllEvts(tk, "")
+        local file = string.format("%s-%s-%s.midibuf", id, (me:gsub("[^%w%-_]", "_")), os.date("!%Y%m%d-%H%M%S"))
+        if ok then
+          reaper.RecursiveCreateDirectory(sync.room_dir(cfg, song, room) .. "/midi", 0)
+          band.write_atomic(sync.room_dir(cfg, song, room) .. "/midi/" .. file, buf)
+          sync.post(cfg, song, room, { type = "midi", take = id, track = track, pos = pos, file = file })
+        end
+      end
+      sync.midi_seen(proj, id, tk)
+    end
+  end
 end
 
 -- View-only: lock (item lock) the BandSync takes this person may not change, so nothing silently diverges;
@@ -685,8 +784,10 @@ function sync.apply_locks(proj, can, me)
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     local tk = reaper.GetActiveTake(it)
-    if tk and band.take_id(tk) then
-      local allowed = can(me, track_name(it), reaper.GetMediaItemInfo_Value(it, "D_POSITION"))
+    local name = tk and (band.take_id(tk) and track_name(it) or band.take_ext(tk, "band_midi") ~= "" and
+      band.track_ext(reaper.GetMediaItem_Track(it), "band_midi_track")) -- MIDI copies belong to their print's track
+    if name then
+      local allowed = can(me, name, reaper.GetMediaItemInfo_Value(it, "D_POSITION"))
       local lock = math.floor(reaper.GetMediaItemInfo_Value(it, "C_LOCK"))
       local ours = band.item_ext(it, "band_locked") ~= ""
       if not allowed and lock & 1 == 0 then
@@ -723,11 +824,12 @@ function sync.receive(proj, cfg, song, room, can)
       setext(proj, sync.APPLIED, ev.id, "1") -- our own (already true here), or not theirs to change
     else
       if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
-      if sync.apply(proj, ev) then
+      if sync.apply(proj, ev, sync.room_dir(cfg, song, room)) then
         setext(proj, sync.APPLIED, ev.id, "1")
         applied = applied + 1
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
-          delete = "deleted " .. tostring(ev.take), undelete = "brought back " .. tostring(ev.take) })[ev.type]
+          delete = "deleted " .. tostring(ev.take), undelete = "brought back " .. tostring(ev.take),
+          midi = "edited the notes of " .. tostring(ev.take) })[ev.type]
         done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))
       end
     end

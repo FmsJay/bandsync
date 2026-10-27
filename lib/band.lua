@@ -550,6 +550,54 @@ function band.update_take(proj, t, path, dry_path)
   return true
 end
 
+-- ---- MIDI copies ------------------------------------------------------------------------------
+-- A MIDI take's notes travel with its print. Each receiver gets them as an editable MIDI item (tagged
+-- band_midi = id) on a muted "<track> (MIDI)" track: edit the notes and everyone follows, or put your own
+-- instrument on that track and "Print my MIDI" to replace the print everyone hears.
+
+function band.find_midi(proj, id)
+  local lid = id:lower()
+  for i = 0, reaper.CountMediaItems(proj) - 1 do
+    local it = reaper.GetMediaItem(proj, i)
+    local tk = reaper.GetActiveTake(it)
+    if tk and band.take_ext(tk, "band_midi"):lower() == lid then return it, tk end
+  end
+end
+
+-- Place or update the MIDI copy of take manifest t from its .midibuf file. Returns item, take.
+function band.place_midi(proj, t, path)
+  local buf = band.read(path)
+  if not buf then return nil end
+  local it, tk = band.find_midi(proj, t.id)
+  if not it then
+    local name = t.track .. " (MIDI)"
+    local tr
+    for i = 0, reaper.CountTracks(proj) - 1 do
+      local c = reaper.GetTrack(proj, i)
+      if band.track_ext(c, "band_midi_track"):lower() == t.track:lower() then tr = c end
+    end
+    if not tr then
+      tr = band.new_track(proj, name)
+      if not tr then return nil end
+      reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) -- the print plays; this is for editing and re-printing
+      reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_midi_track", t.track, true)
+    end
+    it = reaper.CreateNewMIDIItemInProj(tr, t.pos, t.pos + t.len)
+    tk = it and reaper.GetActiveTake(it)
+    if not tk then return nil end
+    band.set_take_ext(tk, "band_midi", t.id)
+    reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", t.user .. " · " .. t.track .. " (MIDI)", true)
+  end
+  reaper.SetMediaItemInfo_Value(it, "D_POSITION", t.pos)
+  reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len)
+  reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", t.midi_offs or 0) -- same tempo map: same source start, same notes
+  band.mark_base(tk)
+  reaper.MIDI_SetAllEvts(tk, buf)
+  reaper.MIDI_Sort(tk)
+  reaper.UpdateItemInProject(it)
+  return it, tk
+end
+
 -- Insert take t (a take manifest) from path (plus its dry twin for "both" prints), or upgrade its
 -- source if already placed (preview -> full).
 function band.place_take(proj, t, path, mode, dry_path)

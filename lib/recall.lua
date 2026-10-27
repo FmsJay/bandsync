@@ -78,7 +78,11 @@ function recall.restore(proj, cfg, song, room, file)
   local moved, removed, revived = 0, 0, 0
   reaper.Undo_BeginBlock2(proj)
   for lid, hit in pairs(idx) do -- here now, not in the recall point: delete (it goes to _trash, recoverable)
-    if not want[lid] and sync.delete_take(proj, hit[1], hit[2], band.take_id(hit[2]) or lid) then removed = removed + 1 end
+    if not want[lid] and sync.delete_take(proj, hit[1], hit[2], band.take_id(hit[2]) or lid) then
+      removed = removed + 1
+      local mit = band.find_midi(proj, lid) -- a revived take's MIDI copy comes back with its import
+      if mit then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(mit), mit) end
+    end
   end
   idx = band.take_index(proj)
   local takes_dir, trash = band.takes_dir(cfg, song, room), sync.room_dir(cfg, song, room) .. "/_trash"

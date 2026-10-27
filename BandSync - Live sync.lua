@@ -47,14 +47,29 @@ local function import(room)
       local full, prev = tdir .. "/" .. t.full, t.preview and (tdir .. "/" .. t.preview)
       local dry = t.dry and (tdir .. "/" .. t.dry)
       local rev, held = t.rev or 1, tonumber(sync.ext(proj, sync.REV, t.id)) or 1
-      if state == "full" and rev > held then -- the sender reprinted it (FX/volume change): update in place
+      local midi = t.midi and (tdir .. "/" .. t.midi)
+      local function place_midi() -- the notes, as an editable MIDI copy under the print
+        if not midi or not reaper.file_exists(midi) then return end
+        local _, mtk = band.place_midi(proj, t, midi)
+        if mtk then sync.midi_seen(proj, t.id, mtk) end
+      end
+      local _, mine = band.find_take(proj, t.id)
+      if mine and band.take_ext(mine, "band_sent") == "" then mine = nil end
+      if state == "full" and rev > held and mine then -- someone printed our MIDI take with their instrument
+        sync.setext(proj, sync.REV, t.id, tostring(rev))
+        sync.setext(proj, sync.PRINTER, t.id, t.printed_by or "")
+        band.log(string.format("%s printed your take %s with their own sound: the band hears theirs now", tostring(t.printed_by), t.id))
+      elseif state == "full" and rev > held then -- reprinted (FX/volume/note change): update in place
         if ready(full) and (not dry or ready(dry)) then
           reaper.Undo_BeginBlock2(proj)
           local ok = band.update_take(proj, t, full, dry)
+          if ok then place_midi() end
           reaper.Undo_EndBlock2(proj, "BandSync: updated take from " .. t.user, -1)
           if ok then
             sync.setext(proj, sync.REV, t.id, tostring(rev))
-            band.log(string.format("take from %s updated (revision %d) -> %s", t.user, rev, t.track))
+            sync.setext(proj, sync.PRINTER, t.id, t.printed_by or "")
+            band.log(string.format("take from %s updated (revision %d%s) -> %s", t.user, rev,
+              (t.printed_by and t.printed_by ~= t.user) and (", printed by " .. t.printed_by) or "", t.track))
           end
         end
       elseif state ~= "full" and state ~= "deleted" then -- "full" also covers takes this project sent itself
@@ -64,10 +79,12 @@ local function import(room)
         if want then
           reaper.Undo_BeginBlock2(proj)
           local ok = band.place_take(proj, t, path, mode, want == "full" and dry or nil)
+          if ok then place_midi() end
           reaper.Undo_EndBlock2(proj, "BandSync: " .. want .. " take from " .. t.user, -1)
           if ok then
             band.set_take_state(proj, t.id, want)
             sync.setext(proj, sync.REV, t.id, tostring(rev))
+            sync.setext(proj, sync.PRINTER, t.id, t.printed_by or "")
             local pending = sync.ext(proj, sync.PENDING, t.id) -- brought back by a recall point: put it where that had it
             if pending ~= "" then
               local p = band.json_decode(pending)

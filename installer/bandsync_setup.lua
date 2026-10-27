@@ -64,6 +64,9 @@ elseif req.mode == "folder" then
   step("register actions from shared folder", #scripts > 0, #scripts .. " scripts in " .. dir)
 end
 
+-- optional: the control panel needs ReaImGui (ReaTeam Extensions repository, which ReaPack has by default)
+out.reaimgui = reaper.APIExists("ImGui_GetBuiltinPath")
+
 -- verify: which BandSync actions does REAPER have registered right now?
 local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
 local count, text = 0, kb and kb:read("a") or ""

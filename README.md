@@ -3,9 +3,10 @@
 Record together in REAPER from different cities, as if you were working in one project. One person
 hosts a song; everyone records locally against the same tempo map with no latency, and every take,
 alternate and lane shows up in everyone's project, in the same places. Edits made by whoever is
-driving the session (deletes, moves, trims, which take or lane plays) follow everywhere.
+driving the session (deletes, moves, trims, which take or lane plays) follow everywhere; bandmates can own
+their own tracks or song sections, and every handover leaves a recall point you can go back to.
 
-Plain-Lua ReaScripts, no extensions required (SWS helps; see Limits). REAPER 7.18 or newer; 7.83 is
+Plain-Lua ReaScripts, no extensions required (SWS helps; see Limits; the control panel needs ReaImGui). REAPER 7.18 or newer; 7.83 is
 tested. Machines talk only through a shared folder (Syncthing recommended, or a cloud drive).
 
 ## How it works
@@ -16,8 +17,11 @@ tested. Machines talk only through a shared folder (Syncthing recommended, or a 
     session.json               tempo map, markers, sample rate, stems, host, print mode, version
     stems/vN/NN.flac + .opus   one folder per publish (open files are never overwritten)
     rooms/<room>/
-      takes/    <id>.json + .flac (+ .opus preview, + -dry.flac twin)   every take, as printed
-      events/   <person>-<time>.json    the driver's deletes, edits and lane/take choices
+      takes/    <id>.json + .flac (+ .opus preview, + -dry.flac twin, + .midibuf notes)   every take, as printed
+      events/   <person>-<time>.json    deletes, edits, lane/take choices, note edits, track mute/colour
+      midi/     note edits that travel with "midi" events
+      claims/   <person>.json           the tracks and regions each person owns
+      recall/   <time>-<person>-<label>.json   recall points (every handover, or saved by hand)
       status/   <person>.json           what each person's project holds (the Status window)
       _trash/   deleted takes, kept, never destroyed
       driver.json                       who's driving (the host until someone takes control)
@@ -35,7 +39,11 @@ tested. Machines talk only through a shared folder (Syncthing recommended, or a 
     takes of one item. Preview first, then full quality.
   - **Reprints** your takes when their sound changes (an FX added or tweaked, volume, pan, fades), and
     everyone's copy updates in place.
-  - **Mirrors the driver**: their deletes, moves, trims, lane moves and which take or lane plays.
+  - **Mirrors whoever may change each take**: deletes, moves, trims, mutes, lane moves, which take or lane
+    plays, and track name/mute/solo/colour/icon. What you may not change is locked (view-only) so it can't
+    silently drift from the band's version.
+  - **MIDI**: a MIDI take's notes travel with its print and land as an editable MIDI copy on a muted
+    "<track> (MIDI)" track. Edit those notes and everyone follows (the player's own Live sync reprints it).
   - Never touches the project while you're recording.
 
 Print modes (the host picks per song): **wet** (default) prints each item through its track's FX,
@@ -76,6 +84,10 @@ By hand:
 
 ## Session workflow
 
+**BandSync - Panel** puts all of it in one dockable window: Live sync on/off, Hold sync, bandmates and what
+they have, who's driving, who owns what, recall points, and the other actions. The table below uses the
+separate actions, which still work without the panel.
+
 | Host | Bandmate |
 |---|---|
 | **BandSync - Publish session**: song name, stems (`none` / `mix` / `grouped` / `tracks`), print (`wet` / `dry` / `both`). Save. | |
@@ -85,8 +97,19 @@ By hand:
 
 - **BandSync - Status**: a window showing who's online, their BandSync version, how many of the room's takes
   they have, and which of *yours* they're still missing. Green = in sync, yellow = catching up, grey = offline.
-- **BandSync - Take control**: become the driver (tell the others first). Only the driver's edits propagate;
-  everyone else's stay in their own project.
+- **BandSync - Take control**: become the driver (tell the others first). The driver's edits propagate for
+  everything nobody has claimed; everyone else's stay in their own project. Every handover saves a recall point.
+- **Ownership** (panel): *Claim selected tracks* makes them yours (only your edits there propagate, whoever
+  drives); *Claim region at cursor* does the same for every take that starts in that region. A track claim
+  beats a region claim, which beats the driver. *Release mine* hands them back.
+- **Recall points** (panel): snapshots of which takes exist, where they sit, what plays, and track mute/solo/
+  colour. Saved at every handover and whenever you click *Save point*. The driver can *Restore* one: the
+  session goes back to it (deleted takes come back out of `_trash`), after first saving where it is now, so you
+  can flip between versions.
+- **Hold sync** (panel checkbox): work without sending anything; on release your net changes go out once.
+- **BandSync - Print my MIDI**: put your own instrument on a "<track> (MIDI)" track (a better drum VST,
+  say), select its MIDI items and run this. Your render replaces the print everyone hears, and from then on
+  your Live sync keeps it current (your FX changes, anyone's note edits).
 - **BandSync - Send takes / Send all takes**: send by hand (resend a selected item's active take, or every
   unsent pass). Live sync normally makes these unnecessary.
 - **BandSync - Settings** also sets how takes land in this project: `mirror` (default: as the sender has them),
@@ -117,4 +140,6 @@ layers fix that, best set up on the host's always-on machine:
 - REAPER's lanes play one lane or all of them, so "which lane plays" mirrors as exactly that.
 - Refreshing replaces a bandmate's markers and tempo map with the host's. A take recorded before the host
   changed the tempo stays at its original time, not on the bar.
+- MIDI copies assume everyone has the same tempo map (they do, from the publish). Looped MIDI items print
+  fine but their copy isn't looped.
 - Live listening while someone records isn't part of this yet: use SonoBus on the performer's master bus.

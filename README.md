@@ -53,11 +53,11 @@ By hand:
      everyone instantly, but new scripts must be loaded once by hand. The trade-off: anyone who can write to the
      shared folder can change everyone's scripts. Only share it with your band.
 3. Run **BandSync - Settings**: choose the shared folder and enter your name.
-4. **Calibrate recording latency** (important): connect a
-   cable from your interface's output 1 to an input, and run it. It plays three clicks, records them
-   back in a temporary project, and tells you how many ms early or late your recordings land. Under
-   1 ms is fine. Otherwise adjust the latency compensation offset in *Preferences > Audio > Recording*
-   and run it again. Without this, every take you send can land a few ms off.
+4. **Calibrate recording latency** (important): connect a cable from your interface's output 1 to an
+   input and run **BandSync - Calibrate latency**. It plays three clicks, records them back in a temporary
+   project, and tells you how many samples early or late your recordings land. Under 1 ms is fine. If it says
+   LATE N, add +N to *Preferences > Audio > Recording > Input manual offset* (EARLY: subtract) and run it again.
+   Without this, every take you send can land a few ms off.
 
 ## Session workflow
 

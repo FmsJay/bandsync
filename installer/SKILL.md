@@ -5,6 +5,12 @@ description: Set up BandSync (remote band recording in REAPER) on this computer 
 
 # BandSync setup
 
+**There is now a scripted installer that does steps 1-3 and most of 4-5:** `install_windows.ps1` (via
+`Install BandSync (Windows).cmd`) and `install_mac.sh` (via `Install BandSync (Mac).command`). Prefer running it,
+answering its questions as parameters (`-User -Hosting yes|no -HostId -Root -Live yes|no -Solo yes|no`; on macOS the
+`BS_*` environment variables in its header), and use the steps below to explain prompts, repair, or finish what it
+lists as left for a human. The Windows one is tested; the macOS one hasn't been run on a Mac yet, so watch it.
+
 You are installing BandSync for a musician who is probably not technical. They are at the keyboard.
 Your job is to get them from nothing to "my take landed in the host's project", explaining each
 prompt before it appears. Everything here was learned from real first-time installs on Windows 11
@@ -111,9 +117,14 @@ Solo edit (versions) and History & restore tabs only exist there. ReaPack's API 
 walk them through *Extensions > ReaPack > Browse packages*, search **ReaImGui**, right-click > Install, Apply, then
 restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui": true`.
 
-## 4. Tailscale (only for Live)
+## 4. SonoBus and Tailscale (only for Live)
 
-Live audio goes through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet.
+**Listen live** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
+from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it and copies the
+song's group link. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
+or restart REAPER after.
+
+**Play along** and **Jam** go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet.
 Bandmates don't join the host's tailnet; the host **shares one machine** with them.
 
 | OS | Install | CLI |

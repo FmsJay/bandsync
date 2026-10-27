@@ -56,6 +56,15 @@ function services.ensure_syncthing()
   return "started"
 end
 
+-- This machine's Tailscale address (100.x.y.z), or nil when Tailscale isn't installed or signed in.
+function services.tailscale_ip()
+  local exe = first_existing({ "C:/Program Files/Tailscale/tailscale.exe", "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+    "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale", "/usr/bin/tailscale" })
+  if not exe then return nil end
+  local out = reaper.ExecProcess(q(exe) .. " ip -4", 5000) or "" -- "0\n100.97.210.49\n"
+  return out:match("^0\n%s*(100%.%d+%.%d+%.%d+)")
+end
+
 -- The host's NINJAM server: <ninjam_dir>/ninjamsrv(.exe) with bandsync.cfg beside it.
 function services.ninjam_dir()
   return reaper.GetExtState(band.SECTION, "ninjam_dir")

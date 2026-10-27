@@ -260,16 +260,59 @@ local live = require("live")
 local live_mode, live_send, live_server = "synced", true, nil
 local services = require("services")
 local ninjam_dir_edit, srv_at, srv_up = nil, 0, false
-local LIVE_MODES = { { "synced", "Play along (synced to the song)" }, { "listen", "Listen live (no sync)" }, { "jam", "Jam (NINJAM intervals)" } }
+local LIVE_MODES = { { "synced", "Play along (synced to the song)" }, { "listen", "Listen live (SonoBus, lowest delay)" }, { "jam", "Jam (NINJAM intervals)" } }
+
+local setup = require("setup")
+
+-- Listen live: the band's join link goes on the clipboard; SonoBus's paste button (plugin version: it doesn't read the
+-- clipboard by itself) fills the group in. Once joined, its "Reconnect Last" rejoins whenever it comes online.
+local function sonobus_open()
+  local link, m, i = setup.sonobus(cfg, b, proj, true)
+  if not link then return band.msg(m) end
+  ImGui.SetClipboardText(ctx, link)
+  reaper.TrackFX_Show(m, i, 3)
+end
+
 local function section_live()
   local lfile = band.song_dir(cfg, b.song) .. "/live.json"
   if not live_server then live_server = (band.read_json(lfile) or {}).server or "" end
+  ImGui.SeparatorText(ctx, "Mode")
+  for _, m in ipairs(LIVE_MODES) do
+    if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
+  end
+  ImGui.TextWrapped(ctx, ({
+    synced = "Your audio is stamped with its song position. Listeners start playback a bar or two after you and hear you in time with the song; what you play also lands on their timeline as a placeholder until your real take arrives (placeholders appear when the listener disconnects: ReaNINJAM only writes its clip log then).",
+    listen = "Hear each other as it happens, peer to peer through SonoBus: no server to run. Playing together in time only works when the delay is low (wired internet, roughly the same region); otherwise use Play along.",
+    jam = "Classic NINJAM: everyone hears everyone one interval late, so you can all play at once.",
+  })[live_mode])
+  ImGui.Spacing(ctx)
+  if live_mode == "listen" then
+    local sm, si = live.fx(proj, false, live.SONOBUS)
+    local on = sm and not reaper.TrackFX_GetOffline(sm, si)
+    if ImGui.Button(ctx, on and "Open SonoBus##sb" or "Connect##sb") then sonobus_open() end
+    ImGui.SetItemTooltip(ctx, "Turns on SonoBus on your master track (it sends your mix and plays the band into it) and copies the band's group link.")
+    if on then
+      ImGui.SameLine(ctx)
+      if ImGui.Button(ctx, "Leave##sb") then reaper.TrackFX_SetOffline(sm, si, true) end
+      ImGui.TextColored(ctx, GREEN, "SonoBus is on. It rejoins the band's group by itself whenever it's on, until you Leave.")
+      ImGui.TextWrapped(ctx, "First time only: in SonoBus click Connect..., then the paste button (top left of Private Group), then Connect to Group.")
+    elseif sm then
+      ImGui.TextDisabled(ctx, "SonoBus is ready on your master track (off: it sends nothing until you Connect).")
+    end
+    local data = band.read_json(lfile) or {}
+    if data.sb_group then ImGui.TextDisabled(ctx, "Group: " .. data.sb_group .. " (password kept in the shared folder)") end
+    return
+  end
   ImGui.SeparatorText(ctx, "Server")
   ImGui.SetNextItemWidth(ctx, 220)
   local changed, v = ImGui.InputTextWithHint(ctx, "##server", "host's Tailscale IP:2049", live_server, ImGui.InputTextFlags_None)
   if changed then live_server = v end
   ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx, "Save for the band") then band.write_json(lfile, { server = live_server, by = cfg.user }) end
+  if ImGui.SmallButton(ctx, "Save for the band") then
+    local data = band.read_json(lfile) or {} -- keep the SonoBus group that lives in the same file
+    data.server, data.by = live_server, cfg.user
+    band.write_json(lfile, data)
+  end
   ImGui.SetItemTooltip(ctx, "The host runs the NINJAM server (tools/ninjam-server); everyone connects to its address.")
   if b.role == "host" then -- the host's Connect starts the server here if it isn't running
     ninjam_dir_edit = ninjam_dir_edit or services.ninjam_dir()
@@ -281,15 +324,6 @@ local function section_live()
     if reaper.time_precise() - srv_at > 3 then srv_at, srv_up = reaper.time_precise(), services.running("ninjamsrv") end -- tasklist is slow: not every frame
     ImGui.TextDisabled(ctx, srv_up and "Server: running on this machine" or "Server: not running (Connect starts it)")
   end
-  ImGui.SeparatorText(ctx, "Mode")
-  for _, m in ipairs(LIVE_MODES) do
-    if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
-  end
-  ImGui.TextWrapped(ctx, ({
-    synced = "Your audio is stamped with its song position. Listeners start playback a bar or two after you and hear you in time with the song; what you play also lands on their timeline as a placeholder until your real take arrives (placeholders appear when the listener disconnects: ReaNINJAM only writes its clip log then).",
-    listen = "Plain live audio, as fast as the network allows. For hearing an idea, not for playing along.",
-    jam = "Classic NINJAM: everyone hears everyone one interval late, so you can all play at once.",
-  })[live_mode])
   local _, s = ImGui.Checkbox(ctx, "Send my audio (my whole mix)", live_send)
   live_send = s
   ImGui.Spacing(ctx)
@@ -372,6 +406,34 @@ local function section_solo()
   end
 end
 
+-- Set up: everything this project and machine need (lib/setup.lua), and one button for every fix that needs no human.
+local setup_at, st = 0, {}
+local function section_setup()
+  if reaper.time_precise() - setup_at > 5 then setup_at, st = reaper.time_precise(), setup.check(cfg, b, proj) end -- tasklist is slow
+  local rows = {
+    { st.folder, "Shared folder is syncing", "Syncthing isn't running" },
+    { st.sync, "Live sync is running", "Live sync is off" },
+    { st.sonobus, "SonoBus is ready on the master track (Listen live)", "SonoBus isn't on the master track" },
+    { st.server, "Live server address is set", b.role == "host" and "Live server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Live server address" },
+    { st.solo, "Solo edit folder found", "Solo edit folder not found: " .. tostring(st.solo_root) .. " (share it / add the Drive shortcut, or set it in Solo edit)" },
+    { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: More > Calibrate latency)" },
+  }
+  if b.role == "host" then table.insert(rows, 5, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
+  local all = true
+  for _, r in ipairs(rows) do all = all and r[1] end
+  if ImGui.CollapsingHeader(ctx, all and "Set up: all done###setup" or "Set up: needs attention###setup", nil, all and ImGui.TreeNodeFlags_None or ImGui.TreeNodeFlags_DefaultOpen) then
+    for _, r in ipairs(rows) do ImGui.TextColored(ctx, r[1] and GREEN or YELLOW, (r[1] and "OK   " or "--   ") .. (r[1] and r[2] or r[3])) end
+    if not all then
+      if ImGui.Button(ctx, "Set up everything I can") then
+        local notes = setup.all(cfg, b, proj, st, function() action("Live sync") end)
+        setup_at, live_server = 0, nil -- re-check, and re-read the server address it may have filled in
+        if #notes > 0 then band.log("Set up: " .. table.concat(notes, "; ")) end
+      end
+      ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Live server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
+    end
+  end
+end
+
 local function section_actions()
   ImGui.SeparatorText(ctx, "More")
   for i, name in ipairs({ "Send takes", "Print my MIDI", "Settings", "Calibrate latency", "Update" }) do
@@ -387,10 +449,17 @@ local function frame()
     err = not ok and tostring(e) or nil
   end
   if err then return ImGui.TextColored(ctx, RED, "Error: " .. err) end
-  if not b then return ImGui.TextWrapped(ctx, "This project isn't a BandSync session. Publish it (host) or open one (guest) first.") end
+  if not b then
+    ImGui.TextWrapped(ctx, "This project isn't a BandSync session yet.")
+    if ImGui.Button(ctx, "Publish this project (I'm the host)") then action("Publish session") end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Open a band session / room") then action("Open session") end
+    return
+  end
   ImGui.Text(ctx, string.format("%s  ·  room %s  ·  %s  ·  you are %s", b.song, b.room, b.role, cfg.user))
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
+      section_setup()
       section_sync()
       section_band()
       section_control()

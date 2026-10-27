@@ -59,9 +59,24 @@ timeline without cluttering main.
 
 ## Setup (each person, once)
 
-**Easiest: let an AI do it.** In Claude Code, on the computer being set up, point it at
+**Easiest: the installer.** Download the `installer` folder (or just the one file) and double-click
+**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (right-click > Open the first
+time). It asks your name, whether you're the host (if not, the host's Syncthing device ID), and whether you'll use
+Live and Solo edit, then installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, Syncthing,
+and optionally SonoBus + Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with the
+host, installs BandSync through ReaPack and opens the panel. What's left needs you, and it lists it at the end:
+signing in to Tailscale and Google Drive, the host adding your device, and the latency cable. (Windows: tested.
+macOS: written the same way, not yet run on a Mac.)
+
+**Or let an AI do it.** In Claude Code, on the computer being set up, point it at
 `installer/SKILL.md` ("set up BandSync using installer/SKILL.md"). It installs and configures everything below,
 explains each prompt before it appears, and asks before every download.
+
+**In the project:** the panel's first screen offers *Publish this project* (host) or *Open a band session*, and the
+Session tab's **Set up** list shows what's in place for this project and machine (shared folder syncing, Live sync,
+SonoBus, the Live server, the Solo edit folder, latency). **Set up everything I can** does every fix that needs no
+human: starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in its Tailscale address as the
+Live server and starts the NINJAM server.
 
 By hand:
 
@@ -158,13 +173,20 @@ machines. The song's real REAPER project lives in a cloud folder (the panel's So
 
 ### Live: hear each other while it happens
 
-The **Live** tab uses REAPER's own ReaNINJAM and a NINJAM server the host runs (see
-`tools/ninjam-server/README.md`), reached over Tailscale. Three modes:
+The **Live** tab has three modes:
 
 - **Play along (synced)**, the default: your audio is stamped with its song position; listeners start playback
-  a bar or two after you and hear you in time with the song. What you play also lands on their timeline as a
-  placeholder on a "<name> (live)" track, replaced automatically when your real take arrives.
-- **Listen live**: plain live audio, as fast as the network allows.
+  a bar or two after you and hear you in time with the song, at any distance. What you play also lands on their
+  timeline as a placeholder on a "<name> (live)" track, replaced automatically when your real take arrives.
+  Uses REAPER's own ReaNINJAM and a NINJAM server the host runs (`tools/ninjam-server/README.md`), over Tailscale.
+- **Listen live**: hear each other as it happens, through **SonoBus** (free, GPLv3, sonobus.net): peer to peer,
+  far lower delay than NINJAM, and nobody runs a server, so it works the same on Windows and Mac. Playing *together*
+  in time this way needs low delay (wired internet, roughly the same region). **Connect** turns on SonoBus on your
+  master track (it sends your mix and plays the band into it) and copies the song's group link; the first time, in
+  SonoBus click *Connect...*, its paste button, then *Connect to Group*. After that, Connect is one click: SonoBus
+  rejoins by itself. **Leave** turns it off (it stays on the master track, sending nothing). Each song gets its own
+  group and password, kept in `<song>/live.json`; SonoBus's public connection server only introduces peers, and the
+  audio itself goes directly between you, unencrypted.
 - **Jam**: classic NINJAM, everyone one interval late.
 
 The host enters `<Tailscale IP>:2049` and clicks *Save for the band*; everyone else clicks **Connect**, which adds
@@ -203,6 +225,9 @@ layers fix that, best set up on the host's always-on machine:
   restart REAPER. Synced mode needs the listener to play from a point behind the sender.
 - Live placeholders appear when the listener disconnects (or after a long session): ReaNINJAM buffers its clip
   log and only writes it to disk then. Hearing the audio live isn't affected.
+- Listen live: SonoBus shows each person under their computer's user name (change it in SonoBus's Connect page).
+  REAPER only sees a newly installed SonoBus after a restart. Only tested on one machine so far (join, leave,
+  rejoin); hearing each other across machines is still to test.
 - Solo edit restores bring back arrangement and settings; media is only ever added to the shared folder, never
   deleted, so old versions always find their files.
 - History restores (live mode) put back arrangement and what plays; note edits and reprints stay current.

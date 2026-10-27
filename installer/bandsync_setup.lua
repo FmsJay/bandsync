@@ -75,3 +75,10 @@ for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do count = coun
 out.registered_actions = count
 step("BandSync actions registered", count >= 5, count)
 finish()
+
+-- open_panel: land the musician in the panel, whose first screen offers to publish or open a session
+if req.open_panel and count >= 5 and out.reaimgui then
+  local id = text:match('SCR %d+ %d+ (%S+) "[^"]*BandSync %- Panel%.lua"')
+  local cmd = id and reaper.NamedCommandLookup("_" .. id) or 0
+  if cmd ~= 0 and reaper.GetToggleCommandState(cmd) ~= 1 then reaper.Main_OnCommand(cmd, 0) end
+end

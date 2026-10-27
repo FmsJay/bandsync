@@ -4,15 +4,18 @@
 --           playhead reaches that position. Start playback a bar or two after the sender and you hear them
 --           in time with the song. Each clip is also saved with its position, so BandSync drops it on the
 --           timeline as a placeholder until the real take arrives.
---   listen (2, "voice chat"): plain live audio, as soon as possible. For hearing an idea, not playing along.
 --   jam    (0): classic NINJAM: everyone hears everyone one interval (BPI bars) late.
 -- ReaNINJAM keeps its settings in reaninjam.ini, section [ninjam], next to reaper.exe or in the resource
 -- folder; BandSync writes them there before ReaNINJAM opens, so connecting is one click.
+-- "Listen live" uses SonoBus instead (GPLv3, sonobus.net): peer-to-peer, far lower latency than NINJAM's
+-- voice-chat mode, and nobody has to host a server. Peers find each other through SonoBus's public
+-- connection server by group name and password, kept per song in <song>/live.json.
 local band = require("band")
 local live = {}
 
-live.FLAGS = { synced = 4, listen = 2, jam = 0 }
+live.FLAGS = { synced = 4, jam = 0 }
 live.FX = "ReaNINJAM"
+live.SONOBUS = "SonoBus"
 live.TRACK_SUFFIX = " (live)"
 
 function live.ini_path()
@@ -75,17 +78,49 @@ function live.configure(cfg, server, mode, send, sessiondir)
   return path
 end
 
--- ReaNINJAM on the master track: it sends what you hear (your whole mix) and plays the band into it.
-function live.fx(proj, add)
+-- ReaNINJAM (or SonoBus, fx = live.SONOBUS) on the master track: it sends what you hear (your whole mix) and
+-- plays the band into it. SonoBus passes your mix through (its Dry Level is 1 in plugin mode).
+function live.fx(proj, add, fx)
+  fx = fx or live.FX
   local master = reaper.GetMasterTrack(proj)
   for i = 0, reaper.TrackFX_GetCount(master) - 1 do
     local _, name = reaper.TrackFX_GetFXName(master, i)
-    if name:find(live.FX, 1, true) then return master, i end
+    if name:find(fx, 1, true) and not name:find("Instrument", 1, true) then return master, i end
   end
   if not add then return nil end
-  local i = reaper.TrackFX_AddByName(master, live.FX, false, -1)
+  local i = reaper.TrackFX_AddByName(master, fx == live.SONOBUS and "VST3:SonoBus (Sonosaurus)" or fx, false, -1)
+  if i < 0 and fx == live.SONOBUS then i = reaper.TrackFX_AddByName(master, "SonoBus (Sonosaurus)", false, -1) end -- VST2 / AU
   if i < 0 then return nil end
   return master, i
+end
+
+-- The song's SonoBus group: { group, password }, made once and kept in live.json for everyone. Pure apart
+-- from the random password.
+function live.sonobus_group(data, song)
+  if data.sb_group and data.sb_password then return data.sb_group, data.sb_password end
+  local chars, pw = "abcdefghjkmnpqrstuvwxyz23456789", {}
+  math.randomseed(os.time() + math.floor(reaper.time_precise() * 1000))
+  for i = 1, 16 do local k = math.random(#chars); pw[i] = chars:sub(k, k) end
+  pw = table.concat(pw)
+  data.sb_group = "BandSync " .. song .. " " .. pw:sub(13) -- group names are global on the public server
+  data.sb_password = pw:sub(1, 12)
+  return data.sb_group, data.sb_password
+end
+
+local function urlenc(s) return (s:gsub("[^%w%-%._~]", function(c) return string.format("%%%02X", c:byte()) end)) end
+
+-- SonoBus's join link (its own format, from ConnectView::handleSonobusURL): its paste button reads it from the
+-- clipboard and fills in group, password and server. Pure.
+function live.sonobus_link(group, password)
+  return "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=" .. urlenc(group) .. "&p=" .. urlenc(password)
+end
+
+-- Ask SonoBus to rejoin its last group whenever the project opens ("Reconnect Last" is a host parameter).
+function live.sonobus_reconnect(tr, i)
+  for p = 0, reaper.TrackFX_GetNumParams(tr, i) - 1 do
+    local _, name = reaper.TrackFX_GetParamName(tr, i, p)
+    if name == "Reconnect Last" then return reaper.TrackFX_SetParamNormalized(tr, i, p, 1) end
+  end
 end
 
 -- Parse clipsort.log lines for remote session-mode clips: { guid, user, chan, name, st, len }. Pure.

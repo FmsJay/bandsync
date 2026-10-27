@@ -33,18 +33,27 @@ same timeline without cluttering main. The host receives every room; each room's
 
 ## Setup (each person, once)
 
+**Easiest: let an AI do it.** In Claude Code, on the computer being set up, point it at
+`installer/SKILL.md` ("set up BandSync using installer/SKILL.md"). It installs and configures everything below,
+explains each prompt before it appears, and asks before every download.
+
+By hand:
+
 1. Share one folder between everyone:
-   - **Syncthing** (recommended): free, peer-to-peer. Set the folder's *Pull order* to
-     *Smallest first* so previews arrive before full files. Files only move while two people are
-     online at the same time.
-   - **Google Drive / Dropbox**: always on. Fine for a start.
-2. In REAPER: *Actions > Show action list > New action > Load ReaScript*, and load the five
-   `BandSync - *.lua` files **straight from `<shared folder>/_tools/bandsync`**. Don't copy them
-   into REAPER's `Scripts/` folder: loading them from the shared folder means updates reach everyone
-   automatically. (The trade-off: anyone who can write to the shared folder can change everyone's
-   scripts. Only share it with your band.)
+   - **Syncthing** (recommended): free, peer-to-peer, a normal local folder. Folder ID `bandsync`, *Pull order*
+     *Smallest first*, *Watch for changes* delay 1 s. Files only move while two people are online at the same
+     time, so it helps if the host's machine stays on.
+   - **Google Drive / Dropbox**: always on, but a virtual drive can mount after REAPER starts.
+2. Install the scripts, either way:
+   - **ReaPack** (recommended): *Extensions > ReaPack > Import repositories*, paste
+     `https://github.com/FmsJay/bandsync/raw/main/index.xml`, then install **BandSync**. Updates come with
+     ReaPack's sync, or run **BandSync - Update**.
+   - **From the shared folder** (band-internal): *Actions > Show action list > New action > Load ReaScript*,
+     and load every `BandSync - *.lua` straight from `<shared folder>/_tools/bandsync`. Edits there reach
+     everyone instantly, but new scripts must be loaded once by hand. The trade-off: anyone who can write to the
+     shared folder can change everyone's scripts. Only share it with your band.
 3. Run **BandSync - Settings**: choose the shared folder and enter your name.
-4. **Calibrate recording latency** (important): load **BandSync - Calibrate latency** too, connect a
+4. **Calibrate recording latency** (important): connect a
    cable from your interface's output 1 to an input, and run it. It plays three clicks, records them
    back in a temporary project, and tells you how many ms early or late your recordings land. Under
    1 ms is fine. Otherwise adjust the latency compensation offset in *Preferences > Audio > Recording*

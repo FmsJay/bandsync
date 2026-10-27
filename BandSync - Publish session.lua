@@ -13,10 +13,11 @@ local projname = reaper.GetProjectName(proj)
 local song = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 -- Print: how every take reaches everyone. wet = through its track's FX (the default), dry = take only,
 -- both = wet plus a dry twin to switch to. Everyone's takes and lanes are mirrored as they are.
+-- Stems default to none: the host shares its real takes, so stems would only duplicate them.
 local MODES, PRINTS = { none = true, mix = true, grouped = true, tracks = true }, { wet = true, dry = true, both = true }
 local ok, csv = reaper.GetUserInputs("BandSync: publish", 3,
   "Song name,Stems (none/mix/grouped/tracks),Print takes (wet/dry/both),separator=|,extrawidth=150",
-  song .. "|" .. (b.stem_mode or "grouped") .. "|" .. (b.print or "wet"))
+  song .. "|" .. (b.stem_mode or "none") .. "|" .. (b.print or "wet"))
 if not ok then return end
 local name, mode, print_mode = csv:match("^(.-)|(.-)|(.*)$")
 song, mode, print_mode = band.clean(name), mode:lower():gsub("%s", ""), print_mode:lower():gsub("%s", "")

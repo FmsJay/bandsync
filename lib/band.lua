@@ -84,6 +84,7 @@ end
 
 function band.write_json(path, t) band.write_atomic(path, json.encode(t, true)) end
 function band.json_encode(t) return json.encode(t) end -- keys sorted: equal tables give equal strings
+function band.json_decode(s) local ok, v = pcall(json.decode, s); return ok and v or nil end
 
 local function enum(fn, dir)
   local out, i = {}, 0
@@ -579,6 +580,7 @@ function band.place_take(proj, t, path, mode, dry_path)
   end
   if not item then return false end
   band.set_take_ext(take, "band_take", t.id)
+  band.set_take_ext(take, "band_wet", t.wet and "1" or "") -- a cross-track move keeps wet prints on mirror tracks
   band.mark_base(take)
   reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label .. " · " .. t.track, true)
   add_dry(item, take, t, dry_path)

@@ -68,6 +68,12 @@ local function import(room)
           if ok then
             band.set_take_state(proj, t.id, want)
             sync.setext(proj, sync.REV, t.id, tostring(rev))
+            local pending = sync.ext(proj, sync.PENDING, t.id) -- brought back by a recall point: put it where that had it
+            if pending ~= "" then
+              local p = band.json_decode(pending)
+              if p then sync.apply(proj, { type = "edit", take = t.id, track = p.track, pos = p.pos, len = p.len, lane = p.lane, mute = p.mute, offs = p.offs }) end
+              sync.setext(proj, sync.PENDING, t.id, "")
+            end
             band.log(string.format("%s take from %s (%s) -> %s", want, t.user, room, t.track))
           end
         end
@@ -76,14 +82,26 @@ local function import(room)
   end
 end
 
+local last_driver
 local function poll()
   local s = band.read_json(band.session_path(cfg, b.song))
+  local can, who = sync.authority(cfg, b.song, b.room, s)
+  local driver = who.driver
+  if last_driver and driver ~= last_driver then -- handovers are announced, never silent
+    band.log(driver == cfg.user and "you're driving now" or (tostring(driver) .. " took control" ..
+      (last_driver == cfg.user and ": you're no longer driving (what you don't own is view-only)" or "")))
+  end
+  last_driver = driver
   local rooms = host and band.subdirs(band.song_dir(cfg, b.song) .. "/rooms") or { b.room }
   for _, room in ipairs(rooms) do
     import(room)
-    local n = sync.receive(proj, cfg, b.song, room, sync.driver(cfg, b.song, room, s), s and s.host)
-    if n > 0 then band.log(n .. " change(s) from the session driver (" .. room .. ")") end
+    local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
+    local n = sync.receive(proj, cfg, b.song, room, room_can)
+    if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")") end
   end
+
+  -- Hold sync: keep working without sending anything; releasing it sends the net result once
+  local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
 
   -- our own new recordings go out once the transport has been stopped for a moment, and takes whose
   -- sound changed are reprinted (rendering needs this tab in front and the transport stopped)
@@ -91,7 +109,7 @@ local function poll()
   local now = reaper.time_precise()
   local copies = sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
   if copies > 0 then band.log(copies .. " copied or split item(s) will go out as new takes") end
-  if reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
+  if not hold and reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
     local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN })
     if #units > 0 then band.log("sent " .. sync.send(proj, cfg, b, units, print_mode) .. " new take(s)") end
     if now - last_reprint > 10 then
@@ -101,9 +119,10 @@ local function poll()
     end
   end
 
-  -- as driver, our deletes/edits/lane choices go out; otherwise just keep the snapshots current
-  local driver = sync.driver(cfg, b.song, b.room, s)
-  sync.watch(proj, cfg, b.song, b.room, driver == cfg.user)
+  -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest
+  -- is view-only (locked) so it can't silently drift from the band's version
+  if not hold then sync.watch(proj, cfg, b.song, b.room, can) end
+  sync.apply_locks(proj, can, cfg.user)
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
   local info = { driver = driver, role = b.role, song = b.song }

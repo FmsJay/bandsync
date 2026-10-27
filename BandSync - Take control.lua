@@ -16,6 +16,8 @@ local now = sync.driver(cfg, b.song, b.room, s)
 if now == cfg.user then return band.msg("You're already driving '" .. b.song .. "' (room " .. b.room .. ").") end
 if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ").\n\nTake control? Tell them first: " ..
     "from now on only your deletes, moves and lane choices reach everyone.", "BandSync", 4) ~= 6 then return end
-sync.watch(proj, cfg, b.song, b.room, false) -- start from what's here now, so old local edits aren't replayed
+sync.watch(proj, cfg, b.song, b.room, function() return false end) -- start from what's here now: old local edits aren't replayed
+-- every handover leaves a recall point, so the band can always go back to how it was before
+require("recall").save(proj, cfg, b.song, b.room, "before " .. cfg.user .. " took over from " .. tostring(now))
 sync.set_driver(cfg, b.song, b.room, cfg.user)
 band.msg("You're driving '" .. b.song .. "' now.")

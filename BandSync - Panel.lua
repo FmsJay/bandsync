@@ -258,6 +258,8 @@ end
 -- Live: hear each other while it happens, through ReaNINJAM and the band's NINJAM server.
 local live = require("live")
 local live_mode, live_send, live_server = "synced", true, nil
+local services = require("services")
+local ninjam_dir_edit, srv_at, srv_up = nil, 0, false
 local LIVE_MODES = { { "synced", "Play along (synced to the song)" }, { "listen", "Listen live (no sync)" }, { "jam", "Jam (NINJAM intervals)" } }
 local function section_live()
   local lfile = band.song_dir(cfg, b.song) .. "/live.json"
@@ -269,6 +271,16 @@ local function section_live()
   ImGui.SameLine(ctx)
   if ImGui.SmallButton(ctx, "Save for the band") then band.write_json(lfile, { server = live_server, by = cfg.user }) end
   ImGui.SetItemTooltip(ctx, "The host runs the NINJAM server (tools/ninjam-server); everyone connects to its address.")
+  if b.role == "host" then -- the host's Connect starts the server here if it isn't running
+    ninjam_dir_edit = ninjam_dir_edit or services.ninjam_dir()
+    ImGui.SetNextItemWidth(ctx, -150)
+    local c2, v2 = ImGui.InputTextWithHint(ctx, "##ninjamdir", "folder with ninjamsrv + bandsync.cfg", ninjam_dir_edit, ImGui.InputTextFlags_None)
+    if c2 then ninjam_dir_edit = v2 end
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Use server folder") then reaper.SetExtState(band.SECTION, "ninjam_dir", (ninjam_dir_edit:gsub("\\", "/")), true) end
+    if reaper.time_precise() - srv_at > 3 then srv_at, srv_up = reaper.time_precise(), services.running("ninjamsrv") end -- tasklist is slow: not every frame
+    ImGui.TextDisabled(ctx, srv_up and "Server: running on this machine" or "Server: not running (Connect starts it)")
+  end
   ImGui.SeparatorText(ctx, "Mode")
   for _, m in ipairs(LIVE_MODES) do
     if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
@@ -285,6 +297,10 @@ local function section_live()
   if not master then
     ImGui.BeginDisabled(ctx, live_server == "")
     if ImGui.Button(ctx, "Connect") then
+      if b.role == "host" then
+        local ok2, why = services.ensure_ninjam()
+        if ok2 == "started" then band.log("started the NINJAM server") elseif not ok2 then band.msg("NINJAM server: " .. why) end
+      end
       local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
       reaper.RecursiveCreateDirectory(sdir, 0)
       reaper.SetProjExtState(proj, band.SECTION, "live_dir", sdir)

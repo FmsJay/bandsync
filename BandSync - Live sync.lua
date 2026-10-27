@@ -21,6 +21,14 @@ local s0 = band.read_json(band.session_path(cfg, b.song)) or {}
 local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-take items as they are
 local baseline = sync.mark_baseline(proj)
 
+-- the shared folder only moves while Syncthing runs: start it if it isn't (a cloud-drive root needs nothing)
+for _, d in ipairs(band.subdirs(cfg.root)) do
+  if d == ".stfolder" then -- Syncthing marks the folders it shares with this
+    local ok, why = require("services").ensure_syncthing()
+    if ok == "started" then band.log("started Syncthing") elseif not ok then band.log("Syncthing: " .. why) end
+  end
+end
+
 local _, _, section, cmd = reaper.get_action_context()
 local function toggle(v)
   if cmd > 0 then reaper.SetToggleCommandState(section, cmd, v); reaper.RefreshToolbar2(section, cmd) end

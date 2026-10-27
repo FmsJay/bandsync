@@ -305,6 +305,57 @@ local function section_live()
   ImGui.TextDisabled(ctx, "If ReaNINJAM was already open since REAPER started, restart REAPER for new settings.")
 end
 
+-- Solo edit: one person at a time through the cloud folder, with every checked-in version kept.
+local solo = require("solo")
+local solo_hist, solo_at, solo_root_edit = {}, 0, nil
+local function section_solo()
+  solo_root_edit = solo_root_edit or solo.root(cfg)
+  ImGui.SetNextItemWidth(ctx, -120)
+  local ch, v = ImGui.InputText(ctx, "##soloroot", solo_root_edit, ImGui.InputTextFlags_None)
+  if ch then solo_root_edit = v end
+  ImGui.SameLine(ctx)
+  if ImGui.SmallButton(ctx, "Use this folder") then reaper.SetExtState(band.SECTION, "solo_root", solo_root_edit, true); solo_at = 0 end
+  ImGui.SetItemTooltip(ctx, "Where solo versions live: a cloud folder everyone shares (Google Drive works well).")
+  if reaper.time_precise() - solo_at > 3 then solo_at = reaper.time_precise(); solo_hist = solo.history(cfg, b.song) end
+  local l = solo.lock(cfg, b.song)
+  ImGui.SeparatorText(ctx, "Who's editing")
+  if not l then ImGui.TextColored(ctx, GREEN, "Nobody: '" .. b.song .. "' is free to check out.")
+  elseif l.mine then ImGui.TextColored(ctx, GREEN, "You have it checked out (since " .. local_time(l.since) .. ").")
+  elseif l.stale then ImGui.TextColored(ctx, YELLOW, string.format("%s had it, but hasn't been seen for %d min: you can take over.", l.user, math.floor(l.age / 60)))
+  else ImGui.TextColored(ctx, RED, string.format("%s is editing (since %s, seen %d s ago). Look, but don't edit.", l.user, local_time(l.since), math.floor(l.age))) end
+  if not (l and l.mine) then
+    if ImGui.Button(ctx, l and not l.stale and "Open latest to look" or "Check out") then action("Solo edit") end
+  else
+    if ImGui.Button(ctx, "Check in") then action("Check in") end
+  end
+  ImGui.SeparatorText(ctx, "Versions, newest first")
+  if #solo_hist == 0 then ImGui.TextDisabled(ctx, "None yet. The first check-out starts from the project in front.") end
+  if ImGui.BeginChild(ctx, "solohist", 0, -4) then
+    for i, h in ipairs(solo_hist) do
+      ImGui.PushID(ctx, "s" .. i)
+      ImGui.BeginDisabled(ctx, not (l and l.mine) or i == 1)
+      if ImGui.SmallButton(ctx, "Restore") and reaper.MB("Go back to " .. (h.user or "?") .. "'s version from " .. local_time(h.time) ..
+          "?\n\nWhat you have now is checked in first, so you can come back to it.", "BandSync", 4) == 6 then
+        local msg, e = solo.restore(proj, cfg, b.song, h.file)
+        band.log(msg or e)
+        solo_at, last = 0, 0
+      end
+      ImGui.EndDisabled(ctx)
+      ImGui.SetItemTooltip(ctx, i == 1 and "This is the current version." or "Check out first to restore.")
+      ImGui.SameLine(ctx)
+      local head = string.format("%s  ·  %s  ·  %d change%s%s", h.user or "?", local_time(h.time), #(h.changes or {}),
+        #(h.changes or {}) == 1 and "" or "s", h.note and ("  ·  " .. h.note) or "")
+      if ImGui.TreeNodeEx(ctx, "v", head, ImGui.TreeNodeFlags_SpanAvailWidth) then
+        for _, line in ipairs(h.changes or {}) do ImGui.BulletText(ctx, line) end
+        if (h.printed or 0) > 0 then ImGui.TextDisabled(ctx, h.printed .. " wet print(s) made") end
+        ImGui.TreePop(ctx)
+      end
+      ImGui.PopID(ctx)
+    end
+    ImGui.EndChild(ctx)
+  end
+end
+
 local function section_actions()
   ImGui.SeparatorText(ctx, "More")
   for i, name in ipairs({ "Send takes", "Print my MIDI", "Settings", "Calibrate latency", "Update" }) do
@@ -329,6 +380,10 @@ local function frame()
       section_control()
       section_drums()
       section_actions()
+      ImGui.EndTabItem(ctx)
+    end
+    if ImGui.BeginTabItem(ctx, "Solo edit") then
+      section_solo()
       ImGui.EndTabItem(ctx)
     end
     if ImGui.BeginTabItem(ctx, "Live") then

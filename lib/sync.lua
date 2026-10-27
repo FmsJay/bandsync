@@ -163,6 +163,8 @@ local function fxhash(it, tk, wet)
   return string.format("%08x", h)
 end
 
+sync.fxhash = fxhash
+
 -- ---- our own takes ------------------------------------------------------------------------------
 
 local function content_key(it, tk) -- position included: a pasted copy is the same audio, somewhere else
@@ -277,11 +279,17 @@ end
 -- 7.83), so a dry print bypasses the track's FX and neutralises its volume/pan for the render.
 -- Works on the active tab only (REAPER renders the active project).
 -- `twin`: printing someone's MIDI copy with our own instrument; it's the original track's name.
-local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twin)
+local function selection(proj)
+  local sel = {}
+  for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedMediaItem(proj, i) end
+  return sel
+end
+
+-- Render item `it` (its active take, which must be selected alone) to <out>/<name>.flac (+ .opus).
+local function render_item(it, take, out, name, wet)
   local tr = reaper.GetMediaItem_Track(it)
-  local suffix = rev > 1 and ("-r" .. rev) or ""
   local nch = reaper.GetMediaSourceNumChannels(reaper.GetMediaItemTake_Source(take))
-  local function render(name, wet)
+  do
     os.remove(out .. "/" .. name .. ".flac") -- leftovers would make REAPER stop on a modal "files exist" warning
     os.remove(out .. "/" .. name .. ".opus")
     local keys = { "B_MUTE", "I_FXEN", "D_VOL", "D_PAN" }
@@ -305,12 +313,31 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
     if lane then set_lanes_playing(tr, playing) end
     return out .. "/" .. name
   end
+end
+
+-- Print one take through its track (wet) to <out>/<name>.flac, leaving selection and the playing take as they
+-- were. Returns the .flac path, or nil. Active tab only. (Solo edit keeps wet prints beside dry recordings.)
+function sync.print_item(proj, it, take, out, name)
+  local sel, playing = selection(proj), reaper.GetActiveTake(it)
+  reaper.SetActiveTake(take)
+  reaper.SelectAllMediaItems(proj, false)
+  reaper.SetMediaItemSelected(it, true)
+  local path = render_item(it, take, out, name, true) .. ".flac"
+  reaper.SetActiveTake(playing)
+  reaper.SelectAllMediaItems(proj, false)
+  for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaItem*") then reaper.SetMediaItemSelected(s, true) end end
+  return reaper.file_exists(path) and path or nil
+end
+
+local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twin)
+  local tr = reaper.GetMediaItem_Track(it)
+  local suffix = rev > 1 and ("-r" .. rev) or ""
   local playing = reaper.GetActiveTake(it)
   reaper.SetActiveTake(take) -- renders render the item's active take
   reaper.SelectAllMediaItems(proj, false)
   reaper.SetMediaItemSelected(it, true)
-  local main = render(id .. suffix, mode ~= "dry")
-  local dry = mode == "both" and render(id .. "-dry" .. suffix, false)
+  local main = render_item(it, take, out, id .. suffix, mode ~= "dry")
+  local dry = mode == "both" and render_item(it, take, out, id .. "-dry" .. suffix, false)
   reaper.SetActiveTake(playing)
   if not reaper.file_exists(main .. ".flac") then band.log("render failed for take " .. id); return nil end
 
@@ -376,11 +403,6 @@ local function finish(proj, sel)
   for _, it in ipairs(sel) do if reaper.ValidatePtr2(proj, it, "MediaItem*") then reaper.SetMediaItemSelected(it, true) end end
   reaper.UpdateArrange()
   if select(2, reaper.EnumProjects(-1)) ~= "" then reaper.Main_SaveProject(proj, false) end -- sent marks survive a crash
-end
-local function selection(proj)
-  local sel = {}
-  for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedMediaItem(proj, i) end
-  return sel
 end
 
 -- Print and post {item, take} pairs as new takes. Returns how many went out.

@@ -17,7 +17,7 @@ local song = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 local MODES, PRINTS = { none = true, mix = true, grouped = true, tracks = true }, { wet = true, dry = true, both = true }
 local ok, csv = reaper.GetUserInputs("BandSync: publish", 3,
   "Song name,Stems (none/mix/grouped/tracks),Print takes (wet/dry/both),separator=|,extrawidth=150",
-  song .. "|" .. (b.stem_mode or "none") .. "|" .. (b.print or "wet"))
+  song .. "|" .. (b.stem_mode or "none") .. "|" .. (b.print or "both")) -- both: the dry recording travels with the wet print, so neither is lost
 if not ok then return end
 local name, mode, print_mode = csv:match("^(.-)|(.-)|(.*)$")
 song, mode, print_mode = band.clean(name), mode:lower():gsub("%s", ""), print_mode:lower():gsub("%s", "")

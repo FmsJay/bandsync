@@ -96,7 +96,7 @@ local function section_sync()
   if view.newer then
     ImGui.TextColored(ctx, YELLOW, "BandSync " .. view.newer .. " is in use here; you have " .. band.VERSION .. ".")
     ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Update") then action("Update") end
+    if ImGui.SmallButton(ctx, "Update##banner") then action("Update") end -- "##": same label as More's Update, its own ID
   end
 end
 

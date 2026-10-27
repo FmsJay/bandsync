@@ -18,6 +18,10 @@ function solo.root(cfg)
   local r = reaper.GetExtState(band.SECTION, "solo_root")
   if r ~= "" then return r end
   if reaper.file_exists("G:/My Drive/desktop.ini") or band.subdirs("G:/My Drive")[1] then return "G:/My Drive/BandSync" end
+  local cs = (os.getenv("HOME") or "") .. "/Library/CloudStorage" -- Google Drive for desktop on macOS
+  for _, d in ipairs(band.subdirs(cs)) do
+    if d:match("^GoogleDrive%-") then return cs .. "/" .. d .. "/My Drive/BandSync" end
+  end
   return cfg.root
 end
 function solo.dir(cfg, song) return solo.root(cfg) .. "/" .. song .. "/solo" end

@@ -1,6 +1,6 @@
 ---
 name: bandsync-setup
-description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack and the BandSync scripts, pairs this machine with the band's host, and runs the latency check. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
+description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, joins the host's Tailscale share for Live and the band's Google Drive folder for Solo edit, and runs the latency check. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
 ---
 
 # BandSync setup
@@ -37,7 +37,9 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
 runs the always-on machine) or **joining**; if joining, the host's **Syncthing device ID** (56
 characters, from the host's Syncthing "Show ID"); whether they have a **loopback cable** (output → input)
-for the latency check; whether they mind REAPER's **plug-in scan** (see step 2).
+for the latency check; whether they mind REAPER's **plug-in scan** (see step 2); whether they'll use **Live** (hearing
+each other while playing: needs Tailscale, step 4) and **Solo edit** (editing a song while the others are offline:
+needs Google Drive, step 5). Both are optional; recording and sending takes needs neither.
 
 ## 1. Syncthing (the shared folder)
 
@@ -104,11 +106,57 @@ It checks the REAPER version, checks the folder is writable, stores the name and
 mistakes), installs in the chosen mode, and counts registered BandSync actions. ReaPack's sync is
 asynchronous: re-run with `"mode": "verify"` after a minute and expect `registered_actions` ≥ 12.
 
-`"reaimgui": false` in the result means **BandSync - Panel** (the control panel) won't open; everything else works.
-ReaPack's API can't install a package by itself, so walk them through *Extensions > ReaPack > Browse packages*,
-search **ReaImGui**, right-click > Install, Apply, then restart REAPER.
+**Install ReaImGui too.** `"reaimgui": false` in the result means **BandSync - Panel** won't open, and the Live,
+Solo edit (versions) and History & restore tabs only exist there. ReaPack's API can't install a package by itself, so
+walk them through *Extensions > ReaPack > Browse packages*, search **ReaImGui**, right-click > Install, Apply, then
+restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui": true`.
 
-## 4. Latency check
+## 4. Tailscale (only for Live)
+
+Live audio goes through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet.
+Bandmates don't join the host's tailnet; the host **shares one machine** with them.
+
+| OS | Install | CLI |
+|---|---|---|
+| Windows | `winget install --id Tailscale.Tailscale --exact` | `"C:\Program Files\Tailscale\tailscale.exe"` |
+| macOS | standalone package from tailscale.com/download (or the Mac App Store) | `/Applications/Tailscale.app/Contents/MacOS/Tailscale` |
+
+- **Sign-in is the musician's own click,** with their own account (Google, Apple, Microsoft...). Never create an
+  account or sign in for them. macOS asks to **add VPN configurations** (and, for the standalone package, to allow a
+  system extension): both must be allowed.
+- **Host:** in the admin console (login.tailscale.com/admin/machines), the server machine's **...** menu > **Share**,
+  then invite each bandmate by email or send them the link. The host's Tailscale IP (100.x.y.z) is on that page.
+- **Bandmate:** open the share link while signed in and accept. Check: `tailscale status` lists the host's machine,
+  and `tailscale ping <host IP>` answers. A share is one-way (they reach the host, not the reverse), which is all
+  Live needs: everyone connects to the host's server.
+- **Hosting Live** (only the host): the server (`tools/ninjam-server/README.md`) must be built and its folder set in
+  *Panel > Live*. The server is built for Windows; building it on a Mac needs the Xcode Command Line Tools, so ask
+  first (see Ground rules).
+
+Then, in REAPER: **BandSync - Panel > Live**, pick a mode and click **Connect**; ReaNINJAM opens on the master track
+with the server and name filled in, and needs one more **Connect** in its own window. macOS: the Microphone
+permission from step 2 covers it. If ReaNINJAM can't be added, it is missing from this REAPER install (Windows:
+re-run the REAPER installer with the ReaNINJAM component ticked).
+
+## 5. Google Drive (only for Solo edit)
+
+Solo edit keeps each song's one real project in a Google Drive folder, so whoever edits while the others are offline
+always starts from the latest version.
+
+- Install **Google Drive for desktop** (Windows: `winget install --id Google.GoogleDrive --exact`; macOS: the dmg
+  from google.com/drive/download). Sign-in is the musician's click. macOS asks to allow its File Provider / system
+  extension: allow it.
+- **Host:** create a folder **BandSync** in *My Drive* and share it with each bandmate as **Editor**.
+- **Bandmate:** at drive.google.com, *Shared with me* > right-click **BandSync** > *Organize* > **Add shortcut** >
+  *My Drive*. Without the shortcut, Drive for desktop never puts the folder on this computer and Solo edit sees
+  nothing. Keep the shortcut's name `BandSync`.
+- The folder is then `G:/My Drive/BandSync` (Windows, Drive on G:) or
+  `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/BandSync` (macOS); BandSync finds both by itself. Anywhere
+  else (another drive letter): *Panel > Solo edit*, type the path, **Use this folder**.
+- Check: the folder is visible in Explorer/Finder, and *Panel > Solo edit* shows "Nobody: '<song>' is free to check
+  out" for a published song.
+
+## 6. Latency check
 
 With a loopback cable (output 1 → an input), the musician runs **BandSync - Calibrate latency** from the
 Action list. It reports "Recordings land N samples LATE/EARLY". For LATE N, add **+N** to
@@ -118,13 +166,17 @@ No cable: skip it, and tell them their takes may land a few ms off until they do
 
 **Feedback warning:** a record-armed track with monitoring on and laptop speakers will howl. Use headphones.
 
-## 5. First session (proves it works)
+## 7. First session (proves it works)
 
 The host runs **BandSync - Publish session** and **BandSync - Live sync**. The joiner runs **BandSync - Open session**
 from the Action list (the song picker needs REAPER focused), starts **BandSync - Live sync**, and records 10–20 s on a
 track named like one of the host's. The take goes out by itself when they stop, and the host's Live sync places it.
 **BandSync - Panel** (or **BandSync - Status**) shows both sides in sync. In testing, takes landed 1–14 s after stopping over Syncthing, with
 sample-exact alignment.
+
+If they set up Live: with the host connected, they click **Connect** in *Panel > Live* and should hear the host. If
+they set up Solo edit: **BandSync - Solo edit** on a song nobody has checked out, then **BandSync - Check in**; the
+others' Solo edit tab shows the new version.
 
 ## Updating later
 
@@ -134,5 +186,6 @@ published song and take records the BandSync version that made it, and opening a
 
 ## Report back
 
-End with a short summary: what was installed (versions), the device ID exchange status, the latency result,
+End with a short summary: what was installed (versions), the device ID exchange status, whether the Tailscale share and
+the Drive shortcut are in place, the latency result,
 and any step the user skipped, plus anything that surprised you, so the next install goes better.

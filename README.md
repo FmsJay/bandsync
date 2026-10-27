@@ -83,6 +83,16 @@ By hand:
    input and run **BandSync - Calibrate latency**. It plays three clicks, records them back in a temporary
    project, and tells you how many samples early or late your recordings land. Under 1 ms is fine. If it says
    LATE N, add +N to *Preferences > Audio > Recording > Input manual offset* (EARLY: subtract) and run it again.
+5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live, Solo edit and
+   History tabs, needs it.
+6. Optional extras:
+   - **Live** needs **Tailscale**. Bandmates don't join the host's tailnet: the host shares the server machine with
+     each of them (admin console > the machine's **...** > *Share*), and they accept the link with their own account.
+   - **Solo edit** needs **Google Drive for desktop**. The host shares a `BandSync` folder in My Drive (Editor); each
+     bandmate adds it to their own Drive with *Shared with me > right-click > Organize > Add shortcut > My Drive*,
+     or it never reaches their computer. `G:/My Drive/BandSync` (Windows) and
+     `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/BandSync` (macOS) are found by themselves; anything
+     else goes in the panel's Solo edit tab.
 
 ## Session workflow
 

@@ -1,19 +1,26 @@
--- @description BandSync: update to the latest version (through ReaPack)
--- BandSync installed through ReaPack updates with ReaPack's sync, which also registers new actions.
+-- @description BandSync: update to the latest version
+-- ReaPack installs: runs ReaPack's sync (installs updates and registers new actions).
+-- Shared-folder installs: updates already arrive with the folder; this registers any new BandSync
+-- scripts that came with it, which REAPER would otherwise not show.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 
-local sync = reaper.NamedCommandLookup("_REAPACK_SYNC")
-if not reaper.APIExists("ReaPack_GetOwner") or sync == 0 then
-  return band.msg("BandSync " .. band.VERSION .. " isn't managed by ReaPack here.\n\n" ..
-    "Install ReaPack (reapack.com), then add the BandSync repository so updates arrive automatically.")
-end
 local _, me = reaper.get_action_context()
-local entry = reaper.ReaPack_GetOwner(me)
-if not entry then
-  return band.msg("BandSync " .. band.VERSION .. " was loaded from a folder, not installed through ReaPack, " ..
-    "so updates arrive with that folder (for example through Syncthing). Nothing to do here.")
+local entry = reaper.APIExists("ReaPack_GetOwner") and reaper.ReaPack_GetOwner(me)
+if entry then
+  reaper.ReaPack_FreeEntry(entry)
+  return reaper.Main_OnCommand(reaper.NamedCommandLookup("_REAPACK_SYNC"), 0) -- ReaPack: Synchronize packages
 end
-reaper.ReaPack_FreeEntry(entry)
-reaper.Main_OnCommand(sync, 0) -- ReaPack: Synchronize packages
+
+local scripts, i = {}, 0
+reaper.EnumerateFiles(dir, -1)
+while true do
+  local name = reaper.EnumerateFiles(dir, i)
+  if not name then break end
+  if name:match("^BandSync %- .+%.lua$") then scripts[#scripts + 1] = name end
+  i = i + 1
+end
+for n, name in ipairs(scripts) do reaper.AddRemoveReaScript(true, 0, dir .. "/" .. name, n == #scripts) end
+band.msg(string.format("BandSync %s runs from %s, so updates arrive with that folder.\n\n%d BandSync actions are registered, including any new ones.",
+  band.VERSION, band.norm(dir), #scripts))

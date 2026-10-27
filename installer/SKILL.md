@@ -123,7 +123,7 @@ sample-exact alignment.
 ## Updating later
 
 ReaPack installs: **BandSync - Update** (runs ReaPack's sync; new actions get registered). Folder installs: updates
-arrive with the shared folder; re-run the helper with `"mode": "folder"` to register any new scripts. Every
+arrive with the shared folder; **BandSync - Update** registers any new scripts that came with it. Every
 published song and take records the BandSync version that made it, and opening a newer one tells the user to update.
 
 ## Report back

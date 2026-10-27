@@ -1,35 +1,51 @@
 # BandSync
 
-Remote band collaboration for REAPER, phase 1. One person hosts a song; everyone else records
-locally against the host's tempo map and stems, with no latency, and their takes land in the
-host's project automatically, in lanes on the matching track.
+Record together in REAPER from different cities, as if you were working in one project. One person
+hosts a song; everyone records locally against the same tempo map with no latency, and every take,
+alternate and lane shows up in everyone's project, in the same places. Edits made by whoever is
+driving the session (deletes, moves, trims, which take or lane plays) follow everywhere.
 
-Five ReaScripts, plain Lua, no extensions required. They need REAPER 7.0 or newer; 7.83 is tested.
-They talk only through a shared folder (Syncthing or a cloud drive).
+Plain-Lua ReaScripts, no extensions required (SWS helps; see Limits). REAPER 7.18 or newer; 7.83 is
+tested. Machines talk only through a shared folder (Syncthing recommended, or a cloud drive).
 
 ## How it works
 
 ```
 <shared folder>/
   <Song>/
-    session.json             tempo map, markers, sample rate, stems list, host, version
-    stems/vN/NN.flac + .opus one folder per publish (open files are never overwritten); .opus syncs first
-    rooms/<room>/takes/      <id>.json manifest + <id>.opus preview + <id>.flac full take
+    session.json               tempo map, markers, sample rate, stems, host, print mode, version
+    stems/vN/NN.flac + .opus   one folder per publish (open files are never overwritten)
+    rooms/<room>/
+      takes/    <id>.json + .flac (+ .opus preview, + -dry.flac twin)   every take, as printed
+      events/   <person>-<time>.json    the driver's deletes, edits and lane/take choices
+      status/   <person>.json           what each person's project holds (the Status window)
+      _trash/   deleted takes, kept, never destroyed
+      driver.json                       who's driving (the host until someone takes control)
 ```
 
-- **Publish** (host) writes `session.json` and renders stems. Whoever publishes is the host.
-- **Open** (guest) builds a local project with the same sample rate, tempo map, markers and
-  stems, saved to a local folder (`<REAPER resource path>/BandSync/<Song>/`). Running it again
-  refreshes the project from the latest publish.
-- **Send** renders each take dry (no track FX) to a 24-bit FLAC and a ~128 kbps Opus preview,
-  stamped with its timeline position, and writes them to the room's `takes/` folder.
-- **Inbox** (background) places takes at their stamped position, so network delay never affects
-  alignment. It uses the preview first and swaps in the FLAC when it arrives. It never edits the
-  project while it is recording.
+- **Publish** (host) writes `session.json`: tempo map, markers, stems, and the song's **print mode**.
+  The host's existing takes, lanes and alternates are shared too.
+- **Open** (bandmate) builds a local project with the same timeline. Stems are copied locally, so the
+  project never depends on the shared folder being mounted.
+- **Live sync** (everyone, in the background) does the rest:
+  - **Sends** every new recording a moment after you stop, every pass of it, active or not, printed at the
+    item's exact position and length. Slivers under 0.5 s are skipped, and the same audio is never sent
+    twice.
+  - **Receives** everyone's takes and rebuilds them exactly: same track, same lane, passes of one item as
+    takes of one item. Preview first, then full quality.
+  - **Reprints** your takes when their sound changes (an FX added or tweaked, volume, pan, fades), and
+    everyone's copy updates in place.
+  - **Mirrors the driver**: their deletes, moves, trims, lane moves and which take or lane plays.
+  - Never touches the project while you're recording.
 
-Rooms: everyone joins `main` by default. Type a new room name when opening to try ideas on the
-same timeline without cluttering main. The host receives every room; each room's lanes are named
-`room · person · time`. Promote a take by clicking its lane's play button.
+Print modes (the host picks per song): **wet** (default) prints each item through its track's FX,
+volume and pan; **dry** prints the item alone (take FX, fades, item volume); **both** sends wet with a dry
+twin take to switch to. Wet prints land on a BandSync **mirror track** with no FX of yours ("Vox", or
+"Vox (band)" next to your own Vox), so nothing is processed twice. Dry prints land on your real track.
+When the host shares its takes, the stems arrive muted as a mixed reference.
+
+Rooms: everyone joins `main` by default; type a new room name when opening to try ideas on the same
+timeline without cluttering main.
 
 ## Setup (each person, once)
 
@@ -49,39 +65,43 @@ By hand:
      `https://github.com/FmsJay/bandsync/raw/main/index.xml`, then install **BandSync**. Updates come with
      ReaPack's sync, or run **BandSync - Update**.
    - **From the shared folder** (band-internal): *Actions > Show action list > New action > Load ReaScript*,
-     and load every `BandSync - *.lua` straight from `<shared folder>/_tools/bandsync`. Edits there reach
-     everyone instantly, but new scripts must be loaded once by hand. The trade-off: anyone who can write to the
-     shared folder can change everyone's scripts. Only share it with your band.
+     and load every `BandSync - *.lua` straight from `<shared folder>/_tools/bandsync`. **BandSync - Update**
+     registers any new scripts that arrive later. The trade-off: anyone who can write to the shared folder can
+     change everyone's scripts. Only share it with your band.
 3. Run **BandSync - Settings**: choose the shared folder and enter your name.
 4. **Calibrate recording latency** (important): connect a cable from your interface's output 1 to an
    input and run **BandSync - Calibrate latency**. It plays three clicks, records them back in a temporary
    project, and tells you how many samples early or late your recordings land. Under 1 ms is fine. If it says
    LATE N, add +N to *Preferences > Audio > Recording > Input manual offset* (EARLY: subtract) and run it again.
-   Without this, every take you send can land a few ms off.
 
 ## Session workflow
 
-| Host | Guest |
+| Host | Bandmate |
 |---|---|
-| **BandSync - Publish session**: song name, stems mode (`none` / `mix` / `grouped` / `tracks`) and comping style (`lanes` / `takes`, detected from your project). Save. | |
-| **BandSync - Take inbox**: leave running. | **BandSync - Open session**: pick the song and a room. |
-| | Record on a track named like the host's (e.g. `Bass`) to land on that track; any other name becomes a new track on the host. Record as many passes as you like, then make your favourite the active take. |
-| Takes arrive in the song's comping style: a new lane on the matching track, or a new take in the matching item. What was playing keeps playing. Preview first, then full quality. To send a part of your own to guests, select it first. | **BandSync - Send takes**: the active take of everything not sent yet (or of the selected items). Picked a different pass later? Send again. **BandSync - Send all takes** sends every unsent pass for the host to comp from. Recording or "Save All" doesn't send anything; Send does. |
-| Changed the tempo or arrangement? Publish again. | Run **Open session** again to refresh. **Take inbox** on a guest receives bandmates' takes from the same room on `Takes - <name>` tracks and upgrades preview stems to FLAC. |
+| **BandSync - Publish session**: song name, stems (`none` / `mix` / `grouped` / `tracks`), print (`wet` / `dry` / `both`). Save. | |
+| **BandSync - Live sync**: leave it running. | **BandSync - Open session**: pick the song and a room, then **BandSync - Live sync**. |
+| You're the driver: delete, move, trim, switch lanes or takes, and everyone follows. | Record on a track named like the host's to land in the same place (any other name makes a new track). Your takes go out by themselves when you stop. |
+| Changed the tempo or arrangement? Publish again. | Run **Open session** again to refresh. |
 
-Stems modes: `none` sends only the timeline (for when you're streaming audio instead, e.g. with
-SonoBus), `mix` sends one master bounce (use your own metronome for the click), `grouped` sends one
-stem per top-level track or folder, `tracks` sends every non-folder track.
+- **BandSync - Status**: a window showing who's online, their BandSync version, how many of the room's takes
+  they have, and which of *yours* they're still missing. Green = in sync, yellow = catching up, grey = offline.
+- **BandSync - Take control**: become the driver (tell the others first). Only the driver's edits propagate;
+  everyone else's stay in their own project.
+- **BandSync - Send takes / Send all takes**: send by hand (resend a selected item's active take, or every
+  unsent pass). Live sync normally makes these unnecessary.
+- **BandSync - Settings** also sets how takes land in this project: `mirror` (default: as the sender has them),
+  `lanes`, `takes`, `person` (a `Takes - <name>` track) or `inbox` (one muted track to review first).
 
-**BandSync - Settings** also sets where takes land in the current project: `lanes` or `takes` (host default:
-the song's comping style), `person` (a `Takes - <name>` track; guest default) or `inbox` (one muted
-`BandSync inbox` track to review first).
+Stems modes: `none` sends only the timeline, `mix` one master bounce, `grouped` one stem per top-level track
+or folder, `tracks` every non-folder track.
 
-## Limits (phase 1)
+## Limits
 
-- Refreshing replaces the guest's markers and tempo map with the host's.
-- A take recorded before the host changed the tempo stays at its original time, not on the bar.
-  Send warns about this.
-- `tracks` mode skips folder tracks' own FX.
-- Live listening is not part of this phase. Use SonoBus on the performer's master bus to stream
-  their monitor mix.
+- Wet prints include the item's own track (FX, volume, pan), not parent folders, sends or reverb tails past
+  the item's end.
+- Deleting one take out of a multi-take item happens when that project's tab is in front (REAPER/SWS only
+  allow it there); whole items are deleted any time.
+- REAPER's lanes play one lane or all of them, so "which lane plays" mirrors as exactly that.
+- Refreshing replaces a bandmate's markers and tempo map with the host's. A take recorded before the host
+  changed the tempo stays at its original time, not on the bar.
+- Live listening while someone records isn't part of this yet: use SonoBus on the performer's master bus.

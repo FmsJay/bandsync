@@ -9,14 +9,14 @@ local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
 if not b then return band.msg("Saved. Shared folder: " .. cfg.root .. "\nYour name: " .. cfg.user) end
 
-local MODES = { lanes = true, takes = true, person = true, inbox = true }
-local current = b.take_mode or (b.role == "host" and (b.comp or "lanes") or "person")
+local MODES = { mirror = true, lanes = true, takes = true, person = true, inbox = true }
+local current = b.take_mode or "mirror"
 local ok, mode = reaper.GetUserInputs("BandSync: " .. b.song, 1,
-  "Takes land as (lanes/takes/person/inbox),extrawidth=80", current)
+  "Takes land as (mirror/lanes/takes/person/inbox),extrawidth=120", current)
 mode = ok and mode:lower():gsub("%s", "")
 if mode and MODES[mode] then
   band.bind(proj, { take_mode = mode })
   reaper.MarkProjectDirty(proj)
   band.msg("Saved. Shared folder: " .. cfg.root .. "\nYour name: " .. cfg.user .. "\n\nTakes now land as '" .. mode ..
-    "'. Restart 'BandSync - Take inbox' if it is running.")
+    "'. Restart 'BandSync - Live sync' if it is running.")
 end

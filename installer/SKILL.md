@@ -102,7 +102,7 @@ Write `bandsync_setup.json` next to it, run it in the live REAPER (see Ground ru
 
 It checks the REAPER version, checks the folder is writable, stores the name and folder (no typing paths, no `~`
 mistakes), installs in the chosen mode, and counts registered BandSync actions. ReaPack's sync is
-asynchronous: re-run with `"mode": "verify"` after a minute and expect `registered_actions` ≥ 7.
+asynchronous: re-run with `"mode": "verify"` after a minute and expect `registered_actions` ≥ 10.
 
 ## 4. Latency check
 
@@ -116,8 +116,10 @@ No cable: skip it, and tell them their takes may land a few ms off until they do
 
 ## 5. First session (proves it works)
 
-The host runs **BandSync - Publish session**. The joiner runs **BandSync - Open session** from the Action list (the song
-picker needs REAPER focused), records 10–20 s on a track named like one of the host's, and runs **BandSync - Send takes**. On the host, **BandSync - Take inbox** places it. In testing, takes landed 1–14 s after Send over Syncthing, with
+The host runs **BandSync - Publish session** and **BandSync - Live sync**. The joiner runs **BandSync - Open session**
+from the Action list (the song picker needs REAPER focused), starts **BandSync - Live sync**, and records 10–20 s on a
+track named like one of the host's. The take goes out by itself when they stop, and the host's Live sync places it.
+**BandSync - Status** shows both sides in sync. In testing, takes landed 1–14 s after stopping over Syncthing, with
 sample-exact alignment.
 
 ## Updating later

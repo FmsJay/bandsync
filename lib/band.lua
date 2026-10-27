@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.3.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.4.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -69,6 +69,7 @@ function band.read_json(path)
 end
 
 function band.write_json(path, t) band.write_atomic(path, json.encode(t, true)) end
+function band.json_encode(t) return json.encode(t) end -- keys sorted: equal tables give equal strings
 
 local function enum(fn, dir)
   local out, i = {}, 0
@@ -136,7 +137,7 @@ end
 -- A project is bound to one song: role (host/guest), song, room, version, take_mode.
 function band.binding(proj)
   local b = {}
-  for _, k in ipairs({ "role", "song", "room", "version", "take_mode", "stem_mode", "comp" }) do
+  for _, k in ipairs({ "role", "song", "room", "version", "take_mode", "stem_mode", "print" }) do
     local _, v = reaper.GetProjExtState(proj, band.SECTION, k)
     b[k] = v ~= "" and v or nil
   end
@@ -351,32 +352,54 @@ end
 function band.take_state(proj, id) return select(2, reaper.GetProjExtState(proj, band.TAKES, id)) end
 function band.set_take_state(proj, id, v) reaper.SetProjExtState(proj, band.TAKES, id, v) end
 
--- The take that received manifest id, wherever it is (0.2 tagged the item instead of the take).
-function band.find_take(proj, id)
+-- A take's BandSync id: received takes carry band_take, our own sent takes band_sent.
+function band.take_id(tk)
+  local id = band.take_ext(tk, "band_take")
+  if id == "" then id = band.take_ext(tk, "band_sent") end
+  return id ~= "" and id or nil
+end
+
+-- lower(id) -> { item, take } for every BandSync take in proj. Lowercased because REAPER upper-cases
+-- ProjExtState keys on save, so ids read back from state can differ in case from the takes' own.
+function band.take_index(proj)
+  local idx = {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     for k = 0, reaper.CountTakes(it) - 1 do
       local tk = reaper.GetTake(it, k)
-      if band.take_ext(tk, "band_take") == id then return it, tk end
+      local id = band.take_id(tk)
+      if id then idx[id:lower()] = { it, tk } end
     end
-    if band.item_ext(it, "band_take") == id then return it, reaper.GetActiveTake(it) end
+    local legacy = band.item_ext(it, "band_take") -- 0.2 tagged the item instead of the take
+    if legacy ~= "" and not idx[legacy:lower()] then idx[legacy:lower()] = { it, reaper.GetActiveTake(it) } end
   end
+  return idx
+end
+
+function band.find_take(proj, id)
+  local hit = band.take_index(proj)[id:lower()]
+  if hit then return hit[1], hit[2] end
 end
 
 -- "takes" mode: add the incoming take to the item on the matching track it overlaps most, so a
 -- bandmate's passes stack as takes of one item. The item grows to fit; nothing already in it moves
 -- (REAPER honours negative take start offsets: silence until the source begins).
-local function add_as_take(proj, t, path)
-  local tr = band.find_track(proj, t.track, true) or band.new_track(proj, t.track)
-  if not tr then return nil end
-  local best, overlap = nil, 0
-  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
-    local it = reaper.GetTrackMediaItem(tr, i)
-    local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-    local o = math.min(p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), t.pos + t.len) - math.max(p, t.pos)
-    if o > overlap then best, overlap = it, o end
+-- The track a take for `name` belongs on. A wet print already carries the sender's FX, so it goes on a
+-- BandSync mirror track (no FX of ours, never processed twice): `name` itself when we have no track by
+-- that name, else "name (band)" beside our own. Dry takes go on our real track, through our FX once.
+function band.dest_track(proj, name, wet)
+  if not wet then return band.find_track(proj, name, true) or band.new_track(proj, name) end
+  for _, n in ipairs({ name, name .. " (band)" }) do
+    local tr = band.find_track(proj, n, true)
+    if tr and band.track_ext(tr, "band_mirror") ~= "" then return tr end
   end
-  if not best then return band.add_item(tr, path, t.pos, t.len) end
+  local tr = band.new_track(proj, band.find_track(proj, name, true) and (name .. " (band)") or name)
+  if tr then reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_mirror", "1", true) end
+  return tr
+end
+
+-- Add take t as another take of item `best`, growing the item to fit without moving anything in it.
+local function add_take_to(best, t, path)
   local src = reaper.PCM_Source_CreateFromFile(path)
   if not src then return nil end
   local p = reaper.GetMediaItemInfo_Value(best, "D_POSITION")
@@ -400,6 +423,51 @@ local function add_as_take(proj, t, path)
   return best, take
 end
 
+local function add_as_take(proj, t, path)
+  local tr = band.dest_track(proj, t.track, t.wet)
+  if not tr then return nil end
+  local best, overlap = nil, 0
+  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    local it = reaper.GetTrackMediaItem(tr, i)
+    local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+    local o = math.min(p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), t.pos + t.len) - math.max(p, t.pos)
+    if o > overlap then best, overlap = it, o end
+  end
+  if not best then return band.add_item(tr, path, t.pos, t.len) end
+  return add_take_to(best, t, path)
+end
+
+-- "mirror" (the default): rebuild the sender's structure. Passes of one sender item (same group) stay
+-- one item here, in the same lane, on a track with the same lane layout; so takes and lanes coexist
+-- exactly as they do for the sender.
+local function mirror(proj, t, path)
+  local tr = band.dest_track(proj, t.track, t.wet)
+  if not tr then return nil end
+  if t.lane then
+    if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") ~= 2 then
+      reaper.SetMediaTrackInfo_Value(tr, "I_FREEMODE", 2)
+      reaper.UpdateTimeline()
+    end
+    if reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") < t.lane + 1 then
+      reaper.SetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES", t.lane + 1)
+    end
+  end
+  if t.group then
+    for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+      local it = reaper.GetTrackMediaItem(tr, i)
+      if band.item_ext(it, "band_group") == t.group then return add_take_to(it, t, path) end
+    end
+  end
+  local it, tk = band.add_item(tr, path, t.pos, t.len)
+  if not it then return nil end
+  if t.group then band.set_item_ext(it, "band_group", t.group) end
+  if t.lane then
+    reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", t.lane)
+    if t.lane_name and t.lane_name ~= "" then reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. t.lane, t.lane_name, true) end
+  end
+  return it, tk
+end
+
 -- Where a take lands. mode: "lanes" (new fixed lane on the matching track), "takes" (see above),
 -- "person" ("Takes - <user>" track) or "inbox" (one muted "BandSync inbox" track).
 local function target(proj, t, mode)
@@ -414,9 +482,8 @@ local function target(proj, t, mode)
     end
     return tr
   end
-  local tr = band.find_track(proj, t.track, true)
-  if not tr then return band.new_track(proj, t.track) end
-  if reaper.CountTrackMediaItems(tr) == 0 then return tr end -- first take on an empty part just plays
+  local tr = band.dest_track(proj, t.track, t.wet)
+  if not tr or reaper.CountTrackMediaItems(tr) == 0 then return tr end -- first take on an empty part just plays
   if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") ~= 2 then
     reaper.SetMediaTrackInfo_Value(tr, "I_FREEMODE", 2)
     reaper.UpdateTimeline()
@@ -426,14 +493,70 @@ local function target(proj, t, mode)
   return tr, lane
 end
 
--- Insert take t (a take manifest) from path, or upgrade its source if already placed.
-function band.place_take(proj, t, path, mode)
+-- Offsets are shared relative to where a print was placed ("base"), because each project's take
+-- offsets differ (a receiver's take is a print starting at the item, the sender's points into a recording).
+function band.mark_base(tk) band.set_take_ext(tk, "band_base_offs", string.format("%.9f", reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS"))) end
+function band.base_offs(tk) return tonumber(band.take_ext(tk, "band_base_offs")) or 0 end
+
+-- The dry companion of a "both" print: another take in the same item, tagged band_dry = id.
+local function add_dry(item, take, t, dry_path)
+  local src = dry_path and reaper.PCM_Source_CreateFromFile(dry_path)
+  if not src then return end
+  local playing = reaper.GetActiveTake(item)
+  local tk = reaper.AddTakeToMediaItem(item)
+  reaper.SetMediaItemTake_Source(tk, src)
+  reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS"))
+  reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", select(2, reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)) .. " (dry)", true)
+  band.set_take_ext(tk, "band_dry", t.id)
+  reaper.SetActiveTake(playing or take) -- what was playing keeps playing; the dry print is a click away
+end
+
+-- A new revision of an already-placed take (the sender reprinted it after an FX/volume change):
+-- swap the audio, line it up with the print again, keep its lane/take and play state.
+function band.update_take(proj, t, path, dry_path)
+  local item, take = band.find_take(proj, t.id)
+  if not item then return false end
+  band.swap_source(take, band.localize(proj, path))
+  if reaper.CountTakes(item) <= 2 then -- the item is this take (+ its dry twin): follow the sender's extent
+    reaper.SetMediaItemInfo_Value(item, "D_POSITION", t.pos)
+    reaper.SetMediaItemInfo_Value(item, "D_LENGTH", t.len)
+  end
+  local offs = reaper.GetMediaItemInfo_Value(item, "D_POSITION") - t.pos
+  reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", offs)
+  band.mark_base(take)
+  for k = 0, reaper.CountTakes(item) - 1 do
+    local tk = reaper.GetTake(item, k)
+    if band.take_ext(tk, "band_dry"):lower() == t.id:lower() then
+      if dry_path then band.swap_source(tk, band.localize(proj, dry_path)) end
+      reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", offs)
+    end
+  end
+  reaper.UpdateItemInProject(item)
+  return true
+end
+
+-- Insert take t (a take manifest) from path (plus its dry twin for "both" prints), or upgrade its
+-- source if already placed (preview -> full).
+function band.place_take(proj, t, path, mode, dry_path)
   path = band.localize(proj, path)
-  local _, found = band.find_take(proj, t.id)
-  if found then return band.swap_source(found, path) end
+  if dry_path then dry_path = band.localize(proj, dry_path) end
+  local found_item, found = band.find_take(proj, t.id)
+  if found then -- preview -> full; a "both" print's dry twin arrives with the full file
+    band.swap_source(found, path)
+    if dry_path then
+      local has_twin = false
+      for k = 0, reaper.CountTakes(found_item) - 1 do
+        if band.take_ext(reaper.GetTake(found_item, k), "band_dry"):lower() == t.id:lower() then has_twin = true end
+      end
+      if not has_twin then add_dry(found_item, found, t, dry_path) end
+    end
+    return true
+  end
   local label = string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))
   local item, take, tr, lane
-  if mode == "takes" then
+  if mode == "mirror" then
+    item, take = mirror(proj, t, path)
+  elseif mode == "takes" then
     item, take = add_as_take(proj, t, path)
   else
     tr, lane = target(proj, t, mode)
@@ -442,7 +565,9 @@ function band.place_take(proj, t, path, mode)
   end
   if not item then return false end
   band.set_take_ext(take, "band_take", t.id)
+  band.mark_base(take)
   reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label .. " · " .. t.track, true)
+  add_dry(item, take, t, dry_path)
   if lane then -- name the lane only once an item lives in it, or the name doesn't stick
     reaper.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane)
     reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, label, true)

@@ -51,6 +51,12 @@ if first_open then reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.F
 band.apply_tempo(proj, s.tempo)
 band.apply_markers(proj, s.markers)
 local n = band.sync_stems(proj, cfg, song, s)
+if s.share then -- the host shares its real takes and lanes, so stems are only a mixed reference
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    if band.track_ext(tr, "band_stem") ~= "" then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
+  end
+end
 b.version = s.version
 band.bind(proj, b)
 reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, b.room), 0)
@@ -63,4 +69,4 @@ if first_open then reaper.Main_SaveProject(proj, false) end
 
 band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
   "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..
-  "Record, then run 'BandSync - Send takes'.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))
+  "Run 'BandSync - Live sync' and record: each take goes out by itself when you stop.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))

@@ -11,29 +11,17 @@ local b = band.binding(proj) or {}
 
 local projname = reaper.GetProjectName(proj)
 local song = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
--- Comping style follows the project: multi-take items and no real fixed-lane tracks -> "takes", else "lanes".
--- (REAPER 7 tracks can report fixed-lane mode with a single lane, so only >1 lane counts as using lanes.)
-local uses_takes, uses_lanes = false, false
-for i = 0, reaper.CountTracks(proj) - 1 do
-  local tr = reaper.GetTrack(proj, i)
-  if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > 1 then
-    uses_lanes = true
-  end
-  for k = 0, reaper.CountTrackMediaItems(tr) - 1 do
-    if reaper.CountTakes(reaper.GetTrackMediaItem(tr, k)) > 1 then uses_takes = true end
-  end
-end
-local detected = (uses_takes and not uses_lanes) and "takes" or "lanes"
-
-local MODES, COMPS = { none = true, mix = true, grouped = true, tracks = true }, { lanes = true, takes = true }
+-- Print: how every take reaches everyone. wet = through its track's FX (the default), dry = take only,
+-- both = wet plus a dry twin to switch to. Everyone's takes and lanes are mirrored as they are.
+local MODES, PRINTS = { none = true, mix = true, grouped = true, tracks = true }, { wet = true, dry = true, both = true }
 local ok, csv = reaper.GetUserInputs("BandSync: publish", 3,
-  "Song name,Stems (none/mix/grouped/tracks),Comping (lanes/takes),separator=|,extrawidth=150",
-  song .. "|" .. (b.stem_mode or "grouped") .. "|" .. (b.comp or detected))
+  "Song name,Stems (none/mix/grouped/tracks),Print takes (wet/dry/both),separator=|,extrawidth=150",
+  song .. "|" .. (b.stem_mode or "grouped") .. "|" .. (b.print or "wet"))
 if not ok then return end
-local name, mode, comp = csv:match("^(.-)|(.-)|(.*)$")
-song, mode, comp = band.clean(name), mode:lower():gsub("%s", ""), comp:lower():gsub("%s", "")
-if song == "" or not MODES[mode] or not COMPS[comp] then
-  return band.msg("Need a song name, stems as none/mix/grouped/tracks, and comping as lanes/takes.")
+local name, mode, print_mode = csv:match("^(.-)|(.-)|(.*)$")
+song, mode, print_mode = band.clean(name), mode:lower():gsub("%s", ""), print_mode:lower():gsub("%s", "")
+if song == "" or not MODES[mode] or not PRINTS[print_mode] then
+  return band.msg("Need a song name, stems as none/mix/grouped/tracks, and print as wet/dry/both.")
 end
 
 local sdir = band.song_dir(cfg, song)
@@ -109,12 +97,13 @@ for i = 0, reaper.CountTracks(proj) - 1 do
 end
 
 band.write_json(band.session_path(cfg, song), {
-  format = band.FORMAT, bandsync = band.VERSION, song = song, host = cfg.user, version = version, comp = comp,
+  format = band.FORMAT, bandsync = band.VERSION, song = song, host = cfg.user, version = version, print = print_mode, share = true,
   published = os.date("!%Y-%m-%dT%H:%M:%SZ"), srate = band.srate(proj), length = length,
   stem_mode = mode, tempo = band.capture_tempo(proj), markers = band.capture_markers(proj),
   stems = stems, tracks = tracks,
 })
-band.bind(proj, { role = "host", song = song, room = "main", version = version, stem_mode = mode, comp = comp })
+band.bind(proj, { role = "host", song = song, room = "main", version = version, stem_mode = mode, print = print_mode })
+reaper.SetProjExtState(proj, band.SECTION, "baseline", "shared") -- the host shares everything already here
 reaper.MarkProjectDirty(proj)
 
 -- Best effort: drop older stem versions. Files still open somewhere fail to delete and are retried next publish.
@@ -126,5 +115,5 @@ for _, d in ipairs(band.subdirs(all_stems)) do
   end
 end
 
-band.msg(string.format("Published '%s' v%d with %d stem(s).\n\nSave this project, then run 'BandSync - Take inbox' to receive takes.",
+band.msg(string.format("Published '%s' v%d with %d stem(s).\n\nSave this project, then run 'BandSync - Live sync': it sends your new recordings and brings in everyone else's.",
   song, version, #stems))

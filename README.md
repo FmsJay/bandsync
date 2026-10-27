@@ -187,6 +187,8 @@ layers fix that, best set up on the host's always-on machine:
   fine but their copy isn't looped.
 - Live: ReaNINJAM reads its settings when it first opens in a REAPER session; after changing mode or server,
   restart REAPER. Synced mode needs the listener to play from a point behind the sender.
+- Live placeholders appear when the listener disconnects (or after a long session): ReaNINJAM buffers its clip
+  log and only writes it to disk then. Hearing the audio live isn't affected.
 - Solo edit restores bring back arrangement and settings; media is only ever added to the shared folder, never
   deleted, so old versions always find their files.
 - History restores (live mode) put back arrangement and what plays; note edits and reprints stay current.

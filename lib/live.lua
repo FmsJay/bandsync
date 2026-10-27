@@ -109,23 +109,37 @@ function live.newest_session(sessiondir)
   return best and (sessiondir .. "/" .. best)
 end
 
+live.SEEN = "BandSync.live" -- clip GUID (upper case) -> UTC stamp of the live session it came from
+
+-- "…/20261026_2345.ninjam" (the listener's local time) -> "20261027-054500Z", comparable with take ids.
+function live.session_stamp(dir)
+  local y, mo, d, h, mi = (dir or ""):match("(%d%d%d%d)(%d%d)(%d%d)_(%d%d)(%d%d)[^/\\]*%.ninjam$")
+  if not y then return "" end
+  return os.date("!%Y%m%d-%H%M%SZ", os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = tonumber(h), min = tonumber(mi), sec = 0 }))
+end
+
+-- Whether take `id` (from <user>-YYYYMMDD-HHMMSSZ-n) replaces a placeholder of `user` from a session that
+-- started at `since`: same person, recorded after the session began. Pure.
+function live.replaces(id, user, since)
+  local who, stamp = (id or ""):match("^(.-)%-(%d+%-%d+Z)")
+  if not who or who:lower():gsub("_", " ") ~= (user or ""):lower():gsub("_", " ") then return false end
+  return since ~= "" and stamp >= since
+end
+
 -- Drop received session clips on "<user> (live)" tracks at their song position, as placeholders: they show
--- what was played until the real take lands. Returns how many were added. Clips already placed are skipped.
+-- what was played until the real take lands. Returns how many were added. A clip is placed once, ever: one
+-- that was retired, or that someone deleted, never comes back.
 function live.place_clips(proj, sessiondir)
   local dir = live.newest_session(sessiondir)
   if not dir then return 0 end
-  local f = io.open(dir .. "/clipsort.log", "rb")
+  local f = io.open(dir .. "/clipsort.log", "rb") -- ReaNINJAM writes it when the listener disconnects (buffered)
   if not f then return 0 end
   local clips = live.parse_log(f:read("a"))
   f:close()
-  local have = {}
-  for i = 0, reaper.CountMediaItems(proj) - 1 do
-    local g = band.item_ext(reaper.GetMediaItem(proj, i), "band_live")
-    if g ~= "" then have[g] = true end
-  end
-  local n = 0
+  local since, n = live.session_stamp(dir), 0
   for _, c in ipairs(clips) do
-    if not have[c.guid] and c.len and c.len > 0 then
+    local key = c.guid:upper()
+    if select(2, reaper.GetProjExtState(proj, live.SEEN, key)) == "" and c.len and c.len > 0 then
       local sub = dir .. "/" .. c.guid:sub(1, 1)
       local file
       for _, fn in ipairs(band.files(sub)) do if fn:sub(1, #c.guid) == c.guid then file = sub .. "/" .. fn end end
@@ -135,7 +149,12 @@ function live.place_clips(proj, sessiondir)
         if tr then
           reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_live_track", "1", true)
           local it = band.add_item(tr, file, c.st, c.len)
-          if it then band.set_item_ext(it, "band_live", c.guid); n = n + 1 end
+          if it then
+            band.set_item_ext(it, "band_live", c.guid)
+            band.set_item_ext(it, "band_live_since", since)
+            n = n + 1
+          end
+          reaper.SetProjExtState(proj, live.SEEN, key, since ~= "" and since or "?")
         end
       end
     end
@@ -143,18 +162,17 @@ function live.place_clips(proj, sessiondir)
   return n
 end
 
--- Remove placeholders that a real take now covers: same person, overlapping time.
+-- Remove placeholders that a real take now covers: the same person's take, recorded after that live session
+-- started, overlapping in time. (Older takes of theirs never count.)
 function live.retire(proj)
-  local takes = {} -- user -> { {from, to} }
+  local takes = {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     local tk = reaper.GetActiveTake(it)
     local id = tk and band.take_id(tk)
-    local user = id and id:match("^(.-)%-%d+%-%d+Z")
-    if user then
+    if id then
       local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-      takes[user:lower()] = takes[user:lower()] or {}
-      table.insert(takes[user:lower()], { p, p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH") })
+      takes[#takes + 1] = { id, p, p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH") }
     end
   end
   local n = 0
@@ -162,11 +180,12 @@ function live.retire(proj)
     local it = reaper.GetMediaItem(proj, i)
     if band.item_ext(it, "band_live") ~= "" then
       local tr = reaper.GetMediaItem_Track(it)
-      local user = select(2, reaper.GetTrackName(tr)):gsub(" %(live%)$", ""):gsub("_", " "):lower()
+      local user = select(2, reaper.GetTrackName(tr)):gsub(" %(live%)$", "")
+      local since = band.item_ext(it, "band_live_since")
       local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
       local e = p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
-      for _, span in ipairs(takes[user] or takes[user:gsub(" ", "_")] or {}) do
-        if span[1] < e and span[2] > p then
+      for _, t in ipairs(takes) do
+        if t[2] < e and t[3] > p and live.replaces(t[1], user, since) then
           reaper.DeleteTrackMediaItem(tr, it)
           n = n + 1
           break

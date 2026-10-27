@@ -274,7 +274,7 @@ local function section_live()
     if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
   end
   ImGui.TextWrapped(ctx, ({
-    synced = "Your audio is stamped with its song position. Listeners start playback a bar or two after you and hear you in time with the song; what you play also lands on their timeline as a placeholder until your real take arrives.",
+    synced = "Your audio is stamped with its song position. Listeners start playback a bar or two after you and hear you in time with the song; what you play also lands on their timeline as a placeholder until your real take arrives (placeholders appear when the listener disconnects: ReaNINJAM only writes its clip log then).",
     listen = "Plain live audio, as fast as the network allows. For hearing an idea, not for playing along.",
     jam = "Classic NINJAM: everyone hears everyone one interval late, so you can all play at once.",
   })[live_mode])

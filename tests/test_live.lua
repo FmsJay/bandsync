@@ -15,4 +15,15 @@ assert(fresh == "[ninjam]\nhost=h\n", "section created: " .. fresh)
 local log = 'user {A} "x" 0 "y"\nsessionlog 0123ABCD "Laptop@100.1.2.4" 0 "Laptop" 12.5000000000 2.2500000000\nlocal xyz 0\n'
 local c = live.parse_log(log)
 assert(#c == 1 and c[1].guid == "0123ABCD" and c[1].user == "Laptop@100.1.2.4" and c[1].st == 12.5 and c[1].len == 2.25, "sessionlog parsed")
+-- session folder names are the listener's local time; stamps are UTC, comparable with take ids
+local st = live.session_stamp("C:/x/bandsync_live/20261026_2345.ninjam")
+assert(st:match("^%d%d%d%d%d%d%d%d%-%d%d%d%d%d%dZ$"), "stamp format: " .. st)
+assert(st == os.date("!%Y%m%d-%H%M%SZ", os.time({ year = 2026, month = 10, day = 26, hour = 23, min = 45, sec = 0 })), "local -> UTC")
+assert(live.session_stamp("C:/x/20261026_2345_1.ninjam") == st, "suffixed session folder")
+-- only the same person's takes recorded after the session started replace its placeholders
+assert(live.replaces("James-20261027-055000Z-1", "James", "20261027-054500Z"), "later take replaces")
+assert(not live.replaces("James-20261027-032717Z-1", "James", "20261027-054500Z"), "earlier take doesn't")
+assert(not live.replaces("Laptop-20261027-055000Z-1", "James", "20261027-054500Z"), "someone else's doesn't")
+assert(live.replaces("Mary_Jo-20261027-055000Z-1", "Mary Jo", "20261027-054500Z"), "spaces vs underscores")
+assert(not live.replaces("James-20261027-055000Z-1", "James", ""), "unknown session time: never")
 print("ok")

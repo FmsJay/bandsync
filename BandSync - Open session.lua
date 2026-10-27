@@ -12,8 +12,13 @@ if b and b.role == "host" then
   return band.msg("This is the host project for '" .. b.song .. "'. Open the session in a new project tab instead.")
 end
 
-local song = b and b.song or band.pick(band.songs(cfg))
-if not song then return band.msg("No published songs found in " .. cfg.root) end
+local song = b and b.song
+if not song then
+  local songs = band.songs(cfg)
+  if #songs == 0 then return band.msg("No published songs found in " .. cfg.root) end
+  song = band.pick(songs)
+  if not song then return end -- menu dismissed
+end
 local s = band.read_json(band.session_path(cfg, song))
 if not s then return band.msg("Couldn't read session.json for '" .. song .. "' (still syncing?).") end
 

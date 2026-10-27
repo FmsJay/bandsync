@@ -3,10 +3,11 @@ local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 
-if not band.settings(true) then return end
+local cfg = band.settings(true)
+if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return end
+if not b then return band.msg("Saved. Shared folder: " .. cfg.root .. "\nYour name: " .. cfg.user) end
 
 local MODES = { lanes = true, person = true, inbox = true }
 local current = b.take_mode or (b.role == "host" and "lanes" or "person")

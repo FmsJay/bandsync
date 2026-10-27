@@ -95,8 +95,16 @@ function band.settings(force)
       "Shared folder (Syncthing),Your name,separator=|,extrawidth=250", root .. "|" .. user)
     if not ok then return nil end
     root, user = csv:match("^(.-)|(.*)$")
+    root = root:gsub("^~", os.getenv("HOME") or os.getenv("USERPROFILE") or "~")
     root, user = norm(root), band.clean(user)
     if root == "" or user == "" then return nil end
+    local probe = root .. "/.bandsync-write-test" -- the folder must exist and be writable
+    local f = io.open(probe, "w")
+    if not f then
+      band.msg("Can't write to " .. root .. ". Check the folder exists (is Syncthing set up?).")
+      return nil
+    end
+    f:close(); os.remove(probe)
     reaper.SetExtState(band.SECTION, "sync_root", root, true)
     reaper.SetExtState(band.SECTION, "user", user, true)
   end

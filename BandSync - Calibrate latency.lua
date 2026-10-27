@@ -17,6 +17,9 @@ if reaper.MB("Connect a cable from your interface's OUTPUT 1 to INPUT " .. ch ..
 -- a 3 s mono WAV with one full-scale sample at each click time
 local work = reaper.GetResourcePath() .. "/BandSync/calibration"
 reaper.RecursiveCreateDirectory(work, 0)
+for _, f in ipairs(band.files(work)) do -- previous runs' recordings
+  if f ~= "click.wav" and not f:match("%.rpp") then os.remove(work .. "/" .. f) end
+end
 local parts, last = {}, 0
 for _, t in ipairs(CLICKS) do
   local s = math.floor(t * SR)
@@ -42,6 +45,11 @@ reaper.SetMediaTrackInfo_Value(rec_tr, "I_RECMODE", 0)        -- record the inpu
 reaper.SetMediaTrackInfo_Value(rec_tr, "I_RECMON", 0)         -- no monitoring: avoids a feedback loop
 reaper.SetMediaTrackInfo_Value(rec_tr, "I_RECARM", 1)
 reaper.SetEditCurPos2(proj, 0, false, false)
+-- the metronome and record pre-roll would play into the measurement windows: off for the run, then restored
+local restore = {}
+for _, id in ipairs({ 40364, 41819 }) do -- Options: Toggle metronome; Pre-roll: toggle pre-roll on record
+  if reaper.GetToggleCommandState(id) == 1 then reaper.Main_OnCommand(id, 0); restore[#restore + 1] = id end
+end
 reaper.Main_OnCommand(1013, 0) -- Transport: Record
 
 local function finish()
@@ -74,13 +82,18 @@ local function finish()
       local ms = sum / #offsets
       reaper.SetExtState(band.SECTION, "rec_offset_ms", string.format("%.3f", ms), true)
       local _, rate = reaper.GetAudioDeviceInfo("SRATE")
+      local samples = math.floor(math.abs(ms) / 1000 * (tonumber(rate) or SR) + 0.5)
+      -- verified on a ToneX (ASIO, 44.1 kHz): 203 samples LATE fixed by Input manual offset +203
       report = string.format(
-        "Recordings land %.2f ms %s (%.0f samples at %s Hz; spread %.2f ms across the 3 clicks).\n\n%s",
-        math.abs(ms), ms >= 0 and "LATE" or "EARLY", math.abs(ms) / 1000 * (tonumber(rate) or SR), rate or "?", hi - lo,
+        "Recordings land %.2f ms %s (%d samples at %s Hz; spread %.2f ms across the 3 clicks).\n\n%s",
+        math.abs(ms), ms >= 0 and "LATE" or "EARLY", samples, rate or "?", hi - lo,
         math.abs(ms) < 1 and "That's within 1 ms: your takes line up. Nothing to do."
-        or "Fix it in Preferences > Audio > Recording, latency compensation: adjust the manual offset by that many samples, then run this again until it reads under 1 ms.")
+        or string.format("Fix: Preferences > Audio > Recording, %s %d samples %s the INPUT manual offset, then run this again.\n" ..
+          "Re-run after changing your audio device, sample rate or buffer size.",
+          ms >= 0 and "add" or "subtract", samples, ms >= 0 and "to" or "from"))
     end
   end
+  for _, id in ipairs(restore) do reaper.Main_OnCommand(id, 0) end
   reaper.Main_SaveProject(proj, false)
   reaper.Main_OnCommand(40860, 0) -- File: Close current project tab
   band.msg(report)

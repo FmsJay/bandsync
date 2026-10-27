@@ -163,8 +163,13 @@ function sync.own_takes(proj, opts)
       local function add(tk)
         if not tk or band.take_ext(tk, "band_take") ~= "" or band.take_ext(tk, "band_dry") ~= "" then return end
         if reaper.GetMediaItemInfo_Value(it, "D_LENGTH") < (opts.min_len or 0) then return end
-        if opts.unsent and (band.take_ext(tk, "band_sent") ~= "" or band.take_ext(tk, "band_base") ~= ""
-            or ext(proj, sync.SENTKEYS, content_key(it, tk)) ~= "") then return end
+        if opts.unsent then
+          if band.take_ext(tk, "band_sent") ~= "" or band.take_ext(tk, "band_base") ~= "" then return end
+          -- the same audio at the same place went out before, unless that take has since been deleted
+          -- (delete a paste, paste it back: it must go out again)
+          local before = ext(proj, sync.SENTKEYS, content_key(it, tk))
+          if before ~= "" and band.take_state(proj, before) ~= "deleted" then return end
+        end
         out[#out + 1] = { it, tk }
       end
       if opts.all then

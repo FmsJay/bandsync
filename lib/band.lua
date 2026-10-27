@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.2.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.3.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -136,7 +136,7 @@ end
 -- A project is bound to one song: role (host/guest), song, room, version, take_mode.
 function band.binding(proj)
   local b = {}
-  for _, k in ipairs({ "role", "song", "room", "version", "take_mode", "stem_mode" }) do
+  for _, k in ipairs({ "role", "song", "room", "version", "take_mode", "stem_mode", "comp" }) do
     local _, v = reaper.GetProjExtState(proj, band.SECTION, k)
     b[k] = v ~= "" and v or nil
   end
@@ -232,6 +232,8 @@ end
 function band.track_ext(tr, key) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. key, "", false)) end
 function band.item_ext(it, key) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:" .. key, "", false)) end
 function band.set_item_ext(it, key, v) reaper.GetSetMediaItemInfo_String(it, "P_EXT:" .. key, v, true) end
+function band.take_ext(tk, key) return select(2, reaper.GetSetMediaItemTakeInfo_String(tk, "P_EXT:" .. key, "", false)) end
+function band.set_take_ext(tk, key, v) reaper.GetSetMediaItemTakeInfo_String(tk, "P_EXT:" .. key, v, true) end
 
 function band.add_item(track, path, pos, len)
   local src = reaper.PCM_Source_CreateFromFile(path)
@@ -245,15 +247,14 @@ function band.add_item(track, path, pos, len)
   return item, take
 end
 
--- Point an item at a better file (preview -> full). Length and position are left alone.
-function band.swap_source(item, path)
-  local take = reaper.GetActiveTake(item)
+-- Point a take at a better file (preview -> full). Length, position and offsets are left alone.
+function band.swap_source(take, path)
   local src = take and reaper.PCM_Source_CreateFromFile(path)
   if not src then return false end
   local old = reaper.GetMediaItemTake_Source(take)
   reaper.SetMediaItemTake_Source(take, src)
   reaper.PCM_Source_Destroy(old) -- the API leaves the old source to the caller
-  reaper.UpdateItemInProject(item)
+  reaper.UpdateItemInProject(reaper.GetMediaItemTake_Item(take))
   return true
 end
 
@@ -323,7 +324,7 @@ function band.sync_stems(proj, cfg, song, s, upgrade_only)
     local item = tr and reaper.GetTrackMediaItem(tr, 0)
     if path and upgrade_only then
       if item and quality == "full" and band.item_ext(item, "band_quality") == "preview" then
-        band.swap_source(item, band.localize(proj, path))
+        band.swap_source(reaper.GetActiveTake(item), band.localize(proj, path))
         band.set_item_ext(item, "band_quality", quality)
         changed = changed + 1
       end
@@ -350,15 +351,57 @@ end
 function band.take_state(proj, id) return select(2, reaper.GetProjExtState(proj, band.TAKES, id)) end
 function band.set_take_state(proj, id, v) reaper.SetProjExtState(proj, band.TAKES, id, v) end
 
-function band.find_take_item(proj, id)
+-- The take that received manifest id, wherever it is (0.2 tagged the item instead of the take).
+function band.find_take(proj, id)
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
-    if band.item_ext(it, "band_take") == id then return it end
+    for k = 0, reaper.CountTakes(it) - 1 do
+      local tk = reaper.GetTake(it, k)
+      if band.take_ext(tk, "band_take") == id then return it, tk end
+    end
+    if band.item_ext(it, "band_take") == id then return it, reaper.GetActiveTake(it) end
   end
 end
 
--- Where a take lands. mode: "lanes" (new fixed lane on the matching track), "person"
--- ("Takes - <user>" track) or "inbox" (one muted "BandSync inbox" track).
+-- "takes" mode: add the incoming take to the item on the matching track it overlaps most, so a
+-- bandmate's passes stack as takes of one item. The item grows to fit; nothing already in it moves
+-- (REAPER honours negative take start offsets: silence until the source begins).
+local function add_as_take(proj, t, path)
+  local tr = band.find_track(proj, t.track, true) or band.new_track(proj, t.track)
+  if not tr then return nil end
+  local best, overlap = nil, 0
+  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    local it = reaper.GetTrackMediaItem(tr, i)
+    local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+    local o = math.min(p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), t.pos + t.len) - math.max(p, t.pos)
+    if o > overlap then best, overlap = it, o end
+  end
+  if not best then return band.add_item(tr, path, t.pos, t.len) end
+  local src = reaper.PCM_Source_CreateFromFile(path)
+  if not src then return nil end
+  local p = reaper.GetMediaItemInfo_Value(best, "D_POSITION")
+  local e = p + reaper.GetMediaItemInfo_Value(best, "D_LENGTH")
+  local np, ne = math.min(p, t.pos), math.max(e, t.pos + t.len)
+  if np < p then -- grow left: shift every existing take's offset so its audio stays put
+    for k = 0, reaper.CountTakes(best) - 1 do
+      local tk = reaper.GetTake(best, k)
+      reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS") - (p - np))
+    end
+    reaper.SetMediaItemInfo_Value(best, "D_POSITION", np)
+  end
+  reaper.SetMediaItemInfo_Value(best, "D_LENGTH", ne - np)
+  reaper.SetMediaItemInfo_Value(best, "B_LOOPSRC", 0) -- a grown item must play silence, not repeat a shorter take
+  local playing = reaper.GetActiveTake(best)
+  local take = reaper.AddTakeToMediaItem(best)
+  reaper.SetMediaItemTake_Source(take, src)
+  reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", np - t.pos)
+  if playing then reaper.SetActiveTake(playing) end -- never change what is already playing
+  reaper.UpdateItemInProject(best)
+  return best, take
+end
+
+-- Where a take lands. mode: "lanes" (new fixed lane on the matching track), "takes" (see above),
+-- "person" ("Takes - <user>" track) or "inbox" (one muted "BandSync inbox" track).
 local function target(proj, t, mode)
   if mode == "person" then
     local name = "Takes - " .. t.user
@@ -386,15 +429,20 @@ end
 -- Insert take t (a take manifest) from path, or upgrade its source if already placed.
 function band.place_take(proj, t, path, mode)
   path = band.localize(proj, path)
-  local item = band.find_take_item(proj, t.id)
-  if item then return band.swap_source(item, path) end
+  local _, found = band.find_take(proj, t.id)
+  if found then return band.swap_source(found, path) end
   local label = string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))
-  local tr, lane = target(proj, t, mode)
-  if not tr then return false end
-  item = band.add_item(tr, path, t.pos, t.len)
+  local item, take, tr, lane
+  if mode == "takes" then
+    item, take = add_as_take(proj, t, path)
+  else
+    tr, lane = target(proj, t, mode)
+    if not tr then return false end
+    item, take = band.add_item(tr, path, t.pos, t.len)
+  end
   if not item then return false end
-  band.set_item_ext(item, "band_take", t.id)
-  reaper.GetSetMediaItemTakeInfo_String(reaper.GetActiveTake(item), "P_NAME", label .. " · " .. t.track, true)
+  band.set_take_ext(take, "band_take", t.id)
+  reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label .. " · " .. t.track, true)
   if lane then -- name the lane only once an item lives in it, or the name doesn't stick
     reaper.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane)
     reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, label, true)

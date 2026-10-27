@@ -63,19 +63,19 @@ By hand:
 
 | Host | Guest |
 |---|---|
-| **BandSync - Publish session**: song name and stems mode (`none` / `mix` / `grouped` / `tracks`). Save. | |
+| **BandSync - Publish session**: song name, stems mode (`none` / `mix` / `grouped` / `tracks`) and comping style (`lanes` / `takes`, detected from your project). Save. | |
 | **BandSync - Take inbox**: leave running. | **BandSync - Open session**: pick the song and a room. |
-| | Record on a track named like the host's (e.g. `Bass`) to land in that track's lanes; any other name becomes a new track on the host. |
-| Takes appear as lanes. Preview first, then full quality. To send a part of your own to guests, select it first: in a host project, every item counts as unsent. | **BandSync - Send takes**: everything not sent yet, or just the selection. It asks when a selection would leave other new takes behind. |
+| | Record on a track named like the host's (e.g. `Bass`) to land on that track; any other name becomes a new track on the host. Record as many passes as you like, then make your favourite the active take. |
+| Takes arrive in the song's comping style: a new lane on the matching track, or a new take in the matching item. What was playing keeps playing. Preview first, then full quality. To send a part of your own to guests, select it first. | **BandSync - Send takes**: the active take of everything not sent yet (or of the selected items). Picked a different pass later? Send again. **BandSync - Send all takes** sends every unsent pass for the host to comp from. Recording or "Save All" doesn't send anything; Send does. |
 | Changed the tempo or arrangement? Publish again. | Run **Open session** again to refresh. **Take inbox** on a guest receives bandmates' takes from the same room on `Takes - <name>` tracks and upgrades preview stems to FLAC. |
 
 Stems modes: `none` sends only the timeline (for when you're streaming audio instead, e.g. with
 SonoBus), `mix` sends one master bounce (use your own metronome for the click), `grouped` sends one
 stem per top-level track or folder, `tracks` sends every non-folder track.
 
-**BandSync - Settings** also sets where takes land in the current project: `lanes` (host default),
-`person` (a `Takes - <name>` track; guest default) or `inbox` (one muted `BandSync inbox` track
-to review first).
+**BandSync - Settings** also sets where takes land in the current project: `lanes` or `takes` (host default:
+the song's comping style), `person` (a `Takes - <name>` track; guest default) or `inbox` (one muted
+`BandSync inbox` track to review first).
 
 ## Limits (phase 1)
 

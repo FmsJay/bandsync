@@ -17,6 +17,19 @@
         <source file="lib/band.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/lib/band.lua</source>
         <source file="lib/json.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/lib/json.lua</source>
       </version>
+      <version name="0.3.0" author="James" time="2026-10-27T01:44:31Z">
+        <changelog>Send works per take: sends the active take you picked (send again after picking another); new 'Send all takes' sends every unsent pass, grouped. Sent status tracked per take, so re-recording into a sent item is caught. Selection check compares takes, not counts. Unique take IDs within the same second (fixes a REAPER 'files exist' freeze). Per-song comping style (lanes/takes) detected at publish; takes mode adds incoming takes to the matching item without moving existing audio.</changelog>
+        <source main="main" file="BandSync - Calibrate latency.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Calibrate%20latency.lua</source>
+        <source main="main" file="BandSync - Open session.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Open%20session.lua</source>
+        <source main="main" file="BandSync - Publish session.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Publish%20session.lua</source>
+        <source main="main" file="BandSync - Send all takes.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Send%20all%20takes.lua</source>
+        <source main="main" file="BandSync - Send takes.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Send%20takes.lua</source>
+        <source main="main" file="BandSync - Settings.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Settings.lua</source>
+        <source main="main" file="BandSync - Take inbox.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Take%20inbox.lua</source>
+        <source main="main" file="BandSync - Update.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/BandSync%20-%20Update.lua</source>
+        <source file="lib/band.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/lib/band.lua</source>
+        <source file="lib/json.lua">https://github.com/FmsJay/bandsync/raw/v0.3.0/lib/json.lua</source>
+      </version>
     </reapack>
   </category>
 </index>

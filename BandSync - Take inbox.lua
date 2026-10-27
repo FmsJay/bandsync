@@ -12,7 +12,7 @@ local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
 local host = b.role == "host"
-local mode = b.take_mode or (host and "lanes" or "person")
+local mode = b.take_mode or (host and (b.comp or "lanes") or "person") -- host: the song's comping style
 
 local _, _, section, cmd = reaper.get_action_context()
 local function toggle(v)

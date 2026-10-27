@@ -11,13 +11,30 @@ local b = band.binding(proj) or {}
 
 local projname = reaper.GetProjectName(proj)
 local song = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
-local MODES = { none = true, mix = true, grouped = true, tracks = true }
-local ok, csv = reaper.GetUserInputs("BandSync: publish", 2,
-  "Song name,Stems (none/mix/grouped/tracks),separator=|,extrawidth=150", song .. "|" .. (b.stem_mode or "grouped"))
+-- Comping style follows the project: multi-take items and no real fixed-lane tracks -> "takes", else "lanes".
+-- (REAPER 7 tracks can report fixed-lane mode with a single lane, so only >1 lane counts as using lanes.)
+local uses_takes, uses_lanes = false, false
+for i = 0, reaper.CountTracks(proj) - 1 do
+  local tr = reaper.GetTrack(proj, i)
+  if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > 1 then
+    uses_lanes = true
+  end
+  for k = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    if reaper.CountTakes(reaper.GetTrackMediaItem(tr, k)) > 1 then uses_takes = true end
+  end
+end
+local detected = (uses_takes and not uses_lanes) and "takes" or "lanes"
+
+local MODES, COMPS = { none = true, mix = true, grouped = true, tracks = true }, { lanes = true, takes = true }
+local ok, csv = reaper.GetUserInputs("BandSync: publish", 3,
+  "Song name,Stems (none/mix/grouped/tracks),Comping (lanes/takes),separator=|,extrawidth=150",
+  song .. "|" .. (b.stem_mode or "grouped") .. "|" .. (b.comp or detected))
 if not ok then return end
-local name, mode = csv:match("^(.-)|(.*)$")
-song, mode = band.clean(name), mode:lower():gsub("%s", "")
-if song == "" or not MODES[mode] then return band.msg("Need a song name and one of: none, mix, grouped, tracks.") end
+local name, mode, comp = csv:match("^(.-)|(.-)|(.*)$")
+song, mode, comp = band.clean(name), mode:lower():gsub("%s", ""), comp:lower():gsub("%s", "")
+if song == "" or not MODES[mode] or not COMPS[comp] then
+  return band.msg("Need a song name, stems as none/mix/grouped/tracks, and comping as lanes/takes.")
+end
 
 local sdir = band.song_dir(cfg, song)
 local old = band.read_json(band.session_path(cfg, song))
@@ -92,12 +109,12 @@ for i = 0, reaper.CountTracks(proj) - 1 do
 end
 
 band.write_json(band.session_path(cfg, song), {
-  format = band.FORMAT, bandsync = band.VERSION, song = song, host = cfg.user, version = version,
+  format = band.FORMAT, bandsync = band.VERSION, song = song, host = cfg.user, version = version, comp = comp,
   published = os.date("!%Y-%m-%dT%H:%M:%SZ"), srate = band.srate(proj), length = length,
   stem_mode = mode, tempo = band.capture_tempo(proj), markers = band.capture_markers(proj),
   stems = stems, tracks = tracks,
 })
-band.bind(proj, { role = "host", song = song, room = "main", version = version, stem_mode = mode })
+band.bind(proj, { role = "host", song = song, room = "main", version = version, stem_mode = mode, comp = comp })
 reaper.MarkProjectDirty(proj)
 
 -- Best effort: drop older stem versions. Files still open somewhere fail to delete and are retried next publish.

@@ -564,8 +564,17 @@ function band.find_midi(proj, id)
   end
 end
 
+-- Notes in drum map `from` (a take's), rewritten into the drum map set on track tr ("" or unset: as they are).
+function band.to_track_map(root, buf, from, tr)
+  local to = band.track_ext(tr, "band_drummap")
+  if not root or (from or "") == "" or to == "" or from == to then return buf end
+  local dm = require("drummap")
+  return dm.translate(buf, dm.table(dm.load(root, from), dm.load(root, to)))
+end
+
 -- Place or update the MIDI copy of take manifest t from its .midibuf file. Returns item, take.
-function band.place_midi(proj, t, path)
+-- `root` (the shared folder) lets drum takes land in this track's drum map.
+function band.place_midi(proj, t, path, root)
   local buf = band.read(path)
   if not buf then return nil end
   local it, tk = band.find_midi(proj, t.id)
@@ -592,7 +601,7 @@ function band.place_midi(proj, t, path)
   reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len)
   reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", t.midi_offs or 0) -- same tempo map: same source start, same notes
   band.mark_base(tk)
-  reaper.MIDI_SetAllEvts(tk, buf)
+  reaper.MIDI_SetAllEvts(tk, band.to_track_map(root, buf, t.drummap, reaper.GetMediaItem_Track(it)))
   reaper.MIDI_Sort(tk)
   reaper.UpdateItemInProject(it)
   return it, tk

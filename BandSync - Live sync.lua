@@ -50,7 +50,7 @@ local function import(room)
       local midi = t.midi and (tdir .. "/" .. t.midi)
       local function place_midi() -- the notes, as an editable MIDI copy under the print
         if not midi or not reaper.file_exists(midi) then return end
-        local _, mtk = band.place_midi(proj, t, midi)
+        local _, mtk = band.place_midi(proj, t, midi, cfg.root)
         if mtk then sync.midi_seen(proj, t.id, mtk) end
       end
       local _, mine = band.find_take(proj, t.id)
@@ -142,8 +142,10 @@ local function poll()
   sync.apply_locks(proj, can, cfg.user)
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
-  local info = { driver = driver, role = b.role, song = b.song }
-  local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver)
+  -- pending + hold let "Take control" wait until everyone has caught up before switching
+  local info = { driver = driver, role = b.role, song = b.song, hold = hold or nil,
+    pending = sync.pending_events(proj, cfg, b.song, b.room) }
+  local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold)
   if fingerprint ~= status_json or now - last_status > 15 then
     status_json, last_status = fingerprint, now
     sync.write_status(proj, cfg, b.song, b.room, info)

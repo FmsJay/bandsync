@@ -66,11 +66,113 @@ function recall.list(cfg, song, room)
   return out
 end
 
+-- ---- history: every take and change, in order -----------------------------------------------------
+-- Entries are { time, id, user, kind = "take" | event type, ... }: a take's arrival (from its manifest's
+-- first placement) or an event as posted. Sorted by time, then id.
+
+function recall.entries(cfg, song, room)
+  local out = {}
+  local rdir = sync.room_dir(cfg, song, room)
+  for _, d in ipairs({ band.takes_dir(cfg, song, room), rdir .. "/_trash" }) do -- deleted takes still have a past
+    for _, f in ipairs(band.files(d, ".json")) do
+      local m = band.read_json(d .. "/" .. f)
+      if m and m.id and m.user then
+        local o = m.origin or { pos = m.pos, len = m.len, track = sync.base_name(m.track), lane = m.lane, sent = m.sent }
+        out[#out + 1] = { kind = "take", time = o.sent or m.sent or "", id = m.id, take = m.id, user = m.user,
+          track = o.track, pos = o.pos, len = o.len, lane = o.lane, midi = m.midi and true or nil }
+      end
+    end
+  end
+  for _, f in ipairs(band.files(rdir .. "/events", ".json")) do
+    local ev = band.read_json(rdir .. "/events/" .. f)
+    if ev and ev.id and ev.time then ev.kind = ev.type; out[#out + 1] = ev end
+  end
+  table.sort(out, function(a, x) return (a.time .. a.id) < (x.time .. x.id) end)
+  return out
+end
+
+-- The arrangement after entries[1..upto], in recall-point form ({ takes, plays, tracks }). Pure: no REAPER calls.
+function recall.replay(entries, upto)
+  local st = { takes = {}, plays = {}, tracks = {} }
+  local gone = {} -- deleted takes keep their last shape, for an undelete
+  for i = 1, math.min(upto or #entries, #entries) do
+    local e = entries[i]
+    local id = e.take and e.take:lower()
+    if e.kind == "take" then
+      st.takes[id] = { id = e.take, track = e.track, pos = e.pos, len = e.len, lane = e.lane, mute = 0, offs = 0 }
+    elseif e.kind == "delete" and st.takes[id] then
+      gone[id], st.takes[id] = st.takes[id], nil
+    elseif e.kind == "undelete" and gone[id] then
+      st.takes[id], gone[id] = gone[id], nil
+    elseif e.kind == "edit" and st.takes[id] then
+      local t = st.takes[id]
+      t.track, t.pos, t.len, t.lane = e.track or t.track, e.pos or t.pos, e.len or t.len, e.lane
+      t.mute, t.offs = e.mute or t.mute, e.offs or t.offs
+    elseif e.kind == "plays" then
+      st.plays[e.track] = e.takes or {}
+    elseif e.kind == "track" then
+      if e.was and st.tracks[e.was] then st.tracks[e.was] = nil end
+      st.tracks[e.track] = { mute = e.mute, solo = e.solo, color = e.color, icon = e.icon }
+    end
+  end
+  -- which takes play: the newest "plays" per track picks the active take of each item
+  local active = {}
+  for _, list in pairs(st.plays) do for _, id in ipairs(list) do active[id:lower()] = true end end
+  local out = { takes = {}, plays = st.plays, tracks = st.tracks }
+  for lid, t in pairs(st.takes) do
+    out.takes[t.id] = { track = t.track, pos = t.pos, len = t.len, lane = t.lane, mute = t.mute, offs = t.offs, active = active[lid] or nil }
+  end
+  return out
+end
+
+-- One line per entry, for the history list.
+function recall.describe(e)
+  local whose = e.take and ((e.take:match("^(.-)%-%d+%-%d+Z") or e.take) .. "'s take") or ""
+  local on = " on " .. tostring(e.track)
+  if e.kind == "take" then
+    return string.format("recorded %s%s at %.2f s%s", e.midi and "a MIDI take" or "a take", on, e.pos or 0, e.lane and (" (lane " .. (e.lane + 1) .. ")") or "")
+  elseif e.kind == "edit" then
+    return string.format("moved/trimmed %s%s to %.2f s%s", whose, on, e.pos or 0, (e.mute or 0) > 0 and ", muted" or "")
+  elseif e.kind == "delete" then return "deleted " .. whose .. on
+  elseif e.kind == "undelete" then return "brought back " .. whose .. on
+  elseif e.kind == "midi" then return "edited the notes of " .. whose .. on
+  elseif e.kind == "plays" then return string.format("%s: now playing %d take(s)", tostring(e.track), #(e.takes or {}))
+  elseif e.kind == "track" then
+    return string.format("%s%s: %s%s", e.was and (e.was .. " renamed to ") or "", tostring(e.track),
+      (e.mute or 0) > 0 and "muted" or "unmuted", (e.solo or 0) > 0 and ", soloed" or "")
+  elseif e.kind == "driver" then return "took control from " .. tostring(e.from)
+  end
+  return tostring(e.kind)
+end
+
+-- Consecutive entries by one person, while one driver drives, form a group:
+-- { user, driver, first, last (entry indexes), from, to (times) }.
+function recall.groups(entries, host)
+  local groups, driver = {}, host
+  for i, e in ipairs(entries) do
+    if e.kind == "driver" then driver = e.driver or e.user end
+    local g = groups[#groups]
+    if not g or g.user ~= e.user or g.driver ~= driver then
+      g = { user = e.user, driver = driver, first = i, from = e.time }
+      groups[#groups + 1] = g
+    end
+    g.last, g.to = i, e.time
+  end
+  return groups
+end
+
 -- Make this project match recall point `file`. Only the driver should call this (Live sync posts only
 -- what this person may change). Returns a short summary.
 function recall.restore(proj, cfg, song, room, file)
   local st = band.read_json(recall.dir(cfg, song, room) .. "/" .. file)
   if not st then return nil, "can't read " .. file end
+  return recall.restore_state(proj, cfg, song, room, st, st.label or file)
+end
+
+-- Make this project match state st (a recall point, or recall.replay's result).
+function recall.restore_state(proj, cfg, song, room, st, label)
+  st.label = label
+  local file = label
   recall.save(proj, cfg, song, room, "before restoring " .. (st.label or file))
   local want = {}
   for id, t in pairs(st.takes or {}) do want[id:lower()] = { id = id, t = t } end

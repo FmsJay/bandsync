@@ -323,17 +323,21 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
     lane = lane, lane_name = lane and select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, "", false)) or nil,
     printed_by = cfg.user,
   }
-  local old = twin and band.read_json(takes .. "/" .. id .. ".json")
-  if old then -- printed from a MIDI copy: still the original's take (whose, which track, lane, item)
+  local old = rev > 1 and band.read_json(takes .. "/" .. id .. ".json")
+  if twin and old then -- printed from a MIDI copy: still the original's take (whose, which track, lane, item)
     for _, k in ipairs({ "user", "room", "track", "group", "lane", "lane_name", "session_version" }) do m[k] = old[k] end
   elseif twin then
     m.track = twin
   end
+  -- where it first landed: the history replays edits from here (later revisions rewrite pos/len)
+  m.origin = old and old.origin or { pos = m.pos, len = m.len, track = base_name(m.track), lane = m.lane, sent = old and old.sent or m.sent }
   if reaper.TakeIsMIDI(take) then -- the notes travel with the print, so anyone may edit them or print them with their own instrument
     local ok, buf = reaper.MIDI_GetAllEvts(take, "")
     if ok then
       band.write_atomic(takes .. "/" .. id .. suffix .. ".midibuf", buf)
       m.midi, m.midi_offs = id .. suffix .. ".midibuf", reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+      local map = band.track_ext(tr, "band_drummap") -- the notes are in this drum map; receivers translate
+      m.drummap = map ~= "" and map or nil
     end
   end
   if (band.size(main .. ".opus") or math.huge) < band.size(main .. ".flac") then -- a preview only helps if smaller
@@ -616,8 +620,8 @@ end
 
 -- Apply one event from whoever may make it. False means retry later (its take hasn't arrived, or a
 -- delete needs this tab in front).
--- `dir`: the room's folder (where "midi" events keep their note files).
-function sync.apply(proj, ev, dir)
+-- `dir`: the room's folder (where "midi" events keep their note files); `root`: the shared folder (drum maps).
+function sync.apply(proj, ev, dir, root)
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
   local it, tk = band.find_take(proj, ev.take)
@@ -629,7 +633,7 @@ function sync.apply(proj, ev, dir)
     if not buf then return false end -- not synced here yet
     for _, t2 in pairs({ mtk or false, tk and reaper.TakeIsMIDI(tk) and tk }) do
       if t2 then
-        reaper.MIDI_SetAllEvts(t2, buf)
+        reaper.MIDI_SetAllEvts(t2, band.to_track_map(root, buf, ev.drummap, reaper.GetMediaItem_Track(reaper.GetMediaItemTake_Item(t2))))
         reaper.MIDI_Sort(t2)
         sync.midi_seen(proj, ev.take, t2) -- applied, not a local edit (Live sync reprints if the print is ours)
       end
@@ -770,7 +774,8 @@ function sync.watch(proj, cfg, song, room, can)
         if ok then
           reaper.RecursiveCreateDirectory(sync.room_dir(cfg, song, room) .. "/midi", 0)
           band.write_atomic(sync.room_dir(cfg, song, room) .. "/midi/" .. file, buf)
-          sync.post(cfg, song, room, { type = "midi", take = id, track = track, pos = pos, file = file })
+          local map = band.track_ext(reaper.GetMediaItem_Track(it), "band_drummap")
+          sync.post(cfg, song, room, { type = "midi", take = id, track = track, pos = pos, file = file, drummap = map ~= "" and map or nil })
         end
       end
       sync.midi_seen(proj, id, tk)
@@ -824,7 +829,7 @@ function sync.receive(proj, cfg, song, room, can)
       setext(proj, sync.APPLIED, ev.id, "1") -- our own (already true here), or not theirs to change
     else
       if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
-      if sync.apply(proj, ev, sync.room_dir(cfg, song, room)) then
+      if sync.apply(proj, ev, sync.room_dir(cfg, song, room), cfg.root) then
         setext(proj, sync.APPLIED, ev.id, "1")
         applied = applied + 1
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
@@ -855,6 +860,15 @@ function sync.holdings(proj)
     end
   end
   return have
+end
+
+-- How many of the room's events this project hasn't applied (or set aside) yet.
+function sync.pending_events(proj, cfg, song, room)
+  local n = 0
+  for _, f in ipairs(band.files(sync.room_dir(cfg, song, room) .. "/events", ".json")) do
+    if ext(proj, sync.APPLIED, f:sub(1, -6)) == "" then n = n + 1 end
+  end
+  return n
 end
 
 function sync.write_status(proj, cfg, song, room, info)

@@ -18,6 +18,7 @@ local ImGui = require "imgui" "0.10"
 local cfg = band.settings()
 if not cfg then return end
 
+if reaper.set_action_options then reaper.set_action_options(1) end -- running it again closes it (no task dialog)
 local _, _, section, cmd = reaper.get_action_context()
 if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 1); reaper.RefreshToolbar2(section, cmd) end
 reaper.atexit(function() if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end end)
@@ -42,6 +43,21 @@ local function refresh()
   view = status.gather(cfg, b, proj)
   can, who = sync.authority(cfg, b.song, b.room, view.session)
   points = recall.list(cfg, b.song, b.room)
+end
+
+-- History: re-read only while its tab is open, and not every frame.
+local entries, groups, hist_at = {}, {}, 0
+local function refresh_history()
+  entries = recall.entries(cfg, b.song, b.room)
+  groups = recall.groups(entries, view.session and view.session.host)
+end
+local utc_now = os.date("!*t")
+utc_now.isdst = false
+local utc_offset = os.time() - os.time(utc_now) -- shortcut: fixed at start, a DST change mid-session shows an hour off
+local function local_time(iso)
+  local y, mo, d, h, mi, s = (iso or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+  if not y then return "?" end
+  return os.date("%m-%d %H:%M", os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s, isdst = false }) + utc_offset)
 end
 
 -- What a track is called for ownership: a "(MIDI)" copy track and a "(band)" mirror belong to their part.
@@ -145,7 +161,7 @@ local function section_recall()
     last = 0
   end
   local driving = view.driver == cfg.user
-  if ImGui.BeginChild(ctx, "points", 0, 160, ImGui.ChildFlags_Borders) then
+  if ImGui.BeginChild(ctx, "points", 0, 110, ImGui.ChildFlags_Borders) then
     if #points == 0 then ImGui.TextDisabled(ctx, "None yet. Every handover saves one by itself.") end
     for i, p in ipairs(points) do
       ImGui.PushID(ctx, i)
@@ -165,6 +181,80 @@ local function section_recall()
   end
 end
 
+local function section_history()
+  if reaper.time_precise() - hist_at > 4 then hist_at = reaper.time_precise(); refresh_history() end
+  ImGui.SeparatorText(ctx, "Every change, newest first")
+  local driving = view.driver == cfg.user
+  if #groups == 0 then ImGui.TextDisabled(ctx, "Nothing has happened in this room yet.") end
+  if ImGui.BeginChild(ctx, "history", 0, -4) then
+    for gi = #groups, 1, -1 do
+      local g = groups[gi]
+      ImGui.PushID(ctx, gi)
+      ImGui.BeginDisabled(ctx, not driving)
+      if ImGui.SmallButton(ctx, "Restore") and reaper.MB(string.format("Make the session look like it did right after %s's changes at %s?\n\n" ..
+          "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
+          "Where things are now is saved as a recall point first, so you can come back.", g.user, local_time(g.to)), "BandSync", 4) == 6 then
+        local st = recall.replay(entries, g.last)
+        band.log(recall.restore_state(proj, cfg, b.song, b.room, st, string.format("%s's changes at %s", g.user, local_time(g.to))) or "restore failed")
+        last, hist_at = 0, 0
+      end
+      ImGui.EndDisabled(ctx)
+      ImGui.SetItemTooltip(ctx, driving and "Go back to right after this group of changes." or "Only the driver restores (take control first).")
+      ImGui.SameLine(ctx)
+      local n = g.last - g.first + 1
+      local head = string.format("%s%s  ·  %s%s  ·  %d change%s", g.user, g.user == g.driver and " (driving)" or "",
+        local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "", n, n == 1 and "" or "s")
+      if ImGui.TreeNodeEx(ctx, "g", head, ImGui.TreeNodeFlags_SpanAvailWidth) then
+        for i = g.first, g.last do
+          ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))
+          ImGui.SameLine(ctx)
+          ImGui.Text(ctx, recall.describe(entries[i]))
+        end
+        ImGui.TreePop(ctx)
+      end
+      ImGui.PopID(ctx)
+    end
+    ImGui.EndChild(ctx)
+  end
+end
+
+-- Drum map of the selected tracks. Changing it rewrites the BandSync MIDI on those tracks into the new map,
+-- so the notes keep hitting the same drums with the new instrument.
+local drummap = require("drummap")
+local function section_drums()
+  ImGui.SeparatorText(ctx, "Drum map (selected tracks)")
+  local tr = reaper.GetSelectedTrack(proj, 0)
+  if not tr then return ImGui.TextDisabled(ctx, "Select a drum track (yours, or a '(MIDI)' copy).") end
+  local cur = band.track_ext(tr, "band_drummap")
+  local names = { "", "gm" }
+  for _, f in ipairs(band.files(cfg.root .. "/drummaps", ".json")) do names[#names + 1] = f:sub(1, -6) end
+  ImGui.SetNextItemWidth(ctx, 220)
+  if ImGui.BeginCombo(ctx, "##drummap", cur == "" and "none (notes as they come)" or cur) then
+    for _, n in ipairs(names) do
+      if ImGui.Selectable(ctx, n == "" and "none (notes as they come)" or n, n == cur) and n ~= cur then
+        for i = 0, reaper.CountSelectedTracks(proj) - 1 do
+          local t2 = reaper.GetSelectedTrack(proj, i)
+          local old = band.track_ext(t2, "band_drummap")
+          local conv = old ~= "" and n ~= "" and drummap.table(drummap.load(cfg.root, old), drummap.load(cfg.root, n))
+          for j = 0, reaper.CountTrackMediaItems(t2) - 1 do
+            local tk = reaper.GetActiveTake(reaper.GetTrackMediaItem(t2, j))
+            local id = tk and reaper.TakeIsMIDI(tk) and (band.take_ext(tk, "band_midi") ~= "" and band.take_ext(tk, "band_midi") or band.take_ext(tk, "band_sent"))
+            if conv and id and id ~= "" then
+              local _, buf = reaper.MIDI_GetAllEvts(tk, "")
+              reaper.MIDI_SetAllEvts(tk, drummap.translate(buf, conv))
+              reaper.MIDI_Sort(tk)
+              if band.take_ext(tk, "band_midi") ~= "" then sync.midi_seen(proj, id, tk) end -- a new view, not a note edit
+            end
+          end
+          reaper.GetSetMediaTrackInfo_String(t2, "P_EXT:band_drummap", n, true)
+        end
+      end
+    end
+    ImGui.EndCombo(ctx)
+  end
+  ImGui.SetItemTooltip(ctx, "Which notes this track's drum instrument uses. Maps live in <shared folder>/drummaps; 'gm' is General MIDI.")
+end
+
 local function section_actions()
   ImGui.SeparatorText(ctx, "More")
   for i, name in ipairs({ "Send takes", "Print my MIDI", "Settings", "Calibrate latency", "Update" }) do
@@ -182,11 +272,22 @@ local function frame()
   if err then return ImGui.TextColored(ctx, RED, "Error: " .. err) end
   if not b then return ImGui.TextWrapped(ctx, "This project isn't a BandSync session. Publish it (host) or open one (guest) first.") end
   ImGui.Text(ctx, string.format("%s  ·  room %s  ·  %s  ·  you are %s", b.song, b.room, b.role, cfg.user))
-  section_sync()
-  section_band()
-  section_control()
-  section_recall()
-  section_actions()
+  if ImGui.BeginTabBar(ctx, "tabs") then
+    if ImGui.BeginTabItem(ctx, "Session") then
+      section_sync()
+      section_band()
+      section_control()
+      section_drums()
+      section_actions()
+      ImGui.EndTabItem(ctx)
+    end
+    if ImGui.BeginTabItem(ctx, "History & restore") then
+      section_recall()
+      section_history()
+      ImGui.EndTabItem(ctx)
+    end
+    ImGui.EndTabBar(ctx)
+  end
 end
 
 local function loop()

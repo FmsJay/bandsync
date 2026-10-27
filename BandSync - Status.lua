@@ -110,7 +110,8 @@ local function draw()
   gfx.update()
 end
 
-gfx.init("BandSync status", 720, 300, 0)
+local mx, my = reaper.GetMousePosition() -- open by the mouse (down-left of it), not over REAPER's menu bar
+gfx.init("BandSync status", 720, 300, 0, math.max(0, mx - 360), my + 40)
 local last = 0
 local function loop()
   local ch = gfx.getchar()

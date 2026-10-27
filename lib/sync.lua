@@ -546,17 +546,24 @@ function sync.receive(proj, cfg, song, room, driver, host)
   -- be applied after a newer one
   local newest = {}
   for _, ev in ipairs(pending) do if ev.type == "plays" then newest[ev.track or ""] = ev.id end end
-  local applied = 0
+  local applied, done, undo_open = 0, {}, false
   for _, ev in ipairs(pending) do
     if ev.type == "plays" and newest[ev.track or ""] ~= ev.id then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
     elseif ev.user == cfg.user or not (ev.user == driver or ev.user == host) then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own (already true here), or not from whoever's driving
-    elseif sync.apply(proj, ev) then
-      setext(proj, sync.APPLIED, ev.id, "1")
-      applied = applied + 1
+    else
+      if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
+      if sync.apply(proj, ev) then
+        setext(proj, sync.APPLIED, ev.id, "1")
+        applied = applied + 1
+        done[#done + 1] = ev.type == "plays" and ("now playing on " .. tostring(ev.track))
+          or ((ev.type == "delete" and "deleted " or "moved/trimmed ") .. tostring(ev.take))
+      end
     end
   end
+  if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: " .. tostring(driver) .. "'s changes", -1) end
+  for _, d in ipairs(done) do band.log(tostring(driver) .. ": " .. d) end
   return applied
 end
 

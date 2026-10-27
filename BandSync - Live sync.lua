@@ -89,6 +89,8 @@ local function poll()
   -- sound changed are reprinted (rendering needs this tab in front and the transport stopped)
   local print_mode = (s and s.print) or "wet"
   local now = reaper.time_precise()
+  local copies = sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
+  if copies > 0 then band.log(copies .. " copied or split item(s) will go out as new takes") end
   if reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
     local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN })
     if #units > 0 then band.log("sent " .. sync.send(proj, cfg, b, units, print_mode) .. " new take(s)") end

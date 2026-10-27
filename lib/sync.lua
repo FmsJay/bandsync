@@ -86,10 +86,47 @@ end
 
 -- ---- our own takes ------------------------------------------------------------------------------
 
-local function content_key(it, tk)
+local function content_key(it, tk) -- position included: a pasted copy is the same audio, somewhere else
   local fn = reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(tk))
-  return string.format("%s|%.4f|%.4f", fn:match("[^/\\]+$") or fn, reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS"),
-    reaper.GetMediaItemInfo_Value(it, "D_LENGTH"))
+  return string.format("%s|%.4f|%.4f|%.4f", fn:match("[^/\\]+$") or fn, reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS"),
+    reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), reaper.GetMediaItemInfo_Value(it, "D_POSITION"))
+end
+
+-- Copy/paste, duplicate and split copy an item's P_EXT, so two takes end up carrying one BandSync id.
+-- The one still where the snapshot last saw it keeps the id (else the first); the others are new
+-- material: their tags are cleared, so Live sync prints and sends them as takes of their own.
+-- (After a split, the left half usually keeps the id and goes out as a trim; the right half is new.)
+function sync.split_copies(proj)
+  local by_id, n = {}, 0
+  for i = 0, reaper.CountMediaItems(proj) - 1 do
+    local it = reaper.GetMediaItem(proj, i)
+    for k = 0, reaper.CountTakes(it) - 1 do
+      local tk = reaper.GetTake(it, k)
+      local id = band.take_id(tk)
+      if id then
+        local l = id:lower()
+        by_id[l] = by_id[l] or {}
+        table.insert(by_id[l], { it, tk, id })
+      end
+    end
+  end
+  for _, list in pairs(by_id) do
+    if #list > 1 then
+      local keep = 1
+      for j, u in ipairs(list) do
+        if ext(proj, sync.SNAP, u[3]) == u[3] .. "|" .. shape(u[1], u[2]) then keep = j end
+      end
+      for j, u in ipairs(list) do
+        if j ~= keep then
+          for _, key in ipairs({ "band_sent", "band_take", "band_fxhash", "band_base_offs", "band_base" }) do band.set_take_ext(u[2], key, "") end
+          band.set_item_ext(u[1], "band_take", "")
+          band.set_item_ext(u[1], "band_group", "")
+          n = n + 1
+        end
+      end
+    end
+  end
+  return n
 end
 
 -- Everything already in a guest's project when sync first runs is baseline (earlier experiments): never

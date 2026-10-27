@@ -45,6 +45,8 @@ reaper.Undo_BeginBlock2(proj)
 reaper.PreventUIRefresh(1)
 reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", s.srate, true)
 reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
+-- record 24-bit FLAC: Send renders 24-bit, but can't restore detail a 16-bit recording never captured
+if first_open then reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true) end
 band.apply_tempo(proj, s.tempo)
 band.apply_markers(proj, s.markers)
 local n = band.sync_stems(proj, cfg, song, s)

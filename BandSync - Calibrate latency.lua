@@ -50,6 +50,11 @@ local restore = {}
 for _, id in ipairs({ 40364, 41819 }) do -- Options: Toggle metronome; Pre-roll: toggle pre-roll on record
   if reaper.GetToggleCommandState(id) == 1 then reaper.Main_OnCommand(id, 0); restore[#restore + 1] = id end
 end
+local function put_back()
+  for _, id in ipairs(restore) do reaper.Main_OnCommand(id, 0) end
+  restore = {}
+end
+reaper.atexit(put_back) -- also restores if the analysis throws
 reaper.Main_OnCommand(1013, 0) -- Transport: Record
 
 local function finish()
@@ -93,7 +98,7 @@ local function finish()
           ms >= 0 and "add" or "subtract", samples, ms >= 0 and "to" or "from"))
     end
   end
-  for _, id in ipairs(restore) do reaper.Main_OnCommand(id, 0) end
+  put_back()
   reaper.Main_SaveProject(proj, false)
   reaper.Main_OnCommand(40860, 0) -- File: Close current project tab
   band.msg(report)

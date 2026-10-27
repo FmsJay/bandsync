@@ -232,7 +232,8 @@ function sync.own_takes(proj, opts)
   local n = opts.selected and reaper.CountSelectedMediaItems(proj) or reaper.CountMediaItems(proj)
   for i = 0, n - 1 do
     local it = opts.selected and reaper.GetSelectedMediaItem(proj, i) or reaper.GetMediaItem(proj, i)
-    if band.track_ext(reaper.GetMediaItem_Track(it), "band_stem") == "" and band.item_ext(it, "band_take") == "" then
+    if band.track_ext(reaper.GetMediaItem_Track(it), "band_stem") == "" and band.item_ext(it, "band_take") == ""
+        and band.item_ext(it, "band_live") == "" then -- live placeholders are someone else's audio, never ours to send
       local legacy = band.item_ext(it, "band_sent") -- 0.2 marked the item: carry it to the take that was active
       if legacy ~= "" then
         local a = reaper.GetActiveTake(it)

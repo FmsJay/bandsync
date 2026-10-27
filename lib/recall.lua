@@ -128,7 +128,7 @@ end
 -- One line per entry, for the history list.
 function recall.describe(e)
   local whose = e.take and ((e.take:match("^(.-)%-%d+%-%d+Z") or e.take) .. "'s take") or ""
-  local on = " on " .. tostring(e.track)
+  local on = e.track and (" on " .. e.track) or "" -- events from before 0.5 don't name the track
   if e.kind == "take" then
     return string.format("recorded %s%s at %.2f s%s", e.midi and "a MIDI take" or "a take", on, e.pos or 0, e.lane and (" (lane " .. (e.lane + 1) .. ")") or "")
   elseif e.kind == "edit" then

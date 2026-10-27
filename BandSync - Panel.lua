@@ -255,6 +255,56 @@ local function section_drums()
   ImGui.SetItemTooltip(ctx, "Which notes this track's drum instrument uses. Maps live in <shared folder>/drummaps; 'gm' is General MIDI.")
 end
 
+-- Live: hear each other while it happens, through ReaNINJAM and the band's NINJAM server.
+local live = require("live")
+local live_mode, live_send, live_server = "synced", true, nil
+local LIVE_MODES = { { "synced", "Play along (synced to the song)" }, { "listen", "Listen live (no sync)" }, { "jam", "Jam (NINJAM intervals)" } }
+local function section_live()
+  local lfile = band.song_dir(cfg, b.song) .. "/live.json"
+  if not live_server then live_server = (band.read_json(lfile) or {}).server or "" end
+  ImGui.SeparatorText(ctx, "Server")
+  ImGui.SetNextItemWidth(ctx, 220)
+  local changed, v = ImGui.InputTextWithHint(ctx, "##server", "host's Tailscale IP:2049", live_server, ImGui.InputTextFlags_None)
+  if changed then live_server = v end
+  ImGui.SameLine(ctx)
+  if ImGui.SmallButton(ctx, "Save for the band") then band.write_json(lfile, { server = live_server, by = cfg.user }) end
+  ImGui.SetItemTooltip(ctx, "The host runs the NINJAM server (tools/ninjam-server); everyone connects to its address.")
+  ImGui.SeparatorText(ctx, "Mode")
+  for _, m in ipairs(LIVE_MODES) do
+    if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
+  end
+  ImGui.TextWrapped(ctx, ({
+    synced = "Your audio is stamped with its song position. Listeners start playback a bar or two after you and hear you in time with the song; what you play also lands on their timeline as a placeholder until your real take arrives.",
+    listen = "Plain live audio, as fast as the network allows. For hearing an idea, not for playing along.",
+    jam = "Classic NINJAM: everyone hears everyone one interval late, so you can all play at once.",
+  })[live_mode])
+  local _, s = ImGui.Checkbox(ctx, "Send my audio (my whole mix)", live_send)
+  live_send = s
+  ImGui.Spacing(ctx)
+  local master, idx = live.fx(proj, false)
+  if not master then
+    ImGui.BeginDisabled(ctx, live_server == "")
+    if ImGui.Button(ctx, "Connect") then
+      local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
+      reaper.RecursiveCreateDirectory(sdir, 0)
+      reaper.SetProjExtState(proj, band.SECTION, "live_dir", sdir)
+      local ok, e = live.configure(cfg, live_server, live_mode, live_send, sdir)
+      if not ok then band.msg(e) else
+        local m2, i2 = live.fx(proj, true)
+        if m2 then reaper.TrackFX_Show(m2, i2, 3) else band.msg("Couldn't add ReaNINJAM to the master track.") end
+      end
+    end
+    ImGui.EndDisabled(ctx)
+    ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in: click Connect in its window.")
+  else
+    ImGui.TextColored(ctx, GREEN, "ReaNINJAM is on your master track.")
+    if ImGui.Button(ctx, "Show it") then reaper.TrackFX_Show(master, idx, 3) end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Leave") then reaper.TrackFX_Delete(master, idx) end
+  end
+  ImGui.TextDisabled(ctx, "If ReaNINJAM was already open since REAPER started, restart REAPER for new settings.")
+end
+
 local function section_actions()
   ImGui.SeparatorText(ctx, "More")
   for i, name in ipairs({ "Send takes", "Print my MIDI", "Settings", "Calibrate latency", "Update" }) do
@@ -279,6 +329,10 @@ local function frame()
       section_control()
       section_drums()
       section_actions()
+      ImGui.EndTabItem(ctx)
+    end
+    if ImGui.BeginTabItem(ctx, "Live") then
+      section_live()
       ImGui.EndTabItem(ctx)
     end
     if ImGui.BeginTabItem(ctx, "History & restore") then

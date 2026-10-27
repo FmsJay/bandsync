@@ -9,6 +9,7 @@ local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 local sync = require("sync")
+local live = require("live")
 
 local cfg = band.settings()
 if not cfg then return end
@@ -134,6 +135,14 @@ local function poll()
       local n = sync.reprint(proj, cfg, b, print_mode)
       if n > 0 then band.log("reprinted " .. n .. " take(s) after a sound change") end
     end
+  end
+
+  -- live (ReaNINJAM synced mode): received clips land as placeholders until the real takes replace them
+  local live_dir = select(2, reaper.GetProjExtState(proj, band.SECTION, "live_dir"))
+  if live_dir ~= "" and live.fx(proj, false) then
+    local added, retired = live.place_clips(proj, live_dir), live.retire(proj)
+    if added > 0 then band.log(added .. " live clip(s) placed as placeholders") end
+    if retired > 0 then band.log(retired .. " placeholder(s) replaced by the real takes") end
   end
 
   -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest

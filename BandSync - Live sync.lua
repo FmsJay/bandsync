@@ -161,8 +161,17 @@ local function poll()
   reaper.UpdateArrange()
 end
 
+-- The panel stops us with a flag (re-running the action would raise REAPER's task-control dialog), and sees
+-- we're alive from a heartbeat; both live in non-persistent ExtState so the project isn't marked modified.
+local key = tostring(proj)
 local function tick()
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end -- project closed: stop
+  if reaper.GetExtState(band.SECTION, "stop " .. key) ~= "" then
+    reaper.DeleteExtState(band.SECTION, "stop " .. key, false)
+    reaper.DeleteExtState(band.SECTION, "live " .. key, false)
+    return band.log("live sync stopped for '" .. b.song .. "'")
+  end
+  reaper.SetExtState(band.SECTION, "live " .. key, tostring(reaper.time_precise()), false)
   local st = reaper.GetPlayStateEx(proj)
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end

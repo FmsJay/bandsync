@@ -63,10 +63,15 @@ end
 
 local function section_sync()
   ImGui.SeparatorText(ctx, "Sync")
-  local running = (view.my_age or math.huge) < 30
+  local key = tostring(proj)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
+  local running = beat and reaper.time_precise() - beat < 5
   ImGui.TextColored(ctx, running and GREEN or RED, running and "Live sync is running" or "Live sync is not running")
   ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx, running and "Stop" or "Start") then action("Live sync") end
+  if ImGui.SmallButton(ctx, running and "Stop" or "Start") then
+    if running then reaper.SetExtState(band.SECTION, "stop " .. key, "1", false) -- Live sync sees it on its next tick
+    else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); action("Live sync") end
+  end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
   local changed, v = ImGui.Checkbox(ctx, "Hold sync (try things; your changes go out once, when you release)", hold)
   if changed then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
@@ -107,8 +112,8 @@ local function section_control()
     if ImGui.SmallButton(ctx, "Take control") then action("Take control") end
   end
   local owned = {}
-  for name, c in pairs(who.tracks) do owned[#owned + 1] = string.format("track %s: %s", name, c.user) end
-  for name, c in pairs(who.regions) do owned[#owned + 1] = string.format("region %s: %s", name, c.user) end
+  for name, c in pairs(who.tracks) do owned[#owned + 1] = string.format("track %s: %s", c.name or name, c.user) end
+  for name, c in pairs(who.regions) do owned[#owned + 1] = string.format("region %s: %s", c.name or name, c.user) end
   table.sort(owned)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
   for _, o in ipairs(owned) do ImGui.BulletText(ctx, o) end

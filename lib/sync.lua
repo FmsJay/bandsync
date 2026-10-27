@@ -64,7 +64,7 @@ function sync.authority(cfg, song, room, s)
       for _, list in ipairs({ { c.tracks, tracks }, { c.regions, regions } }) do
         for _, name in ipairs(list[1] or {}) do
           local k = name:lower()
-          if not list[2][k] or list[2][k].time < c.time then list[2][k] = { user = c.user, time = c.time } end
+          if not list[2][k] or list[2][k].time < c.time then list[2][k] = { user = c.user, time = c.time, name = name } end
         end
       end
     end

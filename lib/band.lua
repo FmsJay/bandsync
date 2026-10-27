@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.4.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.4.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -13,6 +13,17 @@ function band.compare_versions(a, b)
     if x ~= y then return x > y and 1 or -1 end
   end
   return 0
+end
+
+-- Seconds since an ISO UTC timestamp ("2026-10-27T02:43:22Z"). Both sides are broken-down UTC times
+-- run through os.time, which reads them as local time: the offset cancels only if neither applies DST,
+-- and os.date("!*t") can carry isdst = true (it did on a UTC-6 laptop in October: every age read +1 h).
+function band.age(iso, now)
+  local y, m, d, H, M, S = (iso or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+  if not y then return math.huge end
+  local n = now or os.date("!*t") -- copied: os.time normalises (rewrites) the table it is given
+  local t = { year = n.year, month = n.month, day = n.day, hour = n.hour, min = n.min, sec = n.sec, isdst = false }
+  return os.time(t) - os.time({ year = y, month = m, day = d, hour = H, min = M, sec = S, isdst = false })
 end
 
 -- Warn once per run when a bandmate's file was made with a newer BandSync than this one.

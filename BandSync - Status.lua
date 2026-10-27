@@ -12,11 +12,7 @@ local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
 
-local function age(iso) -- seconds since an ISO UTC timestamp
-  local y, m, d, H, M, S = (iso or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
-  if not y then return math.huge end
-  return os.time(os.date("!*t")) - os.time({ year = y, month = m, day = d, hour = H, min = M, sec = S })
-end
+local age = band.age
 local function ago(sec)
   if sec == math.huge then return "never" elseif sec < 60 then return math.floor(sec) .. " s ago" end
   return math.floor(sec / 60) .. " min ago"

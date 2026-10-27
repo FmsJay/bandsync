@@ -31,7 +31,16 @@ if not b then
   b = { role = "guest", song = song, room = room }
 end
 
-local proj = reaper.EnumProjects(-1)
+local proj, projfile = reaper.EnumProjects(-1)
+-- First open: save into a local (not synced) folder first, so stems are copied next to the project
+-- and recordings stay off the shared folder until sent.
+local first_open = projfile == ""
+if first_open then
+  local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
+  reaper.RecursiveCreateDirectory(local_dir, 0)
+  reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
+end
+
 reaper.Undo_BeginBlock2(proj)
 reaper.PreventUIRefresh(1)
 reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", s.srate, true)
@@ -47,13 +56,7 @@ reaper.TrackList_AdjustWindows(false)
 reaper.UpdateArrange()
 reaper.Undo_EndBlock2(proj, "BandSync: open " .. song .. " v" .. s.version, -1)
 
--- First open: save into a local (not synced) folder so recordings stay off the shared drive until sent.
-local _, projfile = reaper.EnumProjects(-1)
-if projfile == "" then
-  local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
-  reaper.RecursiveCreateDirectory(local_dir, 0)
-  reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
-end
+if first_open then reaper.Main_SaveProject(proj, false) end
 
 band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
   "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..

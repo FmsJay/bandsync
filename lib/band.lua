@@ -252,6 +252,22 @@ function band.new_track(proj, name)
   return tr
 end
 
+-- Copy a synced file into proj's recording folder and return the copy's path, so the project never
+-- depends on the shared folder: it may mount after REAPER loads, and a sync client can't update files
+-- REAPER holds open. "stems/v5/01.flac" becomes "<record path>/bandsync/v5_01.flac". An unsaved
+-- project has no folder of its own, so it keeps the original path.
+function band.localize(proj, path)
+  if reaper.GetProjectName(proj) == "" then return path end
+  local dir = norm(reaper.GetProjectPathEx(proj)) .. "/bandsync"
+  local parent, name = path:match("([^/]+)/([^/]+)$")
+  local dst = dir .. "/" .. parent .. "_" .. name
+  if not reaper.file_exists(dst) then
+    reaper.RecursiveCreateDirectory(dir, 0)
+    band.copy_atomic(path, dst)
+  end
+  return dst
+end
+
 -- ---- stems ----------------------------------------------------------------------------------
 
 local function best(dir, st)
@@ -277,7 +293,7 @@ function band.sync_stems(proj, cfg, song, s, upgrade_only)
     local item = tr and reaper.GetTrackMediaItem(tr, 0)
     if path and upgrade_only then
       if item and quality == "full" and band.item_ext(item, "band_quality") == "preview" then
-        band.swap_source(item, path)
+        band.swap_source(item, band.localize(proj, path))
         band.set_item_ext(item, "band_quality", quality)
         changed = changed + 1
       end
@@ -291,7 +307,7 @@ function band.sync_stems(proj, cfg, song, s, upgrade_only)
       for i = reaper.CountTrackMediaItems(tr) - 1, 0, -1 do
         reaper.DeleteTrackMediaItem(tr, reaper.GetTrackMediaItem(tr, i))
       end
-      item = band.add_item(tr, path, 0)
+      item = band.add_item(tr, band.localize(proj, path), 0)
       if item then band.set_item_ext(item, "band_quality", quality) end
       changed = changed + 1
     end
@@ -339,6 +355,7 @@ end
 
 -- Insert take t (a take manifest) from path, or upgrade its source if already placed.
 function band.place_take(proj, t, path, mode)
+  path = band.localize(proj, path)
   local item = band.find_take_item(proj, t.id)
   if item then return band.swap_source(item, path) end
   local label = string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))

@@ -38,8 +38,11 @@ same timeline without cluttering main. The host receives every room; each room's
      *Smallest first* so previews arrive before full files. Files only move while two people are
      online at the same time.
    - **Google Drive / Dropbox**: always on. Fine for a start.
-2. Copy this folder into REAPER's `Scripts/` folder (`Options > Show REAPER resource path`), then
-   *Actions > Show action list > New action > Load ReaScript* and load the five `BandSync - *.lua` files.
+2. In REAPER: *Actions > Show action list > New action > Load ReaScript*, and load the five
+   `BandSync - *.lua` files **straight from `<shared folder>/_tools/bandsync`**. Don't copy them
+   into REAPER's `Scripts/` folder: loading them from the shared folder means updates reach everyone
+   automatically. (The trade-off: anyone who can write to the shared folder can change everyone's
+   scripts. Only share it with your band.)
 3. Run **BandSync - Settings**: choose the shared folder and enter your name.
 4. **Calibrate recording latency** (important): record a loopback (output → input cable) of a
    click and check that it lines up. If it doesn't, set

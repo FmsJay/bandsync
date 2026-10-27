@@ -63,7 +63,7 @@ for n, it in ipairs(items) do
   if reaper.file_exists(full) then
     local tr = reaper.GetMediaItem_Track(it)
     local manifest = {
-      format = band.FORMAT, id = id, user = cfg.user, room = b.room, track = select(2, reaper.GetTrackName(tr)),
+      format = band.FORMAT, bandsync = band.VERSION, id = id, user = cfg.user, room = b.room, track = select(2, reaper.GetTrackName(tr)),
       pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION"), len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH"),
       session_version = tonumber(b.version), sent = os.date("!%Y-%m-%dT%H:%M:%SZ"), full = id .. ".flac",
     }

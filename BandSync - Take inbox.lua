@@ -37,6 +37,7 @@ local function poll()
     for _, f in ipairs(band.files(tdir, ".json")) do
       local t = band.read_json(tdir .. "/" .. f)
       if t and t.id and t.full and (host or t.user ~= cfg.user) then
+        band.check_version(t.bandsync, "A take from " .. t.user)
         local state = band.take_state(proj, t.id)
         if state ~= "full" then
           local full, prev = tdir .. "/" .. t.full, t.preview and (tdir .. "/" .. t.preview)
@@ -58,6 +59,7 @@ local function poll()
   end
 
   local s = band.read_json(band.session_path(cfg, b.song))
+  if s then band.check_version(s.bandsync, "'" .. b.song .. "'") end
   if s and not host then
     if band.sync_stems(proj, cfg, b.song, s, true) > 0 then band.log("upgraded stems to full quality") end
     if tostring(s.version) ~= tostring(b.version) and warned_version ~= s.version then

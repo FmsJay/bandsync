@@ -92,7 +92,7 @@ for i = 0, reaper.CountTracks(proj) - 1 do
 end
 
 band.write_json(band.session_path(cfg, song), {
-  format = band.FORMAT, song = song, host = cfg.user, version = version,
+  format = band.FORMAT, bandsync = band.VERSION, song = song, host = cfg.user, version = version,
   published = os.date("!%Y-%m-%dT%H:%M:%SZ"), srate = band.srate(proj), length = length,
   stem_mode = mode, tempo = band.capture_tempo(proj), markers = band.capture_markers(proj),
   stems = stems, tracks = tracks,

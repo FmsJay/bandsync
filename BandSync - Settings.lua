@@ -17,5 +17,6 @@ mode = ok and mode:lower():gsub("%s", "")
 if mode and MODES[mode] then
   band.bind(proj, { take_mode = mode })
   reaper.MarkProjectDirty(proj)
-  band.msg("Takes now land as '" .. mode .. "'. Restart 'BandSync - Take inbox' if it is running.")
+  band.msg("Saved. Shared folder: " .. cfg.root .. "\nYour name: " .. cfg.user .. "\n\nTakes now land as '" .. mode ..
+    "'. Restart 'BandSync - Take inbox' if it is running.")
 end

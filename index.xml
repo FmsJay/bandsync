@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<index version="1" name="BandSync">
+  <category name="BandSync">
+    <reapack name="BandSync.lua" type="script" desc="BandSync: record together remotely over a shared folder">
+      <metadata>
+        <link rel="website">https://github.com/FmsJay/bandsync</link>
+      </metadata>
+      <version name="0.2.0" author="James" time="2026-10-27T01:14:15Z">
+        <changelog>First ReaPack release: publish/open/send/inbox, rooms, lanes, versioned stems, local copies, latency calibration, version check + updater.</changelog>
+        <source main="main" file="BandSync - Calibrate latency.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Calibrate%20latency.lua</source>
+        <source main="main" file="BandSync - Open session.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Open%20session.lua</source>
+        <source main="main" file="BandSync - Publish session.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Publish%20session.lua</source>
+        <source main="main" file="BandSync - Send takes.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Send%20takes.lua</source>
+        <source main="main" file="BandSync - Settings.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Settings.lua</source>
+        <source main="main" file="BandSync - Take inbox.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Take%20inbox.lua</source>
+        <source main="main" file="BandSync - Update.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/BandSync%20-%20Update.lua</source>
+        <source file="lib/band.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/lib/band.lua</source>
+        <source file="lib/json.lua">https://github.com/FmsJay/bandsync/raw/v0.2.0/lib/json.lua</source>
+      </version>
+    </reapack>
+  </category>
+</index>

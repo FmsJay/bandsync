@@ -21,6 +21,7 @@ if not song then
 end
 local s = band.read_json(band.session_path(cfg, song))
 if not s then return band.msg("Couldn't read session.json for '" .. song .. "' (still syncing?).") end
+band.check_version(s.bandsync, "'" .. song .. "'")
 
 if not b then
   local ok, room = reaper.GetUserInputs("Join " .. song, 1, "Room (main, or a new side room),extrawidth=100", "main")

@@ -1,7 +1,29 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.2.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+
+-- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
+function band.compare_versions(a, b)
+  local pa, pb = {}, {}
+  for n in tostring(a):gmatch("%d+") do pa[#pa + 1] = tonumber(n) end
+  for n in tostring(b):gmatch("%d+") do pb[#pb + 1] = tonumber(n) end
+  for i = 1, math.max(#pa, #pb) do
+    local x, y = pa[i] or 0, pb[i] or 0
+    if x ~= y then return x > y and 1 or -1 end
+  end
+  return 0
+end
+
+-- Warn once per run when a bandmate's file was made with a newer BandSync than this one.
+local warned = {}
+function band.check_version(theirs, what)
+  if theirs and band.compare_versions(theirs, band.VERSION) > 0 and not warned[theirs] then
+    warned[theirs] = true
+    band.msg(string.format("%s was made with BandSync %s; you have %s.\n\nRun 'BandSync - Update' so everyone stays compatible.",
+      what, theirs, band.VERSION))
+  end
+end
 
 -- ---- small helpers --------------------------------------------------------------------------
 

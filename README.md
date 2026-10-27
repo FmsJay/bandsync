@@ -32,6 +32,8 @@ tested. Machines talk only through a shared folder (Syncthing recommended, or a 
 - **Open** (bandmate) builds a local project with the same timeline. Stems are copied locally, so the
   project never depends on the shared folder being mounted.
 - **Live sync** (everyone, in the background) does the rest:
+  - **Starts Syncthing** if the shared folder is a Syncthing folder and Syncthing isn't running (nothing starts
+    at login: BandSync starts what a session needs when the session starts).
   - **Sends** every new recording a moment after you stop, every pass of it, active or not, printed at the
     item's exact position and length. Slivers under 0.5 s are skipped, and the same audio is never sent
     twice.
@@ -157,6 +159,8 @@ The **Live** tab uses REAPER's own ReaNINJAM and a NINJAM server the host runs (
 
 The host enters `<Tailscale IP>:2049` and clicks *Save for the band*; everyone else clicks **Connect**, which adds
 ReaNINJAM to their master track with everything filled in (one more Connect click in its window).
+The host also sets the server folder (the one with `ninjamsrv` and `bandsync.cfg`) once; the host's Connect starts
+the server if it isn't running.
 
 Stems modes: `none` sends only the timeline, `mix` one master bounce, `grouped` one stem per top-level track
 or folder, `tracks` every non-folder track.

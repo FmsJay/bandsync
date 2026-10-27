@@ -95,6 +95,19 @@ By hand:
 Stems modes: `none` sends only the timeline, `mix` one master bounce, `grouped` one stem per top-level track
 or folder, `tracks` every non-folder track.
 
+## Backups
+
+Syncthing is a mirror, not a backup: a delete or an overwrite on one machine reaches every machine. Two
+layers fix that, best set up on the host's always-on machine:
+
+- **Syncthing versioning** on the `bandsync` folder (*Edit folder > File Versioning > Staggered*, 30 days):
+  keeps old copies of files that another machine changed or deleted, in the folder's hidden `.stversions`.
+- **A nightly one-way copy to a cloud drive:** `tools/backup_to_drive.ps1` copies the shared folder and your
+  local BandSync projects into `G:\My Drive\BandSync backup` (paths are parameters). It adds and updates files
+  and never deletes from the backup. Schedule it with Task Scheduler (daily, "run as soon as possible after a
+  missed start", as your user so the cloud drive is mounted). Never sync the same folder with both Syncthing
+  and the cloud drive.
+
 ## Limits
 
 - Wet prints include the item's own track (FX, volume, pan), not parent folders, sends or reverb tails past

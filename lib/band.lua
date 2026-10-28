@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.7.6", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.7.7", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -259,8 +259,19 @@ function band.add_item(track, path, pos, len)
   reaper.SetMediaItemTake_Source(take, src)
   reaper.SetMediaItemInfo_Value(item, "D_POSITION", pos)
   reaper.SetMediaItemInfo_Value(item, "D_LENGTH", len or (reaper.GetMediaSourceLength(src)))
+  band.beat_position_only(item, take)
   reaper.UpdateItemInProject(item)
   return item, take
+end
+
+-- Band audio follows the beat by position only. REAPER's default timebase (beats: position, length, rate) gives a
+-- whole item one playrate at a tempo change, so a song-long print would drift everywhere before the change (seen:
+-- up to 0.8 s). Position-only moves it with its bar and never stretches it. MIDI is left alone: its notes follow
+-- the beat, and its prints are re-rendered at the new tempo instead.
+function band.beat_position_only(item, take)
+  if take and not reaper.TakeIsMIDI(take) and reaper.GetMediaItemInfo_Value(item, "C_BEATATTACHMODE") ~= 2 then
+    reaper.SetMediaItemInfo_Value(item, "C_BEATATTACHMODE", 2)
+  end
 end
 
 -- Point a take at a better file (preview -> full). Length, position and offsets are left alone.

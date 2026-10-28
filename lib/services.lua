@@ -56,6 +56,39 @@ function services.ensure_syncthing()
   return "started"
 end
 
+-- How many of Syncthing's devices it's connected to right now: connected, total. nil + why if it can't tell.
+-- Asks Syncthing's own API with the key from its config. "Running but connected to nobody" is what a second
+-- identity looks like (2026-10-27: one started outside a sandboxed shell knew no other machine).
+local peers_at, peers_on, peers_n, peers_why = -math.huge
+function services.syncthing_peers()
+  if reaper.time_precise() - peers_at < 30 then return peers_on, peers_n or peers_why end -- a curl call: not every check
+  peers_at = reaper.time_precise()
+  peers_on, peers_n = services.syncthing_peers_now()
+  if not peers_on then peers_why, peers_n = peers_n, nil end
+  return peers_on, peers_n or peers_why
+end
+function services.syncthing_peers_now()
+  local home = WIN and ((os.getenv("LOCALAPPDATA") or "") .. "/Syncthing")
+    or first_existing({ (os.getenv("HOME") or "") .. "/Library/Application Support/Syncthing/config.xml",
+      (os.getenv("HOME") or "") .. "/.local/state/syncthing/config.xml", (os.getenv("HOME") or "") .. "/.config/syncthing/config.xml" })
+  if home and not WIN then home = home:gsub("/config.xml$", "") end
+  local f = home and io.open(home .. "/config.xml", "r")
+  if not f then return nil, "no Syncthing config found" end
+  local xml = f:read("a")
+  f:close()
+  local gui = xml:match("<gui(.-)</gui>") or ""
+  local key, addr = gui:match("<apikey>(.-)</apikey>"), gui:match("<address>(.-)</address>")
+  if not key or not addr then return nil, "Syncthing config has no API key" end
+  local tls = gui:match('^[^>]*tls="true"') ~= nil
+  local out = reaper.ExecProcess(string.format('curl -s -m 3 %s-H "X-API-Key: %s" %s://%s/rest/system/connections',
+    tls and "-k " or "", key, tls and "https" or "http", addr), 5000) or ""
+  local data = band.json_decode(out:match("^%d+\n(.*)$") or "")
+  if type(data) ~= "table" or type(data.connections) ~= "table" then return nil, "Syncthing didn't answer" end
+  local n, on = 0, 0
+  for _, c in pairs(data.connections) do n = n + 1; if c.connected then on = on + 1 end end
+  return on, n
+end
+
 -- This machine's Tailscale address (100.x.y.z), or nil when Tailscale isn't installed or signed in.
 function services.tailscale_ip()
   local exe = first_existing({ "C:/Program Files/Tailscale/tailscale.exe", "/Applications/Tailscale.app/Contents/MacOS/Tailscale",

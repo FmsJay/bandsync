@@ -23,5 +23,9 @@ assert(s:sub(-8 - 15 - 8, -9):find("JUCEPrivateData", 1, true), "JUCE's private 
 assert(#s - #raw == (#"Mary Jo" - #"admin 2") + (#"BandSync abcd" - #"BandSync SessionTest 4xt2") + (#"pw" - #"xjaqdnnap3u4"),
   "only the changed strings changed size")
 assert(sonobus.join_state(joined, { user = "x", group = "BandSync abcd", password = "pw", now = 1 }), "re-joinable")
+assert(s:find("defnetauto\0value\0\1\9\4" .. string.pack("<d", 1), 1, true), "jitter buffer: Auto-Increase")
+assert(s:find("defnetbuf\0value\0\1\9\4" .. string.pack("<d", 0.04), 1, true), "jitter buffer: 40 ms start")
+assert(sonobus.is_set_up(joined, "BandSync abcd") and not sonobus.is_set_up(joined, "BandSync other"), "set up for its group")
+assert(not sonobus.is_set_up(b64, "BandSync SessionTest 4xt2"), "right group but SonoBus's own buffer defaults: not set up")
 assert(not sonobus.join_state("bm90IGEgc3RhdGU=", { user = "x", group = "g", password = "p" }), "garbage refused")
 print("ok")

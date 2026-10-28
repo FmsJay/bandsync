@@ -108,6 +108,31 @@ local function pack_chunk(c)
   return sonobus.b64encode(string.pack("<I4", #comp) .. c.head .. comp .. c.trailer)
 end
 
+-- Jitter buffer defaults for new peers. SonoBus's own default (Auto-Full from 1 ms) also shrinks the buffer, and
+-- each change jumps the delay: on Wi-Fi that was 5-9 jumps of up to ~110 ms per 30 s (2026-10-28 test). Auto-
+-- Increase from 40 ms only ever grows, so after the first seconds the delay holds still.
+sonobus.BUFFER = { defnetauto = 1, defnetbuf = 0.04 } -- 1 = "Auto-Increase"; seconds
+
+local function param_value(tree, id)
+  for _, pc in ipairs(tree.children) do
+    local pid = pc.type == "PARAM" and prop(pc, "id")
+    if pid and pid[2] == v_str(id) then
+      local v = prop(pc, "value")
+      return v and v[2]:sub(1, 1) == "\4" and string.unpack("<d", v[2], 2), pc
+    end
+  end
+end
+
+-- Whether a SonoBus state is already in `group` with BandSync's buffer defaults.
+function sonobus.is_set_up(b64, group)
+  local c = unpack_chunk(b64)
+  if not c or sonobus.state_group(b64) ~= group then return false end
+  for id, want in pairs(sonobus.BUFFER) do
+    if math.abs((param_value(c.tree, id) or -1) - want) > 1e-6 then return false end
+  end
+  return true
+end
+
 -- The group SonoBus would rejoin (its newest recent connection), or nil.
 function sonobus.state_group(b64)
   local c = unpack_chunk(b64)
@@ -133,11 +158,13 @@ function sonobus.join_state(b64, info)
     { "serverHost", v_str(info.host or "aoo.sonobus.net") }, { "serverPort", v_int(info.port or 10998) },
     { "timestamp", v_int64((info.now or os.time()) * 1000) }, { "groupIsPublic", V_FALSE },
   } } }
-  for _, pc in ipairs(c.tree.children) do -- "Reconnect Last" on: SonoBus rejoins on every load
-    local id = pc.type == "PARAM" and prop(pc, "id")
-    if id and id[2] == v_str("reconnectlast") then
+  local want = { reconnectlast = 1 } -- "Reconnect Last" on: SonoBus rejoins on every load
+  for id, v in pairs(sonobus.BUFFER) do want[id] = v end
+  for id, value in pairs(want) do
+    local _, pc = param_value(c.tree, id)
+    if pc then
       local v = prop(pc, "value")
-      if v then v[2] = v_double(1) else pc.props[#pc.props + 1] = { "value", v_double(1) } end
+      if v then v[2] = v_double(value) else pc.props[#pc.props + 1] = { "value", v_double(value) } end
     end
   end
   return pack_chunk(c)

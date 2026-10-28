@@ -287,7 +287,7 @@ local function section_live()
   end
   ImGui.TextWrapped(ctx, ({
     synced = "Your audio is stamped with its song position. Listeners start playback a bar or two after you and hear you in time with the song; what you play also lands on their timeline as a placeholder until your real take arrives (placeholders appear when the listener disconnects: ReaNINJAM only writes its clip log then).",
-    listen = "Hear each other as it happens, peer to peer through SonoBus: no server to run. Playing together in time only works when the delay is low (wired internet, roughly the same region); otherwise use Play along.",
+    listen = "Hear each other as it happens, peer to peer through SonoBus: no server to run. Use wired internet: on Wi-Fi the delay jumps around. Playing together in time also needs a short distance (roughly the same region); otherwise use Play along.",
     jam = "Classic NINJAM: everyone hears everyone one interval late, so you can all play at once.",
   })[live_mode])
   ImGui.Spacing(ctx)
@@ -419,13 +419,15 @@ local function section_setup()
   local rows = {
     { st.audio, "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device" },
     { st.folder, "Shared folder is syncing", "Syncthing isn't running" },
+    { st.connected, st.peers and string.format("Connected to %d of %d bandmate machine(s)", st.peers, st.devices) or "Shared folder is a cloud drive",
+      st.peers and "Syncthing is running but connected to nobody: is anyone else online? (If they are, this machine's Syncthing identity may have changed: check its device ID.)" or "Can't tell whether Syncthing is connected" },
     { st.sync, "Live sync is running", "Live sync is off" },
     { st.sonobus, "SonoBus is ready on the master track (Listen live)", "SonoBus isn't on the master track" },
     { st.server, "Live server address is set", b.role == "host" and "Live server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Live server address" },
     { st.solo, "Solo edit folder found", "Solo edit folder not found: " .. tostring(st.solo_root) .. " (share it / add the Drive shortcut, or set it in Solo edit)" },
     { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: More > Calibrate latency)" },
   }
-  if b.role == "host" then table.insert(rows, 6, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
+  if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
   local all = true
   for _, r in ipairs(rows) do all = all and r[1] end
   if ImGui.CollapsingHeader(ctx, all and "Set up: all done###setup" or "Set up: needs attention###setup", nil, all and ImGui.TreeNodeFlags_None or ImGui.TreeNodeFlags_DefaultOpen) then
@@ -493,6 +495,8 @@ end
 
 local function loop()
   ImGui.SetNextWindowSize(ctx, 560, 640, ImGui.Cond_FirstUseEver)
+  local wx, wy = ImGui.Viewport_GetWorkPos(ImGui.GetMainViewport(ctx)) -- first time: inside REAPER, below its menus
+  ImGui.SetNextWindowPos(ctx, wx + 60, wy + 90, ImGui.Cond_FirstUseEver)
   local visible, open = ImGui.Begin(ctx, "BandSync", true)
   if visible then
     local ok, e = pcall(frame) -- an error in our logic must still reach End

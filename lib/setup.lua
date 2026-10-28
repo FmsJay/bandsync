@@ -36,7 +36,7 @@ function setup.sonobus(cfg, b, proj, open)
   end
   reaper.TrackFX_SetOffline(m, i, false) -- its state can only be read and written while it's loaded
   local _, chunk = reaper.TrackFX_GetNamedConfigParm(m, i, "vst_chunk")
-  if sonobus.state_group(chunk) ~= group then
+  if not sonobus.is_set_up(chunk, group) then
     local new, why = sonobus.join_state(chunk, { user = cfg.user, group = group, password = pw })
     if not new then return nil, "Couldn't set SonoBus up (" .. why .. "): join by hand with its Connect button." end
     reaper.TrackFX_SetNamedConfigParm(m, i, "vst_chunk", new)
@@ -56,7 +56,10 @@ function setup.check(cfg, b, proj)
   local data = band.read_json(setup.live_file(cfg, b)) or {}
   local st = {}
   st.audio = reaper.Audio_IsRunning() == 1 -- a closed device (driver missing, interface unplugged) makes Live and recording silently do nothing
-  st.folder = not has_subdir(cfg.root, ".stfolder") or services.running("syncthing") -- a cloud-drive root needs nothing
+  local syncthing = has_subdir(cfg.root, ".stfolder") -- a cloud-drive root needs nothing
+  st.folder = not syncthing or services.running("syncthing")
+  if syncthing and st.folder then st.peers, st.devices = services.syncthing_peers() end
+  st.connected = not syncthing or (st.peers or 0) > 0
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   st.sync = beat ~= nil and reaper.time_precise() - beat < 5
   local ms = tonumber(reaper.GetExtState(band.SECTION, "rec_offset_ms"))

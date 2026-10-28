@@ -366,6 +366,7 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
       m.midi, m.midi_offs = id .. suffix .. ".midibuf", reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
       local map = band.track_ext(tr, "band_drummap") -- the notes are in this drum map; receivers translate
       m.drummap = map ~= "" and map or nil
+      m.no_instrument = reaper.TrackFX_GetInstrument(tr) < 0 or nil -- its print is silent: receivers say so
     end
   end
   if (band.size(main .. ".opus") or math.huge) < band.size(main .. ".flac") then -- a preview only helps if smaller

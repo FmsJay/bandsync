@@ -36,7 +36,7 @@ if ($boxed) {
   $cmd = Join-Path $env:TEMP "bandsync_install_outside.cmd"
   Set-Content $cmd "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $quoted`r`npause" -Encoding ascii
   Start-Process explorer.exe -ArgumentList "`"$cmd`""
-  Write-Host "This window runs inside another app's sandbox; BandSync setup continues in a new window." -ForegroundColor Yellow
+  Write-Host "This window runs inside another app's sandbox; BandSync setup continues in a new window. If none appears, double-click 'Install BandSync (Windows).cmd' yourself." -ForegroundColor Yellow
   exit 0
 }
 
@@ -71,6 +71,7 @@ Write-Host ""
 # ---------- 1. apps ----------
 $winget = Get-Command winget -ErrorAction SilentlyContinue
 function Install-App($id, $name) {
+  $ErrorActionPreference = "Continue" # winget writes to stderr (see ST below)
   if ($NoApps) { return }
   if (-not $winget) { Warn "$name : winget isn't available (install 'App Installer' from the Microsoft Store), install $name by hand"; return }
   & winget list --id $id --exact --accept-source-agreements *> $null
@@ -122,8 +123,10 @@ $st = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Links\syncthing.exe"
 if (-not (Test-Path $st)) { $c = Get-Command syncthing -ErrorAction SilentlyContinue; if ($c) { $st = $c.Source } }
 if (-not (Test-Path $st)) { Warn "Syncthing wasn't found: install it from syncthing.net and run this again."; exit 1 }
 $homeArg = @(); if ($SyncthingHome) { $homeArg = @("--home", $SyncthingHome) }
-function ST { & $st @args @homeArg 2>&1 }
-function STcli { & $st cli @homeArg @args 2>&1 }
+# Windows PowerShell 5.1 turns a native program's stderr into errors, and with "Stop" above an error ends the whole
+# installer (seen: Syncthing's "not up yet" while waiting for it killed the run). These calls expect stderr.
+function ST { $ErrorActionPreference = "Continue"; & $st @args @homeArg 2>&1 }
+function STcli { $ErrorActionPreference = "Continue"; & $st cli @homeArg @args 2>&1 }
 
 $cfgDir = if ($SyncthingHome) { $SyncthingHome } else { Join-Path $env:LOCALAPPDATA "Syncthing" }
 if (-not (Test-Path (Join-Path $cfgDir "config.xml"))) { ST generate | Out-Null; Ok "Syncthing set up for the first time" }
@@ -163,6 +166,13 @@ if (-not $isHost) {
 $work = Join-Path $env:TEMP "bandsync_setup"
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $work | Out-Null
+if ($Tag -eq "main") { # the newest released version (what ReaPack serves), not whatever is on main right now
+  try {
+    $idx = (Invoke-WebRequest -UseBasicParsing "https://github.com/$Repo/raw/main/index.xml").Content
+    $vers = [regex]::Matches($idx, 'version name="([0-9.]+)"') | ForEach-Object { $_.Groups[1].Value }
+    if ($vers) { $Tag = "v" + ($vers | Sort-Object { [version]$_ } | Select-Object -Last 1) }
+  } catch { }
+}
 $zipRef = if ($Tag -eq "main") { "heads/main" } else { "tags/$Tag" }
 Invoke-WebRequest -UseBasicParsing "https://codeload.github.com/$Repo/zip/refs/$zipRef" -OutFile (Join-Path $work "bandsync.zip")
 Expand-Archive (Join-Path $work "bandsync.zip") $work
@@ -192,27 +202,40 @@ for ($i = 0; $i -lt 12 -and $count -lt 5; $i++) { # ReaPack downloads in the bac
 }
 if ($count -ge 5) { Ok "BandSync installed: $count actions (the BandSync panel opens in REAPER)" } else { Warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages" }
 
-# ---------- 5. what's left for a human ----------
-Write-Host ""
-Say "Done. What's left (these need you):"
+# ---------- 5. what's left for a human (only what isn't done yet) ----------
+$left = @()
+$peers = @()
+try {
+  $x = [xml](Get-Content (Join-Path $cfgDir "config.xml"))
+  $c = Invoke-RestMethod -TimeoutSec 5 -Uri ("http://" + $x.configuration.gui.address + "/rest/system/connections") -Headers @{ "X-API-Key" = $x.configuration.gui.apikey }
+  $peers = @($c.connections.PSObject.Properties | Where-Object { $_.Value.connected } | ForEach-Object { $_.Name })
+} catch { }
 if ($isHost) {
-  Write-Host "  - Your Syncthing device ID, for bandmates' installers:  $myId"
-  Write-Host "  - When a bandmate sends you their ID: Syncthing (http://127.0.0.1:8384) > Add Remote Device, paste it,"
-  Write-Host "    and on its Sharing tab tick 'BandSync'."
-} else {
-  Write-Host "  - Send the host your Syncthing device ID:  $myId"
-  Write-Host "    (They add it in Syncthing; the shared folder then arrives by itself.)"
+  $left += "Your Syncthing device ID, for bandmates' installers:  $myId"
+  $left += "When a bandmate sends you their ID: Syncthing (http://127.0.0.1:8384) > Add Remote Device, paste it, and on its Sharing tab tick 'BandSync'."
+} elseif ($peers -notcontains $hostId) {
+  $left += "Send the host your Syncthing device ID:  $myId  (they add it in Syncthing; the shared folder then arrives by itself)"
 }
 if ($wantLive) {
-  Write-Host "  - Tailscale: sign in from its icon in the taskbar (your own account)."
-  if ($isHost) { Write-Host "    Then share this machine with each bandmate: login.tailscale.com/admin/machines > ... > Share." }
-  else { Write-Host "    Then open the share link the host sends you, and accept it." }
+  $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+  $state = ""
+  if (Test-Path $ts) { try { $ErrorActionPreference = "Continue"; $state = (& $ts status --json 2>$null | ConvertFrom-Json).BackendState } catch { } finally { $ErrorActionPreference = "Stop" } }
+  if ($state -ne "Running") { $left += "Tailscale: sign in from its icon in the taskbar (your own account)." }
+  if ($isHost) { $left += "Tailscale: share this machine with each bandmate (login.tailscale.com/admin/machines > ... > Share)." }
+  elseif ($state -ne "Running") { $left += "Tailscale: then open the share link the host sends you, and accept it." }
 }
-if ($wantSolo) {
-  Write-Host "  - Google Drive: sign in when it opens."
-  if ($isHost) { Write-Host "    Make a 'BandSync' folder in My Drive and share it with each bandmate (Editor)." }
-  else { Write-Host "    At drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }
+if ($wantSolo -and -not (Test-Path "G:\My Drive\BandSync")) {
+  $left += "Google Drive: sign in when it opens."
+  if ($isHost) { $left += "Google Drive: make a 'BandSync' folder in My Drive and share it with each bandmate (Editor)." }
+  else { $left += "Google Drive: at drive.google.com, Shared with me > right-click BandSync > Organize > Add shortcut > My Drive (or set the folder in the panel's Solo edit tab if your Drive isn't G:)." }
 }
-Write-Host "  - Recording latency: connect a cable from your interface's output 1 to an input, then in the BandSync"
-Write-Host "    panel: More > Calibrate latency."
-Write-Host "  - In the panel, open the band's session (or publish yours, as host); its Set up list shows anything still missing."
+$ext = Join-Path $res "reaper-extstate.ini"
+$offset = ""
+if (Test-Path $ext) { $m = Select-String -Path $ext -Pattern '^rec_offset_ms=(.*)$' | Select-Object -First 1; if ($m) { $offset = $m.Matches[0].Groups[1].Value } }
+if (-not $offset -or [math]::Abs([double]$offset) -ge 1) {
+  $left += "Recording latency: connect a cable from your interface's output 1 to an input, then in the BandSync panel: More > Calibrate latency."
+}
+$left += "In the panel, open the band's session (or publish yours, as host); its Set up list shows anything still missing."
+Write-Host ""
+Say "Done. What's left (these need you):"
+foreach ($l in $left) { Write-Host "  - $l" }

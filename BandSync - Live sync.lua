@@ -61,6 +61,10 @@ local function import(room)
         if not midi or not reaper.file_exists(midi) then return end
         local _, mtk = band.place_midi(proj, t, midi, cfg.root)
         if mtk then sync.midi_seen(proj, t.id, mtk) end
+        if mtk and t.no_instrument then
+          band.log(string.format("%s's MIDI on '%s' came without an instrument, so its print is silent: put one on '%s (MIDI)' to hear it (Print my MIDI shares that)",
+            t.user, t.track, t.track))
+        end
       end
       local _, mine = band.find_take(proj, t.id)
       if mine and band.take_ext(mine, "band_sent") == "" then mine = nil end
@@ -196,7 +200,9 @@ local function tick()
   local st = reaper.GetPlayStateEx(proj)
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
-  if not recording and reaper.time_precise() - last > 2 then
+  local now = reaper.time_precise()
+  local every = (now - stopped_at < 8) and 0.5 or 2 -- just after a recording: look often, so the take goes out quickly
+  if not recording and now - last > every then
     last = reaper.time_precise()
     local ok, err = pcall(poll)
     if not ok then band.log("sync error: " .. tostring(err)) end

@@ -336,10 +336,18 @@ local function render_item(it, take, out, name, wet)
       reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 1)
       reaper.SetMediaTrackInfo_Value(tr, "D_PAN", 0)
     end
+    -- the print is this item only: whatever else feeds the track (a synth routed in to record it) stays out of it
+    -- (2026-10-28: Keys/Lead prints carried their source synth too, so they played twice on everyone else's machine)
+    local receives = {}
+    for r = 0, reaper.GetTrackNumSends(tr, -1) - 1 do
+      receives[r] = reaper.GetTrackSendInfo_Value(tr, -1, r, "B_MUTE")
+      reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", 1)
+    end
     band.render({ RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = 0, RENDER_CHANNELS = wet and 2 or math.min(nch, 2),
       RENDER_TAILFLAG = 0, RENDER_ADDTOPROJ = 0 }, -- &32: selected media items, through their track
       { RENDER_FILE = out, RENDER_PATTERN = name, RENDER_FORMAT = band.FLAC, RENDER_FORMAT2 = band.OPUS })
     for _, k in ipairs(keys) do reaper.SetMediaTrackInfo_Value(tr, k, saved[k]) end
+    for r, m in pairs(receives) do reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", m) end
     reaper.SetMediaItemInfo_Value(it, "B_MUTE", imute)
     if lane then set_lanes_playing(tr, playing) end
     return out .. "/" .. name

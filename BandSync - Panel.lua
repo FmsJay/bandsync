@@ -246,7 +246,7 @@ end
 -- so the notes keep hitting the same drums with the new instrument.
 local drummap = require("drummap")
 local function section_drums()
-  ImGui.SeparatorText(ctx, "Drum map (selected tracks)")
+  if not ImGui.CollapsingHeader(ctx, "Drum map (selected tracks)") then return end
   local tr = reaper.GetSelectedTrack(proj, 0)
   if not tr then return ImGui.TextDisabled(ctx, "Select a drum track (yours, or a '(MIDI)' copy).") end
   local cur = band.track_ext(tr, "band_drummap")
@@ -455,9 +455,12 @@ local function section_setup()
     { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: More > Calibrate latency)" },
   }
   if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
-  local all = true
-  for _, r in ipairs(rows) do all = all and r[1] end
-  if ImGui.CollapsingHeader(ctx, all and "Set up: all done###setup" or "Set up: needs attention###setup", nil, all and ImGui.TreeNodeFlags_None or ImGui.TreeNodeFlags_DefaultOpen) then
+  local all, essential, left = true, st.audio and st.folder and st.connected and st.sync, 0
+  for _, r in ipairs(rows) do all = all and r[1]; if not r[1] then left = left + 1 end end
+  -- only what stops the band from syncing opens this by itself; extras (Listen live, latency...) just count
+  local head = all and "Set up: all done" or not essential and "Set up: needs attention" or string.format("Set up: ready (%d optional extra%s left)", left, left == 1 and "" or "s")
+  if not essential then ImGui.SetNextItemOpen(ctx, true, ImGui.Cond_Always) end
+  if ImGui.CollapsingHeader(ctx, head .. "###setup") then
     for _, r in ipairs(rows) do ImGui.TextColored(ctx, r[1] and GREEN or YELLOW, (r[1] and "OK   " or "--   ") .. (r[1] and r[2] or r[3])) end
     if not all then
       if ImGui.Button(ctx, "Set up everything I can") then
@@ -484,7 +487,8 @@ local function section_actions()
 end
 
 -- ---- Together: start/stop at once, notes and likes, live ideas, and the tools (lib/tools.lua) ----------------
-local countin, lag, note_text, bars = 1, 0, "", 1
+local countin, lag_bars, note_text, bars = 1, 0, "", 1
+local function bar_of(pos) return reaper.format_timestr_pos(pos, "", 2) end -- "5.1.00": bar.beat, as REAPER shows it
 local function sel_take()
   local it = reaper.GetSelectedMediaItem(proj, 0)
   local tk = it and reaper.GetActiveTake(it)
@@ -504,25 +508,26 @@ local function section_together()
   local _, c = ImGui.InputInt(ctx, "count-in bars", countin); countin = math.max(0, c)
   ImGui.SameLine(ctx)
   ImGui.SetNextItemWidth(ctx, 80)
-  local _, l = ImGui.InputDouble(ctx, "listeners' lag (s)", lag, 0, 0, "%.2f"); lag = math.max(0, l)
-  ImGui.SetItemTooltip(ctx, "Play along: the others start this much after you, so they hear you in time (one NINJAM interval). 0 otherwise.")
+  local _, l = ImGui.InputInt(ctx, "bars later for listeners", lag_bars); lag_bars = math.max(0, l)
+  ImGui.SetItemTooltip(ctx, "Only for Play along: the others start this many bars after you (one NINJAM interval), so what they hear of you lines up. Leave 0 otherwise.")
   local pos = reaper.GetCursorPositionEx(proj)
   local function start(rec)
-    go({ type = "start", rec = rec or nil, pos = pos, countin = together.bars_before(proj, pos, countin), lag = lag, lead = cfg.user })
+    go({ type = "start", rec = rec or nil, pos = pos, countin = together.bars_before(proj, pos, countin),
+      lag = together.bars_after(proj, pos, lag_bars), lead = cfg.user })
   end
   if ImGui.Button(ctx, "Play together") then start(false) end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Record together") then start(true) end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Stop together") then go({ type = "stop" }) end
-  ImGui.TextDisabled(ctx, string.format("From the edit cursor (%.2f s), %d s after the click, on every machine running Live sync.", pos, together.LEAD))
+  ImGui.TextDisabled(ctx, string.format("From bar %s (the edit cursor), %d s after the click, on every machine running Live sync.", bar_of(pos), together.LEAD))
 end
 
 local notes_at, notes = 0, {}
 local function section_notes()
   ImGui.SeparatorText(ctx, "Notes and likes")
   ImGui.SetNextItemWidth(ctx, -1)
-  local _, t = ImGui.InputTextWithHint(ctx, "##note", "a note for the band (e.g. 'try the chorus an octave up')", note_text, ImGui.InputTextFlags_None)
+  local entered, t = ImGui.InputTextWithHint(ctx, "##note", "a note for the band, Enter to post (e.g. 'try the chorus an octave up')", note_text, ImGui.InputTextFlags_EnterReturnsTrue)
   note_text = t
   local id, it, tk = sel_take()
   local function mark(kind, text)
@@ -536,7 +541,7 @@ local function section_notes()
     notes_at = 0
   end
   ImGui.BeginDisabled(ctx, note_text == "")
-  if ImGui.Button(ctx, id and "Note on selected take" or "Note at cursor") then mark("note", note_text); note_text = "" end
+  if (ImGui.Button(ctx, id and "Note on selected take" or "Note at cursor") or entered) and note_text ~= "" then mark("note", note_text); note_text = "" end
   ImGui.EndDisabled(ctx)
   ImGui.SameLine(ctx)
   ImGui.BeginDisabled(ctx, not id)
@@ -594,17 +599,20 @@ local function section_tools()
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Use newest Solo edit mix") then
     local mix, h = tools.solo_mix(cfg, b.song)
-    if not mix then band.msg(h) else band.log(string.format("levels/pans/mutes of %d track(s) from %s's Solo edit version", tools.apply_mix(proj, mix), tostring(h.user))) end
+    if not mix then band.msg(h)
+    elseif reaper.MB(string.format("Set your faders, pans and mutes to %s's Solo edit version from %s?\n\nWhat you may change goes to the band too.",
+        tostring(h.user), local_time(h.time)), "BandSync", 4) == 6 then band.log(string.format("levels/pans/mutes of %d track(s) from %s's Solo edit version", tools.apply_mix(proj, mix), tostring(h.user))) end
   end
   ImGui.SeparatorText(ctx, "Arrangement (driver)")
   local driving = view.driver == cfg.user
   ImGui.BeginDisabled(ctx, not driving)
   ImGui.SetNextItemWidth(ctx, 80)
-  local _, nb = ImGui.InputInt(ctx, "bars at the edit cursor", bars); bars = math.max(1, nb)
+  local _, nb = ImGui.InputInt(ctx, "bars at bar " .. bar_of(reaper.GetCursorPositionEx(proj)):match("^%d+") .. " (the edit cursor)###bars", bars); bars = math.max(1, nb)
   local function shift(sign)
     local pos = reaper.GetCursorPositionEx(proj)
-    local num, den = reaper.TimeMap_GetTimeSigAtTime(proj, pos)
-    local len = reaper.TimeMap2_QNToTime(proj, reaper.TimeMap2_timeToQN(proj, pos) + bars * num * 4 / den) - pos
+    if sign < 0 and reaper.MB(string.format("Remove %d bar(s) from bar %s for everyone? What's in them goes (into the trash).", bars, bar_of(pos)),
+        "BandSync", 4) ~= 6 then return end
+    local len = together.bars_after(proj, pos, bars)
     local ok, why = sync.shift(proj, pos, sign * len)
     if not ok then return band.msg(why) end
     sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = sign * len })

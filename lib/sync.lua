@@ -211,7 +211,8 @@ function sync.set_claims(cfg, song, room, claims)
   band.write_json(sync.claims_path(cfg, song, room, cfg.user), claims)
 end
 
--- Returns can(user, track, pos) -> bool, plus { driver, tracks, regions, owner(track, pos) } for display.
+-- Returns can(user, track, pos, take) -> bool, plus { driver, tracks, regions, owner(track, pos) } for display.
+-- A take's author may change it (move, trim, mute) wherever nobody has claimed the track or region; a claim wins.
 function sync.authority(cfg, song, room, s)
   local driver = sync.driver(cfg, song, room, s)
   local tracks, regions = {}, {} -- lower name -> { user, time }
@@ -241,7 +242,17 @@ function sync.authority(cfg, song, room, s)
     end
     return driver
   end
-  return function(user, track, pos) return owner(track, pos) == user end,
+  local function claimed(track, pos)
+    local t = base_name(track)
+    if t and tracks[t:lower()] then return true end
+    for _, sp in ipairs(pos and spans or {}) do
+      if pos >= sp.from and pos < sp.to and regions[sp.name] then return true end
+    end
+  end
+  return function(user, track, pos, take)
+      if owner(track, pos) == user then return true end
+      return take ~= nil and sync.author(take) == sync.author_of(user) and not claimed(track, pos)
+    end,
     { driver = driver, tracks = tracks, regions = regions, owner = owner, spans = spans }
 end
 
@@ -505,12 +516,12 @@ end
 
 -- Print one take through its track (wet) to <out>/<name>.flac, leaving selection and the playing take as they
 -- were. Returns the .flac path, or nil. Active tab only. (Solo edit keeps wet prints beside dry recordings.)
-function sync.print_item(proj, it, take, out, name)
+function sync.print_item(proj, it, take, out, name, tail)
   local sel, playing = selection(proj), reaper.GetActiveTake(it)
   reaper.SetActiveTake(take)
   reaper.SelectAllMediaItems(proj, false)
   reaper.SetMediaItemSelected(it, true)
-  local path = render_item(it, take, out, name, true) .. ".flac"
+  local path = render_item(it, take, out, name, true, tail) .. ".flac"
   reaper.SetActiveTake(playing)
   reaper.SelectAllMediaItems(proj, false)
   for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaItem*") then reaper.SetMediaItemSelected(s, true) end end
@@ -850,7 +861,7 @@ local function holds_takes(tr)
 end
 
 local function apply_track(proj, ev)
-  local from = ev.was or ev.track
+  local from, found = ev.was or ev.track, false
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
     local name = select(2, reaper.GetTrackName(tr))
@@ -864,10 +875,11 @@ local function apply_track(proj, ev)
       if ev.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", ev.vol) end -- the shared mix (0.8+)
       if ev.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", ev.pan) end
       setext(proj, sync.TRACKS, track_guid(tr), track_props(tr)) -- so this isn't seen as a local change
+      found = true
     end
   end
   reaper.TrackList_AdjustWindows(false)
-  return true
+  return found -- no such track here yet (its takes are still coming): try again later
 end
 
 -- Apply one event from whoever may make it. False means retry later (its take hasn't arrived, or a
@@ -1046,7 +1058,7 @@ function sync.watch(proj, cfg, song, room, can)
           sync.remember(proj, id, hit[1], hit[2]) -- first look at a take placed before snapshots existed
         elseif snap ~= id .. "|" .. shape(hit[1], hit[2]) then
           local pos, track = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"), track_name(hit[1])
-          if can(me, track, pos) then
+          if can(me, track, pos, id) then
             sync.post(cfg, song, room, { type = "edit", take = id, pos = pos, qn = sync.qn(proj, pos), track = track,
               len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") - (tonumber(ext(proj, sync.TAILS, id)) or 0), lane = lane_of(hit[1]),
               mute = reaper.GetMediaItemInfo_Value(hit[1], "B_MUTE"),
@@ -1127,7 +1139,7 @@ function sync.watch(proj, cfg, song, room, can)
     local before = track and ext(proj, sync.MIDIHASH, id)
     if before and before ~= select(2, reaper.MIDI_GetHash(tk, false, "")) then
       local pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-      if before ~= "" and can(me, track, pos) then
+      if before ~= "" and can(me, track, pos, id) then
         local ok, buf = reaper.MIDI_GetAllEvts(tk, "")
         local file = string.format("%s-%s-%s.midibuf", id, (me:gsub("[^%w%-_]", "_")), os.date("!%Y%m%d-%H%M%S"))
         if ok then
@@ -1151,7 +1163,7 @@ function sync.apply_locks(proj, can, me)
     local name = tk and (band.take_id(tk) and track_name(it) or band.take_ext(tk, "band_midi") ~= "" and
       band.track_ext(reaper.GetMediaItem_Track(it), "band_midi_track")) -- MIDI copies belong to their print's track
     if name then
-      local allowed = can(me, name, reaper.GetMediaItemInfo_Value(it, "D_POSITION"))
+      local allowed = can(me, name, reaper.GetMediaItemInfo_Value(it, "D_POSITION"), band.take_id(tk) or band.take_ext(tk, "band_midi"))
       local lock = math.floor(reaper.GetMediaItemInfo_Value(it, "C_LOCK"))
       local ours = band.item_ext(it, "band_locked") ~= ""
       if not allowed and lock & 1 == 0 then
@@ -1184,7 +1196,7 @@ function sync.receive(proj, cfg, song, room, can)
   for _, ev in ipairs(pending) do
     if ev.type == "plays" and newest[ev.track or ""] ~= ev.id then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
-    elseif ev.user == cfg.user or not (sync.ANYONE[ev.type] or can(ev.user, ev.was or ev.track, ev.pos)
+    elseif ev.user == cfg.user or not (sync.ANYONE[ev.type] or can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil)
         or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user))) then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own (already true here), or not theirs to change
     else

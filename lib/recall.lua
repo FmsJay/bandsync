@@ -145,7 +145,10 @@ function recall.describe(e)
       local parts = {}
       for _, f in ipairs(e.changed) do
         parts[#parts + 1] = f == "mute" and ((e.mute or 0) > 0 and "muted" or "unmuted") or f == "solo" and ((e.solo or 0) > 0 and "soloed" or "unsoloed")
-          or f == "color" and "colour changed" or f == "icon" and "icon changed" or f == "name" and "renamed" or f
+          or f == "color" and "colour changed" or f == "icon" and "icon changed" or f == "name" and "renamed"
+          or f == "vol" and tonumber(e.vol) and string.format("volume %.1f dB", 20 * math.log(math.max(tonumber(e.vol), 1e-9), 10))
+          or f == "pan" and e.pan and (tonumber(e.pan) == 0 and "pan centre" or string.format("pan %d%% %s", math.floor(math.abs(tonumber(e.pan)) * 100 + 0.5), tonumber(e.pan) < 0 and "left" or "right"))
+          or f
       end
       return string.format("%s%s: %s", e.was and (e.was .. " renamed to ") or "", tostring(e.track), table.concat(parts, ", "))
     end

@@ -26,6 +26,12 @@ function together.bars_before(proj, pos, bars)
   local qn = reaper.TimeMap2_timeToQN(proj, pos)
   return pos - reaper.TimeMap2_QNToTime(proj, qn - bars * num * 4 / den)
 end
+-- Seconds of `bars` bars starting at pos.
+function together.bars_after(proj, pos, bars)
+  if (bars or 0) <= 0 then return 0 end
+  local num, den = reaper.TimeMap_GetTimeSigAtTime(proj, pos)
+  return reaper.TimeMap2_QNToTime(proj, reaper.TimeMap2_timeToQN(proj, pos) + bars * num * 4 / den) - pos
+end
 
 -- Wall clock with sub-second precision: os.time() only counts whole seconds, so note where reaper.time_precise()
 -- stands when the second ticks over (call tick() often; precise to about one defer cycle after the first tick).

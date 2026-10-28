@@ -106,7 +106,8 @@ end
 
 -- ---- print a MIDI part as an audio take (what "record my synth as audio" means) ------------------------------
 -- Renders each selected MIDI item through its track (instrument + FX) onto "<track> audio", where Live sync sends
--- it as an ordinary audio take. The MIDI item stays (muted), so the part can still be edited and printed again.
+-- it as an ordinary audio take, with 2 s of release/reverb past the notes. The MIDI item stays, muted (as your own
+-- take, the band mutes it too), so the part can still be edited and printed again.
 function tools.print_audio(proj, cfg, b)
   local units = {}
   for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do
@@ -122,10 +123,10 @@ function tools.print_audio(proj, cfg, b)
     local it, tk = u[1], u[2]
     local tr = reaper.GetMediaItem_Track(it)
     local name = select(2, reaper.GetTrackName(tr))
-    local path = sync.print_item(proj, it, tk, out, (name:gsub("[^%w%-_ ]", "_")) .. "-" .. os.date("!%Y%m%d-%H%M%S") .. "-" .. n)
+    local path = sync.print_item(proj, it, tk, out, (name:gsub("[^%w%-_ ]", "_")) .. "-" .. os.date("!%Y%m%d-%H%M%S") .. "-" .. n, sync.TAIL)
     if path then
       local dest = band.find_track(proj, name .. " audio", true) or band.new_track(proj, name .. " audio")
-      band.add_item(dest, path, reaper.GetMediaItemInfo_Value(it, "D_POSITION"), nil)
+      band.add_item(dest, path, reaper.GetMediaItemInfo_Value(it, "D_POSITION"), nil) -- the whole file: the release rings on
       reaper.SetMediaItemInfo_Value(it, "B_MUTE", 1)
       n = n + 1
     end

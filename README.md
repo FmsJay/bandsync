@@ -164,7 +164,8 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
 - **Shared mix**: volume and pan travel like mute and solo (the driver's, or a track owner's). Prints are made
   at unity, so nobody's fader is baked in twice.
 - **Locked edits snap back**: moving or trimming a take that isn't yours to change puts it back, with a note
-  in the console. Your own takes you can always delete.
+  in the console. Your own takes you may always move, trim, mute or delete, unless someone has claimed that
+  track or region.
 - **Start Live sync with REAPER** (panel checkbox): Live sync comes back by itself for any session where it
   was running when REAPER closed, until you stop it.
 - **Empty old trash** (panel, More): removes trashed takes and revisions older than 30 days.

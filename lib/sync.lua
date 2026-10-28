@@ -959,6 +959,15 @@ function sync.post(cfg, song, room, ev, proj)
   return ev.id
 end
 
+-- A deleted take's files back from the room's _trash (an undone delete): everyone imports it again.
+function sync.untrash(cfg, song, room, id)
+  local to, from, lid = band.takes_dir(cfg, song, room), sync.room_dir(cfg, song, room) .. "/_trash", id:lower()
+  for _, f in ipairs(band.files(from)) do
+    local lf = f:lower()
+    if lf:sub(1, #lid + 1) == lid .. "." or lf:sub(1, #lid + 1) == lid .. "-" then os.rename(from .. "/" .. f, to .. "/" .. f) end
+  end
+end
+
 -- Move a deleted take's files to the room's _trash, so nobody imports it later and nothing is lost.
 function sync.trash(cfg, song, room, id)
   local from, to = band.takes_dir(cfg, song, room), sync.room_dir(cfg, song, room) .. "/_trash"
@@ -1298,7 +1307,22 @@ function sync.watch(proj, cfg, song, room, can)
     local ok, key, state = reaper.EnumProjExtState(proj, band.TAKES, i)
     if not ok then break end
     i = i + 1
-    if state ~= "deleted" then
+    local undone = state == "deleted" and ext(proj, "BandSync.mydel", ext(proj, sync.SNAP, key):match("^([^|]+)") or key) ~= ""
+      and idx[(ext(proj, sync.SNAP, key):match("^([^|]+)") or key):lower()]
+    if undone then -- a delete we sent, undone here (Ctrl+Z): it comes back for the band too (break round 2: only here)
+      local sid = ext(proj, sync.SNAP, key):match("^([^|]+)") or key
+      local pos, track = reaper.GetMediaItemInfo_Value(undone[1], "D_POSITION"), band_track_name(proj, undone[1])
+      setext(proj, "BandSync.mydel", sid, "")
+      if can(me, track, pos, sid) or sync.author(sid) == sync.author_of(me) then
+        sync.untrash(cfg, song, room, sid)
+        band.set_take_state(proj, sid, "full")
+        sync.post(cfg, song, room, { type = "undelete", take = sid, track = track, pos = pos })
+        setext(proj, sync.SNAP, sid, sid .. "|") -- so the next look sends where it sits (an edit, applied once it's back)
+        band.log("'" .. sid .. "' is back (undo): back for the band too")
+      elseif delete_take(proj, undone[1], undone[2], sid) then
+        band.log("'" .. sid .. "' stays deleted for the band (it's " .. tostring(sync.owner_of and sync.owner_of(track, pos) or "someone else") .. "'s now): removed here again")
+      end
+    elseif state ~= "deleted" then
       local snap = ext(proj, sync.SNAP, key)
       local sid = snap:match("^([^|]+)") or key
       local hit = idx[sid:lower()]
@@ -1312,6 +1336,7 @@ function sync.watch(proj, cfg, song, room, can)
         if can(me, track, pos) or sync.author(sid) == sync.author_of(me) then -- your own take you may always take back
           sync.post(cfg, song, room, { type = "delete", take = sid, track = track, pos = pos })
           sync.trash(cfg, song, room, sid)
+          setext(proj, "BandSync.mydel", sid, "1") -- if it reappears here, that's an undo of this delete
         else -- not yours to delete: it comes back with the next import (the band still has it), placed, trimmed and
           -- muted as it was here: the manifest only knows how it was sent (break round 2: a re-import lost a mute)
           band.set_take_state(proj, sid, "")

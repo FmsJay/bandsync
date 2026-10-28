@@ -146,10 +146,17 @@ function solo.parse(text)
         local k, v = t:match("^(%S+)%s+(.*)$")
         if k == "POSITION" then item.pos = tonumber(v) or 0
         elseif k == "LENGTH" then item.len = tonumber(v) or 0
-        elseif k == "IGUID" then item.guid = v end
+        elseif k == "IGUID" then item.guid = v
+        elseif k == "MUTE" then item.mute = (tonumber(v:match("^(%S+)")) or 0) ~= 0 end
       elseif stack[#stack] == "TRACK" then
         local n = t:match('^NAME%s+"(.*)"$') or t:match("^NAME%s+(%S+)$")
         if n then tr.name = n end
+        local vol, pan = t:match("^VOLPAN%s+(%S+)%s+(%S+)")
+        if vol then tr.vol, tr.pan = tonumber(vol), tonumber(pan) end
+        local mute = t:match("^MUTESOLO%s+(%S+)")
+        if mute then tr.mute = (tonumber(mute) or 0) ~= 0 end
+        local src, rmute = t:match("^AUXRECV%s+(%S+)%s+%S+%s+%S+%s+%S+%s+(%S+)")
+        if src then tr.recv = (tr.recv or "") .. src .. (rmute == "1" and "m" or "") .. ";" end
       end
     end
   end
@@ -164,11 +171,12 @@ function solo.diff(a, b)
     local tb, ta = b.tracks[g], a.tracks[g]
     if not ta then out[#out + 1] = "added track " .. label(tb)
     else
-      local added, removed, moved = 0, 0, 0
+      local added, removed, moved, muted = 0, 0, 0, 0
       for ig, it in pairs(tb.items) do
         local o = ta.items[ig]
         if not o then added = added + 1
-        elseif math.abs(o.pos - it.pos) > 1e-6 or math.abs(o.len - it.len) > 1e-6 then moved = moved + 1 end
+        elseif math.abs(o.pos - it.pos) > 1e-6 or math.abs(o.len - it.len) > 1e-6 then moved = moved + 1
+        elseif (o.mute or false) ~= (it.mute or false) then muted = muted + 1 end
       end
       for ig in pairs(ta.items) do if not tb.items[ig] then removed = removed + 1 end end
       local bits = {}
@@ -176,6 +184,13 @@ function solo.diff(a, b)
       if added > 0 then bits[#bits + 1] = added .. " item(s) added" end
       if removed > 0 then bits[#bits + 1] = removed .. " removed" end
       if moved > 0 then bits[#bits + 1] = moved .. " moved/trimmed" end
+      if muted > 0 then bits[#bits + 1] = muted .. " item(s) muted/unmuted" end
+      local function db(v) return v and v > 0 and string.format("%+.1f dB", 20 * math.log(v, 10)) or "-inf dB" end
+      local function pan(v) return not v and "?" or math.abs(v) < 0.005 and "centre" or string.format("%d%% %s", math.floor(math.abs(v) * 100 + 0.5), v < 0 and "L" or "R") end
+      if ta.vol and tb.vol and math.abs(ta.vol - tb.vol) > 1e-4 then bits[#bits + 1] = "volume " .. db(ta.vol) .. " -> " .. db(tb.vol) end
+      if ta.pan and tb.pan and math.abs(ta.pan - tb.pan) > 1e-4 then bits[#bits + 1] = "pan " .. pan(ta.pan) .. " -> " .. pan(tb.pan) end
+      if (ta.mute or false) ~= (tb.mute or false) then bits[#bits + 1] = tb.mute and "muted" or "unmuted" end
+      if (ta.recv or "") ~= (tb.recv or "") then bits[#bits + 1] = "routing changed" end
       local fa, fb = table.concat(ta.fx, ", "), table.concat(tb.fx, ", ")
       if fa ~= fb then bits[#bits + 1] = "FX now: " .. (fb ~= "" and fb or "none") end
       if #bits > 0 then out[#out + 1] = label(tb) .. ": " .. table.concat(bits, "; ") end

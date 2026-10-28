@@ -193,6 +193,11 @@ end
 local key = tostring(proj)
 local function tick()
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end -- project closed: stop
+  local now_b = band.binding(proj)
+  if not now_b or now_b.role ~= b.role or now_b.song ~= b.song then -- became a solo working copy (or unbound): not ours any more
+    reaper.DeleteExtState(band.SECTION, "live " .. key, false)
+    return band.log("live sync stopped: this tab is now " .. (now_b and now_b.role == "solo" and "a Solo edit working copy" or "no longer this session"))
+  end
   if reaper.GetExtState(band.SECTION, "stop " .. key) ~= "" then
     reaper.DeleteExtState(band.SECTION, "stop " .. key, false)
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)

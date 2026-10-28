@@ -41,15 +41,16 @@ function sync.here(proj, pos, qn)
 end
 function sync.qn(proj, pos) return reaper.TimeMap2_timeToQN(proj, pos) end
 
--- All band audio in the project (takes, prints, stems, live placeholders) follows the beat by position only
--- (band.beat_position_only); projects from before 0.7.7 get it here, at Live sync start and before a tempo change.
-function sync.audio_position_only(proj)
+-- All band audio in the project (takes, prints, stems, live placeholders) follows tempo changes by REAPER's
+-- auto-stretch when the project stretches audio (band.follow_tempo); existing items get it here, at Live sync start
+-- and before a received tempo change.
+function sync.audio_follow_tempo(proj)
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     local tk = reaper.GetActiveTake(it)
     local tr = reaper.GetMediaItem_Track(it)
     if tk and (band.take_id(tk) or band.item_ext(it, "band_live") ~= "" or band.track_ext(tr, "band_stem") ~= "") then
-      band.beat_position_only(it, tk)
+      band.follow_tempo(it, tk)
     end
   end
 end
@@ -459,7 +460,7 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
   end
   band.set_take_ext(take, "band_sent", id)
   band.mark_base(take)
-  band.beat_position_only(it, take)
+  band.follow_tempo(it, take)
   band.set_take_state(proj, id, "full") -- this project already has it: its own sync must not re-import it
   setext(proj, sync.SENTKEYS, content_key(it, take), id)
   sync.remember(proj, id, it, take)
@@ -719,7 +720,7 @@ function sync.apply(proj, ev, dir, root)
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
   if ev.type == "timeline" then -- REAPER moves the items for the new map, as it would for a local change
-    sync.audio_position_only(proj)
+    sync.audio_follow_tempo(proj)
     band.apply_tempo(proj, ev.tempo or {})
     band.apply_markers(proj, ev.markers or {})
     setext(proj, band.SECTION, "timeline", timeline_sig(proj))
@@ -834,7 +835,7 @@ function sync.watch(proj, cfg, song, room, can)
           if not reaper.TakeIsMIDI(hit[2]) and p + reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") > from then n = n + 1 end
         end
         if n > 0 then
-          band.log(string.format("%d audio take(s) play past the tempo change at %.2f s: they keep their recorded speed (MIDI parts reprint at the new tempo); re-record those bars", n, from))
+          band.log(string.format("%d audio take(s) play past the tempo change at %.2f s: REAPER stretches them there (MIDI parts are reprinted at the new tempo instead); re-record those bars for the best sound", n, from))
         end
       else
         band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")

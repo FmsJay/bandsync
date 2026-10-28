@@ -20,7 +20,7 @@ local host = b.role == "host"
 local s0 = band.read_json(band.session_path(cfg, b.song)) or {}
 local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-take items as they are
 local baseline = sync.mark_baseline(proj)
-sync.audio_position_only(proj) -- band audio moves with its bar at tempo changes but is never stretched
+sync.audio_follow_tempo(proj) -- band audio follows tempo changes piece by piece (REAPER auto-stretch), never drifting
 
 -- the shared folder only moves while Syncthing runs: start it if it isn't (a cloud-drive root needs nothing)
 for _, d in ipairs(band.subdirs(cfg.root)) do

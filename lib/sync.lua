@@ -109,28 +109,58 @@ end
 -- ---- arrangement: insert or remove time for everyone (the driver's edit; claims don't block it) ---------
 -- Insert `len` seconds at `at` (len > 0), or remove [at, at - len) (len < 0): items, tempo markers, markers and
 -- regions after it move; removed time's items, tempo markers and markers go. Stems and live placeholders stay.
--- Refuses when a take crosses an edit point (split it there first), so every machine does exactly the same.
--- Returns true, or nil + why.
-function sync.shift(proj, at, len)
-  local cut_to = len < 0 and (at - len) or at
-  local function skip(it)
-    local tr = reaper.GetMediaItem_Track(it)
-    return band.track_ext(tr, "band_stem") ~= "" or band.item_ext(it, "band_live") ~= ""
-  end
-  local items = {}
+-- The driver refuses while a take crosses an edit point (sync.split_crossing splits them; the halves go out as a
+-- trim and a new take). Receivers pass opts.lenient: a crossing item stays put until the driver's trim and new take
+-- arrive. opts.keep(it, tk) -> true keeps a moved take's old snapshot, so Live sync posts its new place as an edit
+-- (a take that reaches someone after the shift still lands right). Returns true, or nil + why.
+local function shiftable(it)
+  local tr = reaper.GetMediaItem_Track(it)
+  return band.track_ext(tr, "band_stem") == "" and band.item_ext(it, "band_live") == ""
+end
+function sync.crossing(proj, at, len)
+  local out, cut_to = {}, len < 0 and (at - len) or at
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
-    if not skip(it) then
-      local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-      local e = p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+    local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+    local e = p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+    if shiftable(it) then
       for _, x in ipairs({ at, cut_to }) do
-        if p < x - 1e-6 and e > x + 1e-6 then
-          local tk = reaper.GetActiveTake(it)
-          return nil, string.format("'%s' on %s crosses %.2f s: split it there first",
-            tk and (band.take_id(tk) or band.take_ext(tk, "band_midi")) or "an item", track_name(it), x)
-        end
+        if p < x - 1e-6 and e > x + 1e-6 then out[#out + 1] = it; break end
       end
-      items[#items + 1] = { it, p, e }
+    end
+  end
+  return out
+end
+function sync.split_crossing(proj, at, len)
+  local n = 0
+  for _, x in ipairs(len < 0 and { at, at - len } or { at }) do
+    for _, it in ipairs(sync.crossing(proj, x, 0)) do
+      reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
+      if reaper.SplitMediaItem(it, x) then n = n + 1 end
+    end
+  end
+  return n
+end
+function sync.shift(proj, at, len, opts)
+  opts = opts or {}
+  local cut_to = len < 0 and (at - len) or at
+  local cross = {}
+  for _, it in ipairs(sync.crossing(proj, at, len)) do cross[it] = true end
+  if next(cross) and not opts.lenient then
+    local it = next(cross)
+    local tk = reaper.GetActiveTake(it)
+    return nil, string.format("'%s' on %s crosses the edit point: split it there first",
+      tk and (band.take_id(tk) or band.take_ext(tk, "band_midi")) or "an item", track_name(it)), sync.crossing(proj, at, len)
+  end
+  local items, kept = {}, {}
+  for i = 0, reaper.CountMediaItems(proj) - 1 do
+    local it = reaper.GetMediaItem(proj, i)
+    if shiftable(it) and not cross[it] then
+      local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+      items[#items + 1] = { it, p, p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH") }
+      local tk = reaper.GetActiveTake(it)
+      local id = tk and band.take_id(tk)
+      if id and opts.keep and p >= cut_to - 1e-6 and opts.keep(it, tk) then kept[id] = ext(proj, sync.SNAP, id) end
     end
   end
   for _, x in ipairs(items) do
@@ -165,6 +195,7 @@ function sync.shift(proj, at, len)
   band.apply_markers(proj, nm)
   setext(proj, band.SECTION, "timeline", timeline_sig(proj))
   sync.resnap(proj)
+  for id, snap in pairs(kept) do setext(proj, sync.SNAP, id, snap) end -- these go out as edits
   reaper.UpdateArrange()
   return true
 end
@@ -882,6 +913,16 @@ local function apply_track(proj, ev)
   return found -- no such track here yet (its takes are still coming): try again later
 end
 
+-- A note on an item shows on every take of it (the print, its dry twin in dry mode, ...), at song position pos.
+function sync.mark_item(it, pos, text)
+  local ipos = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+  for k = 0, reaper.CountTakes(it) - 1 do
+    local tk = reaper.GetTake(it, k)
+    reaper.SetTakeMarker(tk, -1, text, math.max(0, (pos or ipos) - ipos + reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS")))
+  end
+  reaper.UpdateItemInProject(it)
+end
+
 -- Apply one event from whoever may make it. False means retry later (its take hasn't arrived, or a
 -- delete needs this tab in front).
 -- `dir`: the room's folder (where "midi" events keep their note files); `root`: the shared folder (drum maps).
@@ -897,7 +938,7 @@ function sync.apply(proj, ev, dir, root)
     return true
   end
   if ev.type == "shift" then -- the driver inserted or removed time: same edit here, on every track
-    local ok, why = sync.shift(proj, ev.at, ev.len)
+    local ok, why = sync.shift(proj, ev.at, ev.len, { lenient = true })
     if not ok then band.log("couldn't follow " .. tostring(ev.user) .. "'s insert/remove at " .. tostring(ev.at) .. ": " .. tostring(why)) end
     return true
   end
@@ -906,12 +947,8 @@ function sync.apply(proj, ev, dir, root)
     return true
   end
   if ev.type == "note" or ev.type == "like" then
-    local it2, tk2 = ev.take and band.find_take(proj, ev.take)
-    if tk2 then -- shows on the take itself, where everyone sees it
-      local at = (ev.pos or reaper.GetMediaItemInfo_Value(it2, "D_POSITION")) - reaper.GetMediaItemInfo_Value(it2, "D_POSITION")
-        + reaper.GetMediaItemTakeInfo_Value(tk2, "D_STARTOFFS")
-      reaper.SetTakeMarker(tk2, -1, (ev.type == "like" and "+1 " or "") .. ev.user .. (ev.text and (": " .. ev.text) or ""), math.max(0, at))
-    end
+    local it2 = ev.take and band.find_take(proj, ev.take)
+    if it2 then sync.mark_item(it2, ev.pos, (ev.type == "like" and "+1 " or "") .. ev.user .. (ev.text and (": " .. ev.text) or "")) end
     return true -- notes without a take live in the panel's Notes list (and History)
   end
   if not ev.take then return true end -- "driver" and other take-less events: nothing to change in the project

@@ -147,7 +147,7 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
   in `<shared folder>/drummaps` (`{"name": "...", "notes": {"kick": 36, "snare": 38, ...}}`); `gm` is built in.
 - **Together** (panel tab):
   - *Play / Record / Stop together*: every machine running Live sync starts from the edit cursor at the same
-    moment (3 s after the click, with a count-in). Someone who gets the event late starts where the song has
+    moment (5 s after the click, with a count-in). Someone who gets the event late starts where the song has
     got to by then. In Play along, set the listeners' lag to one NINJAM interval.
   - *Notes and likes*: on the selected take (a take marker everyone sees) or at the cursor; click a note to
     jump there. They're in History too.
@@ -157,7 +157,8 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
     which goes out as an ordinary audio take.
   - *Use newest Solo edit mix*: the levels, pans and mutes of the latest Solo edit version.
   - *Insert / Remove bars* (driver): moves every take, tempo marker and marker after the cursor, on every
-    machine. A take that crosses the edit point has to be split first.
+    machine. Takes that play across the edit point are split there first (it asks); the parts after the split
+    go out as new takes from you.
   - *Dry mode*: plays a bandmate's dry recording through *their* plug-in chain (it travels with each print).
     Plug-ins you have load; the rest stay in the chain as missing, with their settings kept. Untick to go back
     to the print.

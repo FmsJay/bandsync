@@ -214,6 +214,31 @@ end
 -- The panel stops us with a flag (re-running the action would raise REAPER's task-control dialog), and sees
 -- we're alive from a heartbeat; both live in non-persistent ExtState so the project isn't marked modified.
 local key = tostring(proj)
+-- Start/stop events: looked for every 0.25 s by name alone (a file listing), read only when new.
+local fired, seen_ev, quick_at = {}, {}, 0
+local function quick_transport()
+  local dir = sync.room_dir(cfg, b.song, b.room) .. "/events"
+  local i, found = 0, nil
+  reaper.EnumerateFiles(dir, -1) -- re-read the folder (REAPER caches listings)
+  while true do
+    local f = reaper.EnumerateFiles(dir, i)
+    if not f then break end
+    i = i + 1
+    if not seen_ev[f] then
+      seen_ev[f] = true
+      if f:sub(-5) == ".json" and not f:lower():find("^" .. (cfg.user:gsub(" ", "_"):lower():gsub("%p", "%%%0")) .. "%-") then
+        local ev = band.read_json(dir .. "/" .. f)
+        if ev and (ev.type == "start" or ev.type == "stop") and not fired[ev.id] and together.now() - (ev.at or 0) < 30 then found = ev end
+      end
+    end
+  end
+  return found
+end
+do -- what's already there is history, not a cue
+  local dir, i = sync.room_dir(cfg, b.song, b.room) .. "/events", 0
+  reaper.EnumerateFiles(dir, -1)
+  while true do local f = reaper.EnumerateFiles(dir, i); if not f then break end; seen_ev[f] = true; i = i + 1 end
+end
 -- BandSync - Autostart.lua restarts us for this project after REAPER restarts, until the person stops us
 local autokey = "autosync " .. (select(2, reaper.EnumProjects(-1)) or ""):lower()
 if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
@@ -244,7 +269,13 @@ local function tick()
   local tjson = reaper.GetExtState(band.SECTION, "transport " .. key) -- a start/stop from the panel or the band
   if tjson ~= "" then
     reaper.DeleteExtState(band.SECTION, "transport " .. key, false)
-    transport = band.json_decode(tjson) or transport
+    local ev = band.json_decode(tjson)
+    if ev and not (ev.id and fired[ev.id]) then transport = ev end
+  end
+  if not transport and reaper.time_precise() - quick_at > 0.25 then -- a start/stop can't wait for the 2 s poll
+    quick_at = reaper.time_precise()
+    local ev = quick_transport()
+    if ev then transport = ev end
   end
   if transport then
     local tnow = together.now()
@@ -269,6 +300,7 @@ local function tick()
         band.log(string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)", transport.rec and "recording" or "playing",
           from, tostring(transport.user), (tnow - fire) * 1000))
       end
+      if transport.id then fired[transport.id] = true end -- the regular poll applies the same event again later
       transport = nil
     end
   end

@@ -55,7 +55,8 @@ function tools.dry_mode(proj, cfg, b, tr, on)
     local target = (m.midi and midi) or tr
     for f = 0, reaper.TrackFX_GetCount(target) - 1 do
       local _, fx = reaper.TrackFX_GetFXName(target, f)
-      if reaper.TrackFX_GetOffline(target, f) or fx == "" then missing[#missing + 1] = fx ~= "" and fx or ("#" .. (f + 1)) end
+      -- a plug-in this machine lacks keeps its slot and settings but loads nothing: no fx_ident (seen 7.83)
+      if select(2, reaper.TrackFX_GetNamedConfigParm(target, f, "fx_ident")) == "" then missing[#missing + 1] = fx ~= "" and fx or ("#" .. (f + 1)) end
     end
     reaper.TrackList_AdjustWindows(false)
     return string.format("%s: dry with %s's plug-ins%s", name, tostring(m.printed_by or m.user),

@@ -6,7 +6,7 @@
 -- Clocks: machines keep internet time (NTP), usually within tens of milliseconds of each other.
 local together = {}
 
-together.LEAD = 3 -- seconds between the click and the start, so the event reaches everyone in time on a LAN
+together.LEAD = 5 -- seconds between the click and the start: the shared folder takes 1-3 s to deliver the event
 
 -- When and from where this machine starts. Pure.
 -- ev = { at = epoch seconds, pos = song position, countin = seconds, lag = seconds, lead = user }; me; now (epoch).

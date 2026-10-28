@@ -529,15 +529,12 @@ local function section_notes()
   ImGui.SetNextItemWidth(ctx, -1)
   local entered, t = ImGui.InputTextWithHint(ctx, "##note", "a note for the band, Enter to post (e.g. 'try the chorus an octave up')", note_text, ImGui.InputTextFlags_EnterReturnsTrue)
   note_text = t
-  local id, it, tk = sel_take()
+  local id, it = sel_take()
   local function mark(kind, text)
     local pos = reaper.GetCursorPositionEx(proj)
     local ev = { type = kind, text = text, take = id, pos = pos, track = it and sync.base_name(select(2, reaper.GetTrackName(reaper.GetMediaItem_Track(it)))) or nil }
     sync.post(cfg, b.song, b.room, ev)
-    if tk then -- the same marker everyone else gets
-      local at = pos - reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS")
-      reaper.SetTakeMarker(tk, -1, (kind == "like" and "+1 " or "") .. cfg.user .. (text and (": " .. text) or ""), math.max(0, at))
-    end
+    if it then sync.mark_item(it, pos, (kind == "like" and "+1 " or "") .. cfg.user .. (text and (": " .. text) or "")) end -- as everyone else gets it
     notes_at = 0
   end
   ImGui.BeginDisabled(ctx, note_text == "")
@@ -612,10 +609,20 @@ local function section_tools()
     local pos = reaper.GetCursorPositionEx(proj)
     if sign < 0 and reaper.MB(string.format("Remove %d bar(s) from bar %s for everyone? What's in them goes (into the trash).", bars, bar_of(pos)),
         "BandSync", 4) ~= 6 then return end
-    local len = together.bars_after(proj, pos, bars)
-    local ok, why = sync.shift(proj, pos, sign * len)
+    local len = sign * together.bars_after(proj, pos, bars)
+    local cross = #sync.crossing(proj, pos, len)
+    if cross > 0 then
+      if reaper.MB(string.format("%d take(s) play across bar %s. Split them there, so the music after it can move?\n\n" ..
+          "The parts after the split go to the band as new takes from you.", cross, bar_of(pos)), "BandSync", 4) ~= 6 then return end
+      sync.split_crossing(proj, pos, len)
+    end
+    reaper.Undo_BeginBlock2(proj)
+    local ok, why = sync.shift(proj, pos, len, { keep = function(it, tk) -- what you may move goes out as edits too
+      return can(cfg.user, sync.base_name(select(2, reaper.GetTrackName(reaper.GetMediaItem_Track(it)))), reaper.GetMediaItemInfo_Value(it, "D_POSITION"), band.take_id(tk))
+    end })
+    reaper.Undo_EndBlock2(proj, string.format("BandSync: %s %d bar(s) at bar %s", sign > 0 and "insert" or "remove", bars, bar_of(pos)), -1)
     if not ok then return band.msg(why) end
-    sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = sign * len })
+    sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = len })
   end
   if ImGui.Button(ctx, "Insert bars") then shift(1) end
   ImGui.SameLine(ctx)

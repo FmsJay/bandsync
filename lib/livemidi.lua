@@ -2,14 +2,17 @@
 -- later (as fast as the shared folder syncs), growing as they play. You hear their instrument through Listen live;
 -- this shows what's being recorded. The placeholder is muted (their sound comes over the audio stream) and goes as
 -- soon as their real take arrives (live.retire: any take of theirs sent after they started).
---   rooms/<room>/live_midi/<user>.json   { user, since = "YYYYMMDD-HHMMSSZ", time, at, done, parts = { [track] = { {s, e, p, v} } } }
--- One writer per file (the recorder), rewritten every half second while recording.
+--   rooms/<room>/live_midi/<user>/<since>-<nnnn>.json   { user, since = "YYYYMMDD-HHMMSSZ", time, at, done, parts = { [track] = { {s, e, p, v} } } }
+-- Every second while recording the recorder writes the whole picture so far as a NEW file (and removes the one
+-- before last): one file rewritten twice a second never synced while it kept changing (2026-10-28, laptop -> PC:
+-- nothing until the recording stopped). Receivers read each bandmate's newest file.
 local band = require("band")
 local sync = require("sync")
 local live = require("live")
 local lm = {}
 
 local function dir(cfg, b) return sync.room_dir(cfg, b.song, b.room) .. "/live_midi" end
+local function safe(user) return (user:gsub("[^%w%-_ ]", "")) end
 
 -- Which armed tracks take this MIDI event (device and channel as their record input says). Pure but for reaper reads.
 local function armed_midi(proj)
@@ -36,7 +39,10 @@ function lm.send_tick(proj, cfg, b, recording)
   if recording and rec == nil then
     local tracks = armed_midi(proj)
     if #tracks == 0 then rec = false; return end -- recording audio only: nothing to show
-    rec = { since = os.date("!%Y%m%d-%H%M%SZ"), parts = {}, open = {}, tracks = tracks, last_seq = latest_seq(), wrote_at = 0 }
+    rec = { since = os.date("!%Y%m%d-%H%M%SZ"), parts = {}, open = {}, tracks = tracks, last_seq = latest_seq(), wrote_at = 0, n = 0 }
+    local udir = dir(cfg, b) .. "/" .. safe(cfg.user) -- an earlier recording's files: not needed any more
+    for _, f in ipairs(band.files(udir, ".json")) do os.remove(udir .. "/" .. f) end
+    os.remove(dir(cfg, b) .. "/" .. safe(cfg.user) .. ".json") -- (0.15.1-0.15.2 kept one file per person)
   end
   if not rec then
     if not recording then rec = nil end -- (false: this recording had no MIDI track armed)
@@ -83,15 +89,18 @@ function lm.send_tick(proj, cfg, b, recording)
     return
   end
   rec.at = reaper.GetPlayPosition2Ex(proj)
-  -- every half second, changed or not: a held note or a pause still moves "at", so their view keeps growing
-  if reaper.time_precise() - rec.wrote_at > 0.5 then lm.write(cfg, b, rec.at) end
+  -- every second, changed or not: a held note or a pause still moves "at", so their view keeps growing
+  if reaper.time_precise() - rec.wrote_at >= 1 then lm.write(cfg, b, rec.at) end
 end
 
 function lm.write(cfg, b, at)
   if not rec then return end
-  reaper.RecursiveCreateDirectory(dir(cfg, b), 0)
-  band.write_json(dir(cfg, b) .. "/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json", { user = cfg.user, since = rec.since,
+  local udir = dir(cfg, b) .. "/" .. safe(cfg.user)
+  reaper.RecursiveCreateDirectory(udir, 0)
+  rec.n = rec.n + 1
+  band.write_json(string.format("%s/%s-%04d.json", udir, rec.since, rec.n), { user = cfg.user, since = rec.since,
     time = os.date("!%Y-%m-%dT%H:%M:%SZ"), at = at, done = rec.done or nil, parts = rec.parts })
+  if rec.n > 2 then os.remove(string.format("%s/%s-%04d.json", udir, rec.since, rec.n - 2)) end -- (one spare while it syncs)
   rec.wrote_at, rec.changed = reaper.time_precise(), false
 end
 
@@ -115,8 +124,9 @@ end
 -- Draw every bandmate's stream as a muted MIDI placeholder on their "(live)" track. Call every half second or so.
 function lm.receive_tick(proj, cfg, b)
   if reaper.time_precise() - tidied_at > 2 then tidied_at = reaper.time_precise(); tidy(proj) end
-  for _, f in ipairs(band.files(dir(cfg, b), ".json")) do
-    local s = band.read_json(dir(cfg, b) .. "/" .. f)
+  for _, u in ipairs(band.subdirs(dir(cfg, b))) do
+    local files = band.files(dir(cfg, b) .. "/" .. u, ".json") -- sorted: the newest is last
+    local s = files[1] and band.read_json(dir(cfg, b) .. "/" .. u .. "/" .. files[#files])
     if type(s) == "table" and type(s.user) == "string" and s.user ~= cfg.user and type(s.parts) == "table"
         and type(s.since) == "string" and band.age(s.time) < 600 then
       local sig = s.since .. "|" .. tostring(s.time) .. "|" .. tostring(s.done)

@@ -179,6 +179,12 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
 - **Start Live sync with REAPER** (panel checkbox): Live sync comes back by itself for any session where it
   was running when REAPER closed, until you stop it.
 - **Empty old trash** (panel, More): removes trashed takes and revisions older than 30 days.
+- **BandSync - Prepare session** (panel: More, or the first screen): for an already busy project, a checklist of what
+  it needs for BandSync, applied after a backup copy as one undo: multi-take items into fixed lanes (the playing take
+  keeps playing), 24-bit FLAC recording at one sample rate, unnamed/duplicate track names fixed (generic ones flagged),
+  WAV/AIFF converted to FLAC (checked sample by sample; originals in 'BandSync originals'; 32-bit float left alone),
+  files from outside the project copied in, empty items and slivers removed, ripple editing off, SonoBus on the
+  master and Live sync starting with REAPER.
 - **BandSync - Send selection** (panel: More): send what's highlighted, by hand: selected items, every item on
   selected tracks, or with nothing selected everything in the time selection. With a time selection, choose
   only its inside (items crossing its edges are split there) or whole items; optionally every take of each item.

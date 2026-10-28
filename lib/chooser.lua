@@ -98,6 +98,7 @@ function chooser.open(cfg, opts, done)
   end
   local function loop()
     ImGui.SetNextWindowSize(ctx, 680, 440, ImGui.Cond_FirstUseEver)
+    ImGui.SetNextWindowBgAlpha(ctx, 1) -- opaque: the arrange view showing through made it hard to read
     local shown, open = ImGui.Begin(ctx, (opts.title or "Choose a song") .. "###bandsync_chooser", true)
     local result -- { song, room } when chosen, false when cancelled
     if shown then

@@ -270,7 +270,7 @@ function tools.set_autostart(on, dir)
       MARK_A .. "\ndofile([[" .. dir .. "/BandSync - Autostart.lua]])\n" .. MARK_Z .. "\n"
   end
   reaper.RecursiveCreateDirectory(reaper.GetResourcePath() .. "/Scripts", 0)
-  return band.write_atomic(startup_path(), text)
+  return pcall(band.write_atomic, startup_path(), text) -- (write_atomic returns nothing: it raises when it can't)
 end
 
 return tools

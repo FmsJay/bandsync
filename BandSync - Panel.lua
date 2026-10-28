@@ -568,6 +568,9 @@ local function section_actions()
     if i > 1 then ImGui.SameLine(ctx) end
     if ImGui.Button(ctx, name) then action(name) end
   end
+  if ImGui.Button(ctx, "Prepare this project") then action("Prepare session") end
+  ImGui.SetItemTooltip(ctx, "Takes into lanes, FLAC (recording and existing WAVs), clear track names, media in the project folder, tidy-up: a checklist first.")
+  ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Empty old trash") then
     local n = band.empty_trash(sync.room_dir(cfg, b.song, b.room) .. "/_trash", 30)
     band.log(string.format("emptied %s file(s) from this room's trash (in it for over 30 days)", tostring(n)))
@@ -855,6 +858,8 @@ local function frame()
     if ImGui.Button(ctx, "Publish this project (I'm the host)") then action("Publish session") end
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, "Open a band session / room") then action("Open session") end
+    if ImGui.Button(ctx, "Prepare this project for BandSync") then action("Prepare session") end
+    ImGui.SetItemTooltip(ctx, "Before publishing a busy project: takes into lanes, FLAC recording, clear track names, media in the project folder, tidy-up. Shows a checklist first.")
     return
   end
   ImGui.Text(ctx, string.format("%s  ·  room %s  ·  %s  ·  you are %s", b.song, b.room, b.role, cfg.user))

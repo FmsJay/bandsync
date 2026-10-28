@@ -67,8 +67,14 @@ end
 -- the shared folder only moves while Syncthing runs: start it if it isn't (a cloud-drive root needs nothing)
 for _, d in ipairs(band.subdirs(cfg.root)) do
   if d == ".stfolder" then -- Syncthing marks the folders it shares with this
-    local ok, why = require("services").ensure_syncthing()
+    local services = require("services")
+    local ok, why = services.ensure_syncthing()
     if ok == "started" then band.log("started Syncthing") elseif not ok then band.log("Syncthing: " .. why) end
+    if ok then -- quick hand-off for live use (lib/services.lua): the live MIDI view a couple of seconds behind
+      local set, err = services.tune_band_folder()
+      if set and #set > 0 then band.log("Syncthing's band folder tuned for live use: " .. table.concat(set, ", "))
+      elseif not set then band.log("Syncthing: " .. tostring(err)) end
+    end
   end
 end
 

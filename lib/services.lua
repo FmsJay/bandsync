@@ -89,6 +89,29 @@ function services.ensure_syncthing()
   return "started"
 end
 
+-- The band folder's Syncthing settings for live use: changes are picked up within a second and, while files keep
+-- changing (a live MIDI stream writes one a second), offered to the others at least every 2 s; left at 0 (the
+-- default), Syncthing held them back about 7 s at a time (2026-10-28, laptop -> PC). Checked once per Live sync
+-- start; only what differs is set. Returns what it set ({} when nothing), or nil + why.
+services.WATCH = { ["fswatcher-enabled"] = "true", ["fswatcher-delays"] = "1", ["fswatcher-timeouts"] = "2" }
+function services.tune_band_folder()
+  local st = services.syncthing_path()
+  if not st then return nil, "Syncthing wasn't found" end
+  local set = {}
+  for key, want in pairs(services.WATCH) do
+    local got = (reaper.ExecProcess(q(st) .. " cli config folders bandsync " .. key .. " get", 8000) or ""):match("^0\n(.-)%s*$")
+    if not got then return nil, "Syncthing didn't answer (is it running, with a folder called bandsync?)" end
+    if tonumber(got) and tonumber(want) and tonumber(got) == tonumber(want) or got == want then -- (2 and 2.0 alike)
+    else
+      local r = reaper.ExecProcess(q(st) .. " cli config folders bandsync " .. key .. " set " .. want, 8000) or ""
+      if not r:match("^0\n") then return nil, "couldn't set " .. key .. ": " .. r:gsub("^%d+\n", "") end
+      set[#set + 1] = key .. " " .. got .. " -> " .. want
+    end
+  end
+  table.sort(set)
+  return set
+end
+
 -- How many of Syncthing's devices it's connected to right now: connected, total. nil + why if it can't tell.
 -- Asks Syncthing's own API with the key from its config. "Running but connected to nobody" is what a second
 -- identity looks like (2026-10-27: one started outside a sandboxed shell knew no other machine).

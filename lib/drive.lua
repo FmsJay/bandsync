@@ -143,6 +143,7 @@ function drive.mirror(here, there, budget, user, wait)
     end
   end
   -- takes: each file where it belongs, on both sides
+  tidy(there .. "/takes"); tidy(there .. "/_trash")
   local trashed = drive.trashed(read_events(here .. "/events"))
   local where = {} -- name -> { [side .. "/" .. sub] = true }
   local cur_rev, newest, mrev = {}, {}, {} -- per take: newest manifest's revision and path; per manifest path: its revision
@@ -169,6 +170,11 @@ function drive.mirror(here, there, budget, user, wait)
     for _, side in ipairs({ here, there }) do
       local want, other = side .. "/" .. dest, side .. "/" .. (dest == "takes" and "_trash" or "takes")
       local stale = manifest and (mrev[want .. "/" .. f] or 0) < cur_rev[id:lower()] -- an older revision's manifest
+      local work = not at[want] or stale or (at[other] and at[want])
+      -- on Drive, someone else's take is theirs to file: their machine moves it at once, ours only if it's still
+      -- undone 5 minutes on (2026-10-28: both machines moving a just-deleted take at once, Drive refused one with
+      -- "Can't add file ... you don't have permission to add files to 'takes'" and kept a "(1)" copy)
+      if work and side == there and not due("place:" .. f, f, user, wait) then goto next_side end
       if not at[want] or stale then
         if out_of_time() then return n, true end
         if at[other] and not manifest then -- on this side already: a move
@@ -176,7 +182,6 @@ function drive.mirror(here, there, budget, user, wait)
           if os.rename(other .. "/" .. f, want .. "/" .. f) then at[other], n = nil, n + 1 end
         else
           local src = manifest and newest[f] or (function() for k in pairs(at) do return k .. "/" .. f end end)()
-          if side == there and not src:find(there, 1, true) and not due(src, f, user, wait) then goto next_side end
           copy(src, want .. "/" .. f)
           mrev[want .. "/" .. f] = manifest and cur_rev[id:lower()] or nil
         end

@@ -42,6 +42,7 @@ function sync.room_dir(cfg, song, room) return band.song_dir(cfg, song) .. "/roo
 local function newest_key(ev, name)
   if ev.type == "edit" and ev.take then return "take:" .. ev.take:lower() end
   if ev.type == "track" and (name or ev.track) then return "track:" .. (name or ev.track):lower() end
+  if ev.type == "mix" then return "mix" end -- the whole mix layer: the newest one stands
 end
 -- The order is time..id, except that a change made here always comes after the newest one seen here (a machine
 -- whose clock runs ahead would otherwise win over every later change to that take).
@@ -804,6 +805,11 @@ end
 -- item holding the original, on every machine (the owner's too), never changing what plays: the owner picks it if
 -- they like it. Their dry recording is untouched, so any sound can be made again. Returns how many went, or nil + why.
 function sync.share_sound(proj, cfg, b, tr)
+  -- a MIDI part plays (Dry + their plug-ins, or your own instrument) on its "(MIDI)" copy: its notes are rendered there
+  local mode = band.track_ext(tr, "band_drymode")
+  if mode == "midi" or mode == "rawmidi" then
+    tr = band.find_track(proj, (select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "")) .. " (MIDI)", true) or tr
+  end
   if reaper.TrackFX_GetCount(tr) == 0 then return nil, "there are no plug-ins on this track to share" end
   local out, takes = dirs(proj, cfg, b)
   local stamp, seq, sent = os.date("!%Y%m%d-%H%M%SZ"), 0, 0
@@ -811,8 +817,12 @@ function sync.share_sound(proj, cfg, b, tr)
   for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
     local it = reaper.GetTrackMediaItem(tr, j)
     local dry = reaper.GetActiveTake(it)
-    local orig = dry and band.take_ext(dry, "band_dry")
+    local orig = dry and (band.take_ext(dry, "band_dry") ~= "" and band.take_ext(dry, "band_dry") or band.take_ext(dry, "band_midi"))
     local m0 = orig and orig ~= "" and band.read_json(takes .. "/" .. orig .. ".json")
+    -- the item is longer than the recording by the print's own tail: render just the recording (plus a fresh tail)
+    local was_len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+    local rec_len = m0 and (m0.len - (m0.tail or 0))
+    if m0 and rec_len and rec_len > 0 and rec_len < was_len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", rec_len) end
     if m0 then
       local id
       repeat
@@ -820,20 +830,24 @@ function sync.share_sound(proj, cfg, b, tr)
         id = string.format("%s-%s-%d", (cfg.user:gsub(" ", "_")), stamp, seq)
       until not reaper.file_exists(takes .. "/" .. id .. ".json")
       local path = sync.print_item(proj, it, dry, out, id, tail)
+      reaper.SetMediaItemInfo_Value(it, "D_LENGTH", was_len)
       if path then
         band.copy_atomic(path, takes .. "/" .. id .. ".flac")
         band.write_json(takes .. "/" .. id .. ".json", {
           format = band.FORMAT, bandsync = band.VERSION, id = id, rev = 1, user = cfg.user, printed_by = cfg.user, room = b.room,
-          track = m0.track, pos = m0.pos, qn = m0.qn, len = m0.len + (tail or 0), tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+          track = m0.track, pos = m0.pos, qn = m0.qn, len = rec_len + (tail or 0), tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
           full = id .. ".flac", print = "wet", wet = true, group = m0.group, lane = m0.lane, lane_name = m0.lane_name,
           session_version = m0.session_version, based_on = m0.id, sound = cfg.user .. "'s sound",
-          origin = { pos = m0.pos, len = m0.len, track = m0.track, lane = m0.lane, sent = os.date("!%Y-%m-%dT%H:%M:%SZ") },
+          origin = { pos = m0.pos, len = rec_len, track = m0.track, lane = m0.lane, sent = os.date("!%Y-%m-%dT%H:%M:%SZ") },
         })
         sent = sent + 1
       end
     end
   end
-  if sent == 0 then return nil, "nothing to share: switch the part to Dry (or Dry + their plug-ins) and put the plug-ins you want on it" end
+  if sent == 0 then
+    return nil, "nothing to share: switch the part to Dry or Dry + their plug-ins first (an audio part needs a dry recording: " ..
+      "it comes when the song's print setting is 'both', the default)"
+  end
   return sent
 end
 
@@ -1256,6 +1270,12 @@ end
 function sync.apply(proj, ev, dir, root, can, me)
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
+  if ev.type == "mix" and type(ev.state) == "table" then -- the driver's buses, sends into them, master plug-ins (lib/mixlayer.lua)
+    local n, clash = require("mixlayer").apply(proj, ev.state)
+    if clash and #clash > 0 then band.log("the band's mix has track(s) named like yours, left out here: " .. table.concat(clash, ", ")) end
+    setext(proj, band.SECTION, "mix_sig", ev.sig or "")
+    return true
+  end
   if ev.type == "timeline" then -- REAPER moves the items for the new map, as it would for a local change
     sync.audio_follow_tempo(proj)
     band.apply_tempo(proj, ev.tempo or {})
@@ -1638,6 +1658,7 @@ function sync.receive(proj, cfg, song, room, can)
           midi = "edited the notes of " .. tostring(ev.take), timeline = "changed the tempo map / markers",
           start = (ev.rec and "record" or "play") .. " together at " .. tostring(ev.pos), stop = "stop together",
           note = "note: " .. tostring(ev.text), like = "liked " .. tostring(ev.take),
+          mix = "changed the mix (buses, sends, master plug-ins)",
           shift = ((ev.len or 0) > 0 and "inserted " or "removed ") .. string.format("%.2f s at %.2f s", math.abs(ev.len or 0), ev.at or 0) })[ev.type]
         done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))
       end

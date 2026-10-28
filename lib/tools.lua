@@ -32,6 +32,31 @@ end
 function tools.dry_mode(proj, cfg, b, tr, on, raw)
   local name = select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "")
   local midi = band.find_track(proj, name .. " (MIDI)", true)
+  local function follow_fader() -- the part's shared mix (its fader, pan) on the copy that plays instead of it
+    if midi then
+      reaper.SetMediaTrackInfo_Value(midi, "D_VOL", reaper.GetMediaTrackInfo_Value(tr, "D_VOL"))
+      reaper.SetMediaTrackInfo_Value(midi, "D_PAN", reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
+    end
+  end
+  if on and raw and midi and reaper.CountTrackMediaItems(midi) > 0 then
+    -- a MIDI part's dry is its notes: through their instrument only, the effects after it switched off
+    local m = newest_manifest(cfg, b, tr)
+    local chain = m and band.read(sync.room_dir(cfg, b.song, b.room) .. "/" .. m.fxchain)
+    if not chain then return nil, "no instrument came with " .. name .. "'s part yet: its dry notes would be silent" end
+    set_chain(midi, chain)
+    local inst = reaper.TrackFX_GetInstrument(midi)
+    if inst < 0 or select(2, reaper.TrackFX_GetNamedConfigParm(midi, inst, "fx_ident")) == "" then
+      set_chain(midi, nil)
+      return nil, name .. "'s instrument isn't installed here, so the dry notes would be silent: it stays as the print"
+    end
+    for f = 0, reaper.TrackFX_GetCount(midi) - 1 do reaper.TrackFX_SetEnabled(midi, f, f == inst) end
+    follow_fader()
+    reaper.SetMediaTrackInfo_Value(midi, "B_MUTE", 0)
+    reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1)
+    band.set_track_ext(tr, "band_drymode", "rawmidi")
+    reaper.TrackList_AdjustWindows(false)
+    return string.format("%s: dry, the notes through %s's instrument only", name, tostring(m.printed_by or m.user))
+  end
   if on and raw then -- usually to hear a part without its effects: needs none of their plug-ins
     set_chain(tr, nil)
     band.set_track_ext(tr, "band_drymode", "raw")
@@ -52,6 +77,7 @@ function tools.dry_mode(proj, cfg, b, tr, on, raw)
     if not chain then return nil, "the plug-in chain hasn't arrived yet" end
     if m.midi and midi then -- the notes are the dry part: they play through the chain on the copy track
       set_chain(midi, chain)
+      follow_fader()
       reaper.SetMediaTrackInfo_Value(midi, "B_MUTE", 0)
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1)
       band.set_track_ext(tr, "band_drymode", "midi")
@@ -78,7 +104,7 @@ function tools.dry_mode(proj, cfg, b, tr, on, raw)
   local mode = band.track_ext(tr, "band_drymode")
   if mode == "" then return name .. ": already the print" end
   band.set_track_ext(tr, "band_drymode", "")
-  if mode == "midi" and midi then
+  if (mode == "midi" or mode == "rawmidi") and midi then
     set_chain(midi, nil)
     reaper.SetMediaTrackInfo_Value(midi, "B_MUTE", 1)
     reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 0)
@@ -103,7 +129,7 @@ end
 -- What a band track plays: "wet" (the print), "dry" (no effects) or "plugins" (dry through the sender's chain).
 function tools.hearing(tr)
   local m = band.track_ext(tr, "band_drymode")
-  return m == "raw" and "dry" or (m == "1" or m == "midi") and "plugins" or "wet"
+  return (m == "raw" or m == "rawmidi") and "dry" or (m == "1" or m == "midi") and "plugins" or "wet"
 end
 -- Switch a band track to "wet", "dry" or "plugins". Returns a summary, or nil + why.
 function tools.hear(proj, cfg, b, tr, how)

@@ -169,7 +169,10 @@ local function import(room)
         if want then
           reaper.Undo_BeginBlock2(proj)
           local ok = band.place_take(proj, with_tail(t, path), path, mode, want == "full" and dry or nil)
-          if ok then place_midi(); remember(t.id) end
+          if ok then
+            place_midi(); remember(t.id)
+            if t.based_on then remember(t.based_on) end -- a shared sound grew the original's item: not an edit of it
+          end
           reaper.Undo_EndBlock2(proj, "BandSync: " .. want .. " take from " .. t.user, -1)
           if ok then
             band.set_take_state(proj, t.id, want)
@@ -197,6 +200,7 @@ end
 local last_driver
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
 local joined = {} -- machines this Live sync has already let in
+local mix_pending, mix_at -- the driver's mix layer, changed but still settling (a knob being turned)
 local function poll()
   local s = band.read_json(band.session_path(cfg, b.song)) or last_session
   last_session = s
@@ -268,6 +272,21 @@ local function poll()
   -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest
   -- is view-only (locked) so it can't silently drift from the band's version
   if not hold then sync.watch(proj, cfg, b.song, b.room, can) end
+  -- the driver's mix layer (buses, sends into them, master plug-ins) goes to the band once it has settled; only
+  -- while stopped, since automation moves plug-in settings during playback
+  if driver == cfg.user and not hold and reaper.GetPlayStateEx(proj) == 0 then
+    local mixlayer = require("mixlayer")
+    local st, sig = mixlayer.capture(proj)
+    if sig ~= select(2, reaper.GetProjExtState(proj, band.SECTION, "mix_sig")) then
+      if mix_pending ~= sig then mix_pending, mix_at = sig, now
+      elseif now - mix_at > 3 then
+        sync.post(cfg, b.song, b.room, { type = "mix", state = st, sig = sig }, proj)
+        reaper.SetProjExtState(proj, band.SECTION, "mix_sig", sig)
+        mix_pending = nil
+        band.log(string.format("your mix went to the band (%d bus/empty track(s), %d send(s)%s)", #st.tracks, #st.sends, st.master and ", master plug-ins" or ""))
+      end
+    end
+  end
   if sync.need_save then -- a delete went out: the project is saved, so a crash can't bring the take back here
     sync.need_save = nil
     for i = 0, 512 do

@@ -157,7 +157,7 @@ function recall.describe(e)
   elseif e.kind == "driver" then return "took control from " .. tostring(e.from)
   elseif e.kind == "start" then return string.format("%s together from %.2f s", e.rec and "recorded" or "played", e.pos or 0)
   elseif e.kind == "stop" then return "stopped together"
-  elseif e.kind == "note" then return "note" .. (e.take and (" on " .. whose) or string.format(" at %.2f s", e.pos or 0)) .. ": " .. tostring(e.text)
+  elseif e.kind == "note" then return "note" .. (e.take and (" on " .. whose .. on) or string.format(" at %.2f s", e.pos or 0)) .. ": " .. tostring(e.text)
   elseif e.kind == "like" then return "liked " .. whose .. on
   elseif e.kind == "shift" then
     return string.format("%s %.2f s at %.2f s (every track)", (e.len or 0) > 0 and "inserted" or "removed", math.abs(e.len or 0), e.at or 0)

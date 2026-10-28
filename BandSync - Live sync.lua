@@ -293,6 +293,7 @@ local function tick()
       if transport.type == "stop" then
         reaper.OnStopButtonEx(proj)
         band.log("stopped together (" .. tostring(transport.user) .. ")")
+        reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. "stopped together (" .. tostring(transport.user) .. ")", false)
       else
         local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone
         if reaper.GetPlayStateEx(proj) ~= 0 then reaper.OnStopButtonEx(proj) end
@@ -303,8 +304,10 @@ local function tick()
         else
           reaper.OnPlayButtonEx(proj)
         end
-        band.log(string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)", transport.rec and "recording" or "playing",
-          from, tostring(transport.user), (tnow - fire) * 1000))
+        local said = string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)", transport.rec and "recording" or "playing",
+          from, tostring(transport.user), (tnow - fire) * 1000)
+        band.log(said)
+        reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. said, false) -- the panel shows it
       end
       if transport.id then fired[transport.id] = true end -- the regular poll applies the same event again later
       transport = nil

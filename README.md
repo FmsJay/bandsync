@@ -155,7 +155,7 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
   - *Take back my last take*: removes your newest take from everyone (it waits in the room's `_trash`).
   - *Print selected MIDI as audio*: renders a synth or drum part through its instrument onto `<track> audio`,
     which goes out as an ordinary audio take.
-  - *Use newest Solo edit mix*: the levels, pans and mutes of the latest Solo edit version.
+  - *Copy mix from Solo edit*: your faders, pans and mutes become those of the latest Solo edit version.
   - *Insert / Remove bars* (driver): moves every take, tempo marker and marker after the cursor, on every
     machine. Takes that play across the edit point are split there by whoever recorded them, on their own
     machine (it asks first), so both parts stay theirs. "(MIDI)" copies aren't split.

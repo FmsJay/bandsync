@@ -39,13 +39,13 @@ assert(recall.describe(TL[2]):match("^changed the tempo map %(96 bpm 4/4 at 0.00
 local V8 = {
   E[1],
   { kind = "start", time = "2026-10-27T01:10:00Z", id = "A-s", user = "A", pos = 4, rec = true },
-  { kind = "note", time = "2026-10-27T01:11:00Z", id = "B-n", user = "B", take = E[1].take, text = "love this" },
+  { kind = "note", time = "2026-10-27T01:11:00Z", id = "B-n", user = "B", take = E[1].take, track = "Gtr", text = "love this" },
   { kind = "like", time = "2026-10-27T01:12:00Z", id = "B-l", user = "B", take = E[1].take, track = "Gtr" },
   { kind = "shift", time = "2026-10-27T01:13:00Z", id = "A-x", user = "A", at = 8, len = -2 },
 }
 assert(recall.replay(V8).takes[E[1].take].pos == 1, "0.8 events don't break replay")
 assert(recall.describe(V8[2]) == "recorded together from 4.00 s", recall.describe(V8[2]))
-assert(recall.describe(V8[3]) == "note on A's take: love this", recall.describe(V8[3]))
+assert(recall.describe(V8[3]) == "note on A's take on Gtr: love this", recall.describe(V8[3]))
 assert(recall.describe(V8[4]) == "liked A's take on Gtr", recall.describe(V8[4]))
 assert(recall.describe(V8[5]) == "removed 2.00 s at 8.00 s (every track)", recall.describe(V8[5]))
 -- an insert/remove carries the map it left: a restore after it keeps the moved markers

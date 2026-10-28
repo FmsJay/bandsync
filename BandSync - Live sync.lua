@@ -14,6 +14,14 @@ local together = require("together")
 local transport -- a pending start/stop (lib/together.lua)
 local clip_said -- when we last warned about the master clipping
 local due_in = math.huge -- seconds until a pending start/stop fires
+-- A side-by-side stop fires when our playhead reaches the leader's stop position, on two readings in a row: the
+-- play position can read a few hundred ms off for a moment (seen on the laptop: 6.418 -> 6.112 -> 6.446 in 2 ms).
+local past = 0
+local function reached(t, theirs)
+  if not (t.type == "stop" and t.follow and theirs and t.pos and reaper.GetPlayStateEx(proj) & 1 == 1) then past = 0; return false end
+  past = reaper.GetPlayPosition2Ex(proj) >= t.pos - 0.005 and past + 1 or 0
+  return past >= 2
+end
 
 local cfg = band.settings()
 if not cfg then return end
@@ -319,11 +327,12 @@ local function tick()
     if tnow - fire > 30 then -- arrived long after the fact (offline, sync stalled): don't start a song out of nowhere
       band.log(string.format("missed a %s from %s (%.0f s ago)", transport.type, tostring(transport.user), tnow - fire))
       transport = nil
-    elseif tnow >= fire or (transport.type == "stop" and transport.follow and theirs and transport.pos and reaper.GetPlayStateEx(proj) & 1 == 1
-        and reaper.GetPlayPosition2Ex(proj) >= transport.pos - 0.005) then -- a follower stops where the leader stopped
+    elseif tnow >= fire or reached(transport, theirs) then -- a follower stops where the leader stopped
       if transport.type == "stop" then
+        local at_pos = reaper.GetPlayPosition2Ex(proj)
         reaper.OnStopButtonEx(proj)
-        band.log("stopped together (" .. tostring(transport.user) .. ")")
+        band.log(string.format("stopped together (%s) at %.3f s, %s", tostring(transport.user), at_pos,
+          tnow >= fire and "by time" or string.format("by position (theirs: %.3f s)", transport.pos)))
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. "stopped together (" .. tostring(transport.user) .. ")", false)
       else
         local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone

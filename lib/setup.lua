@@ -55,6 +55,7 @@ end
 function setup.check(cfg, b, proj)
   local data = band.read_json(setup.live_file(cfg, b)) or {}
   local st = {}
+  st.audio = reaper.Audio_IsRunning() == 1 -- a closed device (driver missing, interface unplugged) makes Live and recording silently do nothing
   st.folder = not has_subdir(cfg.root, ".stfolder") or services.running("syncthing") -- a cloud-drive root needs nothing
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   st.sync = beat ~= nil and reaper.time_precise() - beat < 5

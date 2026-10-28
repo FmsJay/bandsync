@@ -26,6 +26,13 @@ assert(not live.replaces("James-20261027-032717Z-1", "James", "20261027-054500Z"
 assert(not live.replaces("Laptop-20261027-055000Z-1", "James", "20261027-054500Z"), "someone else's doesn't")
 assert(live.replaces("Mary_Jo-20261027-055000Z-1", "Mary Jo", "20261027-054500Z"), "spaces vs underscores")
 assert(not live.replaces("James-20261027-055000Z-1", "James", ""), "unknown session time: never")
+-- with the clip's arrival time: only a take that was recording then (2026-10-28 test: C1 takes, sent 00:40:37,
+-- 26 s long, must not retire clips heard at 00:42:30-00:43:04; C2 takes sent 00:43:05 must)
+local S = "20261028-003100Z"
+assert(not live.replaces("Laptop-20261028-004037Z-1", "Laptop", S, "20261028-004235Z", 26), "earlier take, later clip")
+assert(live.replaces("Laptop-20261028-004305Z-1", "Laptop", S, "20261028-004250Z", 26), "recorded while heard")
+assert(live.replaces("Laptop-20261028-004305Z-1", "Laptop", S, "20261028-004303Z", 26), "last clip, just before stop")
+assert(not live.replaces("Laptop-20261028-004305Z-1", "Laptop", S, "20261028-003510Z", 26), "take long after the clip")
 
 -- SonoBus: one group for the band, made once and then kept; the join link is what SonoBus's paste parser reads
 reaper = { time_precise = function() return 1.5 end }

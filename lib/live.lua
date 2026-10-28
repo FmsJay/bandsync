@@ -145,12 +145,40 @@ function live.session_stamp(dir)
   return os.date("!%Y%m%d-%H%M%SZ", os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = tonumber(h), min = tonumber(mi), sec = 0 }))
 end
 
--- Whether take `id` (from <user>-YYYYMMDD-HHMMSSZ-n) replaces a placeholder of `user` from a session that
--- started at `since`: same person, recorded after the session began. Pure.
-function live.replaces(id, user, since)
+live.HEARD = "BandSync.live_heard" -- clip GUID (upper case) -> UTC stamp of when its file first appeared here
+
+local function secs(stamp) -- "20261027-054500Z" -> seconds (only differences are used)
+  local y, mo, d, h, mi, s = (stamp or ""):match("^(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)(%d%d)Z$")
+  return y and os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = tonumber(h), min = tonumber(mi), sec = tonumber(s) })
+end
+
+-- Whether take `id` (from <user>-YYYYMMDD-HHMMSSZ-n, stamped when it was sent) replaces a placeholder of `user`.
+-- With `heard` (when that clip arrived here) and the take's length: the take must have been recording when the
+-- clip was heard, i.e. the clip arrived within the take's length (+ slack for pre-roll and the send delay) before
+-- it was sent. Without `heard` (Live sync wasn't watching then): any take of theirs sent after the session began
+-- at `since`. Pure.
+function live.replaces(id, user, since, heard, take_len)
   local who, stamp = (id or ""):match("^(.-)%-(%d+%-%d+Z)")
   if not who or who:lower():gsub("_", " ") ~= (user or ""):lower():gsub("_", " ") then return false end
+  local t, h = secs(stamp), secs(heard)
+  if t and h then return h <= t + 5 and h >= t - (take_len or 0) - 30 end
   return since ~= "" and stamp >= since
+end
+
+-- Note when each clip file of the current session first appears (ReaNINJAM writes them as they arrive; only its
+-- log waits for the disconnect), so placeholders know when they were heard. Call it on every Live sync poll.
+function live.note_clips(proj, sessiondir)
+  local dir = live.newest_session(sessiondir)
+  if not dir then return end
+  local now = os.date("!%Y%m%d-%H%M%SZ")
+  for _, sub in ipairs(band.subdirs(dir)) do
+    for _, fn in ipairs(band.files(dir .. "/" .. sub)) do
+      local guid = fn:match("^(%x+)")
+      if guid and #guid >= 16 and select(2, reaper.GetProjExtState(proj, live.HEARD, guid:upper())) == "" then
+        reaper.SetProjExtState(proj, live.HEARD, guid:upper(), now)
+      end
+    end
+  end
 end
 
 -- Drop received session clips on "<user> (live)" tracks at their song position, as placeholders: they show
@@ -175,10 +203,19 @@ function live.place_clips(proj, sessiondir)
         local tr = band.find_track(proj, name) or band.new_track(proj, name)
         if tr then
           reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_live_track", "1", true)
+          for j = reaper.CountTrackMediaItems(tr) - 1, 0, -1 do -- a newer session's clip replaces an older one's
+            local old = reaper.GetTrackMediaItem(tr, j)
+            local op = reaper.GetMediaItemInfo_Value(old, "D_POSITION")
+            if band.item_ext(old, "band_live") ~= "" and band.item_ext(old, "band_live_since") < since
+              and op < c.st + c.len - 0.01 and op + reaper.GetMediaItemInfo_Value(old, "D_LENGTH") > c.st + 0.01 then
+              reaper.DeleteTrackMediaItem(tr, old)
+            end
+          end
           local it = band.add_item(tr, file, c.st, c.len)
           if it then
             band.set_item_ext(it, "band_live", c.guid)
             band.set_item_ext(it, "band_live_since", since)
+            band.set_item_ext(it, "band_live_heard", select(2, reaper.GetProjExtState(proj, live.HEARD, key)))
             n = n + 1
           end
           reaper.SetProjExtState(proj, live.SEEN, key, since ~= "" and since or "?")
@@ -189,8 +226,8 @@ function live.place_clips(proj, sessiondir)
   return n
 end
 
--- Remove placeholders that a real take now covers: the same person's take, recorded after that live session
--- started, overlapping in time. (Older takes of theirs never count.)
+-- Remove placeholders that a real take now covers: the same person's take, overlapping in song position, that was
+-- being recorded when the clip was heard (live.replaces).
 function live.retire(proj)
   local takes = {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
@@ -198,8 +235,8 @@ function live.retire(proj)
     local tk = reaper.GetActiveTake(it)
     local id = tk and band.take_id(tk)
     if id then
-      local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-      takes[#takes + 1] = { id, p, p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH") }
+      local p, l = reaper.GetMediaItemInfo_Value(it, "D_POSITION"), reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+      takes[#takes + 1] = { id, p, p + l, l }
     end
   end
   local n = 0
@@ -208,11 +245,11 @@ function live.retire(proj)
     if band.item_ext(it, "band_live") ~= "" then
       local tr = reaper.GetMediaItem_Track(it)
       local user = select(2, reaper.GetTrackName(tr)):gsub(" %(live%)$", "")
-      local since = band.item_ext(it, "band_live_since")
+      local since, heard = band.item_ext(it, "band_live_since"), band.item_ext(it, "band_live_heard")
       local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
       local e = p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
       for _, t in ipairs(takes) do
-        if t[2] < e and t[3] > p and live.replaces(t[1], user, since) then
+        if t[2] < e and t[3] > p and live.replaces(t[1], user, since, heard, t[4]) then
           reaper.DeleteTrackMediaItem(tr, it)
           n = n + 1
           break

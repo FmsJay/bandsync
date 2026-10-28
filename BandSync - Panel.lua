@@ -273,9 +273,14 @@ local function sonobus_open()
   reaper.TrackFX_Show(m, i, 3)
 end
 
+local server_at = 0
 local function section_live()
   local lfile = band.song_dir(cfg, b.song) .. "/live.json"
-  if not live_server then live_server = (band.read_json(lfile) or {}).server or "" end
+  -- the host may fill the address in after this panel opened (it arrives through the shared folder): re-read it
+  -- every few seconds while it's still empty here
+  if not live_server or (live_server == "" and reaper.time_precise() - server_at > 3) then
+    server_at, live_server = reaper.time_precise(), (band.read_json(lfile) or {}).server or ""
+  end
   ImGui.SeparatorText(ctx, "Mode")
   for _, m in ipairs(LIVE_MODES) do
     if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
@@ -412,6 +417,7 @@ local setup_at, st = 0, {}
 local function section_setup()
   if reaper.time_precise() - setup_at > 5 then setup_at, st = reaper.time_precise(), setup.check(cfg, b, proj) end -- tasklist is slow
   local rows = {
+    { st.audio, "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device" },
     { st.folder, "Shared folder is syncing", "Syncthing isn't running" },
     { st.sync, "Live sync is running", "Live sync is off" },
     { st.sonobus, "SonoBus is ready on the master track (Listen live)", "SonoBus isn't on the master track" },
@@ -419,7 +425,7 @@ local function section_setup()
     { st.solo, "Solo edit folder found", "Solo edit folder not found: " .. tostring(st.solo_root) .. " (share it / add the Drive shortcut, or set it in Solo edit)" },
     { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: More > Calibrate latency)" },
   }
-  if b.role == "host" then table.insert(rows, 5, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
+  if b.role == "host" then table.insert(rows, 6, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
   local all = true
   for _, r in ipairs(rows) do all = all and r[1] end
   if ImGui.CollapsingHeader(ctx, all and "Set up: all done###setup" or "Set up: needs attention###setup", nil, all and ImGui.TreeNodeFlags_None or ImGui.TreeNodeFlags_DefaultOpen) then

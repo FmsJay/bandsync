@@ -799,6 +799,44 @@ function sync.print_item(proj, it, take, out, name, tail)
   return reaper.file_exists(path) and path or nil
 end
 
+-- "Share this sound": a bandmate's dry recording, through the plug-ins on our copy of their track (theirs in "Dry +
+-- their plug-ins", or our own), rendered and sent as a NEW take based on theirs. It lands as an extra take in the
+-- item holding the original, on every machine (the owner's too), never changing what plays: the owner picks it if
+-- they like it. Their dry recording is untouched, so any sound can be made again. Returns how many went, or nil + why.
+function sync.share_sound(proj, cfg, b, tr)
+  if reaper.TrackFX_GetCount(tr) == 0 then return nil, "there are no plug-ins on this track to share" end
+  local out, takes = dirs(proj, cfg, b)
+  local stamp, seq, sent = os.date("!%Y%m%d-%H%M%SZ"), 0, 0
+  local tail = band.track_has_fx(tr) and sync.TAIL or nil
+  for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    local it = reaper.GetTrackMediaItem(tr, j)
+    local dry = reaper.GetActiveTake(it)
+    local orig = dry and band.take_ext(dry, "band_dry")
+    local m0 = orig and orig ~= "" and band.read_json(takes .. "/" .. orig .. ".json")
+    if m0 then
+      local id
+      repeat
+        seq = seq + 1
+        id = string.format("%s-%s-%d", (cfg.user:gsub(" ", "_")), stamp, seq)
+      until not reaper.file_exists(takes .. "/" .. id .. ".json")
+      local path = sync.print_item(proj, it, dry, out, id, tail)
+      if path then
+        band.copy_atomic(path, takes .. "/" .. id .. ".flac")
+        band.write_json(takes .. "/" .. id .. ".json", {
+          format = band.FORMAT, bandsync = band.VERSION, id = id, rev = 1, user = cfg.user, printed_by = cfg.user, room = b.room,
+          track = m0.track, pos = m0.pos, qn = m0.qn, len = m0.len + (tail or 0), tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+          full = id .. ".flac", print = "wet", wet = true, group = m0.group, lane = m0.lane, lane_name = m0.lane_name,
+          session_version = m0.session_version, based_on = m0.id, sound = cfg.user .. "'s sound",
+          origin = { pos = m0.pos, len = m0.len, track = m0.track, lane = m0.lane, sent = os.date("!%Y-%m-%dT%H:%M:%SZ") },
+        })
+        sent = sent + 1
+      end
+    end
+  end
+  if sent == 0 then return nil, "nothing to share: switch the part to Dry (or Dry + their plug-ins) and put the plug-ins you want on it" end
+  return sent
+end
+
 local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twin)
   local tr = reaper.GetMediaItem_Track(it)
   local suffix = rev > 1 and ("-r" .. rev) or ""
@@ -1152,7 +1190,8 @@ sync.set_plays = function(proj, trackname, list) return apply_plays(proj, trackn
 
 -- On a track in dry mode (lib/tools.lua), the dry twin of take tk plays instead of the print; nil otherwise.
 function sync.dry_mode_take(tr, it, tk)
-  if band.track_ext(tr, "band_drymode") ~= "1" then return nil end
+  local mode = band.track_ext(tr, "band_drymode")
+  if mode ~= "1" and mode ~= "raw" then return nil end -- (dry through their plug-ins, or plain dry)
   local id = band.take_id(tk)
   for k = 0, reaper.CountTakes(it) - 1 do
     local t2 = reaper.GetTake(it, k)

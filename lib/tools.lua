@@ -28,10 +28,23 @@ local function set_chain(tr, chain)
   if ok then reaper.SetTrackStateChunk(tr, sync.chunk_set_block(chunk, "FXCHAIN", chain), false) end
 end
 
--- tr: the band track holding someone's prints. Returns a summary, or nil + why.
-function tools.dry_mode(proj, cfg, b, tr, on)
+-- tr: the band track holding someone's prints. raw: plain dry (no plug-ins at all). Returns a summary, or nil + why.
+function tools.dry_mode(proj, cfg, b, tr, on, raw)
   local name = select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "")
   local midi = band.find_track(proj, name .. " (MIDI)", true)
+  if on and raw then -- usually to hear a part without its effects: needs none of their plug-ins
+    set_chain(tr, nil)
+    band.set_track_ext(tr, "band_drymode", "raw")
+    local n, none = 0, 0
+    for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+      local it = reaper.GetTrackMediaItem(tr, j)
+      local dry = sync.dry_mode_take(tr, it, reaper.GetActiveTake(it))
+      if dry then reaper.SetActiveTake(dry); n = n + 1 else none = none + 1 end
+    end
+    reaper.UpdateArrange()
+    return string.format("%s: dry, no effects (%d part(s)%s)", name, n,
+      none > 0 and string.format("; %d came without a dry recording (sent as wet only) or are MIDI, and stay as they were", none) or "")
+  end
   if on then
     local m = newest_manifest(cfg, b, tr)
     if not m then return nil, "no plug-in chain came with " .. name .. "'s prints yet (it comes with prints from BandSync 0.8)" end
@@ -63,6 +76,7 @@ function tools.dry_mode(proj, cfg, b, tr, on)
       #missing > 0 and (" (missing here: " .. table.concat(missing, ", ") .. ")") or "")
   end
   local mode = band.track_ext(tr, "band_drymode")
+  if mode == "" then return name .. ": already the print" end
   band.set_track_ext(tr, "band_drymode", "")
   if mode == "midi" and midi then
     set_chain(midi, nil)
@@ -84,6 +98,36 @@ function tools.dry_mode(proj, cfg, b, tr, on)
   end
   reaper.TrackList_AdjustWindows(false)
   return name .. ": back to the print"
+end
+
+-- What a band track plays: "wet" (the print), "dry" (no effects) or "plugins" (dry through the sender's chain).
+function tools.hearing(tr)
+  local m = band.track_ext(tr, "band_drymode")
+  return m == "raw" and "dry" or (m == "1" or m == "midi") and "plugins" or "wet"
+end
+-- Switch a band track to "wet", "dry" or "plugins". Returns a summary, or nil + why.
+function tools.hear(proj, cfg, b, tr, how)
+  local now = tools.hearing(tr)
+  if now == how then return nil, nil end
+  if now ~= "wet" then tools.dry_mode(proj, cfg, b, tr, false) end -- back to the print first
+  if how == "wet" then return select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "") .. ": the print (wet)" end
+  return tools.dry_mode(proj, cfg, b, tr, true, how == "dry")
+end
+-- The tracks holding bandmates' prints: { { track, whose } }.
+function tools.band_tracks(proj)
+  local out = {}
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+      local tk = reaper.GetActiveTake(reaper.GetTrackMediaItem(tr, j))
+      local id = tk and (band.take_ext(tk, "band_take") ~= "" and band.take_ext(tk, "band_take") or band.take_ext(tk, "band_dry"))
+      if id and id ~= "" then
+        out[#out + 1] = { tr, ((id:match("^(.-)%-%d+%-%d+Z") or "?"):gsub("_", " ")) }
+        break
+      end
+    end
+  end
+  return out
 end
 
 -- ---- which of a chain's plug-ins this machine has (before turning dry mode on) ---------------------------

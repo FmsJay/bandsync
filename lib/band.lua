@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.13.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.14.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -544,6 +544,12 @@ end
 -- one item here, in the same lane, on a track with the same lane layout; so takes and lanes coexist
 -- exactly as they do for the sender.
 local function mirror(proj, t, path)
+  if t.based_on then -- a shared sound: an extra take in the band item holding the original. Not in the owner's own
+    -- item: that's on their real track, whose plug-ins would process the print a second time; there it goes on the
+    -- FX-free mirror track like any print
+    local it, tk = band.find_take(proj, t.based_on)
+    if it and band.take_ext(tk, "band_take") ~= "" then return add_take_to(it, t, path) end
+  end
   local tr = band.dest_track(proj, t.track, t.wet)
   if not tr then return nil end
   if t.lane then
@@ -723,7 +729,8 @@ function band.place_take(proj, t, path, mode, dry_path)
     end
     return true
   end
-  local label = string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))
+  local label = t.sound and string.format("%s · %s", t.sound, (t.sent or ""):sub(12, 16)) -- "James's sound · 10:42"
+    or string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))
   local item, take, tr, lane
   if mode == "mirror" then
     item, take = mirror(proj, t, path)

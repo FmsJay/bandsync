@@ -813,28 +813,52 @@ local function section_tools()
   if ImGui.Button(ctx, "Remove bars") then shift(-1) end
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, driving and "Moves everything after the cursor (takes, tempo, markers) on every machine." or "Only the driver (take control first).")
-  ImGui.SeparatorText(ctx, "Dry mode (a bandmate's dry recording through their plug-ins)")
+  ImGui.SeparatorText(ctx, "Hear bandmates' parts: wet, dry, or dry through their plug-ins")
   if reaper.time_precise() - dry_at > 3 then
     dry_at, dry_tracks = reaper.time_precise(), {}
-    for i = 0, reaper.CountTracks(proj) - 1 do
-      local tr = reaper.GetTrack(proj, i)
-      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-        local tk = reaper.GetActiveTake(reaper.GetTrackMediaItem(tr, j))
-        local id = tk and (band.take_ext(tk, "band_take") ~= "" and band.take_ext(tk, "band_take") or band.take_ext(tk, "band_dry"))
-        if id and id ~= "" then
-          local chain = tools.chain_of(cfg, b, tr)
-          dry_tracks[#dry_tracks + 1] = { tr, (id:match("^(.-)%-%d+%-%d+Z") or "?"):gsub("_", " "), plugins = chain and tools.chain_plugins(chain) or nil }
-          break
-        end
-      end
+    for _, d in ipairs(tools.band_tracks(proj)) do
+      local chain = tools.chain_of(cfg, b, d[1])
+      dry_tracks[#dry_tracks + 1] = { d[1], d[2], plugins = chain and tools.chain_plugins(chain) or nil }
     end
   end
   if #dry_tracks == 0 then ImGui.TextDisabled(ctx, "No bandmate takes here yet.") end
+  local HOW = { { "wet", "Wet" }, { "dry", "Dry" }, { "plugins", "Dry + their plug-ins" } }
+  local function apply(tr, how)
+    local msg, why = tools.hear(proj, cfg, b, tr, how)
+    if msg then band.log(msg) elseif why then band.msg(why) end
+  end
+  if #dry_tracks > 0 then -- all of them at once
+    ImGui.AlignTextToFramePadding(ctx)
+    ImGui.Text(ctx, "All parts:")
+    for _, h in ipairs(HOW) do
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, h[2] .. "##all") then for _, d in ipairs(dry_tracks) do if reaper.ValidatePtr2(proj, d[1], "MediaTrack*") then apply(d[1], h[1]) end end end
+    end
+    ImGui.SetItemTooltip(ctx, "Wet: the parts as their players hear them. Dry: no effects at all (whatever plug-ins you have).\n" ..
+      "Dry + their plug-ins: their chain on your copy, live; plug-ins you don't have stay in it, switched off, settings kept.")
+  end
   for i, d in ipairs(dry_tracks) do
     local tr = d[1]
     if reaper.ValidatePtr2(proj, tr, "MediaTrack*") then
-      local on = band.track_ext(tr, "band_drymode") ~= ""
-      local ch, v = ImGui.Checkbox(ctx, string.format("%s (%s's part)##dry%d", select(2, reaper.GetTrackName(tr)), d[2], i), on)
+      local now = tools.hearing(tr)
+      ImGui.AlignTextToFramePadding(ctx)
+      ImGui.Text(ctx, string.format("%s (%s's part)", select(2, reaper.GetTrackName(tr)), d[2]))
+      for _, h in ipairs(HOW) do
+        ImGui.SameLine(ctx)
+        if ImGui.RadioButton(ctx, h[2] .. "##" .. h[1] .. i, now == h[1]) then apply(tr, h[1]) end
+      end
+      if now ~= "wet" then -- what's on this track now (theirs, or plug-ins you added) can go to the band as a new take
+        ImGui.SameLine(ctx)
+        if ImGui.SmallButton(ctx, "Share this sound##share" .. i) and reaper.MB(string.format(
+            "Render %s's dry part through the plug-ins on this track and send it to the band as an extra take?\n\n" ..
+            "Nothing they have changes: it arrives beside their take (theirs keeps playing), and %s can pick yours.",
+            d[2], d[2]), "BandSync", 4) == 6 then
+          local n, why = sync.share_sound(proj, cfg, b, tr)
+          if n then band.log(string.format("shared your sound for %s's %s (%d take(s))", d[2], select(2, reaper.GetTrackName(tr)), n)) else band.msg(why) end
+        end
+        ImGui.SetItemTooltip(ctx, "Renders their dry recording through the plug-ins on this track (theirs, or ones you added) and\n" ..
+          "sends it as an extra take: it arrives beside theirs on every machine, theirs keeps playing.")
+      end
       if d.plugins then
         local have, miss = 0, {}
         for _, p in ipairs(d.plugins) do if p.have then have = have + 1 else miss[#miss + 1] = p.name end end
@@ -844,10 +868,6 @@ local function section_tools()
       elseif d.plugins == nil then
         ImGui.SameLine(ctx)
         ImGui.TextDisabled(ctx, "no plug-in chain yet")
-      end
-      if ch then
-        local msg, why = tools.dry_mode(proj, cfg, b, tr, v)
-        if msg then band.log(msg) else band.msg(why) end
       end
     end
   end

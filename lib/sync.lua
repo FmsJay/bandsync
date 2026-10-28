@@ -682,6 +682,7 @@ end
 -- item; with opts.from/to only what overlaps that stretch, and items of ours crossing its edges are split there
 -- (lossless), so only the inside goes. Takes the band already has are left alone (edits and reprints carry their
 -- changes). Returns the units for sync.send, the inside items (to select), and how many already-sent ones were left.
+-- opts.dry: only look (nothing is split; the units are the whole items).
 function sync.selection_units(proj, opts)
   local list, seen = {}, {}
   local function want(it)
@@ -710,7 +711,7 @@ function sync.selection_units(proj, opts)
     if with_band then
       had = had + 1
     else
-      if opts.from then
+      if opts.from and not opts.dry then
         local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
         if p < opts.from - 1e-6 then it = split_piece(it, opts.from) or it end -- the left part stays here
         local e = reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")

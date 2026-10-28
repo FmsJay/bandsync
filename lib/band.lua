@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.11.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.11.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -116,10 +116,10 @@ end
 
 function band.subdirs(dir) return enum(reaper.EnumerateSubdirectories, dir) end
 
--- Pop a menu at the mouse; returns the chosen string or nil.
-function band.pick(items)
+-- Pop a menu at the mouse (or at x, y); returns the chosen string or nil. Lines starting "#" are greyed headers.
+function band.pick(items, x, y)
   if #items == 0 then return nil end
-  local x, y = reaper.GetMousePosition()
+  if not x then x, y = reaper.GetMousePosition() end
   gfx.init("", 0, 0, 0, x, y)
   gfx.x, gfx.y = 0, 0
   local i = gfx.showmenu(table.concat(items, "|"))

@@ -97,6 +97,12 @@ local function end_of_session(why)
   ended_at_n = n
   recall.save(proj, cfg, b.song, b.room, "end of session", true)
   band.log("saved an end-of-session restore point (" .. why .. "): it's kept for good")
+  local droot = require("drive").root(cfg) -- and the project itself, for anyone to open from Drive (lib/sessionfile.lua)
+  if droot then
+    local ok, out, err = pcall(require("sessionfile").export, proj, cfg, b, droot, sync.room_dir(cfg, b.song, b.room))
+    band.log(ok and out and ("end-of-session project saved to Google Drive: " .. out:match("[^/]+$")) or
+      ("couldn't save the end-of-session project to Drive: " .. tostring(ok and err or out)))
+  end
 end
 local reloaded -- this instance handed over to the updated code (which saves the end of session itself)
 reaper.atexit(function()
@@ -268,6 +274,14 @@ local function poll()
     reaper.SetExtState(band.SECTION, "alone " .. tostring(proj), alone and "1" or "", false)
   end
   local my_can = alone and function() return true end or can
+  -- the driver stepped away while others are still here: say so once (anyone here can Take control; the panel shows it)
+  local driver_away = not alone and driver and driver ~= cfg.user
+  if driver_away then for _, o in ipairs(others) do if o == driver then driver_away = false end end end
+  if driver_away ~= sync.driver_away then
+    if driver_away then band.log(tostring(driver) .. " is driving but isn't here: anyone can Take control (Session tab) to carry on") end
+    sync.driver_away = driver_away
+    reaper.SetExtState(band.SECTION, "driver_away " .. tostring(proj), driver_away and tostring(driver) or "", false)
+  end
   if last_driver and driver ~= last_driver then -- handovers are announced, never silent
     band.log(driver == cfg.user and "you're driving now" or (tostring(driver) .. " took control" ..
       (last_driver == cfg.user and ": you're no longer driving (what you don't own is view-only)" or "")))
@@ -373,6 +387,7 @@ local function poll()
       if ok then moved, more = moved + n, more or m
       elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
     end
+    pcall(require("sessionfile").catch_up, b.song, 1.0) -- your recordings the end-of-session projects use
     if more and not drive_more then band.log("Google Drive: bringing the band's copy of this room up to date (carries on between passes)") end
     if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end
     drive_more = more

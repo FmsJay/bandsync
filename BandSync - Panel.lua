@@ -186,6 +186,14 @@ local function section_control()
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Take control") then action("Take control") end
   end
+  local away = reaper.GetExtState(band.SECTION, "driver_away " .. tostring(proj))
+  if away ~= "" and not driving then
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.TextColored(ctx, YELLOW, away .. " is driving but isn't here, so only claimed tracks can change. Take control to carry on " ..
+      "(they can take it back when they return).")
+    ImGui.PopTextWrapPos(ctx)
+    if ImGui.Button(ctx, "Take control now") then action("Take control") end
+  end
   if reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) ~= "" then
     ImGui.PushTextWrapPos(ctx, 0)
     ImGui.TextColored(ctx, GREEN, "Nobody else is here: you have full control. Everything you change goes to the band, and reaches " ..

@@ -17,8 +17,12 @@ if not b then return band.msg("Publish (host) or open (guest) a session in this 
 local s = band.read_json(band.session_path(cfg, b.song))
 local now = sync.driver(cfg, b.song, b.room, s)
 if now == cfg.user then return band.msg("You're already driving '" .. b.song .. "' (room " .. b.room .. ").") end
-if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ").\n\nTake control? Tell them first: " ..
-    "from now on your deletes, moves and lane choices reach everyone (except on tracks or regions someone owns).", "BandSync", 4) ~= 6 then return end
+local away = now and now ~= cfg.user
+for _, o in ipairs(sync.present(cfg, b.song, b.room)) do if o == now then away = false end end
+if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ")" ..
+    (away and ", but isn't here.\n\nTake control so the session can carry on? " or ".\n\nTake control? Tell them first: ") ..
+    "from now on your deletes, moves and lane choices reach everyone (except on tracks or regions someone owns)." ..
+    (away and " They can take it back when they return." or ""), "BandSync", 4) ~= 6 then return end
 
 local function handover()
   sync.watch(proj, cfg, b.song, b.room, function() return false end) -- start from what's here now: old local edits aren't replayed

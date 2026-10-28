@@ -87,18 +87,19 @@ function tools.dry_mode(proj, cfg, b, tr, on)
 end
 
 -- ---- take back my last take: delete the newest take I sent (everyone loses it; it's in _trash) ----------------
--- With peek, only says which take that is.
+-- With peek, only says which take that is (id, item). Parts made by an insert/remove split don't count: they
+-- weren't played.
 function tools.take_back(proj, cfg, peek)
   local newest, nit
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     for k = 0, reaper.CountTakes(it) - 1 do
       local id = band.take_ext(reaper.GetTake(it, k), "band_sent")
-      if id ~= "" and sync.author(id) == sync.author_of(cfg.user) and (not newest or id > newest) then newest, nit = id, it end
+      if id ~= "" and band.item_ext(it, "band_split") == "" and sync.author(id) == sync.author_of(cfg.user) and (not newest or id > newest) then newest, nit = id, it end
     end
   end
   if not nit then return nil, "You haven't sent a take in this song." end
-  if peek then return newest end
+  if peek then return newest, nit end
   reaper.SetMediaItemInfo_Value(nit, "C_LOCK", 0)
   reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(nit), nit)
   reaper.Undo_OnStateChange2(proj, "BandSync: take back " .. newest)

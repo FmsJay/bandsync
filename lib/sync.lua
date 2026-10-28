@@ -182,6 +182,7 @@ local function split_crossing(proj, at, len, mine, stale)
           end
           band.set_item_ext(right, "band_take", "")
           band.set_item_ext(right, "band_group", "")
+          band.set_item_ext(right, "band_split", "1") -- made by a split, not played: "take back my last take" skips it
           n = n + 1
         end
       end

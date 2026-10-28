@@ -590,9 +590,11 @@ local dry_at, dry_tracks = 0, {}
 local function section_tools()
   ImGui.SeparatorText(ctx, "Takes")
   if ImGui.Button(ctx, "Take back my last take") then
-    local id, why = tools.take_back(proj, cfg, true)
-    if not id then band.msg(why)
-    elseif reaper.MB("Take back " .. id .. "? It goes from everyone's session (into the room's trash).", "BandSync", 4) == 6 then
+    local id, it = tools.take_back(proj, cfg, true)
+    if not id then band.msg(it)
+    elseif reaper.MB(string.format("Take back your take on %s, bars %s to %s?\n\nIt goes from everyone's session (into the room's trash; the driver can bring it back from History).",
+        sync.track_name(it), bar_of(reaper.GetMediaItemInfo_Value(it, "D_POSITION")):match("^%d+"),
+        bar_of(reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - 0.01):match("^%d+")), "BandSync", 4) == 6 then
       tools.take_back(proj, cfg)
     end
   end

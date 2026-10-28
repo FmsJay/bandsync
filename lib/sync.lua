@@ -484,6 +484,7 @@ function sync.remember(proj, id, it, tk, chunk_only)
   if not chunk_only then
     setext(proj, sync.SNAP, id, id .. "|" .. shape(it, tk))
     setext(proj, sync.SNAPQN, id, string.format("%.9f", sync.qn(proj, reaper.GetMediaItemInfo_Value(it, "D_POSITION"))))
+    setext(proj, "BandSync.base", id, string.format("%.9f", band.base_offs(tk))) -- (a take that comes back is trimmed as it was)
   end
   -- our own takes also keep a copy of the whole item (source, take FX, fades), so a recall point can bring
   -- back the real item after a delete instead of its print
@@ -1311,8 +1312,14 @@ function sync.watch(proj, cfg, song, room, can)
         if can(me, track, pos) or sync.author(sid) == sync.author_of(me) then -- your own take you may always take back
           sync.post(cfg, song, room, { type = "delete", take = sid, track = track, pos = pos })
           sync.trash(cfg, song, room, sid)
-        else -- not yours to delete: it comes back with the next import (the band still has it)
+        else -- not yours to delete: it comes back with the next import (the band still has it), placed, trimmed and
+          -- muted as it was here: the manifest only knows how it was sent (break round 2: a re-import lost a mute)
           band.set_take_state(proj, sid, "")
+          if pos then
+            setext(proj, sync.PENDING, sid, band.json_encode({ track = track ~= "" and track or nil, pos = pos,
+              len = (tonumber(f[3]) or 0) - (tonumber(ext(proj, sync.TAILS, sid)) or 0), lane = tonumber(f[5]), mute = tonumber(f[6]),
+              offs = (tonumber(f[4]) or 0) - (tonumber(ext(proj, "BandSync.base", sid)) or 0) }))
+          end
           band.log(string.format("'%s' on %s is %s's to delete: it comes back", sid, tostring(track), tostring(sync.owner_of and sync.owner_of(track, pos) or "someone else")))
         end
       else

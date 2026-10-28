@@ -255,7 +255,9 @@ layers fix that, best set up on the host's always-on machine:
 - MIDI copies assume everyone has the same tempo map (they do, from the publish). Looped MIDI items print
   fine but their copy isn't looped.
 - Live: ReaNINJAM reads its settings when it first opens in a REAPER session; after changing mode or server,
-  restart REAPER. Synced mode needs the listener to play from a point behind the sender.
+  restart REAPER, or switch the channel's mode in ReaNINJAM's own window. Play along (and Side by side with it)
+  needs the sender's channel in Session mode: in Normal mode the others hear you on NINJAM's interval grid
+  instead of in time with the song (measured 0.94 s off). The panel says when it isn't. Synced mode needs the listener to play from a point behind the sender.
 - Live placeholders appear when the listener disconnects (or after a long session): ReaNINJAM buffers its clip
   log and only writes it to disk then. Hearing the audio live isn't affected.
 - Listen live: REAPER only sees a newly installed SonoBus after a restart. Setting SonoBus up relies on its saved

@@ -110,11 +110,15 @@ function live.fx(proj, add, fx)
       end
     end
   end
-  for i = 0, reaper.TrackFX_GetCount(master) - 1 do
-    local _, name = reaper.TrackFX_GetFXName(master, i)
-    if name:find(fx, 1, true) and not name:find("Instrument", 1, true) then
-      if freed > 0 then reaper.TrackFX_SetOffline(master, i, true); reaper.TrackFX_SetOffline(master, i, false) end -- load it now that it may
-      return master, i
+  -- the master first (where BandSync puts it), then any track (someone may listen on a track of their own)
+  for t = -1, reaper.CountTracks(proj) - 1 do
+    local tr = t < 0 and master or reaper.GetTrack(proj, t)
+    for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+      local _, name = reaper.TrackFX_GetFXName(tr, i)
+      if name:find(fx, 1, true) and not name:find("Instrument", 1, true) then
+        if freed > 0 then reaper.TrackFX_SetOffline(tr, i, true); reaper.TrackFX_SetOffline(tr, i, false) end -- load it now that it may
+        return tr, i
+      end
     end
   end
   if not add then return nil end

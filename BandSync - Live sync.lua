@@ -209,6 +209,7 @@ local function poll()
 
   -- live (ReaNINJAM synced mode): received clips land as placeholders until the real takes replace them
   local live_dir = select(2, reaper.GetProjExtState(proj, band.SECTION, "live_dir"))
+  if live_dir == "" and reaper.GetProjectName(proj) ~= "" then live_dir = reaper.GetProjectPathEx(proj):gsub("\\", "/") .. "/bandsync_live" end -- set up by hand: the usual place
   if live_dir ~= "" and live.fx(proj, false) then
     live.note_clips(proj, live_dir) -- when each clip arrived, so only takes recorded then replace it
     local added, retired = live.place_clips(proj, live_dir), live.retire(proj)
@@ -350,9 +351,10 @@ local function tick()
         else
           reaper.OnPlayButtonEx(proj)
         end
-        local said = string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)",
-          transport.rec and (transport.follow and theirs and "playing along (they're recording)" or "recording") or "playing",
-          from, tostring(transport.user), (tnow - fire) * 1000)
+        local said = transport.rec and transport.follow and theirs
+          and string.format("playing along with %s's recording from %.2f s (%.0f ms after the planned moment)", tostring(transport.user), from, (tnow - fire) * 1000)
+          or string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)", transport.rec and "recording" or "playing",
+            from, tostring(transport.user), (tnow - fire) * 1000)
         band.log(said)
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. said, false) -- the panel shows it
       end

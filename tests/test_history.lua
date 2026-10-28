@@ -52,4 +52,7 @@ assert(recall.describe(V8[5]) == "removed 2.00 s at 8.00 s (every track)", recal
 local SH = { E[1], { kind = "shift", time = "2026-10-27T01:14:00Z", id = "A-y", user = "A", at = 20, len = 5,
   tempo = { { time = 0, bpm = 96, num = 4, denom = 4 } }, markers = { { region = true, name = "Verse", pos = 10, ["end"] = 35 } } } }
 assert(recall.replay(SH).timeline.markers[1]["end"] == 35, "shift's markers become the timeline")
+-- a long pause splits one person's run of changes
+local P = { E[1], { kind = "edit", time = "2026-10-27T01:30:00Z", id = "A-late", user = "A", take = E[1].take, track = "Gtr", pos = 3, len = 4 } }
+assert(#recall.groups(P, "A") == 2, "29 minutes apart: two groups")
 print("ok")

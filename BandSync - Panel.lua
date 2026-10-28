@@ -104,9 +104,15 @@ local function section_sync()
   ImGui.Text(ctx, string.format("Here: %d/%d takes%s", view.total - view.my_missing, view.total,
     view.my_missing > 0 and (", " .. view.my_missing .. " still arriving") or ""))
   if view.newer then
-    ImGui.TextColored(ctx, YELLOW, "BandSync " .. view.newer .. " is in use here; you have " .. band.VERSION .. ".")
-    ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Update##banner") then action("Update") end -- "##": same label as More's Update, its own ID
+    -- already on disk (an update, or a bandmate's folder install)? Then only this running panel is old
+    local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
+    if disk == view.newer then
+      ImGui.TextColored(ctx, YELLOW, "BandSync " .. disk .. " is installed: close and reopen this panel to use it.")
+    else
+      ImGui.TextColored(ctx, YELLOW, "BandSync " .. view.newer .. " is in use here; you have " .. band.VERSION .. ".")
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Update##banner") then action("Update") end -- "##": same label as More's Update, its own ID
+    end
   end
 end
 
@@ -227,8 +233,10 @@ local function section_history()
       ImGui.SetItemTooltip(ctx, driving and "Go back to right after this group of changes." or "Only the driver restores (take control first).")
       ImGui.SameLine(ctx)
       local n = g.last - g.first + 1
-      local head = string.format("%s%s  ·  %s%s  ·  %d change%s", g.user, g.user == g.driver and " (driving)" or "",
-        local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "", n, n == 1 and "" or "s")
+      local first = recall.describe(entries[g.first]) -- what it was about, without opening it
+      if #first > 48 then first = first:sub(1, 46) .. "..." end
+      local head = string.format("%s%s  ·  %s%s  ·  %s%s", g.user, g.user == g.driver and " (driving)" or "",
+        local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "", first, n > 1 and string.format("  (+%d more)", n - 1) or "")
       if ImGui.TreeNodeEx(ctx, "g", head, ImGui.TreeNodeFlags_SpanAvailWidth) then
         for i = g.first, g.last do
           ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))

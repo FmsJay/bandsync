@@ -141,6 +141,27 @@ function sync.recorded_by(me)
     return not id or sync.author(id) == sync.author_of(me)
   end
 end
+-- Split without losing anything: REAPER's split trims a MIDI item's notes away for good (seen 7.83: a restore
+-- that lengthened the left half again found bars 9-12 empty). Here both halves keep the whole source, trimmed.
+local function split_keep(it, x)
+  local ok, chunk = reaper.GetItemStateChunk(it, "", false)
+  if not ok then return nil end
+  -- the copy gets its own identity (and its own MIDI data, not pooled with the original)
+  chunk = chunk:gsub("\n%s*IGUID [^\n]*", ""):gsub("\n%s*GUID [^\n]*", ""):gsub("\n%s*POOLEDEVTS [^\n]*", "")
+  local p, l = reaper.GetMediaItemInfo_Value(it, "D_POSITION"), reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+  local right = reaper.AddMediaItemToTrack(reaper.GetMediaItem_Track(it))
+  if not reaper.SetItemStateChunk(right, chunk, false) then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(right), right); return nil end
+  reaper.SetMediaItemInfo_Value(it, "D_LENGTH", x - p)
+  reaper.SetMediaItemInfo_Value(right, "D_POSITION", x)
+  reaper.SetMediaItemInfo_Value(right, "D_LENGTH", p + l - x)
+  for k = 0, reaper.CountTakes(right) - 1 do
+    local tk = reaper.GetTake(right, k)
+    reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS") + (x - p) * reaper.GetMediaItemTakeInfo_Value(tk, "D_PLAYRATE"))
+  end
+  reaper.UpdateItemInProject(it)
+  reaper.UpdateItemInProject(right)
+  return right
+end
 local function split_crossing(proj, at, len, mine)
   local n = 0
   for _, x in ipairs(len < 0 and { at, at - len } or { at }) do
@@ -150,7 +171,7 @@ local function split_crossing(proj, at, len, mine)
       -- (seen 2026-10-28: a midi event every 2 s). It stays as it is; the take it copies is what's split.
       if mine(it) and not (tk and band.take_ext(tk, "band_midi") ~= "") then
         reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
-        local right = reaper.SplitMediaItem(it, x)
+        local right = split_keep(it, x)
         if right then -- the left part keeps the id; the right part is new
           for k = 0, reaper.CountTakes(right) - 1 do
             for _, key in ipairs({ "band_sent", "band_take", "band_fxhash", "band_base_offs", "band_base" }) do

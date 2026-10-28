@@ -13,6 +13,7 @@ local live = require("live")
 local together = require("together")
 local transport -- a pending start/stop (lib/together.lua)
 local clip_said -- when we last warned about the master clipping
+local due_in = math.huge -- seconds until a pending start/stop fires
 
 local cfg = band.settings()
 if not cfg then return end
@@ -314,6 +315,7 @@ local function tick()
     local fire = transport.type == "stop" and ((transport.at or 0) + (theirs and (transport.lag or 0) or 0)) or together.plan(transport, cfg.user, nil)
     if transport.type == "stop" and transport.follow and theirs and transport.pos then fire = fire + 2 end -- the position decides; time is a backstop
     if transport.type == "start" and tnow < fire then reaper.SetExtState(band.SECTION, "together_at " .. key, tostring(fire), false) end
+    due_in = fire - tnow -- the regular poll can take 100-200 ms: it waits while a start/stop is close
     if tnow - fire > 30 then -- arrived long after the fact (offline, sync stalled): don't start a song out of nowhere
       band.log(string.format("missed a %s from %s (%.0f s ago)", transport.type, tostring(transport.user), tnow - fire))
       transport = nil
@@ -373,7 +375,7 @@ local function tick()
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
   local every = (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
-  if not recording and now - last > every then
+  if not recording and now - last > every and not (transport and due_in < 1.5) then
     last = reaper.time_precise()
     local ok, err = pcall(poll)
     if not ok then band.log("sync error: " .. tostring(err)) end

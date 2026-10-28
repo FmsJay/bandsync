@@ -141,6 +141,14 @@ function recall.describe(e)
   elseif e.kind == "midi" then return "edited the notes of " .. whose .. on
   elseif e.kind == "plays" then return string.format("%s: now playing %d take(s)", tostring(e.track), #(e.takes or {}))
   elseif e.kind == "track" then
+    if e.changed then -- 0.7.6+: only what changed
+      local parts = {}
+      for _, f in ipairs(e.changed) do
+        parts[#parts + 1] = f == "mute" and ((e.mute or 0) > 0 and "muted" or "unmuted") or f == "solo" and ((e.solo or 0) > 0 and "soloed" or "unsoloed")
+          or f == "color" and "colour changed" or f == "icon" and "icon changed" or f == "name" and "renamed" or f
+      end
+      return string.format("%s%s: %s", e.was and (e.was .. " renamed to ") or "", tostring(e.track), table.concat(parts, ", "))
+    end
     return string.format("%s%s: %s%s", e.was and (e.was .. " renamed to ") or "", tostring(e.track),
       (e.mute or 0) > 0 and "muted" or "unmuted", (e.solo or 0) > 0 and ", soloed" or "")
   elseif e.kind == "driver" then return "took control from " .. tostring(e.from)

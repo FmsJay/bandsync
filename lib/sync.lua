@@ -419,9 +419,15 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
     band.copy_atomic(dry .. ".flac", takes .. "/" .. id .. "-dry" .. suffix .. ".flac")
     m.dry = id .. "-dry" .. suffix .. ".flac"
   end
-  if rev > 1 then -- receivers keep local copies, so the previous revision's shared files can go
+  if rev > 1 then -- the previous revision's shared files move to _trash (receivers keep local copies; if a new print
+    -- turns out wrong, the old one is still there to bring back)
     local old = rev > 2 and ("-r" .. (rev - 1)) or ""
-    for _, f in ipairs({ id .. old .. ".flac", id .. old .. ".opus", id .. "-dry" .. old .. ".flac", id .. old .. ".midibuf" }) do os.remove(takes .. "/" .. f) end
+    local trash = sync.room_dir(cfg, b.song, b.room) .. "/_trash"
+    reaper.RecursiveCreateDirectory(trash, 0)
+    for _, f in ipairs({ id .. old .. ".flac", id .. old .. ".opus", id .. "-dry" .. old .. ".flac", id .. old .. ".midibuf" }) do
+      os.remove(trash .. "/" .. f)
+      os.rename(takes .. "/" .. f, trash .. "/" .. f)
+    end
   end
   band.write_json(takes .. "/" .. id .. ".json", m) -- one manifest per take, rewritten for each revision
   band.copy_atomic(main .. ".flac", takes .. "/" .. m.full)
@@ -479,7 +485,10 @@ function sync.reprint(proj, cfg, b, mode)
       local printer = id ~= "" and ext(proj, sync.PRINTER, id) or ""
       -- once someone else has printed this take with their own instrument, their print stands: we don't
       -- overwrite it with ours (our note edits still reach them as MIDI)
-      if id ~= "" and (printer == cfg.user or (printer == "" and not twin)) and band.take_ext(tk, "band_fxhash") ~= fxhash(it, tk, mode ~= "dry" or reaper.TakeIsMIDI(tk)) then
+      -- a MIDI copy only reprints through a real instrument: without one its print is silence, and it would replace
+      -- the take's audible print for everyone (2026-10-28)
+      local silent = twin and reaper.TrackFX_GetInstrument(reaper.GetMediaItem_Track(it)) < 0
+      if id ~= "" and not silent and (printer == cfg.user or (printer == "" and not twin)) and band.take_ext(tk, "band_fxhash") ~= fxhash(it, tk, mode ~= "dry" or reaper.TakeIsMIDI(tk)) then
         todo[#todo + 1] = { it, tk, id, twin }
       end
     end
@@ -719,7 +728,21 @@ function sync.apply(proj, ev, dir, root)
     if not it then return true end
     return delete_take(proj, it, tk, ev.take)
   elseif ev.type == "undelete" then -- a recall point brought it back: import it again
-    if band.take_state(proj, ev.take) == "deleted" then band.set_take_state(proj, ev.take, "") end
+    if band.take_state(proj, ev.take) == "deleted" then
+      local chunk = ext(proj, sync.ITEMS, ev.take)
+      if chunk ~= "" and ev.track then -- ours: our real item (source, instrument track) comes back where it was,
+        -- not an import of our own print as a "(band)" mirror (2026-10-28: that mirror then reprinted silent)
+        local tr = band.find_track(proj, ev.track, true) or band.new_track(proj, ev.track)
+        local it2 = tr and reaper.AddMediaItemToTrack(tr)
+        if it2 and reaper.SetItemStateChunk(it2, chunk, false) then
+          band.set_take_state(proj, ev.take, "full")
+          local hit = band.take_index(proj)[ev.take:lower()]
+          if hit then sync.remember(proj, ev.take, hit[1], hit[2]) end
+          return true
+        end
+      end
+      band.set_take_state(proj, ev.take, "")
+    end
     return true
   elseif ev.type == "edit" then
     if not it then return band.take_state(proj, ev.take) == "deleted" end
@@ -840,8 +863,17 @@ function sync.watch(proj, cfg, song, room, can)
       local before = ext(proj, sync.TRACKS, guid)
       if before ~= props then
         local was = before:match("^([^|]*)")
-        if before ~= "" and can(me, (was and was ~= "") and was or name, nil) then
-          sync.post(cfg, song, room, { type = "track", track = name, was = (was ~= name) and was or nil,
+        local changed = {} -- what actually changed, so History says "colour changed", not "unmuted"
+        local bf, nf = {}, {}
+        for v in (before .. "|"):gmatch("([^|]*)|") do bf[#bf + 1] = v end
+        for v in (props .. "|"):gmatch("([^|]*)|") do nf[#nf + 1] = v end
+        for k, field in ipairs({ "name", "mute", "solo", "color", "icon" }) do if bf[k] ~= nf[k] then changed[#changed + 1] = field end end
+        -- colour/icon alone don't go out: they're cosmetic, and auto-colouring (SWS) recolours tracks whenever tracks
+        -- are added, which filled History with changes nobody made; they still travel with a real change
+        local real = false
+        for _, f in ipairs(changed) do if f == "name" or f == "mute" or f == "solo" then real = true end end
+        if real and before ~= "" and can(me, (was and was ~= "") and was or name, nil) then
+          sync.post(cfg, song, room, { type = "track", track = name, was = (was ~= name) and was or nil, changed = changed,
             mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"), solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"),
             color = reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon = props:match("([^|]*)$") })
         end

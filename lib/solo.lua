@@ -320,6 +320,47 @@ function solo.history(cfg, song)
   return out
 end
 
+-- A project file's text without ReaNINJAM / SonoBus on the master: live plug-ins belong to live sessions (in a
+-- solo copy they fail to load, one ReaNINJAM per REAPER, or join the band's group unasked). Each master plug-in
+-- is a group of lines from its BYPASS line to the next one. Pure.
+function solo.strip_live_fx(text)
+  local lines = {}
+  for l in ((text or "") .. "\n"):gmatch("(.-)\r?\n") do lines[#lines + 1] = l end
+  local out, i = {}, 1
+  while i <= #lines do
+    local l = lines[i]
+    local indent = l:match("^(%s*)<MASTERFXLIST")
+    if not indent then
+      out[#out + 1] = l
+      i = i + 1
+    else
+      out[#out + 1] = l
+      i = i + 1
+      local group
+      local function flush()
+        if not group then return end
+        local live = false
+        for _, g in ipairs(group) do
+          local head = g:match("^%s*<(%u+%d*) (.*)$")
+          if head and (g:find("ReaNINJAM", 1, true) or g:find("SonoBus", 1, true)) then live = true end
+        end
+        if not live then for _, g in ipairs(group) do out[#out + 1] = g end end
+        group = nil
+      end
+      while i <= #lines and lines[i] ~= indent .. ">" do
+        local t = lines[i]
+        if t:match("^" .. indent .. "  BYPASS ") then flush(); group = { t }
+        elseif group then group[#group + 1] = t
+        else out[#out + 1] = t end
+        i = i + 1
+      end
+      flush()
+    end
+  end
+  if out[#out] == "" then out[#out] = nil end
+  return table.concat(out, "\n") .. "\n"
+end
+
 -- Save, consolidate, print wet takes, and publish this project as the new version. Returns a summary.
 function solo.push(proj, cfg, song, note)
   local here = solo.local_dir(cfg, song)
@@ -340,9 +381,13 @@ function solo.push(proj, cfg, song, note)
   solo.use_prints_where_needed(proj) -- then back to what this person can hear
   local remote = solo.dir(cfg, song) .. "/project"
   local prev = band.read(remote .. "/" .. song .. ".rpp")
-  local changes = solo.diff(solo.parse(prev or ""), solo.parse(text))
+  local changes = prev and solo.diff(solo.parse(prev), solo.parse(text))
+    or { string.format("first version: %d track(s)", #solo.parse(text).order) }
   local copied = copy_tree(here, remote, false) -- media and prints first, the project file last
   band.write_atomic(remote .. "/" .. song .. ".rpp", text)
+  if prev and #changes == 0 and printed == 0 and (note or "") == "" then -- nothing new: no empty version in the history
+    return string.format("checked in '%s': nothing had changed", song)
+  end
   local hist = solo.dir(cfg, song) .. "/history"
   reaper.RecursiveCreateDirectory(hist, 0)
   local name = stamp() .. "-" .. (cfg.user:gsub("[^%w%-_]", "_"))
@@ -362,9 +407,16 @@ function solo.restore(proj, cfg, song, file)
   local before, err = solo.push(proj, cfg, song, "before restoring " .. (h.user or "?") .. "'s version of " .. (h.time or file))
   if not before then return nil, err end
   local path = solo.local_dir(cfg, song) .. "/" .. song .. ".rpp"
-  band.write_atomic(path, text)
-  reaper.Main_openProject(path) -- just saved, so no "save changes?" prompt
+  -- REAPER doesn't reload a file into the tab that already has it open (2026-10-28: a restore "worked" and changed
+  -- nothing), so the old version opens under a temporary name next to it (same folder: its media paths still
+  -- resolve) and is then saved back under the working copy's own name
+  local tmp = solo.local_dir(cfg, song) .. "/" .. song .. " (restoring).rpp"
+  band.write_atomic(tmp, text)
+  if reaper.ValidatePtr2(0, proj, "ReaProject*") then reaper.SelectProjectInstance(proj) end
+  reaper.Main_openProject("noprompt:" .. tmp) -- just checked in, so nothing unsaved is lost
   local p2 = reaper.EnumProjects(-1)
+  reaper.Main_SaveProjectEx(p2, path, 8) -- 8: this tab's file is the working copy again
+  os.remove(tmp)
   band.bind(p2, { role = "solo", song = song, room = "main" })
   solo.use_prints_where_needed(p2)
   return "restored " .. (h.user or "?") .. "'s version of " .. (h.time or file) .. ". Check in to publish it."

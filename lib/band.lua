@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.9.9", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.10.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -209,19 +209,27 @@ function band.apply_tempo(proj, map)
   reaper.UpdateTimeline()
 end
 
+-- Regions BandSync draws to show who claimed a stretch of time ("[claimed: James]") are this machine's
+-- display only: they're never captured as the song's markers, and applying the band's markers keeps them.
+band.CLAIM_MARK = "[claimed: "
+function band.is_claim_mark(name) return (name or ""):sub(1, #band.CLAIM_MARK) == band.CLAIM_MARK end
+
 function band.capture_markers(proj)
   local out, i = {}, 0
   while true do
     local n, rgn, pos, rend, name, _, color = reaper.EnumProjectMarkers3(proj, i)
     if n == 0 then break end
-    out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = color }
+    if not band.is_claim_mark(name) then out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = color } end
     i = i + 1
   end
   return out
 end
 
 function band.apply_markers(proj, list)
-  while reaper.DeleteProjectMarkerByIndex(proj, 0) do end
+  for i = reaper.CountProjectMarkers(proj) - 1, 0, -1 do
+    local _, _, _, _, name = reaper.EnumProjectMarkers3(proj, i)
+    if not band.is_claim_mark(name) then reaper.DeleteProjectMarkerByIndex(proj, i) end
+  end
   for _, m in ipairs(list) do reaper.AddProjectMarker2(proj, m.region, m.pos, m["end"], m.name, -1, m.color) end
 end
 

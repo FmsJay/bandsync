@@ -184,8 +184,9 @@ function recall.groups(entries, host)
   for i, e in ipairs(entries) do
     if e.kind == "driver" then driver = e.driver or e.user end
     local g = groups[#groups]
-    if not g or g.user ~= e.user or g.driver ~= driver or secs(e.time) - secs(g.to) > 180 then
-      g = { user = e.user, driver = driver, first = i, from = e.time }
+    local solo = e.kind == "solo"
+    if not g or g.user ~= e.user or g.driver ~= driver or secs(e.time) - secs(g.to) > 180 or (g.solo or false) ~= solo then
+      g = { user = e.user, driver = driver, first = i, from = e.time, solo = solo or nil }
       groups[#groups + 1] = g
     end
     g.last, g.to = i, e.time

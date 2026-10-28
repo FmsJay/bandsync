@@ -54,12 +54,15 @@ local function confirmed()
     if not b then solo.release(cfg, song); return band.msg("Open the song's project first: its current state becomes the first solo version.") end
     path = solo.local_dir(cfg, song) .. "/" .. song .. ".rpp"
     reaper.RecursiveCreateDirectory(solo.local_dir(cfg, song), 0)
-    -- this tab becomes the solo working copy: its Live sync must stop first, or it carries on in the copy and sends
-    -- the copied media as new takes (2026-10-28: 7 duplicates)
-    reaper.SetExtState(band.SECTION, "stop " .. tostring(cur), "1", false)
-    reaper.Main_SaveProjectEx(cur, path, 8)
-    band.bind(cur, { role = "solo", song = song, room = "main" })
-    local msg = solo.push(cur, cfg, song, "first solo version")
+    -- a copy in a tab of its own: the live session stays open and keeps syncing (until 0.9.10 this tab itself
+    -- became the solo copy, which closed the live session out from under its Live sync)
+    reaper.Main_SaveProjectEx(cur, path, 0) -- 0: save a copy; this tab keeps its own file
+    band.write_atomic(path, solo.strip_live_fx(band.read(path)))
+    reaper.Main_OnCommand(40859, 0) -- new tab
+    reaper.Main_openProject("noprompt:" .. path)
+    local copy = reaper.EnumProjects(-1)
+    band.bind(copy, { role = "solo", song = song, room = "main" })
+    local msg = solo.push(copy, cfg, song, "first solo version")
     band.log(msg or "first solo version failed")
   else
     reaper.Main_OnCommand(40859, 0) -- new tab

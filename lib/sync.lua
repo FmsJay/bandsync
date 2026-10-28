@@ -299,15 +299,20 @@ function sync.set_claims(cfg, song, room, claims)
   band.write_json(sync.claims_path(cfg, song, room, cfg.user), claims)
 end
 
--- Returns can(user, track, pos, take) -> bool, plus { driver, tracks, regions, owner(track, pos) } for display.
--- A take's author may change it (move, trim, mute) wherever nobody has claimed the track or region; a claim wins.
+-- Returns can(user, track, pos, take) -> bool, plus { driver, tracks, regions, times, owner(track, pos) } for display.
+-- Who owns a take: its track's claimant, else the newest claim on a stretch of time it starts in (a time selection),
+-- else the claimant of the named region it starts in, else the driver. A take's author may change it (move, trim,
+-- mute) wherever nobody has claimed it that way.
 function sync.authority(cfg, song, room, s)
   local driver = sync.driver(cfg, song, room, s)
-  local tracks, regions = {}, {} -- lower name -> { user, time }
+  local tracks, regions, times = {}, {}, {} -- lower name -> { user, time }; times: { user, time, from, to }
   local dir = sync.room_dir(cfg, song, room) .. "/claims"
   for _, f in ipairs(band.files(dir, ".json")) do
     local c = band.read_json(dir .. "/" .. f)
     if c and c.user and c.time then
+      for _, t in ipairs(c.times or {}) do
+        if tonumber(t.from) and tonumber(t.to) and t.to > t.from then times[#times + 1] = { user = c.user, time = c.time, from = t.from, to = t.to } end
+      end
       for _, list in ipairs({ { c.tracks, tracks }, { c.regions, regions } }) do
         for _, name in ipairs(list[1] or {}) do
           local k = name:lower()
@@ -320,9 +325,15 @@ function sync.authority(cfg, song, room, s)
   for _, m in ipairs((s and s.markers) or {}) do
     if m.region then spans[#spans + 1] = { name = m.name:lower(), from = m.pos, to = m["end"] } end
   end
+  table.sort(times, function(x, y) return x.time > y.time end) -- the newest claim on a stretch wins
+  local function in_time(pos)
+    for _, t in ipairs(pos and times or {}) do if pos >= t.from and pos < t.to then return t end end
+  end
   local function owner(track, pos)
     local t = base_name(track)
     if t and tracks[t:lower()] then return tracks[t:lower()].user end
+    local tc = in_time(pos)
+    if tc then return tc.user end
     if pos then
       for _, sp in ipairs(spans) do
         if pos >= sp.from and pos < sp.to and regions[sp.name] then return regions[sp.name].user end
@@ -333,6 +344,7 @@ function sync.authority(cfg, song, room, s)
   local function claimed(track, pos)
     local t = base_name(track)
     if t and tracks[t:lower()] then return true end
+    if in_time(pos) then return true end
     for _, sp in ipairs(pos and spans or {}) do
       if pos >= sp.from and pos < sp.to and regions[sp.name] then return true end
     end
@@ -341,7 +353,29 @@ function sync.authority(cfg, song, room, s)
       if owner(track, pos) == user then return true end
       return take ~= nil and sync.author(take) == sync.author_of(user) and not claimed(track, pos)
     end,
-    { driver = driver, tracks = tracks, regions = regions, owner = owner, spans = spans }
+    { driver = driver, tracks = tracks, regions = regions, times = times, owner = owner, spans = spans }
+end
+
+-- Show the time claims as regions named "[claimed: <user>]" (this machine only; see band.CLAIM_MARK). Redrawn
+-- only when they change.
+function sync.draw_claims(proj, times)
+  local want, have = {}, {}
+  for _, t in ipairs(times or {}) do want[#want + 1] = string.format("%s%s]|%.6f|%.6f", band.CLAIM_MARK, t.user, t.from, t.to) end
+  table.sort(want)
+  for i = 0, reaper.CountProjectMarkers(proj) - 1 do
+    local _, rgn, p, e, name = reaper.EnumProjectMarkers3(proj, i)
+    if rgn and band.is_claim_mark(name) then have[#have + 1] = string.format("%s|%.6f|%.6f", name, p, e) end
+  end
+  table.sort(have)
+  if table.concat(want, "\n") == table.concat(have, "\n") then return false end
+  for i = reaper.CountProjectMarkers(proj) - 1, 0, -1 do
+    local _, _, _, _, name = reaper.EnumProjectMarkers3(proj, i)
+    if band.is_claim_mark(name) then reaper.DeleteProjectMarkerByIndex(proj, i) end
+  end
+  for _, t in ipairs(times or {}) do
+    reaper.AddProjectMarker2(proj, true, t.from, t.to, band.CLAIM_MARK .. t.user .. "]", -1, reaper.ColorToNative(230, 150, 40) | 0x1000000)
+  end
+  return true
 end
 
 -- ---- where a take sits ---------------------------------------------------------------------------

@@ -37,6 +37,15 @@ function live.channel_mode()
   if reaper.JS_Window_FindChild(con, "Voice Chat", false) then return "voice" end
 end
 
+-- ReaNINJAM's metronome mute button (its "metromute" control, id 1014): one click toggles it. Its state isn't
+-- readable, so the panel offers a toggle (an instance opened before live.configure ran keeps its own setting).
+function live.toggle_click()
+  local con = reaper.JS_Window_Find and reaper.JS_Window_Find("ReaNINJAM", true)
+  if not con then return false end
+  reaper.JS_WindowMessage_Send(con, "WM_COMMAND", 1014, 0, 0, 0)
+  return true
+end
+
 -- Set keys of one [section] in an ini text, keeping everything else. Pure.
 function live.ini_set(text, section, keys)
   local lines, out, in_sec, seen, found = {}, {}, false, {}, false
@@ -78,6 +87,9 @@ function live.configure(cfg, server, mode, send, sessiondir)
     host = server, user = cfg.user, anon = "1", pass = "", passrem = "0",
     savelocal = "1", savelocalwav = "0", sessiondir = sessiondir,
     lc_cnt = "1",
+    -- NINJAM's metronome ticks at the server's tempo all the time you're connected, transport or not: only Jam
+    -- (everyone playing to NINJAM's own clock) needs it
+    metromute = mode == "jam" and "0" or "1",
     lc_0 = string.format("0 source 0 bc %d mute 0 solo 0 volume 1.000000 pan 0.000000 jesus 0 flag %d outidx 0 br 128 name `%s`",
       send and 1 or 0, live.FLAGS[mode] or 4, (cfg.user:gsub("`", ""))),
   }

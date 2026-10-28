@@ -129,8 +129,10 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
   everyone online holds every take and has applied every change (and nobody is holding sync), and offers to
   wait up to 2 minutes for that. Every handover saves a recall point.
 - **Ownership** (panel): *Claim selected tracks* makes them yours (only your edits there propagate, whoever
-  drives); *Claim region at cursor* does the same for every take that starts in that region. A track claim
-  beats a region claim, which beats the driver. *Release mine* hands them back.
+  drives); *Claim region at cursor* does the same for every take that starts in that region; *Claim time
+  selection* does it for any stretch you highlight, shown to everyone as a region named `[claimed: you]` (it
+  isn't one of the song's markers and never syncs as one). A track claim beats a time claim, which beats a
+  region claim, which beats the driver. Each claim has its own x to release it; *Release mine* hands back all.
 - **History & restore** (panel tab): every take and every change in the room, newest first, grouped by who made
   them (and who was driving), each group expandable to its individual changes. The driver can restore the
   session to right after any group: later takes are put away, deleted ones come back out of `_trash`, positions

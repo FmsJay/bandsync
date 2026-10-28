@@ -222,6 +222,7 @@ local function poll()
   -- is view-only (locked) so it can't silently drift from the band's version
   if not hold then sync.watch(proj, cfg, b.song, b.room, can) end
   sync.apply_locks(proj, can, cfg.user)
+  sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
   -- pending + hold let "Take control" wait until everyone has caught up before switching

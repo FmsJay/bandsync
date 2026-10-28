@@ -67,6 +67,11 @@ local function local_time(iso)
   return os.date("%m-%d %H:%M", os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s, isdst = false }) + utc_offset)
 end
 
+local function bar_of(pos) -- "5", or "5 beat 3" off the bar line
+  local bar, beat = reaper.format_timestr_pos(pos, "", 2):match("^(%d+)%.(%d+)")
+  return beat == "1" and bar or (bar .. " beat " .. beat)
+end
+
 -- What a track is called for ownership: a "(MIDI)" copy track and a "(band)" mirror belong to their part.
 local function part_name(tr)
   local m = band.track_ext(tr, "band_midi_track")
@@ -146,6 +151,9 @@ local function section_control()
   local owned = {}
   for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
   for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end
+  for _, t in ipairs(who.times or {}) do
+    owned[#owned + 1] = { string.format("bars %s to %s: %s", bar_of(t.from), bar_of(t.to), t.user), t.user == cfg.user and "times", t }
+  end
   table.sort(owned, function(x, y) return x[1] < y[1] end)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
   for i, o in ipairs(owned) do
@@ -153,7 +161,11 @@ local function section_control()
       if ImGui.SmallButton(ctx, "x##rel" .. i) then
         local c = sync.my_claims(cfg, b.song, b.room)
         local keep = {}
-        for _, n in ipairs(c[o[2]] or {}) do if n:lower() ~= o[3]:lower() then keep[#keep + 1] = n end end
+        for _, n in ipairs(c[o[2]] or {}) do
+          local same = o[2] == "times" and math.abs(n.from - o[3].from) < 1e-6 and math.abs(n.to - o[3].to) < 1e-6
+            or o[2] ~= "times" and n:lower() == o[3]:lower()
+          if not same then keep[#keep + 1] = n end
+        end
         c[o[2]] = keep
         sync.set_claims(cfg, b.song, b.room, c)
       end
@@ -175,7 +187,19 @@ local function section_control()
     if ri < 0 or not isrgn or name == "" then band.msg("Put the edit cursor inside a named region first.") else claim({}, { name }) end
   end
   ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, "Release mine") then sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {} }) end
+  if ImGui.Button(ctx, "Claim time selection") then
+    local from, to = reaper.GetSet_LoopTimeRange2(proj, false, false, 0, 0, false)
+    if to - from < 0.01 then band.msg("Drag across the timeline to select the stretch of time you want to own first.") else
+      local c = sync.my_claims(cfg, b.song, b.room)
+      c.times = c.times or {}
+      c.times[#c.times + 1] = { from = from, to = to }
+      sync.set_claims(cfg, b.song, b.room, c)
+    end
+  end
+  ImGui.SetItemTooltip(ctx, "Takes that start inside the selected time are yours to change (a track someone claimed still wins).\n" ..
+    "Everyone sees it as a region named [claimed: you].")
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Release mine") then sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {}, times = {} }) end
 end
 
 local function section_recall()
@@ -219,7 +243,7 @@ local function section_history()
     for gi = #groups, 1, -1 do
       local g = groups[gi]
       ImGui.PushID(ctx, gi)
-      ImGui.BeginDisabled(ctx, not driving)
+      ImGui.BeginDisabled(ctx, not driving or g.solo)
       if ImGui.SmallButton(ctx, "Restore") and reaper.MB(string.format("Make the session look like it did right after %s's changes at %s?\n\n" ..
           "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
           "Where things are now is saved as a recall point first, so you can come back.", g.user, local_time(g.to)), "BandSync", 4) == 6 then
@@ -230,12 +254,13 @@ local function section_history()
         last, hist_at = 0, 0
       end
       ImGui.EndDisabled(ctx)
-      ImGui.SetItemTooltip(ctx, driving and "Go back to right after this group of changes." or "Only the driver restores (take control first).")
+      ImGui.SetItemTooltip(ctx, g.solo and "A Solo edit version: restore it from the Solo edit tab (check out first)."
+        or driving and "Go back to right after this group of changes." or "Only the driver restores (take control first).")
       ImGui.SameLine(ctx)
       local n = g.last - g.first + 1
       local first = recall.describe(entries[g.first]) -- what it was about, without opening it
       if #first > 48 then first = first:sub(1, 46) .. "..." end
-      local head = string.format("%s%s  ·  %s%s  ·  %s%s", g.user, g.user == g.driver and " (driving)" or "",
+      local head = string.format("%s%s  ·  %s%s  ·  %s%s", g.user, g.solo and " (Solo edit)" or g.user == g.driver and " (driving)" or "",
         local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "", first, n > 1 and string.format("  (+%d more)", n - 1) or "")
       if ImGui.TreeNodeEx(ctx, "g", head, ImGui.TreeNodeFlags_SpanAvailWidth) then
         for i = g.first, g.last do
@@ -387,6 +412,12 @@ local function section_live()
     ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in: click Connect in its window.")
   else
     ImGui.TextColored(ctx, GREEN, "ReaNINJAM is on your master track.")
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "NINJAM click on/off") then
+      if not live.toggle_click() then band.msg("Open ReaNINJAM's window first (Show it).") end
+    end
+    ImGui.SetItemTooltip(ctx, "NINJAM's own metronome ticks the whole time you're connected (at the server's tempo, not the song's).\n" ..
+      "BandSync turns it off for Play along and Listen live; this flips it if it's on anyway.")
     local cm = live.channel_mode()
     if live_mode == "synced" and cm and cm ~= "session" then
       ImGui.PushTextWrapPos(ctx, 0)
@@ -507,10 +538,6 @@ end
 
 -- ---- Together: start/stop at once, notes and likes, live ideas, and the tools (lib/tools.lua) ----------------
 local countin, lag_bars, note_text, bars = 1, 0, "", 1
-local function bar_of(pos) -- "5", or "5 beat 3" off the bar line
-  local bar, beat = reaper.format_timestr_pos(pos, "", 2):match("^(%d+)%.(%d+)")
-  return beat == "1" and bar or (bar .. " beat " .. beat)
-end
 local function sel_take()
   local it = reaper.GetSelectedMediaItem(proj, 0)
   local tk = it and reaper.GetActiveTake(it)
@@ -791,6 +818,12 @@ local function frame()
     return
   end
   ImGui.Text(ctx, string.format("%s  ·  room %s  ·  %s  ·  you are %s", b.song, b.room, b.role, cfg.user))
+  if b.role == "solo" then -- a Solo edit working copy: no Live sync here, only checking out/in and its versions
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.TextDisabled(ctx, "This tab is your Solo edit copy of '" .. b.song .. "'. Live sync never runs here: what you change goes to the band when you check in. The live session is in its own tab.")
+    ImGui.PopTextWrapPos(ctx)
+    return section_solo()
+  end
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
       section_setup()

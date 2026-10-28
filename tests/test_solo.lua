@@ -76,4 +76,39 @@ dirs["G:/My Drive"] = { "x" }
 assert(solo.root({ root = "R" }) == "G:/My Drive/BandSync", "windows drive")
 ext = "X:/set"
 assert(solo.root({ root = "R" }) == "X:/set", "explicit")
+-- a solo copy loses the live plug-ins on the master, and nothing else
+local rpp = table.concat({
+  "<REAPER_PROJECT 0.1",
+  "  <MASTERFXLIST",
+  "    SHOW 0",
+  "    LASTSEL 0",
+  "    BYPASS 0 0 0",
+  '    <VST "VST: ReaEQ (Cockos)" reaeq.dll 0 ""',
+  "      ZXE=",
+  "    >",
+  "    FXID {1}",
+  "    WAK 0 0",
+  "    BYPASS 0 1 1",
+  '    <VST "VST3: SonoBus (Sonosaurus) (18ch)" SonoBus.vst3 0 ""',
+  "      cAmJ",
+  "    >",
+  "    FXID {2}",
+  "    WAK 0 0",
+  "    BYPASS 0 0 0",
+  '    <VST "VST: ReaNINJAM (Cockos)" reaninjam.dll 0 ""',
+  "      bmlu",
+  "    >",
+  "    FXID {3}",
+  "    WAK 0 0",
+  "  >",
+  "  <TRACK",
+  '    NAME "SonoBus notes"',
+  "  >",
+  ">" }, "\n")
+local stripped = solo.strip_live_fx(rpp)
+assert(stripped:find("ReaEQ", 1, true) and stripped:find("FXID {1}", 1, true), "other master plug-ins stay")
+assert(not stripped:find("SonoBus.vst3", 1, true) and not stripped:find("FXID {2}", 1, true), "SonoBus goes, with its FXID/WAK lines")
+assert(not stripped:find("reaninjam.dll", 1, true) and not stripped:find("FXID {3}", 1, true), "ReaNINJAM goes")
+assert(stripped:find('NAME "SonoBus notes"', 1, true), "a track merely named after it is untouched")
+assert(stripped:find("  >\n  <TRACK", 1, true), "the master list still closes")
 print("ok")

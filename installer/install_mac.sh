@@ -98,6 +98,38 @@ if yes "$SOLO"; then
   if have "Google Drive"; then ok "Google Drive is already installed"
   else say "Installing Google Drive for desktop (asks for your password) ..."; from_dmg https://dl.google.com/drive-file-stream/GoogleDrive.dmg GoogleDrive "Google Drive"; fi
 fi
+# Tailscale sign-in as a tagged band machine: a tagged machine's key never expires, so nobody has to sign in again
+# before a session (untagged ones sign out every 180 days). Needs the host's one-time tagOwners line (see the end).
+TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
+TS_TAGGED=""
+if yes "$LIVE" && [ -x "$TS" ]; then
+  open -a Tailscale; sleep 3
+  tsst="$("$TS" status --json 2>/dev/null | tr -d '\n ')"
+  extra=""
+  if echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { echo "$tsst" | grep -q '"BackendState":"Running"' && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
+    ok "Tailscale signed in, and stays signed in"; TS_TAGGED=1 # tagged, or its key expiry was turned off by hand
+  else
+    go=y
+    if echo "$tsst" | grep -q '"BackendState":"Running"'; then
+      go="$(ask "Tailscale is signed in, but signs out by itself every few months. Make this Mac stay signed in? You sign in once more (y/n)" y)"
+      extra="--force-reauth --reset"
+    fi
+    if yes "$go"; then
+      say "Signing in to Tailscale: a browser page opens; sign in with the band's account there. (macOS may first ask"
+      say "to allow Tailscale's VPN configuration: click Allow.)"
+      out="$WORK/ts_up.txt"; : > "$out"
+      "$TS" up --advertise-tags=tag:bandsync $extra --timeout=300s >"$out" 2>&1 &
+      pid=$!; url=""
+      for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
+      [ -n "$url" ] && open "$url"
+      if wait $pid; then ok "Tailscale signed in as a band machine (it stays signed in)"; TS_TAGGED=1
+      elif grep -qi 'tag' "$out"; then
+        warn "Tailscale didn't accept the band tag yet: the host has to allow it once (see the end). Until then, sign in"
+        warn "from the Tailscale icon in the menu bar; this Mac then signs out by itself every few months."
+      else warn "Tailscale sign-in didn't finish: sign in from its icon in the menu bar."; fi
+    fi
+  fi
+fi
 have REAPER || { warn "REAPER isn't installed: get it from reaper.fm and run this again."; exit 1; }
 
 # ---------- 2. REAPER extensions: ReaPack and ReaImGui ----------
@@ -197,10 +229,16 @@ else
     echo "    (They add it in Syncthing; the shared folder then arrives by itself.)"
   fi
 fi
-if yes "$LIVE"; then
-  echo "  - Tailscale: open it and sign in (your own account); allow its VPN configuration when macOS asks."
-  if yes "$HOSTING"; then echo "    Then share this Mac with each bandmate: login.tailscale.com/admin/machines > ... > Share."
-  else echo "    Then open the share link the host sends you, and accept it."; fi
+if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
+  echo "  - Tailscale: sign in from its icon in the menu bar (the band's account); allow its VPN configuration when asked."
+    echo "  - Tailscale, once for the whole band: at login.tailscale.com/admin/acls add this line inside the policy's { }:"
+    echo '      "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
+    echo "    Then band machines sign in as 'tag:bandsync', and tagged machines never have to sign in again."
+fi
+if yes "$LIVE" && yes "$HOSTING" && [ -n "$TS_TAGGED" ]; then
+    echo "  - Tailscale (if you haven't yet), once for the whole band: at login.tailscale.com/admin/acls add this line inside the policy's { }:"
+    echo '      "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
+    echo "    Then band machines sign in as 'tag:bandsync', and tagged machines never have to sign in again."
 fi
 if yes "$SOLO"; then
   echo "  - Google Drive: open it and sign in; allow its extension when macOS asks."

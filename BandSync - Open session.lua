@@ -12,72 +12,69 @@ if b and b.role == "host" then
   return band.msg("This is the host project for '" .. b.song .. "'. Open the session in a new project tab instead.")
 end
 
-local song = b and b.song
-if not song then
-  local songs = band.songs(cfg)
-  if #songs == 0 then return band.msg("No published songs found in " .. cfg.root) end
-  song = band.pick(songs)
-  if not song then return end -- menu dismissed
-end
-local s = band.read_json(band.session_path(cfg, song))
-if not s then return band.msg("Couldn't read session.json for '" .. song .. "' (still syncing?).") end
-band.check_version(s.bandsync, "'" .. song .. "'")
+local function open_song(song, room) -- room: for a new tab (nil when refreshing a bound one)
+  local s = band.read_json(band.session_path(cfg, song))
+  if not s then return band.msg("Couldn't read session.json for '" .. song .. "' (still syncing?).") end
+  band.check_version(s.bandsync, "'" .. song .. "'")
 
-if not b then
-  local ok, room = reaper.GetUserInputs("Join " .. song, 1, "Room (main, or a new side room),extrawidth=100", "main")
-  if not ok then return end
-  room = band.clean(room)
-  if room == "" then room = "main" end
-  for i = 0, math.huge do -- already open here? two tabs of one song share its file and its status (2026-10-28)
-    local p = reaper.EnumProjects(i)
-    if not p then break end
-    local ob = band.binding(p)
-    if ob and ob.song == song and ob.room == room and ob.role ~= "solo" then
-      reaper.SelectProjectInstance(p)
-      return band.msg("'" .. song .. "' (room " .. room .. ") is already open in another tab: switched to it.")
+  if not b then
+    room = (room and room ~= "") and room or "main"
+    for i = 0, math.huge do -- already open here? two tabs of one song share its file and its status (2026-10-28)
+      local p = reaper.EnumProjects(i)
+      if not p then break end
+      local ob = band.binding(p)
+      if ob and ob.song == song and ob.room == room and ob.role ~= "solo" then
+        reaper.SelectProjectInstance(p)
+        return band.msg("'" .. song .. "' (room " .. room .. ") is already open in another tab: switched to it.")
+      end
+    end
+    if reaper.CountTracks(0) > 0 then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
+    b = { role = "guest", song = song, room = room }
+  end
+
+  local proj, projfile = reaper.EnumProjects(-1)
+  -- First open: save into a local (not synced) folder first, so stems are copied next to the project
+  -- and recordings stay off the shared folder until sent.
+  local first_open = projfile == ""
+  if first_open then
+    local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
+    reaper.RecursiveCreateDirectory(local_dir, 0)
+    reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
+  end
+
+  reaper.Undo_BeginBlock2(proj)
+  reaper.PreventUIRefresh(1)
+  reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", s.srate, true)
+  reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
+  -- record 24-bit FLAC: Send renders 24-bit, but can't restore detail a 16-bit recording never captured
+  if first_open then reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true) end
+  band.apply_tempo(proj, s.tempo)
+  band.apply_markers(proj, s.markers)
+  -- the band's timeline, not a local edit: Live sync mustn't send it back (lib/sync.lua timeline_sig)
+  reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }))
+  local n = band.sync_stems(proj, cfg, song, s)
+  if s.share then -- the host shares its real takes and lanes, so stems are only a mixed reference
+    for i = 0, reaper.CountTracks(proj) - 1 do
+      local tr = reaper.GetTrack(proj, i)
+      if band.track_ext(tr, "band_stem") ~= "" then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
     end
   end
-  if reaper.CountTracks(0) > 0 then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
-  b = { role = "guest", song = song, room = room }
+  b.version = s.version
+  band.bind(proj, b)
+  reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, b.room), 0)
+  reaper.PreventUIRefresh(-1)
+  reaper.TrackList_AdjustWindows(false)
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock2(proj, "BandSync: open " .. song .. " v" .. s.version, -1)
+
+  if first_open then reaper.Main_SaveProject(proj, false) end
+
+  band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
+    "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..
+    "Run 'BandSync - Live sync' and record: each take goes out by itself when you stop.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))
 end
 
-local proj, projfile = reaper.EnumProjects(-1)
--- First open: save into a local (not synced) folder first, so stems are copied next to the project
--- and recordings stay off the shared folder until sent.
-local first_open = projfile == ""
-if first_open then
-  local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
-  reaper.RecursiveCreateDirectory(local_dir, 0)
-  reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
-end
-
-reaper.Undo_BeginBlock2(proj)
-reaper.PreventUIRefresh(1)
-reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", s.srate, true)
-reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
--- record 24-bit FLAC: Send renders 24-bit, but can't restore detail a 16-bit recording never captured
-if first_open then reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true) end
-band.apply_tempo(proj, s.tempo)
-band.apply_markers(proj, s.markers)
--- the band's timeline, not a local edit: Live sync mustn't send it back (lib/sync.lua timeline_sig)
-reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }))
-local n = band.sync_stems(proj, cfg, song, s)
-if s.share then -- the host shares its real takes and lanes, so stems are only a mixed reference
-  for i = 0, reaper.CountTracks(proj) - 1 do
-    local tr = reaper.GetTrack(proj, i)
-    if band.track_ext(tr, "band_stem") ~= "" then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
-  end
-end
-b.version = s.version
-band.bind(proj, b)
-reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, b.room), 0)
-reaper.PreventUIRefresh(-1)
-reaper.TrackList_AdjustWindows(false)
-reaper.UpdateArrange()
-reaper.Undo_EndBlock2(proj, "BandSync: open " .. song .. " v" .. s.version, -1)
-
-if first_open then reaper.Main_SaveProject(proj, false) end
-
-band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
-  "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..
-  "Run 'BandSync - Live sync' and record: each take goes out by itself when you stop.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))
+if b then return open_song(b.song) end
+if #band.songs(cfg) == 0 then return band.msg("No published songs found in " .. cfg.root) end
+require("chooser").open(cfg, { title = "Open a band song", action = "Open", rooms = "new" },
+  function(song, room) if song then open_song(song, room) end end)

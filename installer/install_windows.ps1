@@ -226,11 +226,47 @@ if ($isHost) {
 }
 if ($wantLive) {
   $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
-  $state = ""
-  if (Test-Path $ts) { try { $ErrorActionPreference = "Continue"; $state = (& $ts status --json 2>$null | ConvertFrom-Json).BackendState } catch { } finally { $ErrorActionPreference = "Stop" } }
-  if ($state -ne "Running") { $left += "Tailscale: sign in from its icon in the taskbar (your own account)." }
-  if ($isHost) { $left += "Tailscale: share this machine with each bandmate (login.tailscale.com/admin/machines > ... > Share)." }
-  elseif ($state -ne "Running") { $left += "Tailscale: then open the share link the host sends you, and accept it." }
+  # sign in as a tagged band machine: a tagged machine's key never expires, so nobody has to sign in again before a
+  # session (untagged ones sign out every 180 days). Needs the host's one-time tagOwners line (below).
+  $st = $null
+  $tagged = $false
+  if (Test-Path $ts) {
+    try { $ErrorActionPreference = "Continue"; $st = & $ts status --json 2>$null | ConvertFrom-Json } catch { } finally { $ErrorActionPreference = "Stop" }
+    # tagged, or its key expiry was turned off by hand (then it has no KeyExpiry)
+    $tagged = $st -and (@($st.Self.Tags) -contains "tag:bandsync" -or ($st.BackendState -eq "Running" -and -not $st.Self.KeyExpiry))
+    if ($tagged) { Ok "Tailscale signed in, and stays signed in" }
+    else {
+      $extra = @()
+      $go = $true
+      if ($st -and $st.BackendState -eq "Running") {
+        $go = YesNo "Tailscale is signed in, but signs out by itself every few months. Make this PC stay signed in? You sign in once more" "y"
+        $extra = @("--force-reauth", "--reset")
+      }
+      if ($go) {
+        Say "Signing in to Tailscale: a browser page opens; sign in with the band's account there."
+        $out = Join-Path $env:TEMP "bandsync_ts_up.txt"
+        Set-Content $out ""
+        $p = Start-Process -FilePath $ts -ArgumentList (@("up", "--advertise-tags=tag:bandsync", "--timeout=300s") + $extra) -RedirectStandardError $out -NoNewWindow -PassThru
+        $null = $p.Handle # (so ExitCode is readable afterwards)
+        $url = $null
+        for ($i = 0; $i -lt 30 -and -not $url -and -not $p.HasExited; $i++) {
+          Start-Sleep 1
+          $m = Select-String -Path $out -Pattern 'https://login\.tailscale\.com/\S+' | Select-Object -First 1
+          if ($m) { $url = $m.Matches[0].Value }
+        }
+        if ($url) { Start-Process $url }
+        $p.WaitForExit()
+        if ($p.ExitCode -eq 0) { Ok "Tailscale signed in as a band machine (it stays signed in)"; $tagged = $true }
+        elseif ((Get-Content $out -Raw) -match 'tag') { Warn "Tailscale didn't accept the band tag yet: the host has to allow it once (see below). Until then, sign in from the Tailscale icon; this PC then signs out by itself every few months." }
+        else { Warn "Tailscale sign-in didn't finish: sign in from its icon in the taskbar." }
+      }
+    }
+  }
+  if (-not $tagged -or $isHost) {
+    $left += "Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the policy's { }:"
+    $left += "    `"tagOwners`": { `"tag:bandsync`": [`"autogroup:member`"] },"
+    $left += "  Then band machines sign in as 'tag:bandsync', and tagged machines never have to sign in again."
+  }
 }
 if ($wantSolo -and -not (Test-Path "G:\My Drive\BandSync")) {
   $left += "Google Drive: sign in when it opens."

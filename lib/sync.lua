@@ -1638,6 +1638,8 @@ function sync.receive(proj, cfg, song, room, can)
       local ev = band.read_json(dir .. "/" .. f)
       -- a malformed or half-synced file must not stop everything behind it
       if type(ev) == "table" and type(ev.id) == "string" and type(ev.time) == "string" and type(ev.user) == "string" and type(ev.type) == "string" then
+        -- 0.14.4 sent an edit's previous shape as "was", which is a track's old name everywhere else
+        if type(ev.was) == "table" then ev.before, ev.was = ev.before or ev.was, nil end
         pending[#pending + 1] = ev
         if ev.type == "driver" then drivers[ev.id] = { time = ev.time, user = ev.driver or ev.user } end
       end

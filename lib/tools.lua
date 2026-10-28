@@ -173,7 +173,10 @@ local function events_of(cfg, b)
   local dir, list = sync.room_dir(cfg, b.song, b.room) .. "/events", {}
   for _, f in ipairs(band.files(dir, ".json")) do
     local ev = band.read_json(dir .. "/" .. f)
-    if type(ev) == "table" and type(ev.time) == "string" and type(ev.id) == "string" then list[#list + 1] = ev end
+    if type(ev) == "table" and type(ev.time) == "string" and type(ev.id) == "string" then
+      if type(ev.was) == "table" then ev.before, ev.was = ev.before or ev.was, nil end -- (0.14.4's name for it)
+      list[#list + 1] = ev
+    end
   end
   table.sort(list, function(a, z) return (a.time .. a.id) < (z.time .. z.id) end)
   return list

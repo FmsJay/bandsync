@@ -40,7 +40,12 @@ sync.audio_follow_tempo(proj) -- band audio follows tempo changes piece by piece
 -- the song). Non-persistent ExtState "side <proj>" = lag in bars ("" = off).
 local side = { playing = false, pos = 0, t = 0, quiet_until = 0 }
 local function side_bars()
-  local v = reaper.GetExtState(band.SECTION, "side " .. tostring(proj))
+  local v = select(2, reaper.GetProjExtState(proj, band.SECTION, "side")) -- saved with the song: a reopened tab keeps it
+  local old = reaper.GetExtState(band.SECTION, "side " .. tostring(proj)) -- (set per tab before 0.11.3: carried over once)
+  if old ~= "" then
+    reaper.DeleteExtState(band.SECTION, "side " .. tostring(proj), false)
+    if v == "" then v = old; reaper.SetProjExtState(proj, band.SECTION, "side", old) end
+  end
   return v ~= "" and (tonumber(v) or 0) or nil
 end
 -- A count-in click: the metronome on until the song reaches `upto` (then back as it was).

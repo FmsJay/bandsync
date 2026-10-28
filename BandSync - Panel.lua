@@ -580,11 +580,11 @@ local function section_together()
   local key = tostring(proj)
   -- Side by side: everyone's normal transport buttons drive everyone
   ImGui.SeparatorText(ctx, "Side by side")
-  local side = reaper.GetExtState(band.SECTION, "side " .. key)
+  -- kept in the project (until 0.11.3 it was per tab and lost when the tab was closed and reopened)
+  local side = select(2, reaper.GetProjExtState(proj, band.SECTION, "side"))
   local ch, on = ImGui.Checkbox(ctx, "Follow each other: press play, stop and record as usual", side ~= "")
   if ch then
-    if on then reaper.SetExtState(band.SECTION, "side " .. key, tostring(side_bars_edit), false)
-    else reaper.DeleteExtState(band.SECTION, "side " .. key, false) end
+    reaper.SetProjExtState(proj, band.SECTION, "side", on and tostring(side_bars_edit) or "")
   end
   ImGui.SetItemTooltip(ctx, "Whoever presses play, stop or record (or jumps somewhere while playing), everyone in side by side follows.\n" ..
     "The one who records records; the others hear it. Edits land as usual, every half second.")
@@ -592,7 +592,7 @@ local function section_together()
   local lc, lv = ImGui.InputInt(ctx, "bars behind whoever plays", side_bars_edit)
   if lc then
     side_bars_edit = math.max(0, lv)
-    if side ~= "" then reaper.SetExtState(band.SECTION, "side " .. key, tostring(side_bars_edit), false) end
+    if side ~= "" then reaper.SetProjExtState(proj, band.SECTION, "side", tostring(side_bars_edit)) end
   end
   ImGui.SetItemTooltip(ctx, "With Play along (Live tab): 1-2 bars, so you hear them in time with the song.\nWith Listen live: 0, everyone at the same spot.")
   if side ~= "" then

@@ -123,10 +123,11 @@ local function param_value(tree, id)
   end
 end
 
--- Whether a SonoBus state is already in `group` with BandSync's buffer defaults.
-function sonobus.is_set_up(b64, group)
+-- Whether a SonoBus state is already in `group` (as `user`, when given) with BandSync's buffer defaults.
+function sonobus.is_set_up(b64, group, user)
   local c = unpack_chunk(b64)
   if not c or sonobus.state_group(b64) ~= group then return false end
+  if user and sonobus.state_user(b64) ~= user then return false end -- a renamed bandmate rejoins under the new name
   for id, want in pairs(sonobus.BUFFER) do
     if math.abs((param_value(c.tree, id) or -1) - want) > 1e-6 then return false end
   end
@@ -140,6 +141,15 @@ function sonobus.state_group(b64)
   local info = rec and rec.children[1]
   local g = info and prop(info, "groupName")
   return g and g[2]:match("^\5(.*)%z$")
+end
+
+-- The name SonoBus would rejoin under, or nil.
+function sonobus.state_user(b64)
+  local c = unpack_chunk(b64)
+  local rec = c and child(c.tree, "RecentConnections")
+  local info = rec and rec.children[1]
+  local u = info and prop(info, "userName")
+  return u and u[2]:match("^(.*)%z$")
 end
 
 -- The same state, set to join `info` ({ user, group, password, host?, port?, now? }) and to rejoin by itself.

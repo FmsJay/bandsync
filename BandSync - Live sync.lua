@@ -350,7 +350,8 @@ local function tick()
         else
           reaper.OnPlayButtonEx(proj)
         end
-        local said = string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)", transport.rec and "recording" or "playing",
+        local said = string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)",
+          transport.rec and (transport.follow and theirs and "playing along (they're recording)" or "recording") or "playing",
           from, tostring(transport.user), (tnow - fire) * 1000)
         band.log(said)
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. said, false) -- the panel shows it

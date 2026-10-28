@@ -24,6 +24,19 @@ function live.ini_path()
   return reaper.GetResourcePath() .. "/reaninjam.ini"
 end
 
+-- What ReaNINJAM's local channel is sending right now, read off its window: "session", "normal", "voice", or
+-- nil (no window / js_ReaScriptAPI missing). The ini only counts when ReaNINJAM first loads in a REAPER session,
+-- so an instance opened earlier can still be in Normal mode (2026-10-28: Play along streamed normal intervals,
+-- heard 0.94 s off the song).
+function live.channel_mode()
+  if not reaper.JS_Window_Find then return nil end
+  local con = reaper.JS_Window_Find("ReaNINJAM", true)
+  if not con then return nil end
+  if reaper.JS_Window_FindChild(con, "Session Mode", false) then return "session" end
+  if reaper.JS_Window_FindChild(con, "Normal NINJAM", false) then return "normal" end
+  if reaper.JS_Window_FindChild(con, "Voice Chat", false) then return "voice" end
+end
+
 -- Set keys of one [section] in an ini text, keeping everything else. Pure.
 function live.ini_set(text, section, keys)
   local lines, out, in_sec, seen, found = {}, {}, false, {}, false

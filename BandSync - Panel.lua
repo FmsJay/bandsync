@@ -387,6 +387,13 @@ local function section_live()
     ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in: click Connect in its window.")
   else
     ImGui.TextColored(ctx, GREEN, "ReaNINJAM is on your master track.")
+    local cm = live.channel_mode()
+    if live_mode == "synced" and cm and cm ~= "session" then
+      ImGui.PushTextWrapPos(ctx, 0)
+      ImGui.TextColored(ctx, YELLOW, "It's sending in " .. (cm == "normal" and "Normal" or "Voice Chat") .. " mode, so Play along won't line up: " ..
+        "in its window, click the mode button under your channel and pick \"Session mode channel\" (or restart REAPER).")
+      ImGui.PopTextWrapPos(ctx)
+    end
     if ImGui.Button(ctx, "Show it") then -- also takes it off other song tabs (one ReaNINJAM per REAPER) and loads it
       local m2, i2 = live.fx(proj, true)
       if m2 then reaper.TrackFX_Show(m2, i2, 3) end
@@ -554,6 +561,11 @@ local function section_together()
       or "To hear each other, connect in the Live tab.")
     ImGui.PushTextWrapPos(ctx, 0)
     ImGui.TextDisabled(ctx, string.format("On: you follow %s behind whoever plays. %s", n == 0 and "right along" or (n .. (n == 1 and " bar" or " bars")), live_mode_note))
+    local cm = live.fx(proj, false) and live.channel_mode()
+    if cm and cm ~= "session" then
+      ImGui.TextColored(ctx, YELLOW, "ReaNINJAM is sending in " .. (cm == "normal" and "Normal" or "Voice Chat") ..
+        " mode: the others won't hear you in time with the song. In its window, click the mode button under your channel and pick \"Session mode channel\".")
+    end
     ImGui.PopTextWrapPos(ctx)
   end
 

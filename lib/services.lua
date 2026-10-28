@@ -20,8 +20,11 @@ local function background(name, cmd, every)
   if not started[name] or reaper.time_precise() - started[name] > every then
     started[name] = reaper.time_precise()
     -- shortcut: written in place (these outputs are a few hundred bytes); a half-written read just looks like "no answer" once
-    if WIN then
-      reaper.ExecProcess(string.format('cmd /c %s > "%s" 2>nul', cmd, file), -1)
+    if WIN then -- through a hidden-window runner: `cmd /c` without waiting flashes a console window (seen 0.9.7)
+      local bat, vbs = TMP .. "/bandsync-" .. name .. ".cmd", TMP .. "/bandsync-hidden.vbs"
+      band.write_atomic(bat, string.format('@%s > "%s" 2>nul\r\n', cmd, file))
+      if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
+      reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, bat), -1)
     else
       reaper.ExecProcess("/bin/sh -c " .. q(cmd:gsub('"', '\\"') .. " > '" .. file .. "' 2>/dev/null"), -1)
     end

@@ -519,10 +519,11 @@ function sync.split_copies(proj)
       end
       for j, u in ipairs(list) do
         if j ~= keep then
+          local mine = band.take_ext(u[2], "band_sent") ~= "" -- a copy of a bandmate's take stays theirs (not sent)
           for _, key in ipairs({ "band_sent", "band_take", "band_fxhash", "band_base_offs", "band_base" }) do band.set_take_ext(u[2], key, "") end
           band.set_item_ext(u[1], "band_take", "")
           band.set_item_ext(u[1], "band_group", "")
-          n = n + 1
+          if mine then n = n + 1 end
         end
       end
     end
@@ -583,6 +584,7 @@ function sync.own_takes(proj, opts)
         local src = reaper.GetMediaItemTake_Source(tk)
         local file = (src and reaper.GetMediaSourceFileName(src) or ""):match("[^/\\]+$") or ""
         local who = file:match("^(.-)%-%d%d%d%d%d%d%d%d%-%d%d%d%d%d%dZ%-%d+")
+        who = who and who:gsub("^takes_", "") -- Solo edit's media copies are named takes_<id>
         if who and opts.me and sync.author_of(who) ~= sync.author_of(opts.me) then
           if band.take_ext(tk, "band_copied") == "" then
             band.log(string.format("a copy of %s's take on %s stays here: someone else's recording isn't sent as yours", who:gsub("_", " "), track_name(it)))
@@ -1266,6 +1268,7 @@ function sync.watch(proj, cfg, song, room, can)
             reaper.UpdateItemInProject(it)
             local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
             band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, f[7] or track, owner))
+            if snap ~= id .. "|" .. shape(it, tk) then sync.remember(proj, id, it, tk) end -- couldn't land exactly: don't fight it every pass
           end
         end
       end

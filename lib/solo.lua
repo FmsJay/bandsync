@@ -225,6 +225,28 @@ local function dry_take(it)
   end
 end
 
+-- What a wet print depends on, as the project file has it, so every machine computes the same key: the item's
+-- and take's settings, its notes (MIDI) or file (audio), and the track's FX chain as saved (window positions
+-- left out). Live plug-in parameter values differ between machines (2026-10-28: the laptop reprinted the PC's
+-- unchanged MIDI parts at every check-in).
+function solo.print_key(it, tk)
+  local tr = reaper.GetMediaItem_Track(it)
+  local parts = {}
+  for _, k in ipairs({ "D_VOL", "D_FADEINLEN", "D_FADEOUTLEN", "D_LENGTH" }) do parts[#parts + 1] = string.format("%.5f", reaper.GetMediaItemInfo_Value(it, k)) end
+  for _, k in ipairs({ "D_VOL", "D_PITCH", "D_PLAYRATE", "D_STARTOFFS" }) do parts[#parts + 1] = string.format("%.5f", reaper.GetMediaItemTakeInfo_Value(tk, k)) end
+  parts[#parts + 1] = reaper.TakeIsMIDI(tk) and select(2, reaper.MIDI_GetHash(tk, false, ""))
+    or (reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(tk)):match("[^/\\]+$") or "")
+  parts[#parts + 1] = string.format("%d", reaper.GetMediaTrackInfo_Value(tr, "I_FXEN"))
+  local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
+  for line in (sync.chunk_block(chunk, "FXCHAIN") or ""):gmatch("[^\r\n]+") do
+    local t = line:match("^%s*(%S+)")
+    if t ~= "FLOATPOS" and t ~= "FLOAT" and t ~= "WNDRECT" and t ~= "SHOW" and t ~= "LASTSEL" and t ~= "DOCKED" then parts[#parts + 1] = line end
+  end
+  local s, h = table.concat(parts, ";"), 5381
+  for i = 1, #s do h = (h * 33 + s:byte(i)) % 4294967296 end
+  return string.format("%08x", h)
+end
+
 -- Make sure every item on a track with working FX has a current wet print beside its dry take.
 -- Returns how many were (re)printed. Active tab only.
 function solo.print_wet(proj, dir)
@@ -237,7 +259,7 @@ function solo.print_wet(proj, dir)
         local it = reaper.GetTrackMediaItem(tr, j)
         local dry = dry_take(it)
         if dry then
-          local h = sync.fxhash(it, dry, true) .. (reaper.TakeIsMIDI(dry) and "m" or "")
+          local h = solo.print_key(it, dry) .. (reaper.TakeIsMIDI(dry) and "m" or "")
           local p = find_print(it)
           if not p or band.take_ext(p, "band_print") ~= h then
             local guid = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)):gsub("[{}]", "")

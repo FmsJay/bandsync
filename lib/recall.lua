@@ -154,7 +154,9 @@ function recall.describe(e)
   elseif e.kind == "driver" then return "took control from " .. tostring(e.from)
   elseif e.kind == "timeline" then
     local t, changes = e.tempo or {}, {}
-    for i, m in ipairs(t) do changes[#changes + 1] = string.format("%g bpm %d/%d at %.2f s", m.bpm, m.num, m.denom, m.time) end
+    for i, m in ipairs(t) do
+      changes[#changes + 1] = string.format("%g bpm%s at %.2f s", m.bpm, (m.num or 0) > 0 and string.format(" %d/%d", m.num, m.denom) or "", m.time)
+    end
     return string.format("changed the tempo map (%s), %d marker(s)/region(s)", table.concat(changes, ", "), #(e.markers or {}))
   end
   return tostring(e.kind)

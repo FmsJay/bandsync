@@ -325,6 +325,13 @@ function solo.push(proj, cfg, song, note)
   local here = solo.local_dir(cfg, song)
   local l = solo.lock(cfg, song)
   if not (l and l.mine) then return nil, "You don't have '" .. song .. "' checked out." end
+  -- the live plug-ins (ReaNINJAM, SonoBus) belong to live sessions: in a solo version they only fail to load (one
+  -- ReaNINJAM per REAPER) or join the band's group unasked
+  local master = reaper.GetMasterTrack(proj)
+  for f = reaper.TrackFX_GetCount(master) - 1, 0, -1 do
+    local _, n = reaper.TrackFX_GetFXName(master, f)
+    if n:find("ReaNINJAM", 1, true) or n:find("SonoBus", 1, true) then reaper.TrackFX_Delete(master, f) end
+  end
   local media = solo.consolidate(proj, here)
   solo.restore_dry(proj) -- the published file is dry-first, FX on: right for anyone who has the plugins
   local printed = solo.print_wet(proj, here)

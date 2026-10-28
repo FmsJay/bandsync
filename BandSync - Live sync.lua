@@ -312,11 +312,13 @@ local function tick()
     local tnow = together.now()
     local theirs = transport.lead and transport.lead ~= cfg.user
     local fire = transport.type == "stop" and ((transport.at or 0) + (theirs and (transport.lag or 0) or 0)) or together.plan(transport, cfg.user, nil)
+    if transport.type == "stop" and transport.follow and theirs and transport.pos then fire = fire + 2 end -- the position decides; time is a backstop
     if transport.type == "start" and tnow < fire then reaper.SetExtState(band.SECTION, "together_at " .. key, tostring(fire), false) end
     if tnow - fire > 30 then -- arrived long after the fact (offline, sync stalled): don't start a song out of nowhere
       band.log(string.format("missed a %s from %s (%.0f s ago)", transport.type, tostring(transport.user), tnow - fire))
       transport = nil
-    elseif tnow >= fire then
+    elseif tnow >= fire or (transport.type == "stop" and transport.follow and theirs and transport.pos and reaper.GetPlayStateEx(proj) & 1 == 1
+        and reaper.GetPlayPosition2Ex(proj) >= transport.pos - 0.005) then -- a follower stops where the leader stopped
       if transport.type == "stop" then
         reaper.OnStopButtonEx(proj)
         band.log("stopped together (" .. tostring(transport.user) .. ")")
@@ -354,7 +356,8 @@ local function tick()
     if tp >= side.quiet_until then
       local jumped = playing and side.playing and math.abs(pos - (side.pos + (tp - side.t))) > 0.5 -- a seek while playing
       if playing ~= side.playing or jumped then
-        local ev = playing and { type = "start", pos = pos, countin = 0, rec = ps & 4 == 4 or nil } or { type = "stop" }
+        local ev = playing and { type = "start", pos = pos, countin = 0, rec = ps & 4 == 4 or nil }
+          or { type = "stop", pos = side.pos + (tp - side.t) } -- where the song was when you stopped
         ev.at, ev.lead, ev.follow = together.now(), cfg.user, true
         ev.lag = together.bars_after(proj, pos, lagbars)
         sync.post(cfg, b.song, b.room, ev)

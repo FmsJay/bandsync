@@ -549,8 +549,12 @@ local function section_together()
   end
   ImGui.SetItemTooltip(ctx, "With Play along (Live tab): 1-2 bars, so you hear them in time with the song.\nWith Listen live: 0, everyone at the same spot.")
   if side ~= "" then
-    local live_mode_note = live.fx(proj, false) and "Play along / Jam is on" or (live.fx(proj, false, live.SONOBUS) and "Listen live is on" or "no live audio yet: connect in the Live tab to hear each other")
-    ImGui.TextDisabled(ctx, string.format("On: you follow %s bar(s) behind whoever plays (%s).", side, live_mode_note))
+    local n = tonumber(side) or 0
+    local live_mode_note = live.fx(proj, false) and "Play along / Jam is connected." or (live.fx(proj, false, live.SONOBUS) and "Listen live is on."
+      or "To hear each other, connect in the Live tab.")
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.TextDisabled(ctx, string.format("On: you follow %s behind whoever plays. %s", n == 0 and "right along" or (n .. (n == 1 and " bar" or " bars")), live_mode_note))
+    ImGui.PopTextWrapPos(ctx)
   end
 
   ImGui.SeparatorText(ctx, "Start together")
@@ -597,7 +601,7 @@ local function section_together()
       local ready = r.age < 30
       ImGui.TextColored(ctx, ready and GREEN or GREY, string.format("  %s: %s%s%s", r.name, ready and "Live sync on" or ("not seen for " .. status.ago(r.age)),
         (r.armed and #r.armed > 0) and (", armed " .. table.concat(r.armed, ", ")) or ", nothing armed",
-        r.side and (", side by side (" .. r.side .. " bar(s) behind)") or ""))
+        r.side and (", side by side (" .. r.side .. (tonumber(r.side) == 1 and " bar" or " bars") .. " behind)") or ""))
     end
   end
 end
@@ -635,7 +639,8 @@ local function section_notes()
     if #notes == 0 then ImGui.TextDisabled(ctx, "No notes yet.") end
     for i, e in ipairs(notes) do
       if i > 30 then break end
-      if ImGui.Selectable(ctx, string.format("%s  %s: %s##n%d", local_time(e.time):sub(7), e.user, recall.describe(e), i), false) then
+      if ImGui.Selectable(ctx, string.format("%s  %s: %s%s##n%d", local_time(e.time):sub(7), e.user, recall.describe(e),
+          e.take and e.pos and (" (bar " .. bar_of(e.pos) .. ")") or "", i), false) then
         local it2 = e.take and band.find_take(proj, e.take)
         reaper.SetEditCurPos2(proj, e.pos or (it2 and reaper.GetMediaItemInfo_Value(it2, "D_POSITION")) or 0, true, false)
       end
@@ -687,7 +692,7 @@ local function section_tools()
   local driving = view.driver == cfg.user
   ImGui.BeginDisabled(ctx, not driving)
   ImGui.SetNextItemWidth(ctx, 80)
-  local _, nb = ImGui.InputInt(ctx, "bars at bar " .. bar_of(reaper.GetCursorPositionEx(proj)):match("^%d+") .. " (the edit cursor)###bars", bars); bars = math.max(1, nb)
+  local _, nb = ImGui.InputInt(ctx, (bars == 1 and "bar" or "bars") .. " at bar " .. bar_of(reaper.GetCursorPositionEx(proj)):match("^%d+") .. " (the edit cursor)###bars", bars); bars = math.max(1, nb)
   local function shift(sign)
     local pos = reaper.GetCursorPositionEx(proj)
     if sign < 0 then

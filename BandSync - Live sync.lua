@@ -201,11 +201,28 @@ local last_driver
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
 local joined = {} -- machines this Live sync has already let in
 local mix_pending, mix_at -- the driver's mix layer, changed but still settling (a knob being turned)
+-- Are we in the middle of editing? (the project changed in the last 2 s): the band's changes wait for a pause, so
+-- none lands mid-drag. Never more than 10 s, so a long edit can't hold them up for good.
+local change_count, changed_at, held_since = -1, -math.huge, nil
+local function editing()
+  local c = reaper.GetProjectStateChangeCount(proj)
+  local t = reaper.time_precise()
+  if c ~= change_count then change_count, changed_at = c, t end
+  local busy = t - changed_at < 2
+  if busy then held_since = held_since or t else held_since = nil end
+  return busy and t - held_since < 10
+end
+
 local function poll()
   local s = band.read_json(band.session_path(cfg, b.song)) or last_session
   last_session = s
   local can, who = sync.authority(cfg, b.song, b.room, s)
   local driver = who.driver
+  -- "driver writes, others listen" (default; panel: Session > Sync): the driver is here = their status receipt is fresh
+  sync.scratch_mode = reaper.GetExtState(band.SECTION, "edit_mode") ~= "everyone"
+  sync.driver_name = driver
+  local dst = (driver and driver ~= cfg.user) and band.read_json(sync.room_dir(cfg, b.song, b.room) .. "/status/" .. (driver:gsub("[^%w%-_ ]", "")) .. ".json") or nil
+  sync.someone_drives = sync.scratch_mode and type(dst) == "table" and band.age(dst.time) < 30
   if last_driver and driver ~= last_driver then -- handovers are announced, never silent
     band.log(driver == cfg.user and "you're driving now" or (tostring(driver) .. " took control" ..
       (last_driver == cfg.user and ": you're no longer driving (what you don't own is view-only)" or "")))
@@ -215,7 +232,8 @@ local function poll()
   for _, room in ipairs(rooms) do
     import(room)
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
-    local n = sync.receive(proj, cfg, b.song, room, room_can)
+    local n = 0
+    if not editing() then n = sync.receive(proj, cfg, b.song, room, room_can) end
     if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")") end
   end
 

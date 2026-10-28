@@ -819,9 +819,10 @@ function sync.share_sound(proj, cfg, b, tr)
     local dry = reaper.GetActiveTake(it)
     local orig = dry and (band.take_ext(dry, "band_dry") ~= "" and band.take_ext(dry, "band_dry") or band.take_ext(dry, "band_midi"))
     local m0 = orig and orig ~= "" and band.read_json(takes .. "/" .. orig .. ".json")
-    -- the item is longer than the recording by the print's own tail: render just the recording (plus a fresh tail)
+    -- the item is longer than the recording by the print's own tail (a manifest's len never includes it): render just
+    -- the recording, plus a fresh tail; sent with the same len and tail as the original, it fits the same item exactly
     local was_len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
-    local rec_len = m0 and (m0.len - (m0.tail or 0))
+    local rec_len = m0 and m0.len
     if m0 and rec_len and rec_len > 0 and rec_len < was_len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", rec_len) end
     if m0 then
       local id
@@ -835,7 +836,7 @@ function sync.share_sound(proj, cfg, b, tr)
         band.copy_atomic(path, takes .. "/" .. id .. ".flac")
         band.write_json(takes .. "/" .. id .. ".json", {
           format = band.FORMAT, bandsync = band.VERSION, id = id, rev = 1, user = cfg.user, printed_by = cfg.user, room = b.room,
-          track = m0.track, pos = m0.pos, qn = m0.qn, len = rec_len + (tail or 0), tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+          track = m0.track, pos = m0.pos, qn = m0.qn, len = rec_len, tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
           full = id .. ".flac", print = "wet", wet = true, group = m0.group, lane = m0.lane, lane_name = m0.lane_name,
           session_version = m0.session_version, based_on = m0.id, sound = cfg.user .. "'s sound",
           origin = { pos = m0.pos, len = rec_len, track = m0.track, lane = m0.lane, sent = os.date("!%Y-%m-%dT%H:%M:%SZ") },
@@ -1465,7 +1466,19 @@ function sync.watch(proj, cfg, song, room, can)
           sync.remember(proj, id, hit[1], hit[2]) -- first look at a take placed before snapshots existed
         elseif snap ~= id .. "|" .. shape(hit[1], hit[2]) then
           local pos, track = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"), band_track_name(proj, hit[1])
-          if can(me, track, pos, id) then
+          -- "driver writes, others listen" (the default): while someone else drives and is here, only their changes
+          -- (and claimed tracks') go out, so nobody's edits land in the middle of anyone else's; ours stay here as
+          -- scratch. Our own take we may still change when nobody else is driving.
+          local allowed = can(me, track, pos) or (can(me, track, pos, id) and not sync.someone_drives)
+          if not allowed and sync.someone_drives then -- (someone_drives is only set in scratch mode)
+            -- kept here, not sent and not put back: it stays until the band changes that take (then theirs wins)
+            sync.remember(proj, id, hit[1], hit[2])
+            if ext(proj, "BandSync.scratch", id) == "" then
+              setext(proj, "BandSync.scratch", id, "1")
+              band.log(string.format("your change to '%s' on %s stays here only (scratch): %s is driving, so only their changes go out. " ..
+                "Claim the track, or take control, to send yours", id, tostring(track), tostring(sync.driver_name or "someone else")))
+            end
+          elseif allowed then
             local after = ext(proj, band.SECTION, "last_shift") -- set by Insert/Remove bars: receivers apply that first
             local ev = { type = "edit", take = id, after = after ~= "" and after or nil, pos = pos, qn = sync.qn(proj, pos), track = track,
               len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") - (tonumber(ext(proj, sync.TAILS, id)) or 0), lane = lane_of(hit[1]),

@@ -113,6 +113,22 @@ local function section_sync()
   local ach, av = ImGui.Checkbox(ctx, "Start Live sync with REAPER (for sessions where it was running)", auto)
   if ach and not tools.set_autostart(av, dir) then band.msg("Couldn't write Scripts/__startup.lua") end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
+  local everyone = reaper.GetExtState(band.SECTION, "edit_mode") == "everyone"
+  local ech, ev = ImGui.Checkbox(ctx, "While someone else drives, my changes stay here (scratch)", not everyone)
+  if ech then reaper.SetExtState(band.SECTION, "edit_mode", ev and "" or "everyone", true) end
+  ImGui.SetItemTooltip(ctx, "On (the default): during a session only the driver's changes (and claimed tracks') go out; yours stay\n" ..
+    "here, so nobody's edits land in the middle of someone else's. Off: your own takes' changes go out too.")
+  if ImGui.SmallButton(ctx, "Undo my last change") then
+    local c, why = tools.my_last_change(proj, cfg, b)
+    if not c then band.msg(why)
+    elseif reaper.MB("Put back " .. c.what .. " the way it was before?\n\nOnly your own changes, newest first (press again for the one " ..
+        "before): a bandmate's change in between isn't touched. It goes to the band like any change.", "BandSync", 4) == 6 then
+      local msg, e = tools.undo_mine(proj, cfg, b)
+      if msg then band.log(msg) else band.msg(e) end
+    end
+  end
+  ImGui.SetItemTooltip(ctx, "Unlike Ctrl+Z (which steps back whatever came last, a bandmate's change included), this goes back\n" ..
+    "through only your own changes: moves and trims, fader/pan/mute, deletes.")
   local changed, v = ImGui.Checkbox(ctx, "Hold sync (try things; your changes go out once, when you release)", hold)
   if changed then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
   ImGui.Text(ctx, string.format("Here: %d/%d takes%s", view.total - view.my_missing, view.total,

@@ -136,8 +136,13 @@ function tools.hear(proj, cfg, b, tr, how)
   local now = tools.hearing(tr)
   if now == how then return nil, nil end
   if now ~= "wet" then tools.dry_mode(proj, cfg, b, tr, false) end -- back to the print first
-  if how == "wet" then return select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "") .. ": the print (wet)" end
-  return tools.dry_mode(proj, cfg, b, tr, true, how == "dry")
+  local msg, why
+  if how == "wet" then msg = select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "") .. ": the print (wet)"
+  else msg, why = tools.dry_mode(proj, cfg, b, tr, true, how == "dry") end
+  -- switched while playing: a freshly loaded instrument has dropped the notes already held (silence until the next
+  -- note, 1.1 s on the laptop); playing on from the same spot makes REAPER play the held notes again
+  if reaper.GetPlayStateEx(proj) & 1 == 1 then reaper.SetEditCurPos2(proj, reaper.GetPlayPosition2Ex(proj), false, true) end
+  return msg, why
 end
 -- The tracks holding bandmates' prints: { { track, whose } }.
 function tools.band_tracks(proj)
@@ -154,6 +159,79 @@ function tools.band_tracks(proj)
     end
   end
   return out
+end
+
+-- ---- Undo my last change: from the band's shared history, not REAPER's undo ----------------------------------
+-- REAPER's undo is one list for everything, the band's changes included, so with several people working, Ctrl+Z can
+-- step back a bandmate's change first. This goes back through OUR OWN changes only: each press puts the next one back
+-- the way it was before it (that goes out as a new change, so everyone gets it).
+local UNDONE = "BandSync.undone"
+local function events_of(cfg, b)
+  local dir, list = sync.room_dir(cfg, b.song, b.room) .. "/events", {}
+  for _, f in ipairs(band.files(dir, ".json")) do
+    local ev = band.read_json(dir .. "/" .. f)
+    if type(ev) == "table" and type(ev.time) == "string" and type(ev.id) == "string" then list[#list + 1] = ev end
+  end
+  table.sort(list, function(a, z) return (a.time .. a.id) < (z.time .. z.id) end)
+  return list
+end
+-- Our newest change not yet undone, and how to put it back: { ev, what, apply() } or nil + why.
+function tools.my_last_change(proj, cfg, b)
+  local list = events_of(cfg, b)
+  for i = #list, 1, -1 do
+    local ev = list[i]
+    if ev.user == cfg.user and select(2, reaper.GetProjExtState(proj, UNDONE, ev.id)) == "" then
+      if ev.type == "edit" and ev.take then
+        local before -- the take's shape just before this change: the change before it, or where it first landed
+        for j = i - 1, 1, -1 do if list[j].type == "edit" and (list[j].take or ""):lower() == ev.take:lower() then before = list[j]; break end end
+        if not before then
+          local m = band.read_json(band.takes_dir(cfg, b.song, b.room) .. "/" .. ev.take .. ".json")
+          local o = m and (m.origin or m)
+          before = o and { pos = o.pos, len = o.len, offs = 0, mute = 0, lane = o.lane, track = o.track } -- (lengths travel without the print's tail)
+        end
+        if before then
+          return { ev = ev, what = string.format("your move/trim of %s on %s (%s)", ev.take, tostring(ev.track), ev.time:sub(12, 19)), apply = function()
+            local it, tk = band.find_take(proj, ev.take)
+            if not it then return nil, "that take isn't here any more" end
+            reaper.SetMediaItemInfo_Value(it, "D_POSITION", before.pos or reaper.GetMediaItemInfo_Value(it, "D_POSITION"))
+            if before.len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", before.len + (tonumber(sync.ext(proj, sync.TAILS, ev.take)) or 0)) end
+            reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", band.base_offs(tk) + (before.offs or 0))
+            reaper.SetMediaItemInfo_Value(it, "B_MUTE", before.mute or 0)
+            reaper.UpdateItemInProject(it)
+            return true -- Live sync sends it as our change
+          end }
+        end
+      elseif ev.type == "track" and ev.track then
+        local before
+        for j = i - 1, 1, -1 do if list[j].type == "track" and (list[j].track or ""):lower() == ev.track:lower() then before = list[j]; break end end
+        before = before or { vol = 1, pan = 0, mute = 0, solo = 0 }
+        return { ev = ev, what = string.format("your %s change on %s (%s)", table.concat(ev.changed or { "track" }, "/"), ev.track, ev.time:sub(12, 19)), apply = function()
+          local tr = band.find_track(proj, ev.track, true)
+          if not tr then return nil, "that track isn't here any more" end
+          if before.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", before.vol) end
+          if before.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", before.pan) end
+          reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", before.mute or 0)
+          return true
+        end }
+      elseif ev.type == "delete" and ev.take then
+        return { ev = ev, what = string.format("your delete of %s on %s (%s)", ev.take, tostring(ev.track), ev.time:sub(12, 19)), apply = function()
+          sync.untrash(cfg, b.song, b.room, ev.take)
+          band.set_take_state(proj, ev.take, "") -- it's imported again, here and everywhere
+          sync.post(cfg, b.song, b.room, { type = "undelete", take = ev.take, track = ev.track, pos = ev.pos })
+          return true
+        end }
+      end
+    end
+  end
+  return nil, "none of your changes in this room to undo"
+end
+function tools.undo_mine(proj, cfg, b)
+  local c, why = tools.my_last_change(proj, cfg, b)
+  if not c then return nil, why end
+  local ok, err = c.apply()
+  if not ok then return nil, err end
+  reaper.SetProjExtState(proj, UNDONE, c.ev.id, "1") -- the next press goes one further back
+  return "undid " .. c.what
 end
 
 -- ---- which of a chain's plug-ins this machine has (before turning dry mode on) ---------------------------

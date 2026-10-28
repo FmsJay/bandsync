@@ -27,12 +27,12 @@ assert(not live.replaces("Laptop-20261027-055000Z-1", "James", "20261027-054500Z
 assert(live.replaces("Mary_Jo-20261027-055000Z-1", "Mary Jo", "20261027-054500Z"), "spaces vs underscores")
 assert(not live.replaces("James-20261027-055000Z-1", "James", ""), "unknown session time: never")
 
--- SonoBus: one group per song, made once and then kept; the join link is what SonoBus's paste parser reads
+-- SonoBus: one group for the band, made once and then kept; the join link is what SonoBus's paste parser reads
 reaper = { time_precise = function() return 1.5 end }
 local data = {}
-local g, p = live.sonobus_group(data, "My Song")
-assert(g:match("^BandSync My Song %w%w%w%w$") and #p == 12 and data.sb_group == g and data.sb_password == p, g .. " / " .. p)
-assert(select(2, live.sonobus_group(data, "My Song")) == p, "kept once made")
+local g, p = live.sonobus_group(data)
+assert(g:match("^BandSync %w%w%w%w%w%w$") and #p == 12 and data.group == g and data.password == p, g .. " / " .. p)
+assert(select(2, live.sonobus_group(data)) == p, "kept once made")
 assert(live.sonobus_link("BandSync My Song", "ab&c") ==
   "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=BandSync%20My%20Song&p=ab%26c", live.sonobus_link("BandSync My Song", "ab&c"))
 print("ok")

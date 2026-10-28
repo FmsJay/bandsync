@@ -182,11 +182,11 @@ The **Live** tab has three modes:
 - **Listen live**: hear each other as it happens, through **SonoBus** (free, GPLv3, sonobus.net): peer to peer,
   far lower delay than NINJAM, and nobody runs a server, so it works the same on Windows and Mac. Playing *together*
   in time this way needs low delay (wired internet, roughly the same region). **Connect** turns on SonoBus on your
-  master track (it sends your mix and plays the band into it) and copies the song's group link; the first time, in
-  SonoBus click *Connect...*, its paste button, then *Connect to Group*. After that, Connect is one click: SonoBus
-  rejoins by itself. **Leave** turns it off (it stays on the master track, sending nothing). Each song gets its own
-  group and password, kept in `<song>/live.json`; SonoBus's public connection server only introduces peers, and the
-  audio itself goes directly between you, unencrypted.
+  master track (it sends your mix and plays the band into it), already in the band's group under your BandSync name:
+  one click, nothing to type or paste, even the first time (BandSync writes the group into SonoBus's saved state;
+  `lib/sonobus.lua`). **Leave** turns it off (it stays on the master track, sending nothing). The band has one group
+  and password, kept in `<shared folder>/sonobus.json`; *Copy join link* is there for joining from SonoBus's own
+  app. SonoBus's public connection server only introduces peers; the audio goes directly between you, unencrypted.
 - **Jam**: classic NINJAM, everyone one interval late.
 
 The host enters `<Tailscale IP>:2049` and clicks *Save for the band*; everyone else clicks **Connect**, which adds
@@ -225,9 +225,10 @@ layers fix that, best set up on the host's always-on machine:
   restart REAPER. Synced mode needs the listener to play from a point behind the sender.
 - Live placeholders appear when the listener disconnects (or after a long session): ReaNINJAM buffers its clip
   log and only writes it to disk then. Hearing the audio live isn't affected.
-- Listen live: SonoBus shows each person under their computer's user name (change it in SonoBus's Connect page).
-  REAPER only sees a newly installed SonoBus after a restart. Only tested on one machine so far (join, leave,
-  rejoin); hearing each other across machines is still to test.
+- Listen live: REAPER only sees a newly installed SonoBus after a restart. Setting SonoBus up relies on its saved
+  state's layout (checked against SonoBus 1.7.2); if a later SonoBus changes it, BandSync says so and you join with
+  SonoBus's own Connect button. If your name is already in the group (say, a second project of yours is
+  connected), SonoBus adds a number to it.
 - Solo edit restores bring back arrangement and settings; media is only ever added to the shared folder, never
   deleted, so old versions always find their files.
 - History restores (live mode) put back arrangement and what plays; note edits and reprints stay current.

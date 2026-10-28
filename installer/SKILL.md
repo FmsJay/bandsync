@@ -120,8 +120,8 @@ restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui"
 ## 4. SonoBus and Tailscale (only for Live)
 
 **Listen live** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
-from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it and copies the
-song's group link. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
+from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to
+join the band's group under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.
 
 **Play along** and **Jam** go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet.

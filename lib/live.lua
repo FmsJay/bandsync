@@ -9,7 +9,7 @@
 -- folder; BandSync writes them there before ReaNINJAM opens, so connecting is one click.
 -- "Listen live" uses SonoBus instead (GPLv3, sonobus.net): peer-to-peer, far lower latency than NINJAM's
 -- voice-chat mode, and nobody has to host a server. Peers find each other through SonoBus's public
--- connection server by group name and password, kept per song in <song>/live.json.
+-- connection server by the band's group name and password (lib/sonobus.lua writes them into its state).
 local band = require("band")
 local live = {}
 
@@ -94,33 +94,25 @@ function live.fx(proj, add, fx)
   return master, i
 end
 
--- The song's SonoBus group: { group, password }, made once and kept in live.json for everyone. Pure apart
--- from the random password.
-function live.sonobus_group(data, song)
-  if data.sb_group and data.sb_password then return data.sb_group, data.sb_password end
+-- The band's SonoBus group: { group, password }, made once and kept in <shared folder>/sonobus.json for everyone
+-- (one group for the band, so it's the same in every song). Pure apart from the random password.
+function live.sonobus_group(data)
+  if data.group and data.password then return data.group, data.password end
   local chars, pw = "abcdefghjkmnpqrstuvwxyz23456789", {}
   math.randomseed(os.time() + math.floor(reaper.time_precise() * 1000))
-  for i = 1, 16 do local k = math.random(#chars); pw[i] = chars:sub(k, k) end
+  for i = 1, 18 do local k = math.random(#chars); pw[i] = chars:sub(k, k) end
   pw = table.concat(pw)
-  data.sb_group = "BandSync " .. song .. " " .. pw:sub(13) -- group names are global on the public server
-  data.sb_password = pw:sub(1, 12)
-  return data.sb_group, data.sb_password
+  data.group = "BandSync " .. pw:sub(13) -- group names are global on the public server
+  data.password = pw:sub(1, 12)
+  return data.group, data.password
 end
 
 local function urlenc(s) return (s:gsub("[^%w%-%._~]", function(c) return string.format("%%%02X", c:byte()) end)) end
 
--- SonoBus's join link (its own format, from ConnectView::handleSonobusURL): its paste button reads it from the
--- clipboard and fills in group, password and server. Pure.
+-- SonoBus's join link (its own format, from ConnectView::handleSonobusURL), for joining from SonoBus's own app:
+-- its paste button reads it from the clipboard and fills in group, password and server. Pure.
 function live.sonobus_link(group, password)
   return "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=" .. urlenc(group) .. "&p=" .. urlenc(password)
-end
-
--- Ask SonoBus to rejoin its last group whenever the project opens ("Reconnect Last" is a host parameter).
-function live.sonobus_reconnect(tr, i)
-  for p = 0, reaper.TrackFX_GetNumParams(tr, i) - 1 do
-    local _, name = reaper.TrackFX_GetParamName(tr, i, p)
-    if name == "Reconnect Last" then return reaper.TrackFX_SetParamNormalized(tr, i, p, 1) end
-  end
 end
 
 -- Parse clipsort.log lines for remote session-mode clips: { guid, user, chan, name, st, len }. Pure.

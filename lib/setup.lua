@@ -5,28 +5,42 @@ local band = require("band")
 local live = require("live")
 local services = require("services")
 local solo = require("solo")
+local sonobus = require("sonobus")
 local setup = {}
 
 function setup.live_file(cfg, b) return band.song_dir(cfg, b.song) .. "/live.json" end
 
--- SonoBus on the master track, in the song's group. It stays there once added, set offline while not in use, so it
--- never joins the group (or streams anything) until someone connects. Returns the join link, or nil + why.
--- With open: brings it online. The caller puts the link on the clipboard and shows the window; the first time,
--- SonoBus's paste button fills the group in (verified 1.7.2: Connect..., paste, Connect to Group), and after that
--- "Reconnect Last" rejoins by itself whenever it comes back online.
+-- The band's SonoBus group and password, made by whoever needs it first: <shared folder>/sonobus.json.
+function setup.sonobus_group(cfg)
+  local file = cfg.root .. "/sonobus.json"
+  local data = band.read_json(file) or {}
+  local had = data.group
+  local group, pw = live.sonobus_group(data)
+  if not had then band.write_json(file, data) end
+  return group, pw
+end
+
+-- SonoBus on the master track, set to join the band's group by itself: BandSync writes the group, password and
+-- your name into its saved state (lib/sonobus.lua), with "Reconnect Last" on, so SonoBus joins whenever it's on.
+-- It stays on the master track once added, offline while not in use, so it never joins (or streams anything)
+-- until someone connects. With open: brings it online, which joins. Returns the join link (for SonoBus's own app),
+-- the track and the FX index; or nil + why.
 function setup.sonobus(cfg, b, proj, open)
-  local lfile = setup.live_file(cfg, b)
-  local data = band.read_json(lfile) or {}
-  local had = data.sb_group
-  local group, pw = live.sonobus_group(data, b.song)
-  if not had then band.write_json(lfile, data) end
+  local group, pw = setup.sonobus_group(cfg)
   local m, i = live.fx(proj, false, live.SONOBUS)
   if not m then
     m, i = live.fx(proj, true, live.SONOBUS)
     if not m then
       return nil, "SonoBus isn't installed here (sonobus.net, free), or REAPER hasn't seen it yet: REAPER finds new plug-ins when it starts, so restart REAPER after installing it."
     end
-    live.sonobus_reconnect(m, i) -- after the first join, it rejoins whenever the project opens (while online)
+  end
+  reaper.TrackFX_SetOffline(m, i, false) -- its state can only be read and written while it's loaded
+  local _, chunk = reaper.TrackFX_GetNamedConfigParm(m, i, "vst_chunk")
+  if sonobus.state_group(chunk) ~= group then
+    local new, why = sonobus.join_state(chunk, { user = cfg.user, group = group, password = pw })
+    if not new then return nil, "Couldn't set SonoBus up (" .. why .. "): join by hand with its Connect button." end
+    reaper.TrackFX_SetNamedConfigParm(m, i, "vst_chunk", new)
+    reaper.TrackFX_SetOffline(m, i, true) -- reloading it with that state is what makes it join
   end
   reaper.TrackFX_SetOffline(m, i, not open)
   return live.sonobus_link(group, pw), m, i

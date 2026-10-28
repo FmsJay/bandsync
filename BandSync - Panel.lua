@@ -264,12 +264,12 @@ local LIVE_MODES = { { "synced", "Play along (synced to the song)" }, { "listen"
 
 local setup = require("setup")
 
--- Listen live: the band's join link goes on the clipboard; SonoBus's paste button (plugin version: it doesn't read the
--- clipboard by itself) fills the group in. Once joined, its "Reconnect Last" rejoins whenever it comes online.
+-- Listen live: SonoBus joins the band's group by itself (BandSync writes it into SonoBus's state).
+local sb_link
 local function sonobus_open()
   local link, m, i = setup.sonobus(cfg, b, proj, true)
   if not link then return band.msg(m) end
-  ImGui.SetClipboardText(ctx, link)
+  sb_link = link
   reaper.TrackFX_Show(m, i, 3)
 end
 
@@ -290,17 +290,18 @@ local function section_live()
     local sm, si = live.fx(proj, false, live.SONOBUS)
     local on = sm and not reaper.TrackFX_GetOffline(sm, si)
     if ImGui.Button(ctx, on and "Open SonoBus##sb" or "Connect##sb") then sonobus_open() end
-    ImGui.SetItemTooltip(ctx, "Turns on SonoBus on your master track (it sends your mix and plays the band into it) and copies the band's group link.")
+    ImGui.SetItemTooltip(ctx, "Turns on SonoBus on your master track, already set to join the band's group: it sends your mix and plays the band into it.")
     if on then
       ImGui.SameLine(ctx)
       if ImGui.Button(ctx, "Leave##sb") then reaper.TrackFX_SetOffline(sm, si, true) end
-      ImGui.TextColored(ctx, GREEN, "SonoBus is on. It rejoins the band's group by itself whenever it's on, until you Leave.")
-      ImGui.TextWrapped(ctx, "First time only: in SonoBus click Connect..., then the paste button (top left of Private Group), then Connect to Group.")
+      ImGui.TextColored(ctx, GREEN, "SonoBus is on and in the band's group, until you Leave.")
     elseif sm then
       ImGui.TextDisabled(ctx, "SonoBus is ready on your master track (off: it sends nothing until you Connect).")
     end
-    local data = band.read_json(lfile) or {}
-    if data.sb_group then ImGui.TextDisabled(ctx, "Group: " .. data.sb_group .. " (password kept in the shared folder)") end
+    if sb_link then
+      if ImGui.SmallButton(ctx, "Copy join link") then ImGui.SetClipboardText(ctx, sb_link) end
+      ImGui.SetItemTooltip(ctx, "For joining from SonoBus's own app (outside REAPER): its paste button fills the group in.")
+    end
     return
   end
   ImGui.SeparatorText(ctx, "Server")
@@ -309,7 +310,7 @@ local function section_live()
   if changed then live_server = v end
   ImGui.SameLine(ctx)
   if ImGui.SmallButton(ctx, "Save for the band") then
-    local data = band.read_json(lfile) or {} -- keep the SonoBus group that lives in the same file
+    local data = band.read_json(lfile) or {} -- keep whatever else is in it
     data.server, data.by = live_server, cfg.user
     band.write_json(lfile, data)
   end

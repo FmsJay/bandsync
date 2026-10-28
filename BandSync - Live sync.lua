@@ -442,6 +442,8 @@ end
 local autokey = "autosync " .. (select(2, reaper.EnumProjects(-1)) or ""):lower()
 if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
 local tick
+local livemidi = require("livemidi")
+local midi_view_at, midi_view_err = 0, nil
 local undo_since, undo_said -- when you undid one of BandSync's own changes (tick_body waits a while)
 local function tick_body() -- returns true to keep going
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then -- project closed: stop, and say so
@@ -547,6 +549,13 @@ local function tick_body() -- returns true to keep going
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
+  -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs
+  if reaper.EnumProjects(-1) == proj then livemidi.send_tick(proj, cfg, b, st & 4 ~= 0) end -- (input goes to the tab in front)
+  if st & 4 == 0 and now - midi_view_at > 0.5 then
+    midi_view_at = now
+    local ok, e = pcall(livemidi.receive_tick, proj, cfg, b)
+    if not ok and midi_view_err ~= tostring(e) then midi_view_err = tostring(e); band.log("live MIDI view: " .. tostring(e)) end
+  end
   local every = reaper.GetPlayStateEx(proj) & 1 == 1 and 2 -- playing: a pass can stall REAPER ~0.5 s (seen on the laptop)
     or (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
   local redo = reaper.Undo_CanRedo2(proj)

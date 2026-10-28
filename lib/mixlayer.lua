@@ -43,7 +43,8 @@ end
 
 -- Tracks BandSync made (copies of parts, stems, MIDI copies, live placeholders) aren't part of the mix layer.
 local function made_by_bandsync(tr)
-  if band.track_ext(tr, "band_stem") ~= "" or band.track_ext(tr, "band_midi_track") ~= "" or band.track_ext(tr, "band_mirror") ~= "" then return true end
+  if band.track_ext(tr, "band_stem") ~= "" or band.track_ext(tr, "band_midi_track") ~= "" or band.track_ext(tr, "band_mirror") ~= ""
+      or band.track_ext(tr, "band_live_track") ~= "" then return true end
   local n = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
   return n:find(" %(band%)$") ~= nil or n:find(" %(MIDI%)$") ~= nil
 end

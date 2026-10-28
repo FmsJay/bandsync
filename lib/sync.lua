@@ -1659,11 +1659,12 @@ function sync.receive(proj, cfg, song, room, can)
   -- be applied after a newer one
   local newest = {}
   for _, ev in ipairs(pending) do if ev.type == "plays" then newest[ev.track or ""] = ev.id end end
-  -- Both worked alone at the same time (neither could see the other): their changes may undo some of ours. Before
+  -- Both worked alone (neither could see the other's changes): theirs may undo some of ours. Before
   -- any of them lands, where things are here is saved as a kept restore point, so our side is never lost.
   local mine_alone = ext(proj, band.SECTION, "alone_last")
   for _, ev in ipairs(pending) do
-    if ev.alone and ev.user ~= cfg.user and mine_alone ~= "" and ev.time <= mine_alone and not superseded(proj, ev) then
+    -- (whatever its time: they may have worked alone an hour before us, or after; either way the two versions split)
+    if ev.alone and ev.user ~= cfg.user and mine_alone ~= "" and not superseded(proj, ev) then
       require("recall").save(proj, cfg, song, room, "yours before " .. ev.user .. "'s work done alone", true)
       setext(proj, band.SECTION, "alone_last", "") -- once per meeting
       band.log(ev.user .. " also worked on this while you were both alone: where you were is kept as a restore point " ..

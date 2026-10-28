@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.7.8", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.7.9", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -550,6 +550,17 @@ function band.update_take(proj, t, path, dry_path)
   local item, take = band.find_take(proj, t.id)
   if not item then return false end
   band.swap_source(take, band.localize(proj, path))
+  -- a revision is rendered at the current tempo map, so it plays straight: no stretch left over from stretching the
+  -- previous print at a tempo change (2026-10-28: leftover markers put an outro a second off). Auto-stretch stays on
+  -- for the next tempo change.
+  for k = 0, reaper.CountTakes(item) - 1 do
+    local tk = reaper.GetTake(item, k)
+    if tk == take or band.take_ext(tk, "band_dry"):lower() == t.id:lower() then
+      local n = reaper.GetTakeNumStretchMarkers(tk)
+      if n > 0 then reaper.DeleteTakeStretchMarkers(tk, 0, n) end
+      reaper.SetMediaItemTakeInfo_Value(tk, "D_PLAYRATE", 1)
+    end
+  end
   if reaper.CountTakes(item) <= 2 then -- the item is this take (+ its dry twin): follow the sender's extent
     reaper.SetMediaItemInfo_Value(item, "D_POSITION", t.pos)
     reaper.SetMediaItemInfo_Value(item, "D_LENGTH", t.len)

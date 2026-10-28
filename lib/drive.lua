@@ -9,16 +9,25 @@ local band = require("band")
 local drive = {}
 
 -- Where the Drive copy lives, or nil (no Drive on this machine, or turned off: ExtState drive_root = "off").
+-- Looking is cached for 5 minutes: listing My Drive asks Google's servers, and doing it every Live sync poll and
+-- panel frame on two machines of one account ran into Drive's rate limit (2026-10-28: 600+ "userRateLimitExceeded"
+-- in an hour, uploads held back for many minutes, "Can't add file" messages).
+local found, found_at = nil, -math.huge
 function drive.root(cfg)
   local r = reaper.GetExtState(band.SECTION, "drive_root")
   if r == "off" then return nil end
   if r ~= "" then return r end
-  if reaper.file_exists("G:/My Drive/desktop.ini") or band.subdirs("G:/My Drive")[1] then return "G:/My Drive/BandSync" end
-  local cs = (os.getenv("HOME") or "") .. "/Library/CloudStorage" -- Google Drive for desktop on macOS
-  for _, d in ipairs(band.subdirs(cs)) do
-    if d:match("^GoogleDrive%-") then return cs .. "/" .. d .. "/My Drive/BandSync" end
+  if reaper.time_precise() - found_at < 300 then return found end
+  found, found_at = nil, reaper.time_precise()
+  if reaper.file_exists("G:/My Drive/desktop.ini") or reaper.file_exists("G:/My Drive/BandSync") or band.subdirs("G:/My Drive")[1] then
+    found = "G:/My Drive/BandSync"
+  else
+    local cs = (os.getenv("HOME") or "") .. "/Library/CloudStorage" -- Google Drive for desktop on macOS
+    for _, d in ipairs(band.subdirs(cs)) do
+      if d:match("^GoogleDrive%-") then found = cs .. "/" .. d .. "/My Drive/BandSync" end
+    end
   end
-  return nil
+  return found
 end
 
 -- A take file's name -> take id, revision (1 for the first print), and whether it's the manifest. Pure.

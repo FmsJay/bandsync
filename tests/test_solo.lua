@@ -67,7 +67,9 @@ assert(#solo.diff(a, a) == 0, "no change, no lines")
 local band, dirs, ext = package.loaded.band, {}, ""
 band.SECTION = "BandSync"
 band.subdirs = function(p) return dirs[p] or {} end
-reaper = { GetExtState = function() return ext end, file_exists = function() return false end }
+local clock = 0 -- (drive.root caches its look for 5 minutes: each call here is 1000 s later)
+reaper = { GetExtState = function() return ext end, file_exists = function() return false end,
+  time_precise = function() clock = clock + 1000; return clock end }
 local home = os.getenv("HOME") or ""
 assert(solo.root({ root = "R" }) == "R", "fallback")
 dirs[home .. "/Library/CloudStorage"] = { "Dropbox", "GoogleDrive-me@example.com" }

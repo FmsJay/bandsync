@@ -200,11 +200,11 @@ local function section_control()
       "them when they're back. When someone joins, the rules above apply again.")
     ImGui.PopTextWrapPos(ctx)
   end
-  if reaper.time_precise() - drive_at > 5 then drive_at = reaper.time_precise(); drive_root = require("drive").root(cfg) end
+  if reaper.time_precise() - drive_at > 30 then drive_at = reaper.time_precise(); drive_root = require("drive").root(cfg) end
   local off = reaper.GetExtState(band.SECTION, "drive_root") == "off"
   local dch, don = ImGui.Checkbox(ctx, "Keep the band's copy on Google Drive", drive_root ~= nil)
   if dch then reaper.SetExtState(band.SECTION, "drive_root", don and "" or "off", true); drive_at = -math.huge end
-  ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every minute, while stopped): what someone " ..
+  ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every few minutes, while stopped): what someone " ..
     "does alone reaches the band whenever they next open the song, and every end-of-session point is kept there.")
     or off and "Off on this machine." or "No Google Drive for desktop here (My Drive not found).")
   local owned = {}

@@ -111,7 +111,7 @@ reaper.atexit(function()
 end)
 
 -- Google Drive copy of the room (lib/drive.lua): what we did alone reaches the band whenever they next open the
--- song, and what they did alone reaches us. A pass every minute (sooner while a big copy is still going), only
+-- song, and what they did alone reaches us. A pass every 3 minutes (sooner while a big copy is still going), only
 -- while stopped: copying a long FLAC can hold up REAPER's screen for a moment.
 local drive = require("drive")
 local drive_at, drive_more, drive_said = -math.huge, false, nil
@@ -379,7 +379,9 @@ local function poll()
     elseif now - quiet.since > 1200 then pcall(end_of_session, "20 minutes with no changes") end
   end
   local droot = drive.root(cfg)
-  if droot and reaper.GetPlayStateEx(proj) == 0 and now - drive_at > (drive_more and 5 or 60) then
+  -- every 3 minutes (sooner while a big copy is still going): store-and-forward needs no hurry, and Drive limits
+  -- how often one account may change files
+  if droot and reaper.GetPlayStateEx(proj) == 0 and now - drive_at > (drive_more and 10 or 180) then
     drive_at = now
     local moved, more = 0, false
     for _, room in ipairs(rooms) do

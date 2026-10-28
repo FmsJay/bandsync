@@ -34,6 +34,37 @@ end
 
 local function exists(p) return reaper.file_exists(p) end
 
+-- A project's text as a plain project: SonoBus / ReaNINJAM out of every plug-in chain (master, tracks, input FX:
+-- they carry this machine's identity, and opening the file elsewhere warned about ReaNINJAM), and BandSync's own
+-- project state (<BANDSYNC...> under EXTSTATE) gone, so it doesn't open as a session tab. `split` = mixlayer.split_live.
+-- Pure.
+function sessionfile.plain(text, split)
+  local lines = {}
+  -- (REAPER on Windows writes CRLF: a block's closing line is ">\r", which never matched and swallowed the rest)
+  for l in (text .. "\n"):gmatch("([^\n]*)\n") do lines[#lines + 1] = (l:gsub("\r$", "")) end
+  if lines[#lines] == "" then lines[#lines] = nil end
+  local out, i = {}, 1
+  while i <= #lines do
+    local l = lines[i]
+    local ind, tag = l:match("^(%s*)<(%S+)")
+    local fx = tag and (tag:match("^FXCHAIN") or tag == "MASTERFXLIST")
+    local ours = tag and tag:upper():match("^BANDSYNC")
+    if fx or ours then
+      local j = i + 1
+      while j <= #lines and lines[j] ~= ind .. ">" do j = j + 1 end
+      if fx then
+        local block = table.concat(lines, "\n", i, math.min(j, #lines))
+        for b in ((split(block)) .. "\n"):gmatch("([^\n]*)\n") do out[#out + 1] = b end
+      end
+      i = j + 1
+    else
+      out[#out + 1] = l
+      i = i + 1
+    end
+  end
+  return table.concat(out, "\n") .. "\n"
+end
+
 -- Write this machine's end-of-session project to Drive. Returns the file written, or nil + why.
 function sessionfile.export(proj, cfg, b, droot, room_dir)
   local path
@@ -79,7 +110,7 @@ function sessionfile.export(proj, cfg, b, droot, room_dir)
     if not exists(to) then pending[#pending + 1] = { from = full, to = to } end
     return "media/" .. user .. "/" .. name
   end)
-  text = require("solo").strip_live_fx(text)
+  text = sessionfile.plain(text, require("mixlayer").split_live)
   reaper.RecursiveCreateDirectory(sdir .. "/media/" .. user, 0)
   local out = string.format("%s/%s-%s-%s.rpp", sdir, os.date("!%Y%m%d-%H%M%SZ"), user, (b.room:gsub("[^%w%-_]", "_")))
   band.write_atomic(out, text)

@@ -20,7 +20,8 @@ local function capture(proj)
       if id then
         st.takes[id] = { track = sync.track_name(it), pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION"),
           len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), lane = sync.lane_of(it), mute = reaper.GetMediaItemInfo_Value(it, "B_MUTE"),
-          offs = reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS") - band.base_offs(tk), active = tk == active }
+          offs = reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS") - band.base_offs(tk), active = tk == active,
+          rev = tonumber(sync.ext(proj, sync.REV, id)) } -- which print it was: a kept point's files are never cleaned up
       end
     end
   end
@@ -40,9 +41,10 @@ local function capture(proj)
   return st
 end
 
-function recall.save(proj, cfg, song, room, label)
+-- `keep`: kept for good (end of session): "Empty old trash" never removes the audio it needs.
+function recall.save(proj, cfg, song, room, label, keep)
   local st = capture(proj)
-  st.label, st.by, st.time = label, cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ")
+  st.label, st.by, st.time, st.keep = label, cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ"), keep or nil
   st.timeline = { tempo = band.capture_tempo(proj), markers = band.capture_markers(proj) } -- positions are in its seconds
   local dir = recall.dir(cfg, song, room)
   reaper.RecursiveCreateDirectory(dir, 0)
@@ -61,10 +63,33 @@ function recall.list(cfg, song, room)
     if st then
       local n = 0
       for _ in pairs(st.takes or {}) do n = n + 1 end
-      out[#out + 1] = { file = files[i], label = st.label or files[i], by = st.by, time = st.time, takes = n }
+      out[#out + 1] = { file = files[i], label = st.label or files[i], by = st.by, time = st.time, takes = n, keep = st.keep }
     end
   end
   return out
+end
+
+-- For band.empty_trash: a function telling whether a trash file is needed by a kept restore point (that take's
+-- manifest, and its files of the revision the point played; every revision when the point didn't say).
+function recall.protector(cfg, song, room)
+  local need = {} -- lower id -> { [rev] = true } or true (all)
+  local dir = recall.dir(cfg, song, room)
+  for _, f in ipairs(band.files(dir, ".json")) do
+    local st = band.read_json(dir .. "/" .. f)
+    if st and st.keep then
+      for id, t in pairs(st.takes or {}) do
+        local k = id:lower()
+        if not t.rev then need[k] = true
+        elseif need[k] ~= true then need[k] = need[k] or {}; need[k][t.rev] = true end
+      end
+    end
+  end
+  local drive = require("drive")
+  return function(f)
+    local id, rev, manifest = drive.parse(f)
+    local n = id and need[id:lower()]
+    return n ~= nil and (n == true or manifest or n[rev] == true)
+  end
 end
 
 -- ---- history: every take and change, in order -----------------------------------------------------

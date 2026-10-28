@@ -18,7 +18,8 @@ local files_checked -- when our own prints in the shared folder were last checke
 
 local cfg = band.settings()
 if not cfg then return end
-local proj = reaper.EnumProjects(-1)
+local proj = BANDSYNC_LIVE_PROJ or reaper.EnumProjects(-1) -- (set when an update reloads us: our tab, not the front one)
+BANDSYNC_LIVE_PROJ = nil
 -- A side-by-side stop fires when our playhead reaches the leader's stop position, on two readings in a row: the
 -- play position can read a few hundred ms off for a moment (seen on the laptop: 6.418 -> 6.112 -> 6.446 in 2 ms).
 local past = 0
@@ -76,7 +77,32 @@ local function toggle(v)
   if cmd > 0 then reaper.SetToggleCommandState(section, cmd, v); reaper.RefreshToolbar2(section, cmd) end
 end
 toggle(1)
-reaper.atexit(function() toggle(0) end)
+
+-- End of session: a restore point kept for good (Empty old trash never removes its audio), so the band's history
+-- shows where every session ended. Saved when Live sync stops and after 20 minutes without a change (REAPER might
+-- be closed hard), only when something changed since the last one.
+local recall = require("recall")
+local function event_count() return #band.files(sync.room_dir(cfg, b.song, b.room) .. "/events", ".json") end
+local ended_at_n = event_count()
+local quiet = { n = ended_at_n, since = reaper.time_precise(), checked = 0 }
+local function end_of_session(why)
+  local n = event_count()
+  if n == ended_at_n or not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end
+  ended_at_n = n
+  recall.save(proj, cfg, b.song, b.room, "end of session", true)
+  band.log("saved an end-of-session restore point (" .. why .. "): it's kept for good")
+end
+local reloaded -- this instance handed over to the updated code (which saves the end of session itself)
+reaper.atexit(function()
+  if not reloaded then pcall(end_of_session, "Live sync stopped") end
+  toggle(0)
+end)
+
+-- Google Drive copy of the room (lib/drive.lua): what we did alone reaches the band whenever they next open the
+-- song, and what they did alone reaches us. A pass every minute (sooner while a big copy is still going), only
+-- while stopped: copying a long FLAC can hold up REAPER's screen for a moment.
+local drive = require("drive")
+local drive_at, drive_more, drive_said = -math.huge, false, nil
 
 local sizes, warned_version, last, recording, stopped_at = {}, nil, 0, false, 0
 local last_reprint, last_status, status_json = 0, 0, ""
@@ -313,6 +339,25 @@ local function poll()
       if p == proj and fn ~= "" then reaper.Main_SaveProject(proj, false) end -- (an unsaved project would ask where)
     end
   end
+  if now - quiet.checked > 60 then
+    quiet.checked = now
+    local n = event_count()
+    if n ~= quiet.n then quiet.n, quiet.since = n, now
+    elseif now - quiet.since > 1200 then pcall(end_of_session, "20 minutes with no changes") end
+  end
+  local droot = drive.root(cfg)
+  if droot and reaper.GetPlayStateEx(proj) == 0 and now - drive_at > (drive_more and 5 or 60) then
+    drive_at = now
+    local moved, more = 0, false
+    for _, room in ipairs(rooms) do
+      local ok, n, m = pcall(drive.mirror, sync.room_dir(cfg, b.song, room), droot .. "/" .. b.song .. "/rooms/" .. room, 1.5)
+      if ok then moved, more = moved + n, more or m
+      elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
+    end
+    if more and not drive_more then band.log("Google Drive: bringing the band's copy of this room up to date (carries on between passes)") end
+    if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end
+    drive_more = more
+  end
   sync.apply_locks(proj, can, cfg.user)
   sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
 
@@ -506,9 +551,30 @@ local function tick_body() -- returns true to keep going
   end
   return true
 end
+-- A running script keeps the code it started with: after an update, running the action again only said "already
+-- running", so an old Live sync carried on through two updates (laptop, 2026-10-28: 0.13.3 skipped mix events as
+-- unknown and marked them applied). Once the installed version has changed (and held for two looks, so a half-copied
+-- update isn't loaded), the new code takes over in place, for this same tab.
+local seen_disk, disk_at = nil, 0
+local function updated()
+  if reaper.time_precise() - disk_at < 5 then return false end
+  disk_at = reaper.time_precise()
+  local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
+  local ready = disk and disk ~= band.VERSION and disk == seen_disk
+  seen_disk = disk
+  return ready
+end
 -- an error anywhere in a tick (a malformed cue from someone's machine, say) is logged, and Live sync carries on
 local said_at = -math.huge
 tick = function()
+  if reaper.GetPlayStateEx(proj) & 4 == 0 and reaper.ValidatePtr2(0, proj, "ReaProject*") and updated() then
+    band.log("live sync for '" .. b.song .. "' reloaded for BandSync " .. tostring(seen_disk))
+    reloaded = true
+    reaper.DeleteExtState(band.SECTION, "live " .. key, false)
+    for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
+    BANDSYNC_LIVE_PROJ = proj
+    return dofile(dir .. "/BandSync - Live sync.lua")
+  end
   local ok, go = pcall(tick_body)
   if not ok then
     if reaper.time_precise() - said_at > 30 then said_at = reaper.time_precise(); band.log("live sync error: " .. tostring(go)) end

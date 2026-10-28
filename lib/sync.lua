@@ -822,7 +822,9 @@ function sync.share_sound(proj, cfg, b, tr)
     -- the item is longer than the recording by the print's own tail (a manifest's len never includes it): render just
     -- the recording, plus a fresh tail; sent with the same len and tail as the original, it fits the same item exactly
     local was_len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
-    local rec_len = m0 and m0.len
+    -- as the item sits now (it may have been moved or trimmed since the original arrived): its length without the tail
+    local rec_len = m0 and math.min(m0.len or math.huge, was_len - (tonumber(ext(proj, sync.TAILS, m0.id or "")) or 0))
+    local at = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
     if m0 and rec_len and rec_len > 0 and rec_len < was_len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", rec_len) end
     if m0 then
       local id
@@ -836,10 +838,10 @@ function sync.share_sound(proj, cfg, b, tr)
         band.copy_atomic(path, takes .. "/" .. id .. ".flac")
         band.write_json(takes .. "/" .. id .. ".json", {
           format = band.FORMAT, bandsync = band.VERSION, id = id, rev = 1, user = cfg.user, printed_by = cfg.user, room = b.room,
-          track = m0.track, pos = m0.pos, qn = m0.qn, len = rec_len, tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+          track = m0.track, pos = at, qn = sync.qn(proj, at), len = rec_len, tail = tail, sent = os.date("!%Y-%m-%dT%H:%M:%SZ"),
           full = id .. ".flac", print = "wet", wet = true, group = m0.group, lane = m0.lane, lane_name = m0.lane_name,
           session_version = m0.session_version, based_on = m0.id, sound = cfg.user .. "'s sound",
-          origin = { pos = m0.pos, len = rec_len, track = m0.track, lane = m0.lane, sent = os.date("!%Y-%m-%dT%H:%M:%SZ") },
+          origin = { pos = at, len = rec_len, track = m0.track, lane = m0.lane, sent = os.date("!%Y-%m-%dT%H:%M:%SZ") },
         })
         sent = sent + 1
       end
@@ -1484,6 +1486,12 @@ function sync.watch(proj, cfg, song, room, can)
               len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") - (tonumber(ext(proj, sync.TAILS, id)) or 0), lane = lane_of(hit[1]),
               mute = reaper.GetMediaItemInfo_Value(hit[1], "B_MUTE"),
               offs = reaper.GetMediaItemTakeInfo_Value(hit[2], "D_STARTOFFS") - band.base_offs(hit[2]) }
+            local f = {}
+            for v in (snap .. "|"):gmatch("([^|]*)|") do f[#f + 1] = v end -- id|pos|len|offs|lane|mute|track
+            if tonumber(f[2]) then -- the shape just before this change ("Undo my last change" puts it back)
+              ev.was = { pos = tonumber(f[2]), len = (tonumber(f[3]) or 0) - (tonumber(ext(proj, sync.TAILS, id)) or 0), offs = tonumber(f[4]), mute = tonumber(f[6]) }
+            end
+            if ext(proj, "BandSync.undo_echo", id) ~= "" then ev.undo = true; setext(proj, "BandSync.undo_echo", id, "") end
             sync.post(cfg, song, room, ev, proj)
             sync.remember(proj, id, hit[1], hit[2])
             local mit, mtk = band.find_midi(proj, id) -- its MIDI copy keeps sitting under it here too, as when the change comes from the band

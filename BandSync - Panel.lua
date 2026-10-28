@@ -269,7 +269,7 @@ local function section_recall()
       ImGui.EndDisabled(ctx)
       if not driving then ImGui.SetItemTooltip(ctx, "Only the driver restores (take control first).") end
       ImGui.SameLine(ctx)
-      ImGui.Text(ctx, string.format("%s  ·  %s  ·  %s  ·  %d takes", p.label, tostring(p.by), (p.time or ""):sub(1, 16):gsub("T", " "), p.takes))
+      ImGui.Text(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), (p.time or ""):sub(1, 16):gsub("T", " "), p.takes))
       ImGui.PopID(ctx)
     end
     ImGui.EndChild(ctx)
@@ -595,10 +595,11 @@ local function section_actions()
   ImGui.SetItemTooltip(ctx, "Takes into lanes, FLAC (recording and existing WAVs), clear track names, media in the project folder, tidy-up: a checklist first.")
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Empty old trash") then
-    local n = band.empty_trash(sync.room_dir(cfg, b.song, b.room) .. "/_trash", 30)
+    local n = band.empty_trash(sync.room_dir(cfg, b.song, b.room) .. "/_trash", 30, recall.protector(cfg, b.song, b.room))
     band.log(string.format("emptied %s file(s) from this room's trash (in it for over 30 days)", tostring(n)))
   end
-  ImGui.SetItemTooltip(ctx, "Deleted takes and replaced revisions wait in the room's _trash; this removes the ones older than 30 days, on everyone's machine.")
+  ImGui.SetItemTooltip(ctx, "Deleted takes and replaced revisions wait in the room's _trash; this removes the ones older than 30 days, on everyone's machine.\n" ..
+    "Audio a kept restore point (end of session) needs is never removed; nor is anything on the band's Google Drive copy.")
 end
 
 -- ---- Together: start/stop at once, notes and likes, live ideas, and the tools (lib/tools.lua) ----------------

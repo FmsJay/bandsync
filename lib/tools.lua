@@ -180,10 +180,15 @@ function tools.my_last_change(proj, cfg, b)
   local list = events_of(cfg, b)
   for i = #list, 1, -1 do
     local ev = list[i]
-    if ev.user == cfg.user and select(2, reaper.GetProjExtState(proj, UNDONE, ev.id)) == "" then
+    -- an undo's own change isn't one to undo (pressing again goes further back, not back and forth)
+    if ev.user == cfg.user and not ev.undo and select(2, reaper.GetProjExtState(proj, UNDONE, ev.id)) == "" then
       if ev.type == "edit" and ev.take then
-        local before -- the take's shape just before this change: the change before it, or where it first landed
-        for j = i - 1, 1, -1 do if list[j].type == "edit" and (list[j].take or ""):lower() == ev.take:lower() then before = list[j]; break end end
+        local before = ev.was -- the take's shape just before this change (sent with it since 0.14.3); for older
+        -- events: the change before it, or where it first landed
+        for j = i - 1, 1, -1 do
+          if before then break end
+          if list[j].type == "edit" and (list[j].take or ""):lower() == ev.take:lower() then before = list[j] end
+        end
         if not before then
           local m = band.read_json(band.takes_dir(cfg, b.song, b.room) .. "/" .. ev.take .. ".json")
           local o = m and (m.origin or m)
@@ -198,6 +203,7 @@ function tools.my_last_change(proj, cfg, b)
             reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", band.base_offs(tk) + (before.offs or 0))
             reaper.SetMediaItemInfo_Value(it, "B_MUTE", before.mute or 0)
             reaper.UpdateItemInProject(it)
+            reaper.SetProjExtState(proj, "BandSync.undo_echo", ev.take, "1") -- Live sync sends it marked as an undo
             return true -- Live sync sends it as our change
           end }
         end

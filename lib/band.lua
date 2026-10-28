@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.14.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.14.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -291,15 +291,16 @@ function band.to_trash(from_dir, to_dir, f)
   band.write_json(to_dir .. "/index.json", idx)
   return true
 end
--- Delete trash files older than `days` (by the date they went in). Returns how many went.
-function band.empty_trash(dir, days)
+-- Delete trash files older than `days` (by the date they went in), except those `keep(f)` says are needed (kept
+-- restore points' audio). Returns how many went.
+function band.empty_trash(dir, days, keep)
   local idx = band.read_json(dir .. "/index.json") or {}
   local y, m, d = os.date("!%Y-%m-%d"):match("(%d+)-(%d+)-(%d+)")
   local today = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
   local n = 0
   for f, date in pairs(idx) do
     local fy, fm, fd = date:match("(%d+)-(%d+)-(%d+)")
-    if fy and (today - os.time({ year = tonumber(fy), month = tonumber(fm), day = tonumber(fd), hour = 12 })) / 86400 >= days then
+    if fy and not (keep and keep(f)) and (today - os.time({ year = tonumber(fy), month = tonumber(fm), day = tonumber(fd), hour = 12 })) / 86400 >= days then
       if os.remove(dir .. "/" .. f) or not reaper.file_exists(dir .. "/" .. f) then idx[f] = nil; n = n + 1 end
     end
   end

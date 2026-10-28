@@ -9,6 +9,25 @@ if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj) or {}
 
+-- a new song from a project that hasn't been prepared (takes not in lanes, WAVs, duplicate track names...): offer
+-- the checklist first, since it's much harder to tidy once the band has it
+if not b.song then
+  local todo = {}
+  for _, r in ipairs(require("prep").scan(proj, cfg, nil)) do
+    if r.todo ~= nil and r.on and r.key ~= "autostart" then todo[#todo + 1] = "  - " .. r.title end
+  end
+  if #todo > 0 then
+    local r = reaper.MB("This project isn't prepared for BandSync yet:\n\n" .. table.concat(todo, "\n") ..
+      "\n\nYes: prepare it first (a checklist: you choose what changes; nothing is published yet)\nNo: publish it as it is", "BandSync", 3)
+    if r == 2 then return end
+    if r == 6 then
+      local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Prepare session.lua", true)
+      if id > 0 then reaper.Main_OnCommand(id, 0) end
+      return
+    end
+  end
+end
+
 local projname = reaper.GetProjectName(proj)
 local song = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 -- Print: how every take reaches everyone. wet = through its track's FX (the default), dry = take only,

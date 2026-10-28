@@ -104,7 +104,12 @@ function prep.scan(proj, cfg, b)
     end
   end
   if #blank + #dup > 0 then
-    add("names", string.format("Name %d unnamed and %d duplicate-named track(s)", #blank, #dup),
+    add("names", "Name " .. table.concat((function() -- "1 unnamed track", "2 duplicate-named tracks", or both
+      local parts = {}
+      if #blank > 0 then parts[#parts + 1] = #blank .. " unnamed track" .. (#blank > 1 and "s" or "") end
+      if #dup > 0 then parts[#parts + 1] = #dup .. " duplicate-named track" .. (#dup > 1 and "s" or "") end
+      return parts
+    end)(), " and "),
       "BandSync puts each part on the track with the same name, so two tracks called the same thing get each other's takes. " ..
       "Unnamed tracks take their first clip's name; duplicates get a number (Guitar 2).", #blank + #dup, { blank = blank, dup = dup })
   end

@@ -207,8 +207,16 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
     for i in $(seq 1 60); do pgrep -x REAPER >/dev/null && break; sleep 1; done
     sleep 8
   fi
+  # ONE request: the helper waits inside REAPER for ReaPack itself. A second "open" arriving while ReaPack's report
+  # window was up crashed REAPER on macOS (2026-10-28), so it's never sent again
   open -a REAPER "$HELPER"
-  for i in $(seq 1 180); do [ -f "$HDIR/bandsync_setup_result.json" ] && break; sleep 1; done
+  GONE=""
+  for i in $(seq 1 360); do
+    [ -f "$HDIR/bandsync_setup_result.json" ] && break
+    if [ $i -gt 15 ] && ! pgrep -x REAPER >/dev/null; then GONE=1; break; fi
+    [ $i -eq 30 ] && say "Waiting for BandSync to arrive through ReaPack. If REAPER shows ReaPack's report window, close it."
+    sleep 1
+  done
   [ -f "$HDIR/bandsync_setup_result.json" ]
 }
 say "Setting up BandSync inside REAPER (REAPER opens; on a first start it scans your plug-ins, which can take a while) ..."
@@ -216,13 +224,9 @@ say "macOS may ask to let REAPER use the microphone: click Allow, or your takes 
 if request "${BS_SCRIPTS:-reapack}"; then
   if grep -q '"ok": *false' "$HDIR/bandsync_setup_result.json"; then warn "REAPER setup step had problems:"; cat "$HDIR/bandsync_setup_result.json"
   else ok "REAPER: name, shared folder and BandSync repository set"; fi
+elif [ -n "$GONE" ]; then warn "REAPER closed unexpectedly during setup. Open REAPER (and your project: File > Recent projects), then run this again."; exit 1
 else warn "REAPER didn't run the setup step. Open REAPER, then run this again."; exit 1; fi
-count=0
-for i in $(seq 1 12); do # ReaPack downloads in the background
-  [ "$count" -ge 5 ] && break
-  sleep 10
-  request verify && count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/bandsync_setup_result.json" | grep -o '[0-9]*$')"
-done
+count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/bandsync_setup_result.json" | grep -o '[0-9]*$')"
 [ "${count:-0}" -ge 5 ] && ok "BandSync installed: $count actions (the BandSync panel opens in REAPER)" || warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages"
 
 # ---------- 5. what's left for a human ----------

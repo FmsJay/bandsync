@@ -150,7 +150,9 @@ function chooser.open(cfg, opts, done)
       local _, t = ImGui.InputTextWithHint(ctx, "##find", "Type to search: song, host, bandmate", text)
       text = t
       ImGui.SameLine(ctx)
-      local _, sh = ImGui.Checkbox(ctx, "Show hidden", show_hidden)
+      local nhidden = 0 -- (a hidden song also leaves its folder's count: say how many there are)
+      for _, r in ipairs(rows) do if hide[r.song] then nhidden = nhidden + 1 end end
+      local _, sh = ImGui.Checkbox(ctx, nhidden > 0 and ("Show hidden (" .. nhidden .. ")") or "Show hidden", show_hidden)
       show_hidden = sh
       local flags = ImGui.TableFlags_ScrollY | ImGui.TableFlags_RowBg | ImGui.TableFlags_BordersInnerV | ImGui.TableFlags_Resizable
       if ImGui.BeginTable(ctx, "songs", 4, flags, 0, -64) then

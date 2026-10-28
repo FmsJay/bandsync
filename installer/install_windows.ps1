@@ -199,22 +199,28 @@ function Request($mode) {
     for ($i = 0; $i -lt 60 -and -not (Get-Process reaper -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }); $i++) { Start-Sleep 1 }
     Start-Sleep 5
   }
+  # ONE request: the helper waits inside REAPER for ReaPack itself (asking again while ReaPack's report window was up
+  # crashed REAPER on macOS, 2026-10-28)
   Start-Process $reaper -ArgumentList @("-nonewinst", "`"$helper`"")
-  for ($i = 0; $i -lt 180 -and -not (Test-Path $result); $i++) { Start-Sleep 1 }
+  $script:Gone = $false
+  for ($i = 0; $i -lt 360 -and -not (Test-Path $result); $i++) {
+    Start-Sleep 1
+    if ($i -gt 15 -and -not (Get-Process reaper -ErrorAction SilentlyContinue)) { $script:Gone = $true; break }
+    if ($i -eq 30) { Say "Waiting for BandSync to arrive through ReaPack. If REAPER shows ReaPack's report window, close it." }
+  }
   if (-not (Test-Path $result)) { return $null }
   Start-Sleep -Milliseconds 300
   return Get-Content $result -Raw | ConvertFrom-Json
 }
 Say "Setting up BandSync inside REAPER (REAPER opens; on a first start it scans your plug-ins, which can take a while) ..."
 $r = Request $Scripts
-if (-not $r) { Warn "REAPER didn't run the setup step. Open REAPER, then run this again." ; exit 1 }
-foreach ($s in $r.steps) { if ($s.ok) { Ok "$($s.name): $($s.detail)" } else { Warn "$($s.name): $($s.detail)" } }
-$count = 0
-for ($i = 0; $i -lt 12 -and $count -lt 5; $i++) { # ReaPack downloads in the background
-  Start-Sleep 10
-  $v = Request "verify"
-  if ($v) { $count = [int]$v.registered_actions }
+if (-not $r) {
+  if ($script:Gone) { Warn "REAPER closed unexpectedly during setup. Open REAPER (and your project: File > Recent projects), then run this again." }
+  else { Warn "REAPER didn't run the setup step. Open REAPER, then run this again." }
+  exit 1
 }
+foreach ($s in $r.steps) { if ($s.ok) { Ok "$($s.name): $($s.detail)" } else { Warn "$($s.name): $($s.detail)" } }
+$count = [int]$r.registered_actions
 if ($count -ge 5) { Ok "BandSync installed: $count actions (the BandSync panel opens in REAPER)" } else { Warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages" }
 
 # ---------- 5. what's left for a human (only what isn't done yet) ----------

@@ -8,6 +8,10 @@ local band = require("band")
 local cfg = band.settings()
 if not cfg then return end
 local b = band.binding(0)
+if reaper.GetExtState(band.SECTION, "open_other") ~= "" then -- the panel's "Open another song": the chooser, then a new tab
+  reaper.DeleteExtState(band.SECTION, "open_other", false)
+  b = nil
+end
 if b and b.role == "host" then
   return band.msg("This is the host project for '" .. b.song .. "'. Open the session in a new project tab instead.")
 end

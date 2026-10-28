@@ -1,6 +1,6 @@
 -- @description BandSync: prepare this project for BandSync (lanes, FLAC, names, media, tidy-up), as a checklist
 -- For a project that's already busy, before it's published or joined: shows what it would change, each a checkbox,
--- then saves a backup copy and does the ticked ones as one undo (file conversions keep their originals in a
+-- then, on Continue, saves a backup copy and does the ticked ones as one undo (file conversions keep their originals in a
 -- 'BandSync originals' folder next to the project).
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
@@ -40,7 +40,7 @@ local function loop()
       ImGui.TextColored(ctx, GREEN, "Nothing to do: this project is ready for BandSync.")
       if ImGui.Button(ctx, "Close") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then close = true end
     else
-      ImGui.TextWrapped(ctx, "What this project needs for BandSync. Untick anything you'd rather keep; a backup copy of the project is saved first.")
+      ImGui.TextWrapped(ctx, "What this project needs for BandSync. Untick anything you'd rather keep, then Continue: a backup copy of the project is saved first.")
       ImGui.Spacing(ctx)
       if ImGui.BeginChild(ctx, "rows", 0, -40) then
         for i, r in ipairs(rows) do
@@ -64,7 +64,7 @@ local function loop()
       local any = false
       for _, r in ipairs(rows) do if r.on and r.todo ~= nil then any = true end end
       ImGui.BeginDisabled(ctx, not any)
-      if ImGui.Button(ctx, "Do the ticked ones") then
+      if ImGui.Button(ctx, "Continue") then
         ImGui.EndDisabled(ctx)
         local ok, res = pcall(prep.apply, proj, cfg, b, rows, dir)
         result = ok and res or { "Stopped: " .. tostring(res) }

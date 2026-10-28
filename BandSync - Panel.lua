@@ -23,7 +23,8 @@ if not cfg then return end
 if reaper.set_action_options then reaper.set_action_options(1) end -- running it again closes it (no task dialog)
 local _, _, section, cmd = reaper.get_action_context()
 if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 1); reaper.RefreshToolbar2(section, cmd) end
-reaper.atexit(function() if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end end)
+local restarting = false -- an update landed: a new panel took over, and its toolbar state is on
+reaper.atexit(function() if cmd > 0 and not restarting then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end end)
 
 local ctx = ImGui.CreateContext("BandSync")
 local GREEN, YELLOW, GREY, RED = 0x59CC73FF, 0xF2BF40FF, 0x8C8C8CFF, 0xE0605AFF
@@ -568,6 +569,9 @@ local function section_actions()
     if i > 1 then ImGui.SameLine(ctx) end
     if ImGui.Button(ctx, name) then action(name) end
   end
+  if ImGui.Button(ctx, "Open another song") then reaper.SetExtState(band.SECTION, "open_other", "1", false); action("Open session") end
+  ImGui.SetItemTooltip(ctx, "The song chooser: another song or room opens in a new tab (this one stays open, and keeps syncing).")
+  ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Prepare this project") then action("Prepare session") end
   ImGui.SetItemTooltip(ctx, "Takes into lanes, FLAC (recording and existing WAVs), clear track names, media in the project folder, tidy-up: a checklist first.")
   ImGui.SameLine(ctx)
@@ -904,11 +908,31 @@ local function frame()
   end
 end
 
+-- A running script keeps the code it started with, so after an update this panel showed none of the new buttons
+-- until someone closed and reopened it (Mac, 2026-10-28). Once the installed version has changed (and held for two
+-- looks, so a half-finished update isn't loaded), it loads the new code in place: same window, new panel.
+local seen_disk, disk_at = nil, 0
+local function updated()
+  if reaper.time_precise() - disk_at < 3 then return false end
+  disk_at = reaper.time_precise()
+  local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
+  local ready = disk and disk ~= band.VERSION and disk == seen_disk
+  seen_disk = disk
+  return ready
+end
+
 local function loop()
+  if updated() then -- reload in place: relaunching itself as an action is ignored (or asks to terminate instances)
+    band.log("the panel reloaded for BandSync " .. tostring(seen_disk))
+    restarting = true
+    for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
+    return dofile(dir .. "/BandSync - Panel.lua")
+  end
   ImGui.SetNextWindowSize(ctx, 560, 640, ImGui.Cond_FirstUseEver)
   local wx, wy = ImGui.Viewport_GetWorkPos(ImGui.GetMainViewport(ctx)) -- first time: inside REAPER, below its menus
   ImGui.SetNextWindowPos(ctx, wx + 60, wy + 90, ImGui.Cond_FirstUseEver)
-  local visible, open = ImGui.Begin(ctx, "BandSync", true)
+  -- no collapse arrow: collapsed and opened again, the window came back tiny on macOS (dock it, or close it instead)
+  local visible, open = ImGui.Begin(ctx, "BandSync", true, ImGui.WindowFlags_NoCollapse)
   if visible then
     local ok, e = pcall(frame) -- an error in our logic must still reach End
     if not ok then err = tostring(e) end

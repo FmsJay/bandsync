@@ -14,6 +14,10 @@ local together = require("together")
 local transport -- a pending start/stop (lib/together.lua)
 local clip_said -- when we last warned about the master clipping
 local due_in = math.huge -- seconds until a pending start/stop fires
+
+local cfg = band.settings()
+if not cfg then return end
+local proj = reaper.EnumProjects(-1)
 -- A side-by-side stop fires when our playhead reaches the leader's stop position, on two readings in a row: the
 -- play position can read a few hundred ms off for a moment (seen on the laptop: 6.418 -> 6.112 -> 6.446 in 2 ms).
 local past = 0
@@ -22,10 +26,6 @@ local function reached(t, theirs)
   past = reaper.GetPlayPosition2Ex(proj) >= t.pos - 0.005 and past + 1 or 0
   return past >= 2
 end
-
-local cfg = band.settings()
-if not cfg then return end
-local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
 local host = b.role == "host"

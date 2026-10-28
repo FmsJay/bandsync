@@ -520,7 +520,10 @@ local setup_at, st = 0, {}
 -- What BandSync did lately (sends, what arrived, what was put back and why): it used to pop the console up
 local function section_activity()
   local lines = band.activity()
-  if ImGui.CollapsingHeader(ctx, "Activity (" .. (lines[1] and lines[1]:sub(7, 60) or "nothing yet") .. ")") then
+  local newest = lines[1] and lines[1]:sub(7) or "nothing yet"
+  if #newest > 64 then newest = newest:sub(1, 61) .. "..." end -- cut short visibly, not mid-word with nothing after
+  -- "###": the label changes with every line, the header (and whether it's open) stays the same one
+  if ImGui.CollapsingHeader(ctx, "Activity (" .. newest .. ")###activity") then
     if ImGui.BeginChild(ctx, "activity", 0, 140, ImGui.ChildFlags_Borders) then
       for _, l in ipairs(lines) do ImGui.TextWrapped(ctx, l) end
       ImGui.EndChild(ctx)

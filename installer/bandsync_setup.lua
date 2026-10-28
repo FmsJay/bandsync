@@ -40,9 +40,27 @@ if probe and user ~= "" then
   reaper.SetExtState("BandSync", "user", user, true)
 end
 
+-- BandSync already arrived through ReaPack (the repository set, its actions registered)? Then ReaPack is left alone:
+-- starting a ReaPack sync while its Transaction report window is open crashes REAPER on macOS (2026-10-28), and a
+-- re-run or an update is exactly when that window may still be up. Updates come with "BandSync - Update".
+local function already_installed()
+  if not reaper.APIExists("ReaPack_GetRepositoryInfo") then return false end
+  local ok, url = reaper.ReaPack_GetRepositoryInfo("BandSync")
+  if not ok or url ~= req.repo_url then return false end
+  local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
+  local text = kb and kb:read("a") or ""
+  if kb then kb:close() end
+  local n = 0
+  for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do n = n + 1 end
+  return n >= 5
+end
+
 if req.mode == "reapack" then
   if not reaper.APIExists("ReaPack_AddSetRepository") then
     step("ReaPack installed", false, "install ReaPack (reapack.com) and restart REAPER first")
+  elseif already_installed() then
+    step("BandSync already installed through ReaPack", true, "left as it is (updates: BandSync - Update)")
+    req.mode = "verify" -- nothing to wait for
   else
     local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
     step("add BandSync repository", added, err ~= "" and err or req.repo_url)

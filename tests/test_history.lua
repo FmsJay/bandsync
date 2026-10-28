@@ -48,4 +48,8 @@ assert(recall.describe(V8[2]) == "recorded together from 4.00 s", recall.describ
 assert(recall.describe(V8[3]) == "note on A's take: love this", recall.describe(V8[3]))
 assert(recall.describe(V8[4]) == "liked A's take on Gtr", recall.describe(V8[4]))
 assert(recall.describe(V8[5]) == "removed 2.00 s at 8.00 s (every track)", recall.describe(V8[5]))
+-- an insert/remove carries the map it left: a restore after it keeps the moved markers
+local SH = { E[1], { kind = "shift", time = "2026-10-27T01:14:00Z", id = "A-y", user = "A", at = 20, len = 5,
+  tempo = { { time = 0, bpm = 96, num = 4, denom = 4 } }, markers = { { region = true, name = "Verse", pos = 10, ["end"] = 35 } } } }
+assert(recall.replay(SH).timeline.markers[1]["end"] == 35, "shift's markers become the timeline")
 print("ok")

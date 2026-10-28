@@ -218,7 +218,8 @@ local function section_history()
           "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
           "Where things are now is saved as a recall point first, so you can come back.", g.user, local_time(g.to)), "BandSync", 4) == 6 then
         local st = recall.replay(entries, g.last)
-        st.timeline = st.timeline or (view.session and view.session.first_timeline) -- before any tempo change: as published
+        local s0 = view.session or {} -- before any tempo change: as published
+        st.timeline = st.timeline or s0.first_timeline or (s0.tempo and { tempo = s0.tempo, markers = s0.markers })
         band.log(recall.restore_state(proj, cfg, b.song, b.room, st, string.format("%s's changes at %s", g.user, local_time(g.to))) or "restore failed")
         last, hist_at = 0, 0
       end
@@ -611,18 +612,16 @@ local function section_tools()
         "BandSync", 4) ~= 6 then return end
     local len = sign * together.bars_after(proj, pos, bars)
     local cross = #sync.crossing(proj, pos, len)
-    if cross > 0 then
-      if reaper.MB(string.format("%d take(s) play across bar %s. Split them there, so the music after it can move?\n\n" ..
-          "The parts after the split go to the band as new takes from you.", cross, bar_of(pos)), "BandSync", 4) ~= 6 then return end
-      sync.split_crossing(proj, pos, len)
-    end
+    if cross > 0 and reaper.MB(string.format("%d take(s) play across bar %s. Each is split there by whoever recorded it, " ..
+        "and the part after the split moves with the music.\n\nGo ahead?", cross, bar_of(pos)), "BandSync", 4) ~= 6 then return end
     reaper.Undo_BeginBlock2(proj)
-    local ok, why = sync.shift(proj, pos, len, { keep = function(it, tk) -- what you may move goes out as edits too
+    sync.shift(proj, pos, len, { split = sync.recorded_by(cfg.user), keep = function(it, tk) -- what you may move goes out as edits too
       return can(cfg.user, sync.base_name(select(2, reaper.GetTrackName(reaper.GetMediaItem_Track(it)))), reaper.GetMediaItemInfo_Value(it, "D_POSITION"), band.take_id(tk))
     end })
     reaper.Undo_EndBlock2(proj, string.format("BandSync: %s %d bar(s) at bar %s", sign > 0 and "insert" or "remove", bars, bar_of(pos)), -1)
-    if not ok then return band.msg(why) end
-    sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = len })
+    local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
+    sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = len, tempo = tempo, markers = markers })
+    sync.session_timeline(cfg, b.song, tempo, markers)
   end
   if ImGui.Button(ctx, "Insert bars") then shift(1) end
   ImGui.SameLine(ctx)

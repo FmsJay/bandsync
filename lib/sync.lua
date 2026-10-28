@@ -109,10 +109,11 @@ end
 -- ---- arrangement: insert or remove time for everyone (the driver's edit; claims don't block it) ---------
 -- Insert `len` seconds at `at` (len > 0), or remove [at, at - len) (len < 0): items, tempo markers, markers and
 -- regions after it move; removed time's items, tempo markers and markers go. Stems and live placeholders stay.
--- The driver refuses while a take crosses an edit point (sync.split_crossing splits them; the halves go out as a
--- trim and a new take). Receivers pass opts.lenient: a crossing item stays put until the driver's trim and new take
--- arrive. opts.keep(it, tk) -> true keeps a moved take's old snapshot, so Live sync posts its new place as an edit
--- (a take that reaches someone after the shift still lands right). Returns true, or nil + why.
+-- Takes that play across an edit point are split there by whoever recorded them (opts.split(it) -> true), each on
+-- their own machine: the left part keeps its id and
+-- goes out as a trim, the right part is new material and goes out as a new take, already in its moved place.
+-- Everyone else leaves such a take where it is until those arrive. opts.keep(it, tk) -> true keeps a moved take's
+-- old snapshot, so Live sync posts its new place as an edit (a take that reaches someone late still lands right).
 local function shiftable(it)
   local tr = reaper.GetMediaItem_Track(it)
   return band.track_ext(tr, "band_stem") == "" and band.item_ext(it, "band_live") == ""
@@ -131,12 +132,36 @@ function sync.crossing(proj, at, len)
   end
   return out
 end
-function sync.split_crossing(proj, at, len)
+-- split_crossing's test: takes `me` recorded (and anything not sent yet). The author splits, so both parts stay
+-- theirs and land on their tracks everywhere; the left part's trim goes out under the author's own-take right.
+function sync.recorded_by(me)
+  return function(it)
+    local tk = reaper.GetActiveTake(it)
+    local id = tk and band.take_id(tk)
+    return not id or sync.author(id) == sync.author_of(me)
+  end
+end
+local function split_crossing(proj, at, len, mine)
   local n = 0
   for _, x in ipairs(len < 0 and { at, at - len } or { at }) do
     for _, it in ipairs(sync.crossing(proj, x, 0)) do
-      reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
-      if reaper.SplitMediaItem(it, x) then n = n + 1 end
+      local tk = reaper.GetActiveTake(it)
+      -- a "(MIDI)" copy is never split: two copies of one take would each post their notes as that take's
+      -- (seen 2026-10-28: a midi event every 2 s). It stays as it is; the take it copies is what's split.
+      if mine(it) and not (tk and band.take_ext(tk, "band_midi") ~= "") then
+        reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
+        local right = reaper.SplitMediaItem(it, x)
+        if right then -- the left part keeps the id; the right part is new
+          for k = 0, reaper.CountTakes(right) - 1 do
+            for _, key in ipairs({ "band_sent", "band_take", "band_fxhash", "band_base_offs", "band_base" }) do
+              band.set_take_ext(reaper.GetTake(right, k), key, "")
+            end
+          end
+          band.set_item_ext(right, "band_take", "")
+          band.set_item_ext(right, "band_group", "")
+          n = n + 1
+        end
+      end
     end
   end
   return n
@@ -144,14 +169,9 @@ end
 function sync.shift(proj, at, len, opts)
   opts = opts or {}
   local cut_to = len < 0 and (at - len) or at
+  local split = opts.split and split_crossing(proj, at, len, opts.split) or 0
   local cross = {}
   for _, it in ipairs(sync.crossing(proj, at, len)) do cross[it] = true end
-  if next(cross) and not opts.lenient then
-    local it = next(cross)
-    local tk = reaper.GetActiveTake(it)
-    return nil, string.format("'%s' on %s crosses the edit point: split it there first",
-      tk and (band.take_id(tk) or band.take_ext(tk, "band_midi")) or "an item", track_name(it)), sync.crossing(proj, at, len)
-  end
   local items, kept = {}, {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
@@ -197,7 +217,18 @@ function sync.shift(proj, at, len, opts)
   sync.resnap(proj)
   for id, snap in pairs(kept) do setext(proj, sync.SNAP, id, snap) end -- these go out as edits
   reaper.UpdateArrange()
-  return true
+  return true, split
+end
+
+-- The driver's new timeline goes into session.json too: refreshing, or a bandmate joining later, gets it.
+function sync.session_timeline(cfg, song, tempo, markers)
+  local sp = band.session_path(cfg, song)
+  local s = band.read_json(sp)
+  if s then
+    s.first_timeline = s.first_timeline or { tempo = s.tempo, markers = s.markers } -- history restores before this need it
+    s.tempo, s.markers = tempo, markers
+    band.write_json(sp, s)
+  end
 end
 
 -- Everything REAPER moved for a tempo change is where it should be: take new snapshots, so none of it is sent
@@ -926,7 +957,7 @@ end
 -- Apply one event from whoever may make it. False means retry later (its take hasn't arrived, or a
 -- delete needs this tab in front).
 -- `dir`: the room's folder (where "midi" events keep their note files); `root`: the shared folder (drum maps).
-function sync.apply(proj, ev, dir, root)
+function sync.apply(proj, ev, dir, root, can, me)
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
   if ev.type == "timeline" then -- REAPER moves the items for the new map, as it would for a local change
@@ -938,8 +969,7 @@ function sync.apply(proj, ev, dir, root)
     return true
   end
   if ev.type == "shift" then -- the driver inserted or removed time: same edit here, on every track
-    local ok, why = sync.shift(proj, ev.at, ev.len, { lenient = true })
-    if not ok then band.log("couldn't follow " .. tostring(ev.user) .. "'s insert/remove at " .. tostring(ev.at) .. ": " .. tostring(why)) end
+    sync.shift(proj, ev.at, ev.len, { split = sync.recorded_by(me) }) -- we split our own takes; everyone splits theirs
     return true
   end
   if ev.type == "start" or ev.type == "stop" then -- Live sync's tick fires it at the right moment (lib/together.lua)
@@ -1038,13 +1068,7 @@ function sync.watch(proj, cfg, song, room, can)
       if can(me, nil, nil) then -- the song's timeline is the driver's
         local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
         sync.post(cfg, song, room, { type = "timeline", tempo = tempo, markers = markers })
-        local sp = band.session_path(cfg, song) -- refreshing, or a bandmate joining later, gets this timeline too
-        local s = band.read_json(sp)
-        if s then
-          s.first_timeline = s.first_timeline or { tempo = s.tempo, markers = s.markers } -- history restores before this need it
-          s.tempo, s.markers = tempo, markers
-          band.write_json(sp, s)
-        end
+        sync.session_timeline(cfg, song, tempo, markers)
         band.log("sent the new tempo map and markers to the band")
         local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
         local before = band.json_decode(seen) or {}
@@ -1240,7 +1264,7 @@ function sync.receive(proj, cfg, song, room, can)
       if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
       -- one bad event must never block everything behind it (2026-10-28: a take-less "driver" event threw on every
       -- pass, so the handover's edits and tempo change never applied): log it and move on
-      local ok, res = pcall(sync.apply, proj, ev, sync.room_dir(cfg, song, room), cfg.root)
+      local ok, res = pcall(sync.apply, proj, ev, sync.room_dir(cfg, song, room), cfg.root, can, cfg.user)
       if not ok then
         band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
         setext(proj, sync.APPLIED, ev.id, "1")

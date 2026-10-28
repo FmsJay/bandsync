@@ -114,7 +114,7 @@ function recall.replay(entries, upto)
     elseif e.kind == "track" then
       if e.was and st.tracks[e.was] then st.tracks[e.was] = nil end
       st.tracks[e.track] = { mute = e.mute, solo = e.solo, color = e.color, icon = e.icon }
-    elseif e.kind == "timeline" then
+    elseif e.kind == "timeline" or (e.kind == "shift" and e.tempo) then -- an insert/remove carries the map it left
       st.timeline = { tempo = e.tempo, markers = e.markers }
     end
   end
@@ -266,6 +266,12 @@ function recall.restore_state(proj, cfg, song, room, st, label)
       if t.lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", t.lane) end
       if t.active then reaper.SetActiveTake(tk) end
       reaper.UpdateItemInProject(it)
+      local mit = band.find_midi(proj, w.id) -- its "(MIDI)" copy sits under it
+      if mit then
+        reaper.SetMediaItemInfo_Value(mit, "D_POSITION", t.pos)
+        reaper.SetMediaItemInfo_Value(mit, "D_LENGTH", t.len)
+        reaper.UpdateItemInProject(mit)
+      end
       moved = moved + 1
     end
   end

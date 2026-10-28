@@ -157,8 +157,8 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
     which goes out as an ordinary audio take.
   - *Use newest Solo edit mix*: the levels, pans and mutes of the latest Solo edit version.
   - *Insert / Remove bars* (driver): moves every take, tempo marker and marker after the cursor, on every
-    machine. Takes that play across the edit point are split there first (it asks); the parts after the split
-    go out as new takes from you.
+    machine. Takes that play across the edit point are split there by whoever recorded them, on their own
+    machine (it asks first), so both parts stay theirs. "(MIDI)" copies aren't split.
   - *Dry mode*: plays a bandmate's dry recording through *their* plug-in chain (it travels with each print).
     Plug-ins you have load; the rest stay in the chain as missing, with their settings kept. Untick to go back
     to the print.

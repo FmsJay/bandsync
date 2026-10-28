@@ -32,4 +32,16 @@ assert(can("James", "Keys", 21) and not can("Laptop", "Keys", 21), "a time claim
 assert(can("Laptop", "Keys", 12) and not can("James", "Keys", 12), "outside the time claim the region claim holds")
 assert(can("Laptop", "Guitar", 21) and not can("James", "Guitar", 21), "a track claim beats a time claim")
 assert(not can("Laptop", "Pad", 22, "Laptop-20261028-032939Z-1"), "the author can't change their take inside someone's time claim")
+-- claims made in the same second: the later name wins, whatever order the folder lists the files in
+for _, order in ipairs({ { "claims/James.json", "claims/Laptop.json" }, { "claims/Laptop.json", "claims/James.json" } }) do
+  local list = {
+    ["claims/James.json"] = { user = "James", time = "2026-10-28T11:12:00Z", tracks = { "Pad" }, times = { { from = 0, to = 5 } } },
+    ["claims/Laptop.json"] = { user = "Laptop", time = "2026-10-28T11:12:00Z", tracks = { "Pad" }, times = { { from = 0, to = 5 } } },
+  }
+  claims = list
+  package.loaded.band.files = function(dir) return dir:match("claims$") and { order[1]:match("[^/]+$"), order[2]:match("[^/]+$") } or {} end
+  can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
+  assert(who.owner("Pad", 0) == "Laptop", "a same-second track claim tie is decided by name")
+  assert(who.owner("Keys", 1) == "Laptop", "a same-second time claim tie is decided by name")
+end
 print("ok")

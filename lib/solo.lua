@@ -64,7 +64,17 @@ function solo.beat(cfg, song)
 end
 function solo.release(cfg, song)
   local l = solo.lock(cfg, song)
-  if l and l.mine then os.remove(solo.dir(cfg, song) .. "/lock.json") end
+  if l and l.mine then
+    os.remove(solo.dir(cfg, song) .. "/lock.json")
+    -- two checkouts in the same second leave the loser's lock as a sync conflict copy: never read, so tidy it away
+    local copies = {}
+    for i = 0, math.huge do
+      local f = reaper.EnumerateFiles(solo.dir(cfg, song), i)
+      if not f then break end
+      if f:match("^lock%.sync%-conflict") then copies[#copies + 1] = f end
+    end
+    for _, f in ipairs(copies) do os.remove(solo.dir(cfg, song) .. "/" .. f) end
+  end
 end
 
 -- ---- copying ------------------------------------------------------------------------------------

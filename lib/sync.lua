@@ -18,6 +18,7 @@ local sync = {
   MIN_LEN = 0.5,                -- shorter items are recording slivers, not takes
   TAIL = 2,                     -- seconds of FX tail kept past the end of a wet print
   TAILS = "BandSync.tail",      -- id -> seconds of tail this project's print of it carries (items are that much longer)
+  NEWEST = "BandSync.newest",   -- "take:<id>" / "track:<name>" -> time..id of the newest change made or applied here
 }
 
 local function ext(proj, sec, key) return select(2, reaper.GetProjExtState(proj, sec, key)) end
@@ -34,6 +35,27 @@ local function setext(proj, sec, key, v) reaper.SetProjExtState(proj, sec, key, 
 sync.ext, sync.setext = ext, setext
 
 function sync.room_dir(cfg, song, room) return band.song_dir(cfg, song) .. "/rooms/" .. room end
+
+-- Two changes to one take (or track) made at once on two machines arrive in opposite orders, so applying each as it
+-- comes left every machine with the other's (2026-10-28 break round 2). The one stamped latest (time, then id) wins
+-- everywhere: an older one arriving after it is skipped.
+local function newest_key(ev, name)
+  if ev.type == "edit" and ev.take then return "take:" .. ev.take:lower() end
+  if ev.type == "track" and (name or ev.track) then return "track:" .. (name or ev.track):lower() end
+end
+-- The order is time..id, except that a change made here always comes after the newest one seen here (a machine
+-- whose clock runs ahead would otherwise win over every later change to that take).
+local function order(ev) return ev.order or (ev.time .. ev.id) end
+local function stamp(proj, ev)
+  for _, name in ipairs({ ev.track or false, ev.was or false }) do
+    local k = newest_key(ev, name or nil)
+    if k then setext(proj, sync.NEWEST, k, order(ev)) end
+  end
+end
+local function superseded(proj, ev)
+  local k = newest_key(ev, ev.was)
+  return k ~= nil and ext(proj, sync.NEWEST, k) > order(ev)
+end
 
 -- Events anyone may send, whoever drives or owns what: they change no take, track or timeline.
 sync.ANYONE = { start = true, stop = true, note = true, like = true }
@@ -351,7 +373,8 @@ function sync.authority(cfg, song, room, s)
         for _, name in ipairs(list[1] or {}) do
           local k = name:lower()
           local t = (c.since or {})[(list[2] == tracks and "tracks:" or "regions:") .. k] or c.time
-          if not list[2][k] or list[2][k].time < t then list[2][k] = { user = c.user, time = t, name = name } end
+          local o = list[2][k] -- newest wins; the same second goes to the later name, so every machine agrees
+          if not o or o.time < t or (o.time == t and o.user < c.user) then list[2][k] = { user = c.user, time = t, name = name } end
         end
       end
     end
@@ -360,7 +383,10 @@ function sync.authority(cfg, song, room, s)
   for _, m in ipairs((s and s.markers) or {}) do
     if m.region then spans[#spans + 1] = { name = m.name:lower(), from = m.pos, to = m["end"] } end
   end
-  table.sort(times, function(x, y) return x.time > y.time end) -- the newest claim on a stretch wins
+  table.sort(times, function(x, y) -- the newest claim on a stretch wins (same second: the later name, as for tracks)
+    if x.time ~= y.time then return x.time > y.time end
+    return x.user > y.user
+  end)
   local function in_time(pos)
     for _, t in ipairs(pos and times or {}) do if pos >= t.from and pos < t.to then return t end end
   end
@@ -915,13 +941,20 @@ end
 -- ---- events -------------------------------------------------------------------------------------
 
 local ev_seq = 0
-function sync.post(cfg, song, room, ev)
+-- With `proj`, an edit or track change is ordered after the newest change to it seen here, and remembered as that.
+function sync.post(cfg, song, room, ev, proj)
   ev_seq = ev_seq + 1
   ev.format, ev.user, ev.time = band.FORMAT, cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ")
   ev.id = string.format("%s-%s-%05d-%04d", (cfg.user:gsub(" ", "_")), os.date("!%Y%m%d-%H%M%SZ"), ev_seq, math.random(0, 9999))
+  local k = proj and newest_key(ev, ev.was)
+  if k then
+    local seen = ext(proj, sync.NEWEST, k)
+    if seen >= ev.time .. ev.id then ev.order = seen .. "+" end
+  end
   local dir = sync.room_dir(cfg, song, room) .. "/events"
   reaper.RecursiveCreateDirectory(dir, 0)
   band.write_json(dir .. "/" .. ev.id .. ".json", ev)
+  if proj then stamp(proj, ev) end
   return ev.id
 end
 
@@ -1290,10 +1323,11 @@ function sync.watch(proj, cfg, song, room, can)
           local pos, track = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"), band_track_name(proj, hit[1])
           if can(me, track, pos, id) then
             local after = ext(proj, band.SECTION, "last_shift") -- set by Insert/Remove bars: receivers apply that first
-            sync.post(cfg, song, room, { type = "edit", take = id, after = after ~= "" and after or nil, pos = pos, qn = sync.qn(proj, pos), track = track,
+            local ev = { type = "edit", take = id, after = after ~= "" and after or nil, pos = pos, qn = sync.qn(proj, pos), track = track,
               len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") - (tonumber(ext(proj, sync.TAILS, id)) or 0), lane = lane_of(hit[1]),
               mute = reaper.GetMediaItemInfo_Value(hit[1], "B_MUTE"),
-              offs = reaper.GetMediaItemTakeInfo_Value(hit[2], "D_STARTOFFS") - band.base_offs(hit[2]) })
+              offs = reaper.GetMediaItemTakeInfo_Value(hit[2], "D_STARTOFFS") - band.base_offs(hit[2]) }
+            sync.post(cfg, song, room, ev, proj)
             sync.remember(proj, id, hit[1], hit[2])
           else -- not yours to change (someone's claim, or the driver's): put it back where the band has it, and say so
             local f = {}
@@ -1347,10 +1381,11 @@ function sync.watch(proj, cfg, song, room, can)
         local real = false
         for _, f in ipairs(changed) do if f ~= "color" and f ~= "icon" then real = true end end
         if real and before ~= "" and can(me, (was and was ~= "") and was or name, nil) then
-          sync.post(cfg, song, room, { type = "track", track = name, was = (was ~= name) and was or nil, changed = changed,
+          local ev = { type = "track", track = name, was = (was ~= name) and was or nil, changed = changed,
             mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"), solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"),
             color = reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon = nf[5],
-            vol = reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), pan = reaper.GetMediaTrackInfo_Value(tr, "D_PAN") })
+            vol = reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), pan = reaper.GetMediaTrackInfo_Value(tr, "D_PAN") }
+          sync.post(cfg, song, room, ev, proj)
         elseif before ~= "" and was and was ~= "" and was ~= name then
           -- not yours to rename: the band's takes for it would arrive on a new track of the old name. Mute, solo and
           -- level stay yours to change locally (listening); the name goes back.
@@ -1434,7 +1469,9 @@ function sync.receive(proj, cfg, song, room, can)
   table.sort(pending, function(a, x) return (a.time .. a.id) < (x.time .. x.id) end)
   local function driver_at(t) -- who drove when this happened
     local best
-    for _, d in pairs(drivers) do if d.time <= t and (not best or d.time > best.time) then best = d end end
+    for id, d in pairs(drivers) do -- two handovers in the same second: the later id, so every machine agrees
+      if d.time <= t and (not best or d.time > best.time or (d.time == best.time and id > best.id)) then best = d; best.id = id end
+    end
     return best and best.user
   end
   -- only the newest "plays" per track matters; an older one still waiting for its takes must never
@@ -1443,7 +1480,7 @@ function sync.receive(proj, cfg, song, room, can)
   for _, ev in ipairs(pending) do if ev.type == "plays" then newest[ev.track or ""] = ev.id end end
   local applied, done, undo_open = 0, {}, false
   for _, ev in ipairs(pending) do
-    if ev.type == "plays" and newest[ev.track or ""] ~= ev.id then
+    if (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
     elseif ev.user == cfg.user then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
@@ -1462,6 +1499,7 @@ function sync.receive(proj, cfg, song, room, can)
         setext(proj, sync.APPLIED, ev.id, "1")
       elseif res then
         setext(proj, sync.APPLIED, ev.id, "1")
+        stamp(proj, ev)
         applied = applied + 1
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
           delete = "deleted " .. tostring(ev.take), undelete = "brought back " .. tostring(ev.take),

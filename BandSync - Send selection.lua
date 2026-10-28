@@ -41,7 +41,9 @@ if picked and has_time then
     "Everything inside the time selection" }
 elseif has_time then
   choices = { "Everything inside the time selection (" .. bars(from, to) .. ")" }
-elseif not picked then
+elseif picked then
+  choices = { "What's selected (whole items)" }
+else
   return band.msg("Select what to send first: items, tracks (all their items), or a time selection (everything in it).")
 end
 if #choices > 0 then

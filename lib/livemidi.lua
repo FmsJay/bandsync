@@ -83,7 +83,8 @@ function lm.send_tick(proj, cfg, b, recording)
     return
   end
   rec.at = reaper.GetPlayPosition2Ex(proj)
-  if rec.changed and reaper.time_precise() - rec.wrote_at > 0.5 then lm.write(cfg, b, rec.at) end
+  -- every half second, changed or not: a held note or a pause still moves "at", so their view keeps growing
+  if reaper.time_precise() - rec.wrote_at > 0.5 then lm.write(cfg, b, rec.at) end
 end
 
 function lm.write(cfg, b, at)
@@ -96,9 +97,24 @@ end
 
 -- ---- everyone else's side ---------------------------------------------------------------------------------
 local shown = {} -- user -> what was last drawn (so unchanged streams aren't redrawn)
+local tidied_at = -math.huge
+
+-- Placeholders go when their real take arrives (live.retire); one whose take never came (deleted, or REAPER closed
+-- before sending) goes 15 minutes after its recording began.
+local function tidy(proj)
+  live.retire(proj)
+  for i = reaper.CountMediaItems(proj) - 1, 0, -1 do
+    local it = reaper.GetMediaItem(proj, i)
+    local y, mo, d, H, M, S = band.item_ext(it, "band_live"):match("^midi:(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)(%d%d)Z")
+    if y and band.age(string.format("%s-%s-%sT%s:%s:%sZ", y, mo, d, H, M, S)) > 900 then
+      reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(it), it)
+    end
+  end
+end
 
 -- Draw every bandmate's stream as a muted MIDI placeholder on their "(live)" track. Call every half second or so.
 function lm.receive_tick(proj, cfg, b)
+  if reaper.time_precise() - tidied_at > 2 then tidied_at = reaper.time_precise(); tidy(proj) end
   for _, f in ipairs(band.files(dir(cfg, b), ".json")) do
     local s = band.read_json(dir(cfg, b) .. "/" .. f)
     if type(s) == "table" and type(s.user) == "string" and s.user ~= cfg.user and type(s.parts) == "table"
@@ -148,7 +164,6 @@ function lm.draw(proj, s)
       reaper.UpdateItemInProject(it)
     end
   end
-  live.retire(proj) -- their real take may already be here
 end
 
 return lm

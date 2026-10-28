@@ -387,6 +387,35 @@ local function sonobus_open()
   reaper.TrackFX_Show(m, i, 3)
 end
 
+-- Same room: the one switch for playing together. Listen live (SonoBus, set up for the band's group) plus side by side
+-- with no lag: whoever presses play, stop or record, everyone follows at the same spot and hears it at once; what
+-- they record shows on your timeline as they play (MIDI notes) and lands as a take when they stop.
+local function section_room()
+  local sm, si = live.fx(proj, false, live.SONOBUS)
+  local sb_on = sm and not reaper.TrackFX_GetOffline(sm, si)
+  local side = select(2, reaper.GetProjExtState(proj, band.SECTION, "side"))
+  local on = sb_on and side == "0"
+  local ch, v = ImGui.Checkbox(ctx, "Same room: hear everyone and follow the session together", on)
+  if ch then
+    if v then
+      local link, why = setup.sonobus(cfg, b, proj, true)
+      if not link then band.msg(why) else
+        sb_link = link
+        reaper.SetProjExtState(proj, band.SECTION, "side", "0")
+        band.log("same room: Listen live is on and you follow the session (play, stop and record go to everyone)")
+      end
+    else
+      if sm then reaper.TrackFX_SetOffline(sm, si, true) end
+      reaper.SetProjExtState(proj, band.SECTION, "side", "")
+      band.log("same room off: SonoBus left the group and side by side is off (edits still sync)")
+    end
+  end
+  ImGui.SetItemTooltip(ctx, "On: SonoBus joins the band's group on your master track (you hear each other right away), and side by side\n" ..
+    "follows with no lag: whoever presses play, stop or record, everyone follows. What someone records shows on your timeline\n" ..
+    "as they play (MIDI notes appear a few seconds behind) and lands as a take when they stop. Off: both off; edits keep syncing.")
+  if on then ImGui.SameLine(ctx); ImGui.TextColored(ctx, GREEN, "on") end
+end
+
 local server_at = 0
 local function section_live()
   local lfile = band.song_dir(cfg, b.song) .. "/live.json"
@@ -929,6 +958,7 @@ local function frame()
   end
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
+      section_room()
       section_setup()
       section_activity()
       section_sync()

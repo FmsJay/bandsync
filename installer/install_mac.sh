@@ -195,9 +195,16 @@ HELPER="$(find "$WORK/src" -path '*/installer/bandsync_setup.lua' | head -1)"
 HDIR="$(dirname "$HELPER")"
 request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR/bandsync_setup_result.json
   local panel=false; [ "$1" = verify ] && panel=true
-  printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s,"reopen_last":%s}' \
-    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" "${REOPEN:-false}" > "$HDIR/bandsync_setup.json"
+  printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s}' \
+    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" > "$HDIR/bandsync_setup.json"
   rm -f "$HDIR/bandsync_setup_result.json"
+  if [ -n "${REOPEN:-}" ] && ! pgrep -x REAPER >/dev/null; then
+    # we quit REAPER: start it the way you do, so it reopens your project tabs as it always does (started WITH the
+    # helper it came back with one tab, 2026-10-28), then hand it the helper once it's up
+    open -a REAPER
+    for i in $(seq 1 60); do pgrep -x REAPER >/dev/null && break; sleep 1; done
+    sleep 8
+  fi
   open -a REAPER "$HELPER"
   for i in $(seq 1 180); do [ -f "$HDIR/bandsync_setup_result.json" ] && break; sleep 1; done
   [ -f "$HDIR/bandsync_setup_result.json" ]

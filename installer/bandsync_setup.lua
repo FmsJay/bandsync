@@ -25,17 +25,6 @@ local ok, req = pcall(json.decode, f:read("a"))
 f:close()
 if not ok or type(req) ~= "table" then step("read request", false, req); return finish() end
 
--- the installer restarted REAPER (for new extensions): it comes back with the project that was open, not an empty
--- one (a bandmate updating thought their session had vanished)
-if req.reopen_last and reaper.EnumProjects(-1) and select(2, reaper.EnumProjects(-1)) == "" and reaper.CountTracks(0) == 0 then
-  local ini = io.open(reaper.get_ini_file(), "r")
-  local last = ini and ini:read("a"):match("%[Recent%][^%[]-\nrecent01=([^\r\n]+)")
-  if ini then ini:close() end
-  if last and reaper.file_exists(last) then reaper.Main_openProject("noprompt:" .. last) end
-  step("reopen the project REAPER had open", true, last or "none")
-  req.reopen_last = false
-end
-
 local ver = reaper.GetAppVersion()
 local major, minor = ver:match("^(%d+)%.(%d+)")
 step("REAPER 7.18 or newer", tonumber(major) > 7 or (tonumber(major) == 7 and tonumber(minor) >= 18), ver)
@@ -85,6 +74,33 @@ if kb then kb:close() end
 for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do count = count + 1 end
 out.registered_actions = count
 step("BandSync actions registered", count >= 5, count)
+
+-- Live sync starts again with REAPER for a session where it was running (Scripts/__startup.lua runs BandSync -
+-- Autostart, the panel's "Start Live sync with REAPER"). Without it, a REAPER restart (this installer does one)
+-- left Live sync off and changes silently stayed here (Mac, 2026-10-28). Same block as lib/tools.lua writes.
+local live = text:match('"[^"]*BandSync %- Live sync%.lua" "([^"]+)"')
+if live and count >= 5 then
+  live = live:gsub("\\", "/")
+  if not live:match("^/") and not live:match("^%a:") then live = reaper.GetResourcePath() .. "/Scripts/" .. live end
+  local sdir = live:match("^(.*)/")
+  local startup = reaper.GetResourcePath() .. "/Scripts/__startup.lua"
+  local sf = io.open(startup, "r")
+  local cur = sf and sf:read("a") or ""
+  if sf then sf:close() end
+  if not cur:find("-- BandSync autostart", 1, true) and reaper.file_exists(sdir .. "/BandSync - Autostart.lua") then
+    local wf = io.open(startup, "w")
+    if wf then
+      wf:write(cur .. (cur ~= "" and not cur:match("\n$") and "\n" or "") .. "-- BandSync autostart\ndofile([[" .. sdir ..
+        "/BandSync - Autostart.lua]])\n-- /BandSync autostart\n")
+      wf:close()
+      dofile(sdir .. "/BandSync - Autostart.lua") -- and now, for this REAPER session (it just restarted without it)
+    end
+  end
+  local again = io.open(startup, "r")
+  local on = again and again:read("a"):find("-- BandSync autostart", 1, true) ~= nil
+  if again then again:close() end
+  step("Live sync starts with REAPER", on, startup)
+end
 finish()
 
 -- open_panel: land the musician in the panel, whose first screen offers to publish or open a session

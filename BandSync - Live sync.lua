@@ -191,6 +191,7 @@ end
 
 local last_driver
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
+local joined = {} -- machines this Live sync has already let in
 local function poll()
   local s = band.read_json(band.session_path(cfg, b.song)) or last_session
   last_session = s
@@ -207,6 +208,25 @@ local function poll()
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
     local n = sync.receive(proj, cfg, b.song, room, room_can)
     if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")") end
+  end
+
+  -- the host lets new band machines in: a bandmate's installer pairs with the host's Syncthing, which then asks
+  -- here. Over the band's Tailscale (only band machines are on it) they're added and given the band folder at once;
+  -- anything else waits for a click in the panel (Bandmates)
+  if host then
+    local services = require("services")
+    local ask = {}
+    for _, d in ipairs(services.pending_devices()) do
+      if services.on_tailnet(d.address) and not joined[d.id] then
+        joined[d.id] = true
+        local ok, why = services.add_device(d.id, d.name)
+        band.log(ok and string.format("'%s' (%s) joined the band folder: it asked over the band's Tailscale", d.name, d.id:sub(1, 7))
+          or ("couldn't add '" .. d.name .. "': " .. tostring(why)))
+      elseif not joined[d.id] then
+        ask[#ask + 1] = d
+      end
+    end
+    reaper.SetExtState(band.SECTION, "pending_join", band.json_encode(ask), false)
   end
 
   -- Hold sync: keep working without sending anything; releasing it sends the net result once

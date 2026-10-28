@@ -32,34 +32,35 @@ local function send_to(song, room) -- a song and room when sending from another 
   end
   local stretch = has_time and string.format("%s (%.1f-%.1f s)", bars(from, to), from, to)
 
+  -- one question at most, and only when there's a real choice (a menu with one option and a toggle confused people)
   local opts = { me = cfg.user }
-  local choices, all_takes = {}, false
-  if picked and has_time then
-    choices = { "What's selected, only inside the time selection: " .. stretch, "What's selected, whole items",
-      "Everything inside the time selection (all tracks)" }
-  elseif has_time then
-    choices = { "Everything inside the time selection (all tracks): " .. stretch }
-  elseif picked then
-    choices = { "What's selected (whole items)" }
-  else
-    return band.msg("Select what to send first: items, tracks (all their items), or a time selection (everything in it).")
+  if picked and has_time then -- clips or tracks selected AND a time selection: which of the two did they mean?
+    local inside, whole, all = "Just the part inside " .. stretch, "The whole clips I selected", "Everything in " .. bars(from, to) .. ", on all tracks"
+    local pick = band.pick({ "#What should go to the band?", inside, whole, all }, mx, my)
+    if not pick then return end
+    if pick == all then opts.everything, opts.from, opts.to = true, from, to
+    elseif pick == inside then opts.from, opts.to = from, to end
+  elseif has_time then -- only a time selection: everything in it (the confirmation says so)
+    opts.everything, opts.from, opts.to = true, from, to
+  elseif not picked then
+    return band.msg("Select what to send first: clips, tracks (all their clips), or a time selection (everything in it).")
   end
-  local pick
-  repeat -- the last line switches between the playing take and every take of each item
-    local menu = {}
-    for _, c in ipairs(choices) do menu[#menu + 1] = c end
-    menu[#menu + 1] = (all_takes and "!" or "") .. "Every take of each item, not just the playing one"
-    pick = band.pick(menu, mx, my)
-    if pick == menu[#menu] then all_takes = not all_takes end
-  until pick ~= menu[#menu]
-  if not pick then return end
-  if pick:find("^Everything") then opts.everything, opts.from, opts.to = true, from, to
-  elseif pick:find("only inside") then opts.from, opts.to = from, to end
-  opts.all_takes = all_takes
 
   -- first only look (nothing is cut until you say yes)
-  opts.dry = true
+  opts.dry, opts.all_takes = true, true
   local units, inside, had = sync.selection_units(proj, opts)
+  local per = {}
+  local several = false -- a clip holding several takes (passes): only then ask whether the others go too
+  for _, u in ipairs(units) do per[u[1]] = (per[u[1]] or 0) + 1; if per[u[1]] > 1 then several = true end end
+  if several then
+    local r = reaper.MB("Some of these clips hold more than one take (recorded passes).\n\nYes: send every take (the band can pick)\nNo: only the take that plays",
+      "BandSync", 3)
+    if r == 2 then return end
+    opts.all_takes = r == 6
+  else
+    opts.all_takes = false
+  end
+  if not opts.all_takes then units, inside, had = sync.selection_units(proj, opts) end
   local function plural(n, one, many) return n == 1 and one or many end
   if #units == 0 then
     return band.msg(had > 0 and string.format("Nothing new to send: the band already has %s (their changes travel by themselves).",
@@ -78,7 +79,8 @@ local function send_to(song, room) -- a song and room when sending from another 
   local s = band.read_json(band.session_path(cfg, b.song)) or {}
   local notes = {}
   if opts.from then
-    notes[#notes + 1] = "Only " .. stretch .. " goes: items reaching past it are split at its edges, and the parts outside stay here, unsent."
+    notes[#notes + 1] = (opts.everything and ("Everything of yours in " .. stretch .. ", on all tracks. ") or ("Only " .. stretch .. " goes. "))
+      .. "Clips reaching past it are cut at its edges; the parts outside stay here, unsent."
   end
   if had > 0 then notes[#notes + 1] = plural(had, "1 take the band already has stays as it is.", had .. " takes the band already has stay as they are.") end
 
@@ -113,7 +115,11 @@ local function send_to(song, room) -- a song and room when sending from another 
   if b.role ~= "outside" and s.version and tostring(s.version) ~= tostring(b.version) then
     notes[#notes + 1] = "The host published v" .. s.version .. " since you opened v" .. b.version .. ": if the tempo changed, these may land off-grid."
   end
-  if b.role ~= "outside" and select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) == "" then
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
+  if b.role ~= "outside" and not (beat and reaper.time_precise() - beat < 5) then
+    -- these go out anyway; it's everything after (moves, deletes, taking these back) that waits (Mac, 2026-10-28)
+    notes[#notes + 1] = "Live sync is OFF in this project: these go out, but your later changes (moves, deletes) stay here until you start it (panel: Start)."
+  elseif b.role ~= "outside" and select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) == "" then
     notes[#notes + 1] = "(Live sync sends your other new recordings by itself; Hold sync keeps them here.)"
   end
   if reaper.MB(string.format("Send %s from %s to '%s' (room %s)?%s", what, table.concat(names, ", "), b.song, b.room,

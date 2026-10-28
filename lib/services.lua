@@ -25,8 +25,12 @@ local function background(name, cmd, every)
       band.write_atomic(bat, string.format('@%s > "%s" 2>nul\r\n', cmd, file))
       if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
       reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, bat), -1)
-    else
-      reaper.ExecProcess("/bin/sh -c " .. q(cmd:gsub('"', '\\"') .. " > '" .. file .. "' 2>/dev/null"), -1)
+    else -- through a script file too: macOS's ExecProcess doesn't honour \" inside a quoted argument, so any command
+      -- with quotes in it (the curl's -H "X-API-Key: ...") silently never ran (Mac, 2026-10-28). Grouped, so the
+      -- whole command's output lands in the file, not only the part after a ||.
+      local sh = TMP .. "/bandsync-" .. name .. ".sh"
+      band.write_atomic(sh, "{ " .. cmd .. "; } > '" .. file .. "' 2>/dev/null\n")
+      reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
     end
   end
   local out = band.read(file)
@@ -57,7 +61,9 @@ local function launch(path, args, cwd)
     return reaper.ExecProcess('powershell -NoProfile -WindowStyle Hidden -Command ' .. q(ps), -1) ~= nil
   end
   local cmd = (cwd and ("cd " .. q(cwd) .. " && ") or "") .. "nohup " .. q(path) .. " " .. table.concat(args, " ") .. " >/dev/null 2>&1 &"
-  return reaper.ExecProcess("/bin/sh -c " .. q(cmd:gsub('"', '\\"')), -1) ~= nil
+  local sh = TMP .. "/bandsync-launch.sh" -- a script file, not sh -c "...": see background()
+  band.write_atomic(sh, cmd .. "\n")
+  return reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1) ~= nil
 end
 
 local function first_existing(list)
@@ -113,6 +119,46 @@ function services.syncthing_peers_now()
   local n, on = 0, 0
   for _, c in pairs(data.connections) do n = n + 1; if c.connected then on = on + 1 end end
   return on, n
+end
+
+-- Machines asking Syncthing to connect that it doesn't know yet (a bandmate's installer pairs with the host):
+-- { { id, name, address } }. Answers from a background check at most 20 s old ({} before the first).
+function services.pending_devices()
+  local st = services.syncthing_path()
+  local data = st and band.json_decode(background("st-pending", q(st) .. " cli show pending devices", 20) or "")
+  local list = {}
+  for id, d in pairs(type(data) == "table" and data or {}) do
+    if type(d) == "table" and services.is_device_id(id) then list[#list + 1] = { id = id, name = tostring(d.name or ""), address = tostring(d.address or "") } end
+  end
+  table.sort(list, function(a, z) return a.id < z.id end)
+  return list
+end
+
+-- A Syncthing device ID: 8 groups of 7 letters/digits.
+local ID_PATTERN = "^" .. ("[%u%d]"):rep(7) .. ("%-" .. ("[%u%d]"):rep(7)):rep(7) .. "$"
+function services.is_device_id(id)
+  return type(id) == "string" and id:match(ID_PATTERN) ~= nil
+end
+
+-- Whether an address ("100.97.1.2:22000", "[fd7a:115c:a1e0::1]:22000") is on Tailscale (100.64.0.0/10, or its
+-- fd7a:115c:a1e0::/48): with the band on one Tailscale account, only the band's own machines are there.
+function services.on_tailnet(address)
+  local a, b = (address or ""):match("^%[?(%d+)%.(%d+)%.%d+%.%d+")
+  if a then return tonumber(a) == 100 and tonumber(b) >= 64 and tonumber(b) <= 127 end
+  return (address or ""):lower():match("^%[?fd7a:115c:a1e0:") ~= nil
+end
+
+-- Add a machine to Syncthing and share the band folder ("bandsync") with it. Returns true, or nil + why.
+function services.add_device(id, name)
+  local st = services.syncthing_path()
+  if not st then return nil, "Syncthing wasn't found" end
+  if not services.is_device_id(id) then return nil, "not a device ID: " .. tostring(id) end
+  name = (name or ""):gsub("[^%w%-_ ]", "")
+  local r1 = reaper.ExecProcess(q(st) .. " cli config devices add --device-id " .. id .. (name ~= "" and (" --name " .. q(name)) or ""), 15000) or ""
+  local r2 = reaper.ExecProcess(q(st) .. " cli config folders bandsync devices add --device-id " .. id, 15000) or ""
+  if not r1:match("^0\n") then return nil, "Syncthing didn't add it: " .. r1:gsub("^%d+\n", "") end
+  if not r2:match("^0\n") then return nil, "added, but the band folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
+  return true
 end
 
 -- This machine's Tailscale address (100.x.y.z), or nil when Tailscale isn't installed or signed in.

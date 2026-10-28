@@ -131,6 +131,18 @@ end
 
 local function section_band()
   ImGui.SeparatorText(ctx, "Bandmates")
+  -- machines asking to join that didn't come over the band's Tailscale (those are let in by Live sync)
+  local asking = b.role == "host" and band.json_decode(reaper.GetExtState(band.SECTION, "pending_join")) or {}
+  for _, d in ipairs(type(asking) == "table" and asking or {}) do
+    ImGui.TextColored(ctx, YELLOW, string.format("'%s' (%s, from %s) asks to join the band folder.", d.name, d.id:sub(1, 7), d.address))
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Let in##" .. d.id) then
+      local ok, why = require("services").add_device(d.id, d.name)
+      band.log(ok and ("let '" .. d.name .. "' into the band folder") or ("couldn't add '" .. d.name .. "': " .. tostring(why)))
+      reaper.DeleteExtState(band.SECTION, "pending_join", false)
+    end
+    ImGui.SetItemTooltip(ctx, "Only if you know this machine: anyone with your Syncthing ID can ask. Band machines on the band's Tailscale are let in by themselves.")
+  end
   if #view.rows == 0 then return ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
   if ImGui.BeginTable(ctx, "mates", 5, ImGui.TableFlags_RowBg | ImGui.TableFlags_SizingStretchProp) then
     for _, h in ipairs({ "Who", "State", "Seen", "Has", "Version" }) do ImGui.TableSetupColumn(ctx, h) end
@@ -504,6 +516,20 @@ end
 
 -- Set up: everything this project and machine need (lib/setup.lua), and one button for every fix that needs no human.
 local setup_at, st = 0, {}
+-- What BandSync did lately (sends, what arrived, what was put back and why): it used to pop the console up
+local function section_activity()
+  local lines = band.activity()
+  if ImGui.CollapsingHeader(ctx, "Activity (" .. (lines[1] and lines[1]:sub(7, 60) or "nothing yet") .. ")") then
+    if ImGui.BeginChild(ctx, "activity", 0, 140, ImGui.ChildFlags_Borders) then
+      for _, l in ipairs(lines) do ImGui.TextWrapped(ctx, l) end
+      ImGui.EndChild(ctx)
+    end
+    if ImGui.SmallButton(ctx, "Clear") then reaper.DeleteExtState(band.SECTION, band.LOG_KEY, false) end
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Open the full console") then reaper.ShowConsoleMsg("") end
+  end
+end
+
 local function section_setup()
   if reaper.time_precise() - setup_at > 5 then setup_at, st = reaper.time_precise(), setup.check(cfg, b, proj) end -- tasklist is slow
   local rows = {
@@ -841,6 +867,7 @@ local function frame()
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
       section_setup()
+      section_activity()
       section_sync()
       section_band()
       section_control()

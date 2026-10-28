@@ -188,10 +188,17 @@ $src = Get-ChildItem $work -Directory | Select-Object -First 1
 $helper = Join-Path $src.FullName "installer\bandsync_setup.lua"
 $utf8 = New-Object System.Text.UTF8Encoding($false) # no BOM: the Lua JSON reader wants plain UTF-8
 function Request($mode) {
-  $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify"); reopen_last = [bool]$script:Reopen } | ConvertTo-Json
+  $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify") } | ConvertTo-Json
   [IO.File]::WriteAllText((Join-Path (Split-Path $helper) "bandsync_setup.json"), $req, $utf8)
   $result = Join-Path (Split-Path $helper) "bandsync_setup_result.json"
   Remove-Item $result -ErrorAction SilentlyContinue
+  if ($script:Reopen -and -not (Get-Process reaper -ErrorAction SilentlyContinue)) {
+    # we closed REAPER: start it the way you do, so it reopens your projects as it always does (started WITH the
+    # helper it came back with an empty project), then hand it the helper once it's up
+    Start-Process $reaper
+    for ($i = 0; $i -lt 60 -and -not (Get-Process reaper -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }); $i++) { Start-Sleep 1 }
+    Start-Sleep 5
+  }
   Start-Process $reaper -ArgumentList @("-nonewinst", "`"$helper`"")
   for ($i = 0; $i -lt 180 -and -not (Test-Path $result); $i++) { Start-Sleep 1 }
   if (-not (Test-Path $result)) { return $null }

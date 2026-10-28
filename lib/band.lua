@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.12.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.12.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -46,7 +46,26 @@ local function norm(p) return (p:gsub("\\", "/"):gsub("/+$", "")) end
 band.norm = norm
 
 function band.msg(text) reaper.MB(text, "BandSync", 0) end
-function band.log(text) reaper.ShowConsoleMsg("[bandsync] " .. text .. "\n") end
+-- What BandSync did, for the panel's Activity list (the last 80 lines, this REAPER session). It no longer opens the
+-- ReaScript console, which popped up in front on every send and read like an error (Mac, 2026-10-28); the console
+-- still gets the line when it's already open (with js_ReaScriptAPI, which can tell).
+band.LOG_KEY, band.LOG_MAX = "activity", 80
+function band.log(text)
+  local lines = {}
+  for l in reaper.GetExtState(band.SECTION, band.LOG_KEY):gmatch("[^\n]+") do lines[#lines + 1] = l end
+  lines[#lines + 1] = os.date("%H:%M ") .. tostring(text):gsub("\n", " ")
+  while #lines > band.LOG_MAX do table.remove(lines, 1) end
+  reaper.SetExtState(band.SECTION, band.LOG_KEY, table.concat(lines, "\n"), false)
+  if reaper.JS_Window_Find and reaper.JS_Window_Find("ReaScript console output", true) then
+    reaper.ShowConsoleMsg("[bandsync] " .. text .. "\n")
+  end
+end
+-- The Activity lines, newest first.
+function band.activity()
+  local lines = {}
+  for l in reaper.GetExtState(band.SECTION, band.LOG_KEY):gmatch("[^\n]+") do table.insert(lines, 1, l) end
+  return lines
+end
 
 function band.read(path)
   local f = io.open(path, "rb")

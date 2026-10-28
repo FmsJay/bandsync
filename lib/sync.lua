@@ -1054,6 +1054,8 @@ local ev_seq = 0
 function sync.post(cfg, song, room, ev, proj)
   ev_seq = ev_seq + 1
   ev.format, ev.user, ev.time = band.FORMAT, cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ")
+  -- made with nobody else here (full control): everyone takes it when it reaches them, whoever drove then
+  if sync.alone then ev.alone = true; if proj then setext(proj, band.SECTION, "alone_last", ev.time) end end
   ev.id = string.format("%s-%s-%05d-%04d", (cfg.user:gsub(" ", "_")), os.date("!%Y%m%d-%H%M%SZ"), ev_seq, math.random(0, 9999))
   local k = proj and newest_key(ev, ev.was)
   if k then
@@ -1657,6 +1659,18 @@ function sync.receive(proj, cfg, song, room, can)
   -- be applied after a newer one
   local newest = {}
   for _, ev in ipairs(pending) do if ev.type == "plays" then newest[ev.track or ""] = ev.id end end
+  -- Both worked alone at the same time (neither could see the other): their changes may undo some of ours. Before
+  -- any of them lands, where things are here is saved as a kept restore point, so our side is never lost.
+  local mine_alone = ext(proj, band.SECTION, "alone_last")
+  for _, ev in ipairs(pending) do
+    if ev.alone and ev.user ~= cfg.user and mine_alone ~= "" and ev.time <= mine_alone and not superseded(proj, ev) then
+      require("recall").save(proj, cfg, song, room, "yours before " .. ev.user .. "'s work done alone", true)
+      setext(proj, band.SECTION, "alone_last", "") -- once per meeting
+      band.log(ev.user .. " also worked on this while you were both alone: where you were is kept as a restore point " ..
+        "(History & restore) before their changes land")
+      break
+    end
+  end
   local applied, done, undo_open = 0, {}, false
   for _, ev in ipairs(pending) do
     if (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) then
@@ -1664,7 +1678,7 @@ function sync.receive(proj, cfg, song, room, can)
     elseif ev.user == cfg.user then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
       stamp(proj, ev) -- and what we change next comes after it, even one stamped while our clock ran ahead
-    elseif not (sync.ANYONE[ev.type] or can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time))
+    elseif not (sync.ANYONE[ev.type] or ev.alone or can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time))
         or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user))) then
       -- not theirs to change, as far as this machine knows: their claim (or the handover) may simply not have
       -- synced here yet, so it waits a while before it's dropped
@@ -1743,6 +1757,19 @@ function sync.driver_history(proj, cfg, song, room)
   if s and s.host then list["(host)"] = { time = "", user = s.host } end -- the host drives until the first handover
   driver_cache[key] = list
   return list
+end
+
+-- Who else is in the room now: everyone whose status receipt is under `within` s old (45: receipts are written every
+-- 15 s and take a few seconds to sync). A machine whose Syncthing can't reach us counts as away.
+function sync.present(cfg, song, room, within)
+  local dir, out = sync.room_dir(cfg, song, room) .. "/status", {}
+  for _, f in ipairs(band.files(dir, ".json")) do
+    local st = band.read_json(dir .. "/" .. f)
+    if type(st) == "table" and type(st.user) == "string" and st.user ~= cfg.user and type(st.time) == "string"
+        and band.age(st.time) < (within or 45) then out[#out + 1] = st.user end
+  end
+  table.sort(out)
+  return out
 end
 
 function sync.write_status(proj, cfg, song, room, info)

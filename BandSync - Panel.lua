@@ -177,6 +177,7 @@ local function section_band()
   end
 end
 
+local drive_root, drive_at = nil, -math.huge
 local function section_control()
   ImGui.SeparatorText(ctx, "Who changes what")
   local driving = view.driver == cfg.user
@@ -185,6 +186,19 @@ local function section_control()
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Take control") then action("Take control") end
   end
+  if reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) ~= "" then
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.TextColored(ctx, GREEN, "Nobody else is here: you have full control. Everything you change goes to the band, and reaches " ..
+      "them when they're back. When someone joins, the rules above apply again.")
+    ImGui.PopTextWrapPos(ctx)
+  end
+  if reaper.time_precise() - drive_at > 5 then drive_at = reaper.time_precise(); drive_root = require("drive").root(cfg) end
+  local off = reaper.GetExtState(band.SECTION, "drive_root") == "off"
+  local dch, don = ImGui.Checkbox(ctx, "Keep the band's copy on Google Drive", drive_root ~= nil)
+  if dch then reaper.SetExtState(band.SECTION, "drive_root", don and "" or "off", true); drive_at = -math.huge end
+  ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every minute, while stopped): what someone " ..
+    "does alone reaches the band whenever they next open the song, and every end-of-session point is kept there.")
+    or off and "Off on this machine." or "No Google Drive for desktop here (My Drive not found).")
   local owned = {}
   for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
   for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end
@@ -922,10 +936,6 @@ local function frame()
       section_control()
       section_drums()
       section_actions()
-      ImGui.EndTabItem(ctx)
-    end
-    if ImGui.BeginTabItem(ctx, "Solo edit") then
-      section_solo()
       ImGui.EndTabItem(ctx)
     end
     if ImGui.BeginTabItem(ctx, "Together") then

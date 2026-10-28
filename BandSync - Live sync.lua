@@ -249,6 +249,19 @@ local function poll()
   sync.driver_name = driver
   local dst = (driver and driver ~= cfg.user) and band.read_json(sync.room_dir(cfg, b.song, b.room) .. "/status/" .. (driver:gsub("[^%w%-_ ]", "")) .. ".json") or nil
   sync.someone_drives = sync.scratch_mode and type(dst) == "table" and band.age(dst.time) < 30
+  -- Alone = full control: with no bandmate in the room, everything we change goes out, whoever drives or claimed it
+  -- (what Solo edit was for, without a separate copy of the song). Once anyone is here, the band's rules are back.
+  local others = sync.present(cfg, b.song, b.room)
+  local alone = #others == 0
+  if alone ~= sync.alone then
+    if alone or sync.alone ~= nil then
+      band.log(alone and "nobody else is here: you have full control (what you change still goes to the band, and reaches them when they're back)"
+        or (table.concat(others, ", ") .. " joined: the band's rules are back (" .. tostring(driver) .. " drives)"))
+    end
+    sync.alone = alone
+    reaper.SetExtState(band.SECTION, "alone " .. tostring(proj), alone and "1" or "", false)
+  end
+  local my_can = alone and function() return true end or can
   if last_driver and driver ~= last_driver then -- handovers are announced, never silent
     band.log(driver == cfg.user and "you're driving now" or (tostring(driver) .. " took control" ..
       (last_driver == cfg.user and ": you're no longer driving (what you don't own is view-only)" or "")))
@@ -315,7 +328,7 @@ local function poll()
 
   -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest
   -- is view-only (locked) so it can't silently drift from the band's version
-  if not hold then sync.watch(proj, cfg, b.song, b.room, can) end
+  if not hold then sync.watch(proj, cfg, b.song, b.room, my_can) end
   -- the driver's mix layer (buses, sends into them, master plug-ins) goes to the band once it has settled; only
   -- while stopped, since automation moves plug-in settings during playback
   if driver == cfg.user and not hold and reaper.GetPlayStateEx(proj) == 0 then
@@ -358,7 +371,7 @@ local function poll()
     if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end
     drive_more = more
   end
-  sync.apply_locks(proj, can, cfg.user)
+  sync.apply_locks(proj, my_can, cfg.user)
   sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat

@@ -146,8 +146,15 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
   half-open hat and chokes, which fall back to the nearest GM sound where a kit lacks them). Maps are JSON files
   in `<shared folder>/drummaps` (`{"name": "...", "notes": {"kick": 36, "snare": 38, ...}}`); `gm` is built in.
 - **Together** (panel tab):
+  - *Side by side*: tick it and use REAPER's own transport. Whoever presses play, stop or record (or jumps
+    somewhere while playing), everyone else with it on follows, a set number of bars behind: 1-2 bars with Play
+    along, so you hear the one recording in time with the song; 0 with Listen live. The one who records records;
+    the others listen. Edits land every half second. It feels like sitting next to each other, with the Play
+    along delay.
+  - *Who's ready*: whose Live sync is running, what they have armed, and who is side by side.
   - *Play / Record / Stop together*: every machine running Live sync starts from the edit cursor at the same
-    moment (5 s after the click, with a count-in). Someone who gets the event late starts where the song has
+    moment (5 s after the click, with a count-in, optionally with a click), from the edit cursor or a region,
+    with a countdown in the panel. Someone who gets the event late starts where the song has
     got to by then. In Play along, set the listeners' lag to one NINJAM interval.
   - *Notes and likes*: on the selected take (a take marker everyone sees) or at the cursor; click a note to
     jump there. They're in History too.
@@ -160,8 +167,8 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
     machine. Takes that play across the edit point are split there by whoever recorded them, on their own
     machine (it asks first), so both parts stay theirs. "(MIDI)" copies aren't split.
   - *Dry mode*: plays a bandmate's dry recording through *their* plug-in chain (it travels with each print).
-    Plug-ins you have load; the rest stay in the chain as missing, with their settings kept. Untick to go back
-    to the print.
+    Plug-ins you have load; the rest stay in the chain as missing, with their settings kept. The panel shows
+    how many of them you have before you tick it. Untick to go back to the print.
 - **Shared mix**: volume and pan travel like mute and solo (the driver's, or a track owner's). Prints are made
   at unity, so nobody's fader is baked in twice.
 - **Locked edits snap back**: moving or trimming a take that isn't yours to change puts it back, with a note

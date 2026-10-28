@@ -86,6 +86,49 @@ function tools.dry_mode(proj, cfg, b, tr, on)
   return name .. ": back to the print"
 end
 
+-- ---- which of a chain's plug-ins this machine has (before turning dry mode on) ---------------------------
+-- From the chain text: { { name, have } }. A plug-in counts as here when REAPER's own plug-in lists (the
+-- reaper-*plugins*.ini / reaper-clap-*.ini caches next to reaper.ini) or its Effects folder (JSFX) name it.
+local known
+local function plugin_lists()
+  if known then return known end
+  local res, parts = reaper.GetResourcePath(), {}
+  for i = 0, math.huge do
+    local f = reaper.EnumerateFiles(res, i)
+    if not f then break end
+    local l = f:lower()
+    if l:match("^reaper%-.*plugins.*%.ini$") or l:match("^reaper%-clap.*%.ini$") then parts[#parts + 1] = (band.read(res .. "/" .. f) or ""):lower() end
+  end
+  known = "\n" .. table.concat(parts, "\n")
+  return known
+end
+function tools.chain_plugins(chain)
+  local out = {}
+  for line in (chain or ""):gmatch("[^\r\n]+") do
+    local tag, rest = line:match("^%s*<(%u+%d*)%s+(.*)$")
+    if tag == "VST" or tag == "CLAP" or tag == "AU" or tag == "LV2" then
+      local name, after = rest:match('^"([^"]*)"%s*(.*)$')
+      local file = after and (after:match('^"([^"]+)"') or after:match("^(%S+)"))
+      local have = true
+      if file then
+        local f = file:lower():gsub("^.*[/\\]", "")
+        local lists = plugin_lists()
+        have = lists:find("\n" .. f, 1, true) ~= nil or lists:find("\n" .. f:gsub(" ", "_"), 1, true) ~= nil or lists:find(f, 1, true) ~= nil
+      end
+      out[#out + 1] = { name = name or file or tag, have = have }
+    elseif tag == "JS" then
+      local path = rest:match('^"([^"]+)"') or rest:match("^(%S+)")
+      out[#out + 1] = { name = "JS: " .. tostring(path), have = path and reaper.file_exists(reaper.GetResourcePath() .. "/Effects/" .. path) or false }
+    end
+  end
+  return out
+end
+-- The chain of the newest print on a band track, as text (nil if none came with it).
+function tools.chain_of(cfg, b, tr)
+  local m = newest_manifest(cfg, b, tr)
+  return m and band.read(sync.room_dir(cfg, b.song, b.room) .. "/" .. m.fxchain), m
+end
+
 -- ---- take back my last take: delete the newest take I sent (everyone loses it; it's in _trash) ----------------
 -- With peek, only says which take that is (id, item). Parts made by an insert/remove split don't count: they
 -- weren't played.

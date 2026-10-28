@@ -517,27 +517,89 @@ local function go(ev) -- post it for the band, and fire it here through our own 
   ev.user = cfg.user
   reaper.SetExtState(band.SECTION, "transport " .. tostring(proj), band.json_encode(ev), false)
 end
+local start_from, click_on, side_bars_edit = 0, true, 2 -- start_from: 0 = edit cursor, n = the nth region
+local function regions()
+  local out, i = {}, 0
+  while true do
+    local ok, isrgn, p, e, name = reaper.EnumProjectMarkers3(proj, i)
+    if ok == 0 then break end
+    if isrgn then out[#out + 1] = { name = name ~= "" and name or ("region " .. (#out + 1)), pos = p } end
+    i = i + 1
+  end
+  return out
+end
 local function section_together()
+  together.tick()
+  local key = tostring(proj)
+  -- Side by side: everyone's normal transport buttons drive everyone
+  ImGui.SeparatorText(ctx, "Side by side")
+  local side = reaper.GetExtState(band.SECTION, "side " .. key)
+  local ch, on = ImGui.Checkbox(ctx, "Follow each other: press play, stop and record as usual", side ~= "")
+  if ch then
+    if on then reaper.SetExtState(band.SECTION, "side " .. key, tostring(side_bars_edit), false)
+    else reaper.DeleteExtState(band.SECTION, "side " .. key, false) end
+  end
+  ImGui.SetItemTooltip(ctx, "Whoever presses play, stop or record (or jumps somewhere while playing), everyone in side by side follows.\n" ..
+    "The one who records records; the others hear it. Edits land as usual, every half second.")
+  ImGui.SetNextItemWidth(ctx, 80)
+  local lc, lv = ImGui.InputInt(ctx, "bars behind whoever plays", side_bars_edit)
+  if lc then
+    side_bars_edit = math.max(0, lv)
+    if side ~= "" then reaper.SetExtState(band.SECTION, "side " .. key, tostring(side_bars_edit), false) end
+  end
+  ImGui.SetItemTooltip(ctx, "With Play along (Live tab): 1-2 bars, so you hear them in time with the song.\nWith Listen live: 0, everyone at the same spot.")
+  if side ~= "" then
+    local live_mode_note = live.fx(proj, false) and "Play along / Jam is on" or (live.fx(proj, false, live.SONOBUS) and "Listen live is on" or "no live audio yet: connect in the Live tab to hear each other")
+    ImGui.TextDisabled(ctx, string.format("On: you follow %s bar(s) behind whoever plays (%s).", side, live_mode_note))
+  end
+
   ImGui.SeparatorText(ctx, "Start together")
+  local rg = regions()
+  local names = { "the edit cursor (bar " .. bar_of(reaper.GetCursorPositionEx(proj)) .. ")" }
+  for _, r in ipairs(rg) do names[#names + 1] = r.name .. " (bar " .. bar_of(r.pos) .. ")" end
+  if start_from > #rg then start_from = 0 end
+  ImGui.SetNextItemWidth(ctx, 220)
+  if ImGui.BeginCombo(ctx, "start from", names[start_from + 1]) then
+    for i, n in ipairs(names) do if ImGui.Selectable(ctx, n, start_from == i - 1) then start_from = i - 1 end end
+    ImGui.EndCombo(ctx)
+  end
   ImGui.SetNextItemWidth(ctx, 80)
   local _, c = ImGui.InputInt(ctx, "count-in bars", countin); countin = math.max(0, c)
   ImGui.SameLine(ctx)
+  local _, ck = ImGui.Checkbox(ctx, "click", click_on); click_on = ck
+  ImGui.SetItemTooltip(ctx, "The metronome plays during the count-in, then goes back off.")
   ImGui.SetNextItemWidth(ctx, 80)
   local _, l = ImGui.InputInt(ctx, "bars later for listeners", lag_bars); lag_bars = math.max(0, l)
   ImGui.SetItemTooltip(ctx, "Play along only: the others start this many bars after you\n(one NINJAM interval), so what they hear of you lines up.\nLeave 0 for everything else.")
-  local pos = reaper.GetCursorPositionEx(proj)
+  local pos = start_from > 0 and rg[start_from].pos or reaper.GetCursorPositionEx(proj)
   local function start(rec)
-    go({ type = "start", rec = rec or nil, pos = pos, countin = together.bars_before(proj, pos, countin),
+    go({ type = "start", rec = rec or nil, pos = pos, countin = together.bars_before(proj, pos, countin), click = click_on or nil,
       lag = together.bars_after(proj, pos, lag_bars), lead = cfg.user })
   end
   if ImGui.Button(ctx, "Play together") then start(false) end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Record together") then start(true) end
+  ImGui.SetItemTooltip(ctx, "Everyone records on the tracks they have armed (listed below).")
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Stop together") then go({ type = "stop" }) end
-  ImGui.TextDisabled(ctx, string.format("From bar %s (the edit cursor), %d s after the click, on every machine running Live sync.", bar_of(pos), together.LEAD))
-  local last_go = reaper.GetExtState(band.SECTION, "together " .. tostring(proj))
+  local due = tonumber(reaper.GetExtState(band.SECTION, "together_at " .. key))
+  if due and due - together.now() > 0 then
+    ImGui.TextColored(ctx, YELLOW, string.format("Starting in %.1f s...", due - together.now()))
+  else
+    ImGui.TextDisabled(ctx, string.format("From bar %s, %d s after the click, on every machine running Live sync.", bar_of(pos), together.LEAD))
+  end
+  local last_go = reaper.GetExtState(band.SECTION, "together " .. key)
   if last_go ~= "" then ImGui.TextDisabled(ctx, "Last: " .. last_go) end
+  -- who's ready: Live sync running (seen recently), what they have armed, side by side or not
+  if #view.rows > 0 then
+    ImGui.TextDisabled(ctx, "Who's ready:")
+    for _, r in ipairs(view.rows) do
+      local ready = r.age < 30
+      ImGui.TextColored(ctx, ready and GREEN or GREY, string.format("  %s: %s%s%s", r.name, ready and "Live sync on" or ("not seen for " .. status.ago(r.age)),
+        (r.armed and #r.armed > 0) and (", armed " .. table.concat(r.armed, ", ")) or ", nothing armed",
+        r.side and (", side by side (" .. r.side .. " bar(s) behind)") or ""))
+    end
+  end
 end
 
 local notes_at, notes = 0, {}
@@ -665,7 +727,11 @@ local function section_tools()
       for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
         local tk = reaper.GetActiveTake(reaper.GetTrackMediaItem(tr, j))
         local id = tk and (band.take_ext(tk, "band_take") ~= "" and band.take_ext(tk, "band_take") or band.take_ext(tk, "band_dry"))
-        if id and id ~= "" then dry_tracks[#dry_tracks + 1] = { tr, (id:match("^(.-)%-%d+%-%d+Z") or "?"):gsub("_", " ") }; break end
+        if id and id ~= "" then
+          local chain = tools.chain_of(cfg, b, tr)
+          dry_tracks[#dry_tracks + 1] = { tr, (id:match("^(.-)%-%d+%-%d+Z") or "?"):gsub("_", " "), plugins = chain and tools.chain_plugins(chain) or nil }
+          break
+        end
       end
     end
   end
@@ -675,6 +741,16 @@ local function section_tools()
     if reaper.ValidatePtr2(proj, tr, "MediaTrack*") then
       local on = band.track_ext(tr, "band_drymode") ~= ""
       local ch, v = ImGui.Checkbox(ctx, string.format("%s (%s's part)##dry%d", select(2, reaper.GetTrackName(tr)), d[2], i), on)
+      if d.plugins then
+        local have, miss = 0, {}
+        for _, p in ipairs(d.plugins) do if p.have then have = have + 1 else miss[#miss + 1] = p.name end end
+        ImGui.SameLine(ctx)
+        ImGui.TextColored(ctx, #miss == 0 and GREEN or YELLOW, string.format("%d/%d plug-ins here", have, #d.plugins))
+        if #miss > 0 then ImGui.SetItemTooltip(ctx, "Missing here (they load as placeholders, settings kept):\n" .. table.concat(miss, "\n")) end
+      elseif d.plugins == nil then
+        ImGui.SameLine(ctx)
+        ImGui.TextDisabled(ctx, "no plug-in chain yet")
+      end
       if ch then
         local msg, why = tools.dry_mode(proj, cfg, b, tr, v)
         if msg then band.log(msg) else band.msg(why) end

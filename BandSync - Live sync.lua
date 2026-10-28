@@ -197,9 +197,16 @@ local function poll()
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
   -- pending + hold let "Take control" wait until everyone has caught up before switching
+  local armed = {}
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    if reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 then armed[#armed + 1] = select(2, reaper.GetTrackName(tr)) end
+  end
   local info = { driver = driver, role = b.role, song = b.song, hold = hold or nil,
-    pending = sync.pending_events(proj, cfg, b.song, b.room) }
-  local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold)
+    pending = sync.pending_events(proj, cfg, b.song, b.room), armed = armed, side = side_bars(),
+    playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil }
+  local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
+    tostring(info.side) .. tostring(info.playing)
   if fingerprint ~= status_json or now - last_status > 15 then
     status_json, last_status = fingerprint, now
     sync.write_status(proj, cfg, b.song, b.room, info)
@@ -220,6 +227,23 @@ end
 -- The panel stops us with a flag (re-running the action would raise REAPER's task-control dialog), and sees
 -- we're alive from a heartbeat; both live in non-persistent ExtState so the project isn't marked modified.
 local key = tostring(proj)
+-- Side by side (panel, Together tab): press play/stop/record as usual; every machine with it on follows, `lag`
+-- seconds behind whoever pressed (0 with Listen live; a bar or two with Play along, so you hear them in time with
+-- the song). Non-persistent ExtState "side <proj>" = lag in bars ("" = off).
+local side = { playing = false, pos = 0, t = 0, quiet_until = 0 }
+local function side_bars()
+  local v = reaper.GetExtState(band.SECTION, "side " .. tostring(proj))
+  return v ~= "" and (tonumber(v) or 0) or nil
+end
+-- A count-in click: the metronome on until the song reaches `upto` (then back as it was).
+local click
+local function click_until(upto)
+  if reaper.GetToggleCommandStateEx(0, 40364) ~= 1 then
+    reaper.Main_OnCommand(40364, 0) -- Options: Toggle metronome
+    click = upto
+  end
+end
+
 -- Start/stop events: looked for every 0.25 s by name alone (a file listing), read only when new.
 local fired, seen_ev, quick_at = {}, {}, 0
 local function quick_transport()
@@ -276,16 +300,18 @@ local function tick()
   if tjson ~= "" then
     reaper.DeleteExtState(band.SECTION, "transport " .. key, false)
     local ev = band.json_decode(tjson)
-    if ev and not (ev.id and fired[ev.id]) then transport = ev end
+    if ev and not (ev.id and fired[ev.id]) and not (ev.follow and not side_bars()) then transport = ev end
   end
   if not transport and reaper.time_precise() - quick_at > 0.25 then -- a start/stop can't wait for the 2 s poll
     quick_at = reaper.time_precise()
     local ev = quick_transport()
-    if ev then transport = ev end
+    if ev and not (ev.follow and not side_bars()) then transport = ev end
   end
   if transport then
     local tnow = together.now()
-    local fire = transport.type == "stop" and (transport.at or 0) or together.plan(transport, cfg.user, nil)
+    local theirs = transport.lead and transport.lead ~= cfg.user
+    local fire = transport.type == "stop" and ((transport.at or 0) + (theirs and (transport.lag or 0) or 0)) or together.plan(transport, cfg.user, nil)
+    if transport.type == "start" and tnow < fire then reaper.SetExtState(band.SECTION, "together_at " .. key, tostring(fire), false) end
     if tnow - fire > 30 then -- arrived long after the fact (offline, sync stalled): don't start a song out of nowhere
       band.log(string.format("missed a %s from %s (%.0f s ago)", transport.type, tostring(transport.user), tnow - fire))
       transport = nil
@@ -298,7 +324,8 @@ local function tick()
         local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone
         if reaper.GetPlayStateEx(proj) ~= 0 then reaper.OnStopButtonEx(proj) end
         reaper.SetEditCurPos2(proj, from, false, false)
-        if transport.rec then
+        if transport.click and (transport.countin or 0) > 0 then click_until(transport.pos or from) end
+        if transport.rec and not (transport.follow and theirs) then -- side by side: the one who records records, the rest listen
           reaper.SelectProjectInstance(proj)
           reaper.Main_OnCommand(1013, 0) -- Transport: Record (the active project)
         else
@@ -310,14 +337,38 @@ local function tick()
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. said, false) -- the panel shows it
       end
       if transport.id then fired[transport.id] = true end -- the regular poll applies the same event again later
+      reaper.DeleteExtState(band.SECTION, "together_at " .. key, false)
+      side.quiet_until = reaper.time_precise() + 1 -- what we just did isn't a press to pass on
       transport = nil
     end
+  end
+  if click and (reaper.GetPlayStateEx(proj) & 1 == 0 or reaper.GetPlayPosition2Ex(proj) >= click) then
+    if reaper.GetToggleCommandStateEx(0, 40364) == 1 then reaper.Main_OnCommand(40364, 0) end
+    click = nil
+  end
+  local lagbars = side_bars()
+  if lagbars then
+    local ps = reaper.GetPlayStateEx(proj)
+    local playing, pos, tp = ps & 1 == 1, reaper.GetPlayPosition2Ex(proj), reaper.time_precise()
+    if tp >= side.quiet_until then
+      local jumped = playing and side.playing and math.abs(pos - (side.pos + (tp - side.t))) > 0.5 -- a seek while playing
+      if playing ~= side.playing or jumped then
+        local ev = playing and { type = "start", pos = pos, countin = 0, rec = ps & 4 == 4 or nil } or { type = "stop" }
+        ev.at, ev.lead, ev.follow = together.now(), cfg.user, true
+        ev.lag = together.bars_after(proj, pos, lagbars)
+        sync.post(cfg, b.song, b.room, ev)
+        fired[ev.id] = true
+        reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. (playing and string.format("you %s from %.2f s: the band follows %.1f s behind",
+          ev.rec and "recorded" or "played", pos, ev.lag) or "you stopped: the band stops too"), false)
+      end
+    end
+    side.playing, side.pos, side.t = playing, pos, tp
   end
   local st = reaper.GetPlayStateEx(proj)
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
-  local every = (now - stopped_at < 8) and 0.5 or 2 -- just after a recording: look often, so the take goes out quickly
+  local every = (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
   if not recording and now - last > every then
     last = reaper.time_precise()
     local ok, err = pcall(poll)

@@ -309,8 +309,12 @@ end
 local autokey = "autosync " .. (select(2, reaper.EnumProjects(-1)) or ""):lower()
 if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
 local tick
+local undo_since, undo_said -- when you undid one of BandSync's own changes (tick_body waits a while)
 local function tick_body() -- returns true to keep going
-  if not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end -- project closed: stop
+  if not reaper.ValidatePtr2(0, proj, "ReaProject*") then -- project closed: stop, and say so
+    reaper.DeleteExtState(band.SECTION, "live " .. key, false)
+    return band.log("live sync stopped: '" .. b.song .. "' was closed (reopened, it starts again by itself if 'Start Live sync with REAPER' is on; otherwise press Start)")
+  end
   local now_b = band.binding(proj)
   if not now_b or now_b.role ~= b.role or now_b.song ~= b.song then -- became a solo working copy (or unbound): not ours any more
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
@@ -412,7 +416,15 @@ local function tick_body() -- returns true to keep going
   local now = reaper.time_precise()
   local every = reaper.GetPlayStateEx(proj) & 1 == 1 and 2 -- playing: a pass can stall REAPER ~0.5 s (seen on the laptop)
     or (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
-  if not recording and now - last > every and not (transport and due_in < 1.5) then
+  local redo = reaper.Undo_CanRedo2(proj)
+  if redo and redo:find("^BandSync") then -- you just undid one of BandSync's changes: keep undoing if you like
+    undo_since = undo_since or now
+    if not undo_said then undo_said = true; band.log("you undid a BandSync change: Live sync waits 30 s (or until you do something else) so you can keep undoing") end
+  else
+    undo_since, undo_said = nil, nil
+  end
+  local undoing = undo_since and now - undo_since < 30
+  if not recording and not undoing and now - last > every and not (transport and due_in < 1.5) then
     last = reaper.time_precise()
     local ok, err = pcall(poll)
     if not ok then band.log("sync error: " .. tostring(err)) end

@@ -49,7 +49,7 @@ local function order(ev) return ev.order or (ev.time .. ev.id) end
 local function stamp(proj, ev)
   for _, name in ipairs({ ev.track or false, ev.was or false }) do
     local k = newest_key(ev, name or nil)
-    if k then setext(proj, sync.NEWEST, k, order(ev)) end
+    if k and order(ev) > ext(proj, sync.NEWEST, k) then setext(proj, sync.NEWEST, k, order(ev)) end
   end
 end
 local function superseded(proj, ev)
@@ -1329,6 +1329,13 @@ function sync.watch(proj, cfg, song, room, can)
               offs = reaper.GetMediaItemTakeInfo_Value(hit[2], "D_STARTOFFS") - band.base_offs(hit[2]) }
             sync.post(cfg, song, room, ev, proj)
             sync.remember(proj, id, hit[1], hit[2])
+            local mit, mtk = band.find_midi(proj, id) -- its MIDI copy keeps sitting under it here too, as when the change comes from the band
+            if mit then
+              reaper.SetMediaItemInfo_Value(mit, "D_POSITION", pos)
+              reaper.SetMediaItemInfo_Value(mit, "D_LENGTH", ev.len)
+              reaper.SetMediaItemTakeInfo_Value(mtk, "D_STARTOFFS", band.base_offs(mtk) + ev.offs)
+              reaper.UpdateItemInProject(mit)
+            end
           else -- not yours to change (someone's claim, or the driver's): put it back where the band has it, and say so
             local f = {}
             for v in (snap .. "|"):gmatch("([^|]*)|") do f[#f + 1] = v end -- id|pos|len|offs|lane|mute|track
@@ -1484,6 +1491,7 @@ function sync.receive(proj, cfg, song, room, can)
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
     elseif ev.user == cfg.user then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
+      stamp(proj, ev) -- and what we change next comes after it, even one stamped while our clock ran ahead
     elseif not (sync.ANYONE[ev.type] or can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time))
         or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user))) then
       -- not theirs to change, as far as this machine knows: their claim (or the handover) may simply not have

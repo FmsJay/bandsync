@@ -25,6 +25,11 @@ end
 local alive = tonumber(reaper.GetExtState(band.SECTION, "solo alive " .. song))
 if alive and reaper.time_precise() - alive < 5 then return band.msg("You already have '" .. song .. "' checked out. Run 'BandSync - Check in' when you're done.") end
 
+local open = solo.find_tab(song)
+if open then
+  reaper.SelectProjectInstance(open)
+  return band.msg("An earlier solo copy of '" .. song .. "' is still open (now in front). Close that tab, then run Solo edit again: checking out brings the latest version.")
+end
 local ok, l = solo.take(cfg, song, false)
 if not ok then
   if l.stale then

@@ -10,15 +10,37 @@ local WIN = reaper.GetOS():match("^Win") ~= nil
 
 local function q(s) return '"' .. s .. '"' end
 
--- Whether a process named `exe` (e.g. "syncthing") is running.
-function services.running(exe)
-  local out
-  if WIN then
-    out = reaper.ExecProcess('tasklist /FI "IMAGENAME eq ' .. exe .. '.exe" /NH', 5000) or ""
-    return out:lower():find(exe:lower() .. ".exe", 1, true) ~= nil
+-- Slow checks (tasklist ~150 ms, a curl call up to 3 s) run in the background: REAPER waiting on them froze
+-- its UI for 0.3-0.4 s at every panel refresh (2026-10-28, laptop). Each call starts a fresh run at most every
+-- `every` seconds, its output going to a file, and returns what the previous run wrote (nil before the first).
+local TMP = (WIN and (os.getenv("TEMP") or os.getenv("TMP")) or "/tmp"):gsub("\\", "/")
+local started, last = {}, {}
+local function background(name, cmd, every)
+  local file = TMP .. "/bandsync-" .. name .. ".txt"
+  if not started[name] or reaper.time_precise() - started[name] > every then
+    started[name] = reaper.time_precise()
+    -- shortcut: written in place (these outputs are a few hundred bytes); a half-written read just looks like "no answer" once
+    if WIN then
+      reaper.ExecProcess(string.format('cmd /c %s > "%s" 2>nul', cmd, file), -1)
+    else
+      reaper.ExecProcess("/bin/sh -c " .. q(cmd:gsub('"', '\\"') .. " > '" .. file .. "' 2>/dev/null"), -1)
+    end
   end
-  out = reaper.ExecProcess("/usr/bin/pgrep -x " .. exe, 5000) or ""
-  return out:match("^0\n") ~= nil
+  local out = band.read(file)
+  if out and out:match("%S") then last[name] = out end -- a run that has just started truncates the file: keep the last answer
+  return last[name]
+end
+
+-- Whether a process named `exe` (e.g. "syncthing") is running. Answers from the last background check
+-- (at most ~15 s old); the very first time, it waits for one.
+function services.running(exe)
+  local out = background("ps-" .. exe, WIN and ('tasklist /FI "IMAGENAME eq ' .. exe .. '.exe" /NH') or ("/usr/bin/pgrep -x " .. exe .. " || echo none"), 15)
+  if not out then -- nothing yet: ask once and wait
+    out = reaper.ExecProcess(WIN and ('tasklist /FI "IMAGENAME eq ' .. exe .. '.exe" /NH') or ("/usr/bin/pgrep -x " .. exe), 5000) or ""
+    if not WIN then return out:match("^0\n") ~= nil end
+  end
+  if WIN then return out:lower():find(exe:lower() .. ".exe", 1, true) ~= nil end
+  return out:match("%d") ~= nil -- pgrep prints the pids
 end
 
 -- Start `path args...` in the background, hidden, in `cwd` (optional). Returns true if launched.
@@ -61,7 +83,7 @@ end
 -- identity looks like (2026-10-27: one started outside a sandboxed shell knew no other machine).
 local peers_at, peers_on, peers_n, peers_why = -math.huge
 function services.syncthing_peers()
-  if reaper.time_precise() - peers_at < 30 then return peers_on, peers_n or peers_why end -- a curl call: not every check
+  if reaper.time_precise() - peers_at < 5 then return peers_on, peers_n or peers_why end -- (the curl itself runs in the background)
   peers_at = reaper.time_precise()
   peers_on, peers_n = services.syncthing_peers_now()
   if not peers_on then peers_why, peers_n = peers_n, nil end
@@ -80,9 +102,9 @@ function services.syncthing_peers_now()
   local key, addr = gui:match("<apikey>(.-)</apikey>"), gui:match("<address>(.-)</address>")
   if not key or not addr then return nil, "Syncthing config has no API key" end
   local tls = gui:match('^[^>]*tls="true"') ~= nil
-  local out = reaper.ExecProcess(string.format('curl -s -m 3 %s-H "X-API-Key: %s" %s://%s/rest/system/connections',
-    tls and "-k " or "", key, tls and "https" or "http", addr), 5000) or ""
-  local data = band.json_decode(out:match("^%d+\n(.*)$") or "")
+  local out = background("syncthing-connections", string.format('curl -s -m 3 %s-H "X-API-Key: %s" %s://%s/rest/system/connections',
+    tls and "-k " or "", key, tls and "https" or "http", addr), 20) or ""
+  local data = band.json_decode(out)
   if type(data) ~= "table" or type(data.connections) ~= "table" then return nil, "Syncthing didn't answer" end
   local n, on = 0, 0
   for _, c in pairs(data.connections) do n = n + 1; if c.connected then on = on + 1 end end

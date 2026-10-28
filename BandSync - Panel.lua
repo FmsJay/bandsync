@@ -67,6 +67,13 @@ local function local_time(iso)
   return os.date("%m-%d %H:%M", os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s, isdst = false }) + utc_offset)
 end
 
+-- The bar a time falls in, from the tempo map (the displayed position rounds 4.999 s up into the next bar).
+local function bar_num(pos) return select(2, reaper.TimeMap2_timeToBeats(proj, pos)) + 1 end
+-- "bar 2" / "bars 9-10" for a stretch of time; an end on a bar line doesn't include that bar
+local function bar_span(from, to)
+  local a, z = bar_num(from + 1e-6), bar_num(to - 1e-6)
+  return a == z and ("bar " .. a) or ("bars " .. a .. "-" .. z)
+end
 local function bar_of(pos) -- "5", or "5 beat 3" off the bar line
   local bar, beat = reaper.format_timestr_pos(pos, "", 2):match("^(%d+)%.(%d+)")
   return beat == "1" and bar or (bar .. " beat " .. beat)
@@ -153,9 +160,7 @@ local function section_control()
   for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
   for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end
   for _, t in ipairs(who.times or {}) do
-    local last = bar_of(t.to - 0.001):match("^%d+") -- ends on the next bar line: that bar isn't included
-    local first = bar_of(t.from):match("^%d+")
-    owned[#owned + 1] = { string.format("%s: %s", first == last and ("bar " .. first) or ("bars " .. first .. "-" .. last), t.user), t.user == cfg.user and "times", t }
+    owned[#owned + 1] = { string.format("%s: %s", bar_span(t.from, t.to), t.user), t.user == cfg.user and "times", t }
   end
   table.sort(owned, function(x, y) return x[1] < y[1] end)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
@@ -716,9 +721,9 @@ local function section_tools()
   if ImGui.Button(ctx, "Take back my last take") then
     local id, it = tools.take_back(proj, cfg, true)
     if not id then band.msg(it)
-    elseif reaper.MB(string.format("Take back your take on %s, bars %s to %s?\n\nIt goes from everyone's session (into the room's trash; the driver can bring it back from History).",
-        sync.track_name(it), bar_of(reaper.GetMediaItemInfo_Value(it, "D_POSITION")):match("^%d+"),
-        bar_of(reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - 0.01):match("^%d+")), "BandSync", 4) == 6 then
+    elseif reaper.MB(string.format("Take back your take on %s, %s?\n\nIt goes from everyone's session (into the room's trash; the driver can bring it back from History).",
+        sync.track_name(it), bar_span(reaper.GetMediaItemInfo_Value(it, "D_POSITION"),
+        reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemInfo_Value(it, "D_LENGTH"))), "BandSync", 4) == 6 then
       tools.take_back(proj, cfg)
     end
   end

@@ -24,9 +24,9 @@ ask()  { local a; read -r -p "$1${2:+ [$2]} " a </dev/tty; echo "${a:-${2:-}}"; 
 yes()  { case "$1" in [yY]*) return 0;; *) return 1;; esac; }
 
 say "BandSync setup"
-echo "This installs what BandSync needs and sets it up. It asks a few questions first; macOS asks for your"
-echo "password to install some apps, and to allow a few things (all explained as they come). Nothing already"
-echo "installed is changed."
+echo "This installs what BandSync needs and sets it up. It asks a few questions first (unless they were given up"
+echo "front); macOS asks for your password to install some apps, and to allow a few things (all explained as they"
+echo "come). Nothing already installed is changed."
 echo
 
 # ---------- 0. questions ----------
@@ -58,7 +58,7 @@ from_dmg() { # url name app-name
   pkg="$(find "$mnt" -maxdepth 1 -name '*.pkg' | head -1)"
   app="$(find "$mnt" -maxdepth 1 -name "${3:-*}.app" | head -1)"
   local rc=1 # neither a .pkg nor an .app in the image: not installed
-  if [ -n "$pkg" ]; then sudo installer -pkg "$pkg" -target / >/dev/null; rc=$?
+  if [ -n "$pkg" ]; then password_note; sudo installer -pkg "$pkg" -target / >/dev/null; rc=$?
   elif [ -n "$app" ]; then ditto "$app" "/Applications/$(basename "$app")"; rc=$?
   fi
   hdiutil detach "$mnt" -quiet
@@ -68,6 +68,13 @@ gh_asset() { # repo regex -> download URL of the latest release asset matching i
   curl -fsSL "https://api.github.com/repos/$1/releases/latest" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(http[^"]*\)"/\1/' | grep -E "$2" | head -1
 }
 have() { [ -d "/Applications/$1.app" ]; }
+told_pw=""
+password_note() { # before the first sudo: a bare "Password:" looks like something's wrong
+  [ -n "$told_pw" ] && return
+  told_pw=1
+  say "Installing apps needs your Mac password (the one you log in with). Type it at 'Password:' below: nothing shows"
+  say "while you type, that's normal. It's asked once and used only to install."
+}
 
 if have REAPER; then ok "REAPER is already installed"
 else
@@ -79,10 +86,11 @@ if have Syncthing; then ok "Syncthing is already installed"
 else say "Installing Syncthing ..."; from_dmg "$(gh_asset syncthing/syncthing-macos '\.dmg$')" Syncthing Syncthing; fi
 if yes "$LIVE"; then
   if have SonoBus; then ok "SonoBus is already installed"
-  else say "Installing SonoBus ..."; from_dmg "$(gh_asset sonosaurus/sonobus 'mac\.dmg$')" SonoBus SonoBus; fi
+  else say "Installing SonoBus (may ask for your password) ..."; from_dmg "$(gh_asset sonosaurus/sonobus 'mac\.dmg$')" SonoBus SonoBus; fi
   if have Tailscale; then ok "Tailscale is already installed"
   else
     say "Installing Tailscale (asks for your password) ..."
+    password_note
     curl -fsSL https://pkgs.tailscale.com/stable/Tailscale-latest-macos.pkg -o "$WORK/Tailscale.pkg" && sudo installer -pkg "$WORK/Tailscale.pkg" -target / >/dev/null && ok "Tailscale installed" || warn "Tailscale didn't install: get it from tailscale.com/download"
   fi
 fi
@@ -98,10 +106,18 @@ need=""
 [ -f "$PLUG/reaper_reapack-$ARCH.dylib" ] || need="$need reaper_reapack-$ARCH.dylib=https://github.com/cfillion/reapack/releases/download/$REAPACK/reaper_reapack-$ARCH.dylib"
 [ -f "$PLUG/reaper_imgui-$ARCH.dylib" ] || need="$need reaper_imgui-$ARCH.dylib=https://github.com/cfillion/reaimgui/releases/download/v$REAIMGUI/reaper_imgui-$ARCH.dylib"
 if [ -n "$need" ]; then
-  while pgrep -x REAPER >/dev/null; do
-    warn "REAPER is open. Save your work and quit REAPER (it loads new extensions when it starts), then press Return."
+  if pgrep -x REAPER >/dev/null; then
+    say "REAPER has to restart to load its new extensions. Press Return and REAPER is asked to quit (it asks to save"
+    say "anything unsaved first; it reopens your project afterwards), or quit it yourself."
     read -r </dev/tty
-  done
+    osascript -e 'tell application "REAPER" to quit' >/dev/null 2>&1
+    REOPEN=true
+    waited=0
+    while pgrep -x REAPER >/dev/null; do
+      sleep 1; waited=$((waited + 1))
+      [ $((waited % 30)) -eq 0 ] && say "Still waiting for REAPER to close (answer its save question if it asked one) ..."
+    done
+  fi
   mkdir -p "$PLUG"
   for n in $need; do curl -fsSL "${n#*=}" -o "$PLUG/${n%%=*}" && ok "${n%%=*} installed" || warn "${n%%=*} didn't download"; done
 else ok "ReaPack and ReaImGui are already installed"; fi
@@ -123,16 +139,21 @@ up=""; for i in $(seq 1 60); do stcli show system >/dev/null && { up=1; break; }
 [ -n "$up" ] || { warn "Syncthing didn't answer; finish its setup by hand (see installer/SKILL.md)"; exit 1; }
 MY_ID="$("$ST" device-id --home "$STHOME" 2>/dev/null | tail -1 | tr -d '[:space:]')"
 mkdir -p "$ROOT"
-stcli config defaults folder path set "$(dirname "$ROOT")" >/dev/null
 if stcli config folders list | grep -qx bandsync; then ok "shared folder 'bandsync' already set up"
-else stcli config folders add --id bandsync --label BandSync --path "$ROOT" >/dev/null && ok "shared folder 'bandsync' -> $ROOT"; fi
+else
+  stcli config defaults folder path set "$(dirname "$ROOT")" >/dev/null # new folders land beside it
+  stcli config folders add --id bandsync --label BandSync --path "$ROOT" >/dev/null && ok "shared folder 'bandsync' -> $ROOT"
+fi
 stcli config folders bandsync order set smallestFirst >/dev/null
 stcli config folders bandsync fswatcher-delays set 1 >/dev/null  # the default 10 s delay added 10 s to every take
 stcli config devices "$MY_ID" name set "$USERNAME_BS" >/dev/null
 if ! yes "$HOSTING"; then
   stcli config devices list | grep -qx "$HOST_ID" || stcli config devices add --device-id "$HOST_ID" --name "Band host" --introducer --auto-accept-folders >/dev/null
   stcli config folders bandsync devices list | grep -qx "$HOST_ID" || stcli config folders bandsync devices add --device-id "$HOST_ID" >/dev/null
-  ok "paired with the host (they still have to add you: see the end)"
+  CONNECTED=""
+  stcli show connections 2>/dev/null | tr -d '\n ' | grep -q "\"$HOST_ID\":{[^}]*\"connected\":true" && CONNECTED=1
+  if [ -n "$CONNECTED" ]; then ok "paired with the host, and connected"
+  else ok "paired with the host (they still have to add you: see the end)"; fi
 fi
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
@@ -142,8 +163,8 @@ HELPER="$(find "$WORK/src" -path '*/installer/bandsync_setup.lua' | head -1)"
 HDIR="$(dirname "$HELPER")"
 request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR/bandsync_setup_result.json
   local panel=false; [ "$1" = verify ] && panel=true
-  printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s}' \
-    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" > "$HDIR/bandsync_setup.json"
+  printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s,"reopen_last":%s}' \
+    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" "${REOPEN:-false}" > "$HDIR/bandsync_setup.json"
   rm -f "$HDIR/bandsync_setup_result.json"
   open -a REAPER "$HELPER"
   for i in $(seq 1 180); do [ -f "$HDIR/bandsync_setup_result.json" ] && break; sleep 1; done
@@ -171,8 +192,10 @@ if yes "$HOSTING"; then
   echo "  - When a bandmate sends you their ID: Syncthing (menu bar icon > Open) > Add Remote Device, paste it,"
   echo "    and on its Sharing tab tick 'BandSync'."
 else
-  echo "  - Send the host your Syncthing device ID:  $MY_ID"
-  echo "    (They add it in Syncthing; the shared folder then arrives by itself.)"
+  if [ -z "${CONNECTED:-}" ]; then
+    echo "  - Send the host your Syncthing device ID:  $MY_ID"
+    echo "    (They add it in Syncthing; the shared folder then arrives by itself.)"
+  fi
 fi
 if yes "$LIVE"; then
   echo "  - Tailscale: open it and sign in (your own account); allow its VPN configuration when macOS asks."

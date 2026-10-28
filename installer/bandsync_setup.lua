@@ -25,6 +25,17 @@ local ok, req = pcall(json.decode, f:read("a"))
 f:close()
 if not ok or type(req) ~= "table" then step("read request", false, req); return finish() end
 
+-- the installer restarted REAPER (for new extensions): it comes back with the project that was open, not an empty
+-- one (a bandmate updating thought their session had vanished)
+if req.reopen_last and reaper.EnumProjects(-1) and select(2, reaper.EnumProjects(-1)) == "" and reaper.CountTracks(0) == 0 then
+  local ini = io.open(reaper.get_ini_file(), "r")
+  local last = ini and ini:read("a"):match("%[Recent%][^%[]-\nrecent01=([^\r\n]+)")
+  if ini then ini:close() end
+  if last and reaper.file_exists(last) then reaper.Main_openProject("noprompt:" .. last) end
+  step("reopen the project REAPER had open", true, last or "none")
+  req.reopen_last = false
+end
+
 local ver = reaper.GetAppVersion()
 local major, minor = ver:match("^(%d+)%.(%d+)")
 step("REAPER 7.18 or newer", tonumber(major) > 7 or (tonumber(major) == 7 and tonumber(minor) >= 18), ver)

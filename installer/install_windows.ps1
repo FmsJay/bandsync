@@ -47,7 +47,7 @@ function Ask($q, $def) { $a = Read-Host "$q$(if ($def) { " [$def]" })"; if ($a) 
 function YesNo($q, $def) { $a = Ask "$q (y/n)" $def; return $a -match '^[yY]' }
 
 Say "BandSync setup"
-Write-Host "This installs what BandSync needs and sets it up. It asks a few questions first; Windows may ask"
+Write-Host "This installs what BandSync needs and sets it up. It asks a few questions first (unless given up front); Windows may ask"
 Write-Host "permission for each app it installs. Nothing already installed is changed."
 Write-Host ""
 
@@ -104,9 +104,17 @@ $need = @()
 if (-not (Test-Path (Join-Path $plugins "reaper_reapack-x64.dll"))) { $need += @{ file = "reaper_reapack-x64.dll"; url = "https://github.com/cfillion/reapack/releases/download/$ReaPackVer/reaper_reapack-x64.dll" } }
 if (-not (Test-Path (Join-Path $plugins "reaper_imgui-x64.dll"))) { $need += @{ file = "reaper_imgui-x64.dll"; url = "https://github.com/cfillion/reaimgui/releases/download/v$ReaImGuiVer/reaper_imgui-x64.dll" } }
 if ($need.Count -gt 0) {
-  while (Get-Process reaper -ErrorAction SilentlyContinue) {
-    Warn "REAPER is open. Save your work and close REAPER (it loads new extensions when it starts), then press Enter."
+  if (Get-Process reaper -ErrorAction SilentlyContinue) {
+    Say "REAPER has to restart to load its new extensions. Press Enter and REAPER is asked to close (it asks to save"
+    Say "anything unsaved first; it reopens your project afterwards), or close it yourself."
     Read-Host | Out-Null
+    Get-Process reaper -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() } # like clicking X: REAPER asks to save
+    $script:Reopen = $true
+    $waited = 0
+    while (Get-Process reaper -ErrorAction SilentlyContinue) {
+      Start-Sleep 1; $waited++
+      if ($waited % 30 -eq 0) { Say "Still waiting for REAPER to close (answer its save question if it asked one) ..." }
+    }
   }
   New-Item -ItemType Directory -Force $plugins | Out-Null
   foreach ($n in $need) { Invoke-WebRequest -UseBasicParsing $n.url -OutFile (Join-Path $plugins $n.file); Ok "$($n.file) installed" }
@@ -143,7 +151,7 @@ $myId = (ST device-id | Select-Object -Last 1).ToString().Trim()
 
 $root = $root.TrimEnd('\', '/')
 New-Item -ItemType Directory -Force $root | Out-Null
-STcli config defaults folder path set (Split-Path $root) | Out-Null
+if (-not ((STcli config folders list) -match '^bandsync$')) { STcli config defaults folder path set (Split-Path $root) | Out-Null } # fresh setup only
 $folders = STcli config folders list
 if ($folders -notcontains "bandsync") {
   STcli config folders add --id bandsync --label BandSync --path $root | Out-Null
@@ -159,7 +167,7 @@ if (-not $isHost) {
   }
   $shared = STcli config folders bandsync devices list
   if ($shared -notcontains $hostId) { STcli config folders bandsync devices add --device-id $hostId | Out-Null }
-  Ok "paired with the host (they still have to add you: see the end)"
+  Ok "paired with the host"
 }
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
@@ -180,7 +188,7 @@ $src = Get-ChildItem $work -Directory | Select-Object -First 1
 $helper = Join-Path $src.FullName "installer\bandsync_setup.lua"
 $utf8 = New-Object System.Text.UTF8Encoding($false) # no BOM: the Lua JSON reader wants plain UTF-8
 function Request($mode) {
-  $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify") } | ConvertTo-Json
+  $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify"); reopen_last = [bool]$script:Reopen } | ConvertTo-Json
   [IO.File]::WriteAllText((Join-Path (Split-Path $helper) "bandsync_setup.json"), $req, $utf8)
   $result = Join-Path (Split-Path $helper) "bandsync_setup_result.json"
   Remove-Item $result -ErrorAction SilentlyContinue

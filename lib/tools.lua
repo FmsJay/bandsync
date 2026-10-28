@@ -53,6 +53,7 @@ function tools.dry_mode(proj, cfg, b, tr, on, raw)
     follow_fader()
     reaper.SetMediaTrackInfo_Value(midi, "B_MUTE", 0)
     reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1)
+    sync.track_seen(proj, midi); sync.track_seen(proj, tr)
     band.set_track_ext(tr, "band_drymode", "rawmidi")
     reaper.TrackList_AdjustWindows(false)
     return string.format("%s: dry, the notes through %s's instrument only", name, tostring(m.printed_by or m.user))
@@ -80,6 +81,7 @@ function tools.dry_mode(proj, cfg, b, tr, on, raw)
       follow_fader()
       reaper.SetMediaTrackInfo_Value(midi, "B_MUTE", 0)
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1)
+      sync.track_seen(proj, midi); sync.track_seen(proj, tr)
       band.set_track_ext(tr, "band_drymode", "midi")
     else
       set_chain(tr, chain)
@@ -108,6 +110,7 @@ function tools.dry_mode(proj, cfg, b, tr, on, raw)
     set_chain(midi, nil)
     reaper.SetMediaTrackInfo_Value(midi, "B_MUTE", 1)
     reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 0)
+    sync.track_seen(proj, midi); sync.track_seen(proj, tr)
   else
     set_chain(tr, nil)
     for j = 0, reaper.CountTrackMediaItems(tr) - 1 do -- the print of whichever take plays
@@ -183,7 +186,7 @@ function tools.my_last_change(proj, cfg, b)
     -- an undo's own change isn't one to undo (pressing again goes further back, not back and forth)
     if ev.user == cfg.user and not ev.undo and select(2, reaper.GetProjExtState(proj, UNDONE, ev.id)) == "" then
       if ev.type == "edit" and ev.take then
-        local before = ev.was -- the take's shape just before this change (sent with it since 0.14.3); for older
+        local before = ev.before -- the take's shape just before this change (sent with it since 0.14.5); for older
         -- events: the change before it, or where it first landed
         for j = i - 1, 1, -1 do
           if before then break end

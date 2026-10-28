@@ -350,7 +350,7 @@ local function poll()
     drive_at = now
     local moved, more = 0, false
     for _, room in ipairs(rooms) do
-      local ok, n, m = pcall(drive.mirror, sync.room_dir(cfg, b.song, room), droot .. "/" .. b.song .. "/rooms/" .. room, 1.5)
+      local ok, n, m = pcall(drive.mirror, sync.room_dir(cfg, b.song, room), droot .. "/" .. b.song .. "/rooms/" .. room, 1.5, cfg.user)
       if ok then moved, more = moved + n, more or m
       elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
     end

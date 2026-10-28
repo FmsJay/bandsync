@@ -823,7 +823,8 @@ function sync.share_sound(proj, cfg, b, tr)
     -- the recording, plus a fresh tail; sent with the same len and tail as the original, it fits the same item exactly
     local was_len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
     -- as the item sits now (it may have been moved or trimmed since the original arrived): its length without the tail
-    local rec_len = m0 and math.min(m0.len or math.huge, was_len - (tonumber(ext(proj, sync.TAILS, m0.id or "")) or 0))
+    local tail_here = band.take_ext(dry, "band_midi") ~= "" and 0 or (tonumber(ext(proj, sync.TAILS, m0 and m0.id or "")) or 0) -- (a MIDI copy has none)
+    local rec_len = m0 and math.min(m0.len or math.huge, was_len - tail_here)
     local at = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
     if m0 and rec_len and rec_len > 0 and rec_len < was_len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", rec_len) end
     if m0 then
@@ -1227,6 +1228,9 @@ local function track_props(tr)
     20 * math.log(math.max(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), 1e-9), 10), reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
 end
 local function track_guid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)) end
+-- What we just did to this track (dry mode muting the print or its MIDI copy) is how we hear it, not a change for the
+-- band: Live sync takes it as already seen (2026-10-28: Dry on a claimed Keys muted everyone's Keys).
+function sync.track_seen(proj, tr) setext(proj, sync.TRACKS, track_guid(tr), track_props(tr)) end
 local function holds_takes(tr)
   for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
     local it = reaper.GetTrackMediaItem(tr, j)
@@ -1489,7 +1493,8 @@ function sync.watch(proj, cfg, song, room, can)
             local f = {}
             for v in (snap .. "|"):gmatch("([^|]*)|") do f[#f + 1] = v end -- id|pos|len|offs|lane|mute|track
             if tonumber(f[2]) then -- the shape just before this change ("Undo my last change" puts it back)
-              ev.was = { pos = tonumber(f[2]), len = (tonumber(f[3]) or 0) - (tonumber(ext(proj, sync.TAILS, id)) or 0), offs = tonumber(f[4]), mute = tonumber(f[6]) }
+              ev.before = { pos = tonumber(f[2]), len = (tonumber(f[3]) or 0) - (tonumber(ext(proj, sync.TAILS, id)) or 0),
+                offs = (tonumber(f[4]) or 0) - band.base_offs(hit[2]), mute = tonumber(f[6]) } -- (not "was": that's a track's old name)
             end
             if ext(proj, "BandSync.undo_echo", id) ~= "" then ev.undo = true; setext(proj, "BandSync.undo_echo", id, "") end
             sync.post(cfg, song, room, ev, proj)

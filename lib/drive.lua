@@ -70,6 +70,36 @@ local function read_events(dir)
   return out
 end
 
+-- Our own file (named after us), or one another machine wrote: theirs we only carry to Drive once it has waited
+-- here a while (their machine puts it there itself if it can; two machines writing the same file in the same
+-- minute left Google's "x (1).json" copies). Takes, events, MIDI and restore points all carry their author's name.
+local first_seen = {} -- path -> when we first saw it missing on Drive
+local function mine(f, user)
+  local u = (user or ""):gsub("[^%w%-_]", "_")
+  return u ~= "" and (f:sub(1, #u + 1) == u .. "-" or f:find("Z-" .. u .. "-", 1, true) ~= nil)
+end
+local function due(path, f, user, wait)
+  if mine(f, user) then return true end
+  local t = reaper.time_precise()
+  first_seen[path] = first_seen[path] or t
+  return t - first_seen[path] >= (wait or 300)
+end
+drive.mine = mine
+
+-- Google's conflict copies ("x (1).json") of a file that's there under its own name, same size: only clutter.
+local function tidy(dir)
+  local i, gone = 0, {}
+  reaper.EnumerateFiles(dir, -1)
+  while true do
+    local f = reaper.EnumerateFiles(dir, i)
+    if not f then break end
+    local orig = f:gsub(" %(%d+%)(%.[^.]+)$", "%1")
+    if orig ~= f and band.size(dir .. "/" .. orig) == band.size(dir .. "/" .. f) then gone[#gone + 1] = f end
+    i = i + 1
+  end
+  for _, f in ipairs(gone) do os.remove(dir .. "/" .. f) end
+end
+
 local function into_trash_index(dir, f)
   local idx = band.read_json(dir .. "/index.json") or {}
   if not idx[f] then idx[f] = os.date("!%Y-%m-%d"); band.write_json(dir .. "/index.json", idx) end
@@ -77,7 +107,7 @@ end
 
 -- One pass for one room. Copying stops once `budget` seconds have gone (big FLACs on a slow link): the next pass
 -- carries on. Returns files copied or moved, and whether work is left.
-function drive.mirror(here, there, budget)
+function drive.mirror(here, there, budget, user, wait)
   local t0, n = reaper.time_precise(), 0
   local function out_of_time() return reaper.time_precise() - t0 > (budget or 1.5) end
   local function copy(a, z)
@@ -91,7 +121,13 @@ function drive.mirror(here, there, budget)
     local inA, inB = {}, {}
     for _, f in ipairs(A) do inA[f] = true end
     for _, f in ipairs(B) do inB[f] = true end
-    for _, f in ipairs(A) do if not inB[f] then if out_of_time() then return n, true end; copy(here .. "/" .. sub .. "/" .. f, there .. "/" .. sub .. "/" .. f) end end
+    for _, f in ipairs(A) do
+      if not inB[f] and due(here .. "/" .. sub .. "/" .. f, f, user, wait) then
+        if out_of_time() then return n, true end
+        copy(here .. "/" .. sub .. "/" .. f, there .. "/" .. sub .. "/" .. f)
+      end
+    end
+    tidy(there .. "/" .. sub)
     for _, f in ipairs(B) do if not inA[f] then if out_of_time() then return n, true end; copy(there .. "/" .. sub .. "/" .. f, here .. "/" .. sub .. "/" .. f) end end
   end
   -- plug-in chains: rewritten by their owner, so a differing copy is only refreshed where it's missing (Syncthing
@@ -140,6 +176,7 @@ function drive.mirror(here, there, budget)
           if os.rename(other .. "/" .. f, want .. "/" .. f) then at[other], n = nil, n + 1 end
         else
           local src = manifest and newest[f] or (function() for k in pairs(at) do return k .. "/" .. f end end)()
+          if side == there and not src:find(there, 1, true) and not due(src, f, user, wait) then goto next_side end
           copy(src, want .. "/" .. f)
           mrev[want .. "/" .. f] = manifest and cur_rev[id:lower()] or nil
         end
@@ -149,6 +186,7 @@ function drive.mirror(here, there, budget)
       if at[other] and at[want] then -- the right place has it, so this copy in the wrong one is only a leftover
         if os.remove(other .. "/" .. f) then at[other] = nil end
       end
+      ::next_side::
     end
   end
   return n, false

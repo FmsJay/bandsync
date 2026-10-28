@@ -25,6 +25,24 @@ local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-ta
 local baseline = sync.mark_baseline(proj)
 sync.audio_follow_tempo(proj) -- band audio follows tempo changes piece by piece (REAPER auto-stretch), never drifting
 
+-- Side by side (panel, Together tab): press play/stop/record as usual; every machine with it on follows, `lag`
+-- seconds behind whoever pressed (0 with Listen live; a bar or two with Play along, so you hear them in time with
+-- the song). Non-persistent ExtState "side <proj>" = lag in bars ("" = off).
+local side = { playing = false, pos = 0, t = 0, quiet_until = 0 }
+local function side_bars()
+  local v = reaper.GetExtState(band.SECTION, "side " .. tostring(proj))
+  return v ~= "" and (tonumber(v) or 0) or nil
+end
+-- A count-in click: the metronome on until the song reaches `upto` (then back as it was).
+local click
+local function click_until(upto)
+  if reaper.GetToggleCommandStateEx(0, 40364) ~= 1 then
+    reaper.Main_OnCommand(40364, 0) -- Options: Toggle metronome
+    click = upto
+  end
+end
+
+
 -- the shared folder only moves while Syncthing runs: start it if it isn't (a cloud-drive root needs nothing)
 for _, d in ipairs(band.subdirs(cfg.root)) do
   if d == ".stfolder" then -- Syncthing marks the folders it shares with this
@@ -227,23 +245,6 @@ end
 -- The panel stops us with a flag (re-running the action would raise REAPER's task-control dialog), and sees
 -- we're alive from a heartbeat; both live in non-persistent ExtState so the project isn't marked modified.
 local key = tostring(proj)
--- Side by side (panel, Together tab): press play/stop/record as usual; every machine with it on follows, `lag`
--- seconds behind whoever pressed (0 with Listen live; a bar or two with Play along, so you hear them in time with
--- the song). Non-persistent ExtState "side <proj>" = lag in bars ("" = off).
-local side = { playing = false, pos = 0, t = 0, quiet_until = 0 }
-local function side_bars()
-  local v = reaper.GetExtState(band.SECTION, "side " .. tostring(proj))
-  return v ~= "" and (tonumber(v) or 0) or nil
-end
--- A count-in click: the metronome on until the song reaches `upto` (then back as it was).
-local click
-local function click_until(upto)
-  if reaper.GetToggleCommandStateEx(0, 40364) ~= 1 then
-    reaper.Main_OnCommand(40364, 0) -- Options: Toggle metronome
-    click = upto
-  end
-end
-
 -- Start/stop events: looked for every 0.25 s by name alone (a file listing), read only when new.
 local fired, seen_ev, quick_at = {}, {}, 0
 local function quick_transport()

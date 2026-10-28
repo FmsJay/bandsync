@@ -256,6 +256,13 @@ end
 local key = tostring(proj)
 -- Start/stop events: looked for every 0.25 s by name alone (a file listing), read only when new.
 local fired, seen_ev, quick_at = {}, {}, 0
+-- The newest cue wins: an older one (a second copy arriving through the regular poll, say) is ignored.
+local cue_at = -math.huge
+local function take_cue(ev)
+  if not ev or (ev.id and fired[ev.id]) or (ev.follow and not side_bars()) or (ev.at or 0) < cue_at then return end
+  cue_at, transport = ev.at or cue_at, ev
+end
+
 local function quick_transport()
   local dir = sync.room_dir(cfg, b.song, b.room) .. "/events"
   local i, found = 0, nil
@@ -309,13 +316,11 @@ local function tick()
   local tjson = reaper.GetExtState(band.SECTION, "transport " .. key) -- a start/stop from the panel or the band
   if tjson ~= "" then
     reaper.DeleteExtState(band.SECTION, "transport " .. key, false)
-    local ev = band.json_decode(tjson)
-    if ev and not (ev.id and fired[ev.id]) and not (ev.follow and not side_bars()) then transport = ev end
+    take_cue(band.json_decode(tjson))
   end
   if not transport and reaper.time_precise() - quick_at > 0.25 then -- a start/stop can't wait for the 2 s poll
     quick_at = reaper.time_precise()
-    local ev = quick_transport()
-    if ev and not (ev.follow and not side_bars()) then transport = ev end
+    take_cue(quick_transport())
   end
   if transport then
     local tnow = together.now()
@@ -372,7 +377,7 @@ local function tick()
         ev.at, ev.lead, ev.follow = together.now(), cfg.user, true
         ev.lag = together.bars_after(proj, pos, lagbars)
         sync.post(cfg, b.song, b.room, ev)
-        fired[ev.id] = true
+        fired[ev.id], cue_at = true, math.max(cue_at, ev.at)
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. (playing and string.format("you %s from %.2f s: the band follows %.1f s behind",
           ev.rec and "recorded" or "played", pos, ev.lag) or "you stopped: the band stops too"), false)
       end
@@ -383,7 +388,8 @@ local function tick()
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
-  local every = (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
+  local every = reaper.GetPlayStateEx(proj) & 1 == 1 and 2 -- playing: a pass can stall REAPER ~0.5 s (seen on the laptop)
+    or (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
   if not recording and now - last > every and not (transport and due_in < 1.5) then
     last = reaper.time_precise()
     local ok, err = pcall(poll)

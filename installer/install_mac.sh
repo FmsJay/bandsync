@@ -105,28 +105,30 @@ TS_TAGGED=""
 if yes "$LIVE" && [ -x "$TS" ]; then
   open -a Tailscale; sleep 3
   tsst="$("$TS" status --json 2>/dev/null | tr -d '\n ')"
-  extra=""
-  if echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { echo "$tsst" | grep -q '"BackendState":"Running"' && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
+  TS_RUNNING=""; echo "$tsst" | grep -q '"BackendState":"Running"' && TS_RUNNING=1
+  if echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { [ -n "$TS_RUNNING" ] && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
     ok "Tailscale signed in, and stays signed in"; TS_TAGGED=1 # tagged, or its key expiry was turned off by hand
+  elif [ -n "$TS_RUNNING" ]; then
+    # already signed in: left exactly as it is. Re-signing in with the tag logged a Mac OUT when the tag wasn't allowed
+    # yet, and the refused tag stuck in its settings so signing in again kept failing (2026-10-28)
+    ok "Tailscale is signed in (it signs out by itself every few months: see the end to keep it signed in)"
   else
-    go=y
-    if echo "$tsst" | grep -q '"BackendState":"Running"'; then
-      go="$(ask "Tailscale is signed in, but signs out by itself every few months. Make this Mac stay signed in? You sign in once more (y/n)" y)"
-      extra="--force-reauth --reset"
-    fi
-    if yes "$go"; then
-      say "Signing in to Tailscale: a browser page opens; sign in with the band's account there. (macOS may first ask"
-      say "to allow Tailscale's VPN configuration: click Allow.)"
-      out="$WORK/ts_up.txt"; : > "$out"
-      "$TS" up --advertise-tags=tag:bandsync $extra --timeout=300s >"$out" 2>&1 &
+    say "Signing in to Tailscale: a browser page opens; sign in with the band's account there. (macOS may first ask"
+    say "to allow Tailscale's VPN configuration: click Allow.)"
+    out="$WORK/ts_up.txt"; : > "$out"
+    "$TS" up --advertise-tags=tag:bandsync --timeout=300s >"$out" 2>&1 &
+    pid=$!; url=""
+    for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
+    [ -n "$url" ] && open "$url"
+    if wait $pid; then ok "Tailscale signed in as a band machine (it stays signed in)"; TS_TAGGED=1
+    else
+      # the refused tag stays in Tailscale's settings and every later sign-in fails on it: clear it, then sign in plainly
+      "$TS" up --reset --advertise-tags= --timeout=120s >"$out" 2>&1 &
       pid=$!; url=""
       for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
       [ -n "$url" ] && open "$url"
-      if wait $pid; then ok "Tailscale signed in as a band machine (it stays signed in)"; TS_TAGGED=1
-      elif grep -qi 'tag' "$out"; then
-        warn "Tailscale didn't accept the band tag yet: the host has to allow it once (see the end). Until then, sign in"
-        warn "from the Tailscale icon in the menu bar; this Mac then signs out by itself every few months."
-      else warn "Tailscale sign-in didn't finish: sign in from its icon in the menu bar."; fi
+      if wait $pid; then ok "Tailscale signed in (without the band tag: it signs out by itself every few months; see the end)"
+      else warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."; fi
     fi
   fi
 fi
@@ -237,15 +239,14 @@ else
   fi
 fi
 if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
-  echo "  - Tailscale: sign in from its icon in the menu bar (the band's account); allow its VPN configuration when asked."
-    echo "  - Tailscale, once for the whole band: at login.tailscale.com/admin/acls add this line inside the policy's { }:"
-    echo '      "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
-    echo "    Then band machines sign in as 'tag:bandsync', and tagged machines never have to sign in again."
+  echo "  - Tailscale: if it isn't signed in, open it (Applications > Tailscale, or its menu-bar icon) and sign in with the"
+  echo "    band's account. To keep this Mac signed in for good: login.tailscale.com/admin/machines > this Mac > ... >"
+  echo "    Disable key expiry (one click; otherwise it signs out every few months, maybe right before a session)."
 fi
-if yes "$LIVE" && yes "$HOSTING" && [ -n "$TS_TAGGED" ]; then
-    echo "  - Tailscale (if you haven't yet), once for the whole band: at login.tailscale.com/admin/acls add this line inside the policy's { }:"
-    echo '      "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
-    echo "    Then band machines sign in as 'tag:bandsync', and tagged machines never have to sign in again."
+if yes "$LIVE" && yes "$HOSTING"; then # the host's job, once: then bandmates' installers sign their machines in for good
+  echo "  - Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the"
+  echo '    policy'"'"'s { }:   "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
+  echo "    Then each bandmate's installer signs their machine in as a band machine that never has to sign in again."
 fi
 if yes "$SOLO"; then
   echo "  - Google Drive: open it and sign in; allow its extension when macOS asks."

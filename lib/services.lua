@@ -13,7 +13,8 @@ local function q(s) return '"' .. s .. '"' end
 -- Slow checks (tasklist ~150 ms, a curl call up to 3 s) run in the background: REAPER waiting on them froze
 -- its UI for 0.3-0.4 s at every panel refresh (2026-10-28, laptop). Each call starts a fresh run at most every
 -- `every` seconds, its output going to a file, and returns what the previous run wrote (nil before the first).
-local TMP = (WIN and (os.getenv("TEMP") or os.getenv("TMP")) or "/tmp"):gsub("\\", "/")
+-- (macOS: the per-user TMPDIR, not the shared /tmp: the Syncthing check's script carries its API key)
+local TMP = (WIN and (os.getenv("TEMP") or os.getenv("TMP")) or os.getenv("TMPDIR") or "/tmp"):gsub("\\", "/"):gsub("/+$", "")
 local started, last = {}, {}
 local function background(name, cmd, every)
   local file = TMP .. "/bandsync-" .. name .. ".txt"

@@ -70,9 +70,11 @@ local function read_events(dir)
   return out
 end
 
--- Our own file (named after us), or one another machine wrote: theirs we only carry to Drive once it has waited
--- here a while (their machine puts it there itself if it can; two machines writing the same file in the same
--- minute left Google's "x (1).json" copies). Takes, events, MIDI and restore points all carry their author's name.
+-- What we may write on Drive: only our own files (named after us: takes, events, MIDI and restore points all carry
+-- their author's name). Two machines on one Google account writing the same file, even minutes apart (Drive takes
+-- a while to show one machine's upload to the other), made Drive keep one and move the other to "Lost and Found"
+-- with a "Can't sync file" message each time (2026-10-28). Reading from Drive is anyone's.
+-- `wait` (tests only): others' files too, once missing that many seconds.
 local first_seen = {} -- path -> when we first saw it missing on Drive
 local function mine(f, user)
   local u = (user or ""):gsub("[^%w%-_]", "_")
@@ -80,9 +82,10 @@ local function mine(f, user)
 end
 local function due(path, f, user, wait)
   if mine(f, user) then return true end
+  if not wait then return false end
   local t = reaper.time_precise()
   first_seen[path] = first_seen[path] or t
-  return t - first_seen[path] >= (wait or 300)
+  return t - first_seen[path] >= wait
 end
 drive.mine = mine
 
@@ -135,7 +138,7 @@ function drive.mirror(here, there, budget, user, wait)
   local users = {}
   for _, side in ipairs({ here, there }) do for _, u in ipairs(band.subdirs(side .. "/fx")) do users[u] = true end end
   for u in pairs(users) do
-    for _, pair in ipairs({ { here, there }, { there, here } }) do
+    for _, pair in ipairs(mine(u .. "-", user) and { { here, there }, { there, here } } or { { there, here } }) do
       local a, z = pair[1] .. "/fx/" .. u, pair[2] .. "/fx/" .. u
       for _, f in ipairs(band.files(a)) do
         if not reaper.file_exists(z .. "/" .. f) then if out_of_time() then return n, true end; copy(a .. "/" .. f, z .. "/" .. f) end
@@ -186,7 +189,7 @@ function drive.mirror(here, there, budget, user, wait)
           mrev[want .. "/" .. f] = manifest and cur_rev[id:lower()] or nil
         end
         at[want] = true
-        if dest == "_trash" then into_trash_index(want, f) end
+        if dest == "_trash" and side == here then into_trash_index(want, f) end -- (Drive's copy has none: one file both would write)
       end
       if at[other] and at[want] then -- the right place has it, so this copy in the wrong one is only a leftover
         if os.remove(other .. "/" .. f) then at[other] = nil end

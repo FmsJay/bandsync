@@ -157,7 +157,8 @@ function lm.receive_tick(proj, cfg, b)
     streams[u] = streams[u] or { seen = {}, notes = {} }
     local st = streams[u]
     if lm.merge(st, band.files(udir, ".json"), function(f) return band.read_json(udir .. "/" .. f) end)
-        and type(st.user) == "string" and st.user ~= cfg.user and band.age(st.time) < 600 then
+        and type(st.user) == "string" and st.user ~= cfg.user and band.age(st.time) < 600
+        and not (st.done and band.age(st.time) > 30) then -- (a finished one seen only now, after a reload: its take came long ago)
       local parts = {}
       for _, n in pairs(st.notes) do
         if type(n.t) == "string" then parts[n.t] = parts[n.t] or {}; table.insert(parts[n.t], n) end

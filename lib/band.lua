@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.7.11", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.8.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -167,11 +167,14 @@ function band.song_dir(cfg, song) return cfg.root .. "/" .. song end
 function band.session_path(cfg, song) return band.song_dir(cfg, song) .. "/session.json" end
 function band.takes_dir(cfg, song, room) return band.song_dir(cfg, song) .. "/rooms/" .. room .. "/takes" end
 
+-- Newest publish first (the song you're working on now is at the top of the menu).
 function band.songs(cfg)
-  local out = {}
+  local out, when = {}, {}
   for _, d in ipairs(band.subdirs(cfg.root)) do
-    if reaper.file_exists(band.session_path(cfg, d)) then out[#out + 1] = d end
+    local s = reaper.file_exists(band.session_path(cfg, d)) and band.read_json(band.session_path(cfg, d))
+    if s then out[#out + 1], when[d] = d, s.published or "" end
   end
+  table.sort(out, function(x, y) if when[x] ~= when[y] then return when[x] > when[y] end return x < y end)
   return out
 end
 
@@ -224,7 +227,7 @@ end
 
 -- ---- rendering ------------------------------------------------------------------------------
 
-local RENDER_N = { "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_STARTPOS", "RENDER_ENDPOS", "RENDER_SRATE",
+local RENDER_N = { "RENDER_TAILMS", "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_STARTPOS", "RENDER_ENDPOS", "RENDER_SRATE",
   "RENDER_CHANNELS", "RENDER_TAILFLAG", "RENDER_ADDTOPROJ" }
 local RENDER_S = { "RENDER_FILE", "RENDER_PATTERN", "RENDER_FORMAT", "RENDER_FORMAT2" }
 -- Sink configs read back from REAPER 7.83 and patched: FLAC 24-bit level 5 ("calf", int bits, int level);
@@ -243,9 +246,41 @@ function band.render(n, s)
   for k, v in pairs(saved_s) do reaper.GetSetProjectInfo_String(0, k, v, true) end
 end
 
+-- ---- _trash: what was deleted or replaced stays recoverable; dated, so old files can be cleaned up ----------
+function band.to_trash(from_dir, to_dir, f)
+  reaper.RecursiveCreateDirectory(to_dir, 0)
+  os.remove(to_dir .. "/" .. f)
+  if not os.rename(from_dir .. "/" .. f, to_dir .. "/" .. f) then return false end
+  local idx = band.read_json(to_dir .. "/index.json") or {}
+  idx[f] = os.date("!%Y-%m-%d")
+  band.write_json(to_dir .. "/index.json", idx)
+  return true
+end
+-- Delete trash files older than `days` (by the date they went in). Returns how many went.
+function band.empty_trash(dir, days)
+  local idx = band.read_json(dir .. "/index.json") or {}
+  local y, m, d = os.date("!%Y-%m-%d"):match("(%d+)-(%d+)-(%d+)")
+  local today = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
+  local n = 0
+  for f, date in pairs(idx) do
+    local fy, fm, fd = date:match("(%d+)-(%d+)-(%d+)")
+    if fy and (today - os.time({ year = tonumber(fy), month = tonumber(fm), day = tonumber(fd), hour = 12 })) / 86400 >= days then
+      if os.remove(dir .. "/" .. f) or not reaper.file_exists(dir .. "/" .. f) then idx[f] = nil; n = n + 1 end
+    end
+  end
+  band.write_json(dir .. "/index.json", idx)
+  return n
+end
+
+function band.track_has_fx(tr)
+  for f = 0, reaper.TrackFX_GetCount(tr) - 1 do if reaper.TrackFX_GetEnabled(tr, f) then return true end end
+  return false
+end
+
 -- ---- items, tracks, P_EXT tags --------------------------------------------------------------
 
 function band.track_ext(tr, key) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. key, "", false)) end
+function band.set_track_ext(tr, key, v) reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. key, v, true) end
 function band.item_ext(it, key) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:" .. key, "", false)) end
 function band.set_item_ext(it, key, v) reaper.GetSetMediaItemInfo_String(it, "P_EXT:" .. key, v, true) end
 function band.take_ext(tk, key) return select(2, reaper.GetSetMediaItemTakeInfo_String(tk, "P_EXT:" .. key, "", false)) end

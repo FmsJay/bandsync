@@ -152,6 +152,13 @@ function recall.describe(e)
     return string.format("%s%s: %s%s", e.was and (e.was .. " renamed to ") or "", tostring(e.track),
       (e.mute or 0) > 0 and "muted" or "unmuted", (e.solo or 0) > 0 and ", soloed" or "")
   elseif e.kind == "driver" then return "took control from " .. tostring(e.from)
+  elseif e.kind == "start" then return string.format("%s together from %.2f s", e.rec and "recorded" or "played", e.pos or 0)
+  elseif e.kind == "stop" then return "stopped together"
+  elseif e.kind == "note" then return "note" .. (e.take and (" on " .. whose) or string.format(" at %.2f s", e.pos or 0)) .. ": " .. tostring(e.text)
+  elseif e.kind == "like" then return "liked " .. whose .. on
+  elseif e.kind == "shift" then
+    return string.format("%s %.2f s at %.2f s (every track)", (e.len or 0) > 0 and "inserted" or "removed", math.abs(e.len or 0), e.at or 0)
+  elseif e.kind == "solo" then return "Solo edit version" .. (e.note and (": " .. e.note) or "") .. string.format(" (%d change(s))", #(e.changes or {}))
   elseif e.kind == "timeline" then
     local t, changes = e.tempo or {}, {}
     for i, m in ipairs(t) do
@@ -250,7 +257,7 @@ function recall.restore_state(proj, cfg, song, room, st, label)
         if dest then reaper.MoveMediaItemToTrack(it, dest) end
       end
       reaper.SetMediaItemInfo_Value(it, "D_POSITION", t.pos)
-      reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len)
+      reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len + (tonumber(sync.ext(proj, sync.TAILS, w.id)) or 0))
       reaper.SetMediaItemInfo_Value(it, "B_MUTE", t.mute or 0)
       reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", band.base_offs(tk) + (t.offs or 0))
       if t.lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", t.lane) end

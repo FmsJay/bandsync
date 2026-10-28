@@ -8,6 +8,8 @@ local band = require("band")
 local sync = require("sync")
 local recall = require("recall")
 local status = require("status")
+local tools = require("tools")
+local together = require("together")
 
 if not reaper.APIExists("ImGui_GetBuiltinPath") then
   return band.msg("The panel needs ReaImGui. Install it with ReaPack (Extensions > ReaPack > Browse packages: ReaImGui), then run this again.")
@@ -49,6 +51,11 @@ end
 local entries, groups, hist_at = {}, {}, 0
 local function refresh_history()
   entries = recall.entries(cfg, b.song, b.room)
+  local ok, solo_list = pcall(require("solo").history, cfg, b.song)
+  for _, h in ipairs(ok and solo_list or {}) do
+    entries[#entries + 1] = { kind = "solo", time = h.time or "", id = "solo-" .. h.file, user = h.user or "?", note = h.note, changes = h.changes }
+  end
+  table.sort(entries, function(a, x) return (a.time .. a.id) < (x.time .. x.id) end)
   groups = recall.groups(entries, view.session and view.session.host)
 end
 local utc_now = os.date("!*t")
@@ -88,6 +95,9 @@ local function section_sync()
     if running then reaper.SetExtState(band.SECTION, "stop " .. key, "1", false) -- Live sync sees it on its next tick
     else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); action("Live sync") end
   end
+  local auto = tools.autostart_on()
+  local ach, av = ImGui.Checkbox(ctx, "Start Live sync with REAPER (for sessions where it was running)", auto)
+  if ach and not tools.set_autostart(av, dir) then band.msg("Couldn't write Scripts/__startup.lua") end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
   local changed, v = ImGui.Checkbox(ctx, "Hold sync (try things; your changes go out once, when you release)", hold)
   if changed then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
@@ -128,11 +138,24 @@ local function section_control()
     if ImGui.SmallButton(ctx, "Take control") then action("Take control") end
   end
   local owned = {}
-  for name, c in pairs(who.tracks) do owned[#owned + 1] = string.format("track %s: %s", c.name or name, c.user) end
-  for name, c in pairs(who.regions) do owned[#owned + 1] = string.format("region %s: %s", c.name or name, c.user) end
-  table.sort(owned)
+  for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
+  for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end
+  table.sort(owned, function(x, y) return x[1] < y[1] end)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
-  for _, o in ipairs(owned) do ImGui.BulletText(ctx, o) end
+  for i, o in ipairs(owned) do
+    if o[2] then -- mine: let go of just this one
+      if ImGui.SmallButton(ctx, "x##rel" .. i) then
+        local c = sync.my_claims(cfg, b.song, b.room)
+        local keep = {}
+        for _, n in ipairs(c[o[2]] or {}) do if n:lower() ~= o[3]:lower() then keep[#keep + 1] = n end end
+        c[o[2]] = keep
+        sync.set_claims(cfg, b.song, b.room, c)
+      end
+      ImGui.SetItemTooltip(ctx, "Release it: it follows the driver again.")
+      ImGui.SameLine(ctx)
+    end
+    ImGui.BulletText(ctx, o[1])
+  end
   if ImGui.Button(ctx, "Claim selected tracks") then
     local list = {}
     for i = 0, reaper.CountSelectedTracks(proj) - 1 do list[#list + 1] = part_name(reaper.GetSelectedTrack(proj, i)) end
@@ -453,6 +476,167 @@ local function section_actions()
     if i > 1 then ImGui.SameLine(ctx) end
     if ImGui.Button(ctx, name) then action(name) end
   end
+  if ImGui.Button(ctx, "Empty old trash") then
+    local n = band.empty_trash(sync.room_dir(cfg, b.song, b.room) .. "/_trash", 30)
+    band.log(string.format("emptied %s file(s) from this room's trash (in it for over 30 days)", tostring(n)))
+  end
+  ImGui.SetItemTooltip(ctx, "Deleted takes and replaced revisions wait in the room's _trash; this removes the ones older than 30 days, on everyone's machine.")
+end
+
+-- ---- Together: start/stop at once, notes and likes, live ideas, and the tools (lib/tools.lua) ----------------
+local countin, lag, note_text, bars = 1, 0, "", 1
+local function sel_take()
+  local it = reaper.GetSelectedMediaItem(proj, 0)
+  local tk = it and reaper.GetActiveTake(it)
+  if not tk then return nil end
+  local id = band.take_id(tk) or (band.take_ext(tk, "band_dry") ~= "" and band.take_ext(tk, "band_dry")) or nil
+  return id, it, tk
+end
+local function go(ev) -- post it for the band, and fire it here through our own Live sync
+  ev.at = math.floor(os.time()) + together.LEAD
+  sync.post(cfg, b.song, b.room, ev)
+  ev.user = cfg.user
+  reaper.SetExtState(band.SECTION, "transport " .. tostring(proj), band.json_encode(ev), false)
+end
+local function section_together()
+  ImGui.SeparatorText(ctx, "Start together")
+  ImGui.SetNextItemWidth(ctx, 80)
+  local _, c = ImGui.InputInt(ctx, "count-in bars", countin); countin = math.max(0, c)
+  ImGui.SameLine(ctx)
+  ImGui.SetNextItemWidth(ctx, 80)
+  local _, l = ImGui.InputDouble(ctx, "listeners' lag (s)", lag, 0, 0, "%.2f"); lag = math.max(0, l)
+  ImGui.SetItemTooltip(ctx, "Play along: the others start this much after you, so they hear you in time (one NINJAM interval). 0 otherwise.")
+  local pos = reaper.GetCursorPositionEx(proj)
+  local function start(rec)
+    go({ type = "start", rec = rec or nil, pos = pos, countin = together.bars_before(proj, pos, countin), lag = lag, lead = cfg.user })
+  end
+  if ImGui.Button(ctx, "Play together") then start(false) end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Record together") then start(true) end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Stop together") then go({ type = "stop" }) end
+  ImGui.TextDisabled(ctx, string.format("From the edit cursor (%.2f s), %d s after the click, on every machine running Live sync.", pos, together.LEAD))
+end
+
+local notes_at, notes = 0, {}
+local function section_notes()
+  ImGui.SeparatorText(ctx, "Notes and likes")
+  ImGui.SetNextItemWidth(ctx, -1)
+  local _, t = ImGui.InputTextWithHint(ctx, "##note", "a note for the band (e.g. 'try the chorus an octave up')", note_text, ImGui.InputTextFlags_None)
+  note_text = t
+  local id, it, tk = sel_take()
+  local function mark(kind, text)
+    local pos = reaper.GetCursorPositionEx(proj)
+    local ev = { type = kind, text = text, take = id, pos = pos, track = it and sync.base_name(select(2, reaper.GetTrackName(reaper.GetMediaItem_Track(it)))) or nil }
+    sync.post(cfg, b.song, b.room, ev)
+    if tk then -- the same marker everyone else gets
+      local at = pos - reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS")
+      reaper.SetTakeMarker(tk, -1, (kind == "like" and "+1 " or "") .. cfg.user .. (text and (": " .. text) or ""), math.max(0, at))
+    end
+    notes_at = 0
+  end
+  ImGui.BeginDisabled(ctx, note_text == "")
+  if ImGui.Button(ctx, id and "Note on selected take" or "Note at cursor") then mark("note", note_text); note_text = "" end
+  ImGui.EndDisabled(ctx)
+  ImGui.SameLine(ctx)
+  ImGui.BeginDisabled(ctx, not id)
+  if ImGui.Button(ctx, "Like selected take") then mark("like", nil) end
+  ImGui.EndDisabled(ctx)
+  if reaper.time_precise() - notes_at > 4 then
+    notes_at, notes = reaper.time_precise(), {}
+    for _, e in ipairs(recall.entries(cfg, b.song, b.room)) do
+      if e.kind == "note" or e.kind == "like" then table.insert(notes, 1, e) end
+    end
+  end
+  if ImGui.BeginChild(ctx, "notes", 0, 90, ImGui.ChildFlags_Borders) then
+    if #notes == 0 then ImGui.TextDisabled(ctx, "No notes yet.") end
+    for i, e in ipairs(notes) do
+      if i > 30 then break end
+      if ImGui.Selectable(ctx, string.format("%s  %s: %s##n%d", local_time(e.time):sub(7), e.user, recall.describe(e), i), false) then
+        local it2 = e.take and band.find_take(proj, e.take)
+        reaper.SetEditCurPos2(proj, e.pos or (it2 and reaper.GetMediaItemInfo_Value(it2, "D_POSITION")) or 0, true, false)
+      end
+    end
+    ImGui.EndChild(ctx)
+  end
+end
+
+local ideas_at, ideas = 0, {}
+local function section_ideas()
+  if reaper.time_precise() - ideas_at > 2 then ideas_at, ideas = reaper.time_precise(), tools.ideas(proj) end
+  if next(ideas) == nil then return end
+  ImGui.SeparatorText(ctx, "Live ideas (what you heard in Play along, until the real takes arrive)")
+  for who_, n in pairs(ideas) do
+    ImGui.Text(ctx, string.format("%s: %d", who_, n))
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Dismiss##" .. who_) then tools.dismiss_ideas(proj, who_); ideas_at = 0 end
+  end
+  if ImGui.Button(ctx, "Keep selected") then band.log(tools.keep_ideas(proj) .. " idea(s) kept as your own items"); ideas_at = 0 end
+  ImGui.SetItemTooltip(ctx, "The selected placeholders stay for good (no take replaces them). Send them with Send takes if the band should have them.")
+end
+
+local dry_at, dry_tracks = 0, {}
+local function section_tools()
+  ImGui.SeparatorText(ctx, "Takes")
+  if ImGui.Button(ctx, "Take back my last take") then
+    local id, why = tools.take_back(proj, cfg, true)
+    if not id then band.msg(why)
+    elseif reaper.MB("Take back " .. id .. "? It goes from everyone's session (into the room's trash).", "BandSync", 4) == 6 then
+      tools.take_back(proj, cfg)
+    end
+  end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Print selected MIDI as audio") then
+    local n, why = tools.print_audio(proj, cfg, b)
+    if n then band.log(n .. " MIDI item(s) printed to audio tracks") else band.msg(why) end
+  end
+  ImGui.SetItemTooltip(ctx, "Records your synth/drum part through its instrument and FX onto '<track> audio' (the MIDI stays, muted).")
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Use newest Solo edit mix") then
+    local mix, h = tools.solo_mix(cfg, b.song)
+    if not mix then band.msg(h) else band.log(string.format("levels/pans/mutes of %d track(s) from %s's Solo edit version", tools.apply_mix(proj, mix), tostring(h.user))) end
+  end
+  ImGui.SeparatorText(ctx, "Arrangement (driver)")
+  local driving = view.driver == cfg.user
+  ImGui.BeginDisabled(ctx, not driving)
+  ImGui.SetNextItemWidth(ctx, 80)
+  local _, nb = ImGui.InputInt(ctx, "bars at the edit cursor", bars); bars = math.max(1, nb)
+  local function shift(sign)
+    local pos = reaper.GetCursorPositionEx(proj)
+    local num, den = reaper.TimeMap_GetTimeSigAtTime(proj, pos)
+    local len = reaper.TimeMap2_QNToTime(proj, reaper.TimeMap2_timeToQN(proj, pos) + bars * num * 4 / den) - pos
+    local ok, why = sync.shift(proj, pos, sign * len)
+    if not ok then return band.msg(why) end
+    sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = sign * len })
+  end
+  if ImGui.Button(ctx, "Insert bars") then shift(1) end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Remove bars") then shift(-1) end
+  ImGui.EndDisabled(ctx)
+  ImGui.SetItemTooltip(ctx, driving and "Moves everything after the cursor (takes, tempo, markers) on every machine." or "Only the driver (take control first).")
+  ImGui.SeparatorText(ctx, "Dry mode (a bandmate's dry recording through their plug-ins)")
+  if reaper.time_precise() - dry_at > 3 then
+    dry_at, dry_tracks = reaper.time_precise(), {}
+    for i = 0, reaper.CountTracks(proj) - 1 do
+      local tr = reaper.GetTrack(proj, i)
+      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+        local tk = reaper.GetActiveTake(reaper.GetTrackMediaItem(tr, j))
+        local id = tk and (band.take_ext(tk, "band_take") ~= "" and band.take_ext(tk, "band_take") or band.take_ext(tk, "band_dry"))
+        if id and id ~= "" then dry_tracks[#dry_tracks + 1] = tr; break end
+      end
+    end
+  end
+  if #dry_tracks == 0 then ImGui.TextDisabled(ctx, "No bandmate takes here yet.") end
+  for i, tr in ipairs(dry_tracks) do
+    if reaper.ValidatePtr2(proj, tr, "MediaTrack*") then
+      local on = band.track_ext(tr, "band_drymode") ~= ""
+      local ch, v = ImGui.Checkbox(ctx, select(2, reaper.GetTrackName(tr)) .. "##dry" .. i, on)
+      if ch then
+        local msg, why = tools.dry_mode(proj, cfg, b, tr, v)
+        if msg then band.log(msg) else band.msg(why) end
+      end
+    end
+  end
 end
 
 local function frame()
@@ -482,6 +666,13 @@ local function frame()
     end
     if ImGui.BeginTabItem(ctx, "Solo edit") then
       section_solo()
+      ImGui.EndTabItem(ctx)
+    end
+    if ImGui.BeginTabItem(ctx, "Together") then
+      section_together()
+      section_notes()
+      section_ideas()
+      section_tools()
       ImGui.EndTabItem(ctx)
     end
     if ImGui.BeginTabItem(ctx, "Live") then

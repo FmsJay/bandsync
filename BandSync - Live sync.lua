@@ -10,6 +10,9 @@ package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 local sync = require("sync")
 local live = require("live")
+local together = require("together")
+local transport -- a pending start/stop (lib/together.lua)
+local clip_said -- when we last warned about the master clipping
 
 local cfg = band.settings()
 if not cfg then return end
@@ -47,6 +50,26 @@ local function ready(path)
   return ok
 end
 
+-- what sync itself just placed or updated is the band's state, not a local edit (else it'd be sent, or put back)
+local function remember(id)
+  local hit = band.take_index(proj)[id:lower()]
+  if hit then sync.remember(proj, id, hit[1], hit[2]) end
+end
+
+-- someone else's wet print carries `tail` seconds of reverb/delay past its end: our item is that much longer
+-- (returns the path for update_take, or a copy of t with the longer length for place_take)
+local function with_tail(t, path)
+  sync.setext(proj, sync.TAILS, t.id, tostring(t.tail or 0))
+  if path then
+    local c = {}
+    for k, v in pairs(t) do c[k] = v end
+    c.len = t.len + (t.tail or 0)
+    return c
+  end
+  t.len = t.len + (t.tail or 0)
+  return nil
+end
+
 local function import(room)
   local tdir = band.takes_dir(cfg, b.song, room)
   for _, f in ipairs(band.files(tdir, ".json")) do
@@ -77,8 +100,8 @@ local function import(room)
       elseif state == "full" and rev > held then -- reprinted (FX/volume/note change): update in place
         if ready(full) and (not dry or ready(dry)) then
           reaper.Undo_BeginBlock2(proj)
-          local ok = band.update_take(proj, t, full, dry)
-          if ok then place_midi() end
+          local ok = band.update_take(proj, t, (with_tail(t) or full), dry)
+          if ok then place_midi(); remember(t.id) end
           reaper.Undo_EndBlock2(proj, "BandSync: updated take from " .. t.user, -1)
           if ok then
             sync.setext(proj, sync.REV, t.id, tostring(rev))
@@ -93,8 +116,8 @@ local function import(room)
         elseif state == "" and prev and ready(prev) then want, path = "preview", prev end
         if want then
           reaper.Undo_BeginBlock2(proj)
-          local ok = band.place_take(proj, t, path, mode, want == "full" and dry or nil)
-          if ok then place_midi() end
+          local ok = band.place_take(proj, with_tail(t, path), path, mode, want == "full" and dry or nil)
+          if ok then place_midi(); remember(t.id) end
           reaper.Undo_EndBlock2(proj, "BandSync: " .. want .. " take from " .. t.user, -1)
           if ok then
             band.set_take_state(proj, t.id, want)
@@ -191,6 +214,9 @@ end
 -- The panel stops us with a flag (re-running the action would raise REAPER's task-control dialog), and sees
 -- we're alive from a heartbeat; both live in non-persistent ExtState so the project isn't marked modified.
 local key = tostring(proj)
+-- BandSync - Autostart.lua restarts us for this project after REAPER restarts, until the person stops us
+local autokey = "autosync " .. (select(2, reaper.EnumProjects(-1)) or ""):lower()
+if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
 local function tick()
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end -- project closed: stop
   local now_b = band.binding(proj)
@@ -201,9 +227,51 @@ local function tick()
   if reaper.GetExtState(band.SECTION, "stop " .. key) ~= "" then
     reaper.DeleteExtState(band.SECTION, "stop " .. key, false)
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
+    reaper.DeleteExtState(band.SECTION, autokey, true)
     return band.log("live sync stopped for '" .. b.song .. "'")
   end
   reaper.SetExtState(band.SECTION, "live " .. key, tostring(reaper.time_precise()), false)
+  -- the band's takes add up on your master: say so when it clips (at most every 30 s)
+  if reaper.EnumProjects(-1) == proj and reaper.GetPlayState() & 1 == 1 then
+    local m = reaper.GetMasterTrack(proj)
+    local peak = math.max(reaper.Track_GetPeakInfo(m, 0), reaper.Track_GetPeakInfo(m, 1))
+    if peak >= 0.999 and reaper.time_precise() - (clip_said or -1e9) > 30 then
+      clip_said = reaper.time_precise()
+      band.log(string.format("your master is clipping at %.2f s: pull the master (or the loudest tracks) down", reaper.GetPlayPosition2Ex(proj)))
+    end
+  end
+  together.tick()
+  local tjson = reaper.GetExtState(band.SECTION, "transport " .. key) -- a start/stop from the panel or the band
+  if tjson ~= "" then
+    reaper.DeleteExtState(band.SECTION, "transport " .. key, false)
+    transport = band.json_decode(tjson) or transport
+  end
+  if transport then
+    local tnow = together.now()
+    local fire = transport.type == "stop" and (transport.at or 0) or together.plan(transport, cfg.user, nil)
+    if tnow - fire > 30 then -- arrived long after the fact (offline, sync stalled): don't start a song out of nowhere
+      band.log(string.format("missed a %s from %s (%.0f s ago)", transport.type, tostring(transport.user), tnow - fire))
+      transport = nil
+    elseif tnow >= fire then
+      if transport.type == "stop" then
+        reaper.OnStopButtonEx(proj)
+        band.log("stopped together (" .. tostring(transport.user) .. ")")
+      else
+        local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone
+        if reaper.GetPlayStateEx(proj) ~= 0 then reaper.OnStopButtonEx(proj) end
+        reaper.SetEditCurPos2(proj, from, false, false)
+        if transport.rec then
+          reaper.SelectProjectInstance(proj)
+          reaper.Main_OnCommand(1013, 0) -- Transport: Record (the active project)
+        else
+          reaper.OnPlayButtonEx(proj)
+        end
+        band.log(string.format("%s together from %.2f s (%s; %.0f ms after the planned moment)", transport.rec and "recording" or "playing",
+          from, tostring(transport.user), (tnow - fire) * 1000))
+      end
+      transport = nil
+    end
+  end
   local st = reaper.GetPlayStateEx(proj)
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end

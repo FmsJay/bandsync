@@ -16,6 +16,8 @@ local sync = {
   MIDIHASH = "BandSync.midi",   -- id -> hash of the MIDI copy's notes as last seen/applied
   SNAPQN = "BandSync.snapqn",   -- id -> position in quarter notes as last seen/applied (tells tempo moves from edits)
   MIN_LEN = 0.5,                -- shorter items are recording slivers, not takes
+  TAIL = 2,                     -- seconds of FX tail kept past the end of a wet print
+  TAILS = "BandSync.tail",      -- id -> seconds of tail this project's print of it carries (items are that much longer)
 }
 
 local function ext(proj, sec, key) return select(2, reaper.GetProjExtState(proj, sec, key)) end
@@ -23,6 +25,55 @@ local function setext(proj, sec, key, v) reaper.SetProjExtState(proj, sec, key, 
 sync.ext, sync.setext = ext, setext
 
 function sync.room_dir(cfg, song, room) return band.song_dir(cfg, song) .. "/rooms/" .. room end
+
+-- Events anyone may send, whoever drives or owns what: they change no take, track or timeline.
+sync.ANYONE = { start = true, stop = true, note = true, like = true }
+-- A take's author, from its id (<user>-YYYYMMDD-HHMMSSZ-n), normalised like user names in ids.
+function sync.author(id) local who = (id or ""):match("^(.-)%-%d+%-%d+Z"); return who and who:lower():gsub("_", " ") end
+function sync.author_of(user) return (user or ""):lower():gsub("_", " ") end
+
+-- ---- state chunks: a top-level block (e.g. <FXCHAIN ... >) of a track's chunk -----------------------------
+local function chunk_lines(s)
+  local t = {}
+  for l in ((s or "") .. "\n"):gmatch("(.-)\r?\n") do t[#t + 1] = l end
+  if t[#t] == "" then t[#t] = nil end
+  return t
+end
+local function find_block(L, tag)
+  local depth, first = 0, nil
+  for i, l in ipairs(L) do
+    local t = l:match("^%s*(.-)%s*$")
+    if t:sub(1, 1) == "<" then
+      depth = depth + 1
+      if depth == 2 and not first and (t == "<" .. tag or t:sub(1, #tag + 2) == "<" .. tag .. " ") then first = i end
+    elseif t == ">" then
+      if first and depth == 2 then return first, i end
+      depth = depth - 1
+    end
+  end
+end
+-- The block's text (with its <TAG and > lines), or nil. Pure.
+function sync.chunk_block(chunk, tag)
+  local L = chunk_lines(chunk)
+  local a, z = find_block(L, tag)
+  return a and table.concat(L, "\n", a, z) or nil
+end
+-- The chunk with that block replaced by `block` (inserted before the track's end if absent; removed if nil). Pure.
+function sync.chunk_set_block(chunk, tag, block)
+  local L = chunk_lines(chunk)
+  local a, z = find_block(L, tag)
+  local out = {}
+  if a then
+    for i = 1, a - 1 do out[#out + 1] = L[i] end
+    if block then out[#out + 1] = block end
+    for i = z + 1, #L do out[#out + 1] = L[i] end
+  else
+    for i = 1, #L - 1 do out[#out + 1] = L[i] end
+    if block then out[#out + 1] = block end
+    out[#out + 1] = L[#L]
+  end
+  return table.concat(out, "\n")
+end
 
 -- ---- the timeline: tempo map and markers/regions ---------------------------------------------------
 -- The driver's tempo or marker changes travel as one "timeline" event; every machine applies the same map and
@@ -53,6 +104,69 @@ function sync.audio_follow_tempo(proj)
       band.follow_tempo(it, tk)
     end
   end
+end
+
+-- ---- arrangement: insert or remove time for everyone (the driver's edit; claims don't block it) ---------
+-- Insert `len` seconds at `at` (len > 0), or remove [at, at - len) (len < 0): items, tempo markers, markers and
+-- regions after it move; removed time's items, tempo markers and markers go. Stems and live placeholders stay.
+-- Refuses when a take crosses an edit point (split it there first), so every machine does exactly the same.
+-- Returns true, or nil + why.
+function sync.shift(proj, at, len)
+  local cut_to = len < 0 and (at - len) or at
+  local function skip(it)
+    local tr = reaper.GetMediaItem_Track(it)
+    return band.track_ext(tr, "band_stem") ~= "" or band.item_ext(it, "band_live") ~= ""
+  end
+  local items = {}
+  for i = 0, reaper.CountMediaItems(proj) - 1 do
+    local it = reaper.GetMediaItem(proj, i)
+    if not skip(it) then
+      local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+      local e = p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+      for _, x in ipairs({ at, cut_to }) do
+        if p < x - 1e-6 and e > x + 1e-6 then
+          local tk = reaper.GetActiveTake(it)
+          return nil, string.format("'%s' on %s crosses %.2f s: split it there first",
+            tk and (band.take_id(tk) or band.take_ext(tk, "band_midi")) or "an item", track_name(it), x)
+        end
+      end
+      items[#items + 1] = { it, p, e }
+    end
+  end
+  for _, x in ipairs(items) do
+    local it, p, e = x[1], x[2], x[3]
+    if len < 0 and p >= at - 1e-6 and e <= cut_to + 1e-6 then
+      reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(it), it)
+    elseif p >= cut_to - 1e-6 then
+      reaper.SetMediaItemInfo_Value(it, "D_POSITION", p + len)
+    end
+  end
+  local tempo = band.capture_tempo(proj)
+  local nt = {}
+  for _, m in ipairs(tempo) do
+    if m.time < at - 1e-6 or m.time == 0 then nt[#nt + 1] = m
+    elseif m.time >= cut_to - 1e-6 then m.time = m.time + len; nt[#nt + 1] = m end
+  end
+  local marks, nm = band.capture_markers(proj), {}
+  for _, m in ipairs(marks) do
+    local p, e = m.pos, m["end"]
+    if len < 0 and p >= at - 1e-6 and p < cut_to - 1e-6 and not (m.region and e > cut_to) then -- inside the cut: gone
+    else
+      if p >= cut_to - 1e-6 then p = p + len end
+      if m.region then
+        if e >= cut_to - 1e-6 then e = e + len elseif len < 0 and e > at then e = at end
+        if len > 0 and m.pos < at and m["end"] > at then e = m["end"] + len end -- a region around the insert grows
+      end
+      m.pos, m["end"] = p, e
+      nm[#nm + 1] = m
+    end
+  end
+  band.apply_tempo(proj, nt)
+  band.apply_markers(proj, nm)
+  setext(proj, band.SECTION, "timeline", timeline_sig(proj))
+  sync.resnap(proj)
+  reaper.UpdateArrange()
+  return true
 end
 
 -- Everything REAPER moved for a tempo change is where it should be: take new snapshots, so none of it is sent
@@ -189,7 +303,9 @@ function sync.midi_seen(proj, id, tk) setext(proj, sync.MIDIHASH, id, select(2, 
 local function fxhash(it, tk, wet)
   local tr = reaper.GetMediaItem_Track(it)
   local parts = { reaper.GetMediaItemInfo_Value(it, "D_VOL"), reaper.GetMediaItemTakeInfo_Value(tk, "D_VOL"),
-    reaper.GetMediaItemInfo_Value(it, "D_FADEINLEN"), reaper.GetMediaItemInfo_Value(it, "D_FADEOUTLEN") }
+    reaper.GetMediaItemInfo_Value(it, "D_FADEINLEN"), reaper.GetMediaItemInfo_Value(it, "D_FADEOUTLEN"),
+    reaper.GetMediaItemTakeInfo_Value(tk, "D_PITCH"), reaper.GetMediaItemTakeInfo_Value(tk, "B_PPITCH") }
+  if not reaper.TakeIsMIDI(tk) then parts[#parts + 1] = reaper.GetMediaItemTakeInfo_Value(tk, "D_PLAYRATE") end
   local function fx(count, name, en, np, pv, obj)
     for f = 0, count(obj) - 1 do
       parts[#parts + 1] = select(2, name(obj, f)) .. (en(obj, f) and "+" or "-")
@@ -204,8 +320,14 @@ local function fxhash(it, tk, wet)
     parts[#parts + 1] = string.format("%.4f", reaper.GetMediaItemInfo_Value(it, "D_LENGTH"))
   end
   if wet then
-    parts[#parts + 1] = reaper.GetMediaTrackInfo_Value(tr, "D_VOL") .. "/" .. reaper.GetMediaTrackInfo_Value(tr, "D_PAN") ..
-      "/" .. reaper.GetMediaTrackInfo_Value(tr, "I_FXEN")
+    parts[#parts + 1] = reaper.GetMediaTrackInfo_Value(tr, "I_FXEN") -- fader/pan aren't printed (shared mix)
+    for e = 0, reaper.CountTrackEnvelopes(tr) - 1 do -- automation of FX parameters is printed
+      local env = reaper.GetTrackEnvelope(tr, e)
+      for p = 0, reaper.CountEnvelopePoints(env) - 1 do
+        local _, t, v, shape = reaper.GetEnvelopePoint(env, p)
+        parts[#parts + 1] = string.format("%.4f:%.4f:%d", t, v, shape)
+      end
+    end
     fx(reaper.TrackFX_GetCount, reaper.TrackFX_GetFXName, reaper.TrackFX_GetEnabled, reaper.TrackFX_GetNumParams, reaper.TrackFX_GetParamNormalized, tr)
   end
   local s, h = table.concat(parts, ";"), 5381
@@ -295,6 +417,13 @@ function sync.own_takes(proj, opts)
       local function add(tk)
         if not tk or band.take_ext(tk, "band_take") ~= "" or band.take_ext(tk, "band_dry") ~= "" or band.take_ext(tk, "band_midi") ~= "" then return end
         if reaper.GetMediaItemInfo_Value(it, "D_LENGTH") < (opts.min_len or 0) then return end
+        if reaper.TakeIsMIDI(tk) and select(2, reaper.MIDI_CountEvts(tk)) == 0 then -- an empty MIDI recording isn't a take
+          if band.take_ext(tk, "band_empty") == "" then
+            band.log("an empty MIDI take on " .. track_name(it) .. " wasn't sent")
+            band.set_take_ext(tk, "band_empty", "1")
+          end
+          return
+        end
         if opts.unsent then
           if band.take_ext(tk, "band_sent") ~= "" or band.take_ext(tk, "band_base") ~= "" then return end
           -- the same audio at the same place went out before, unless that take has since been deleted
@@ -336,7 +465,7 @@ local function selection(proj)
 end
 
 -- Render item `it` (its active take, which must be selected alone) to <out>/<name>.flac (+ .opus).
-local function render_item(it, take, out, name, wet)
+local function render_item(it, take, out, name, wet, tail)
   local tr = reaper.GetMediaItem_Track(it)
   local nch = reaper.GetMediaSourceNumChannels(reaper.GetMediaItemTake_Source(take))
   do
@@ -350,11 +479,11 @@ local function render_item(it, take, out, name, wet)
     reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 0)
     reaper.SetMediaItemInfo_Value(it, "B_MUTE", 0)
     if lane then reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. lane, 1) end
-    if not wet then
-      reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", 0)
-      reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 1)
-      reaper.SetMediaTrackInfo_Value(tr, "D_PAN", 0)
-    end
+    if not wet then reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", 0) end
+    -- the track's fader and pan aren't printed: they travel as the shared mix (track events), so moving a fader
+    -- never re-renders anything, and everyone's mirror track carries the same setting
+    reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 1)
+    reaper.SetMediaTrackInfo_Value(tr, "D_PAN", 0)
     -- the print is this item only: whatever else feeds the track (a synth routed in to record it) stays out of it
     -- (2026-10-28: Keys/Lead prints carried their source synth too, so they played twice on everyone else's machine)
     local receives = {}
@@ -363,7 +492,8 @@ local function render_item(it, take, out, name, wet)
       reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", 1)
     end
     band.render({ RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = 0, RENDER_CHANNELS = wet and 2 or math.min(nch, 2),
-      RENDER_TAILFLAG = 0, RENDER_ADDTOPROJ = 0 }, -- &32: selected media items, through their track
+      RENDER_TAILFLAG = tail and 16 or 0, RENDER_TAILMS = tail and math.floor(tail * 1000) or 0, -- 16: tail for selected items
+      RENDER_ADDTOPROJ = 0 }, -- &32: selected media items, through their track
       { RENDER_FILE = out, RENDER_PATTERN = name, RENDER_FORMAT = band.FLAC, RENDER_FORMAT2 = band.OPUS })
     for _, k in ipairs(keys) do reaper.SetMediaTrackInfo_Value(tr, k, saved[k]) end
     for r, m in pairs(receives) do reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", m) end
@@ -395,7 +525,9 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
   reaper.SelectAllMediaItems(proj, false)
   reaper.SetMediaItemSelected(it, true)
   local wet = mode ~= "dry" or reaper.TakeIsMIDI(take) -- MIDI without its instrument is silence: always print it wet
-  local main = render_item(it, take, out, id .. suffix, wet)
+  -- reverbs and delays ring past the item's end: the wet print keeps 2 s of that (receivers extend the item by it)
+  local tail = wet and band.track_has_fx(tr) and sync.TAIL or nil
+  local main = render_item(it, take, out, id .. suffix, wet, tail)
   -- a MIDI take's dry is its notes (they travel as .midibuf); rendering it without the instrument is silence
   local dry = mode == "both" and not reaper.TakeIsMIDI(take) and render_item(it, take, out, id .. "-dry" .. suffix, false)
   reaper.SetActiveTake(playing)
@@ -410,7 +542,7 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
     sent = os.date("!%Y-%m-%dT%H:%M:%SZ"), full = id .. suffix .. ".flac", print = mode, wet = wet,
     group = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)), -- passes of one item stay one item
     lane = lane, lane_name = lane and select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, "", false)) or nil,
-    printed_by = cfg.user,
+    printed_by = cfg.user, tail = tail,
   }
   local old = rev > 1 and band.read_json(takes .. "/" .. id .. ".json")
   if twin and old then -- printed from a MIDI copy: still the original's take (whose, which track, lane, item)
@@ -444,9 +576,16 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
     local trash = sync.room_dir(cfg, b.song, b.room) .. "/_trash"
     reaper.RecursiveCreateDirectory(trash, 0)
     for _, f in ipairs({ id .. old .. ".flac", id .. old .. ".opus", id .. "-dry" .. old .. ".flac", id .. old .. ".midibuf" }) do
-      os.remove(trash .. "/" .. f)
-      os.rename(takes .. "/" .. f, trash .. "/" .. f)
+      if reaper.file_exists(takes .. "/" .. f) then band.to_trash(takes, trash, f) end
     end
+  end
+  local ok_c, chunk = reaper.GetTrackStateChunk(tr, "", false)
+  local chain = ok_c and sync.chunk_block(chunk, "FXCHAIN")
+  if chain then -- the track's plug-ins with their settings, for dry mode on other machines (lib/tools.lua)
+    local rel = "fx/" .. (cfg.user:gsub("[^%w%-_]", "_")) .. "/" .. (base_name(m.track):gsub("[^%w%-_ ]", "_")) .. ".fxchain"
+    reaper.RecursiveCreateDirectory(sync.room_dir(cfg, b.song, b.room) .. "/" .. rel:match("^(.*)/"), 0)
+    band.write_atomic(sync.room_dir(cfg, b.song, b.room) .. "/" .. rel, chain)
+    m.fxchain = rel
   end
   band.write_json(takes .. "/" .. id .. ".json", m) -- one manifest per take, rewritten for each revision
   band.copy_atomic(main .. ".flac", takes .. "/" .. m.full)
@@ -557,7 +696,7 @@ function sync.trash(cfg, song, room, id)
   reaper.RecursiveCreateDirectory(to, 0)
   for _, f in ipairs(band.files(from)) do
     if f:lower():sub(1, #id + 1) == (id .. "."):lower() or f:lower():sub(1, #id + 1) == (id .. "-"):lower() then
-      os.rename(from .. "/" .. f, to .. "/" .. f)
+      band.to_trash(from, to, f)
     end
   end
 end
@@ -630,6 +769,8 @@ function sync.audible(tr)
       if id then
         any = true
         if tk == active and lane_on then ids[#ids + 1] = id:lower() end
+      elseif tk == active and lane_on and band.take_ext(tk, "band_dry") ~= "" then -- dry mode plays the dry twin: same take
+        ids[#ids + 1] = band.take_ext(tk, "band_dry"):lower()
       end
     end
   end
@@ -659,7 +800,10 @@ local function apply_plays(proj, trackname, list, local_only)
           local id = band.take_id(tk)
           if id then
             lane_band[lane] = true
-            if want[id:lower()] then lane_want[lane] = true; reaper.SetActiveTake(tk) end
+            if want[id:lower()] then
+              lane_want[lane] = true
+              reaper.SetActiveTake(sync.dry_mode_take(tr, it, tk) or tk)
+            end
           end
         end
       end
@@ -675,6 +819,16 @@ local function apply_plays(proj, trackname, list, local_only)
   return true
 end
 sync.set_plays = function(proj, trackname, list) return apply_plays(proj, trackname, list, true) end
+
+-- On a track in dry mode (lib/tools.lua), the dry twin of take tk plays instead of the print; nil otherwise.
+function sync.dry_mode_take(tr, it, tk)
+  if band.track_ext(tr, "band_drymode") ~= "1" then return nil end
+  local id = band.take_id(tk)
+  for k = 0, reaper.CountTakes(it) - 1 do
+    local t2 = reaper.GetTake(it, k)
+    if id and band.take_ext(t2, "band_dry"):lower() == id:lower() then return t2 end
+  end
+end
 sync.delete_take = delete_take -- recall points delete locally; Live sync then posts it
 sync.lane_of, sync.track_name = lane_of, track_name
 
@@ -682,8 +836,9 @@ sync.lane_of, sync.track_name = lane_of, track_name
 -- live in REAPER's own folder, so the same built-in icon exists everywhere).
 local function track_props(tr)
   local icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false))
-  return string.format("%s|%d|%d|%d|%s", base_name(select(2, reaper.GetTrackName(tr))), reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
-    reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon:match("[^/\\]+$") or icon)
+  return string.format("%s|%d|%d|%d|%s|%.2f|%.2f", base_name(select(2, reaper.GetTrackName(tr))), reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
+    reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon:match("[^/\\]+$") or icon,
+    20 * math.log(math.max(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), 1e-9), 10), reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
 end
 local function track_guid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)) end
 local function holds_takes(tr)
@@ -706,6 +861,8 @@ local function apply_track(proj, ev)
       reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", ev.solo or 0)
       reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", ev.color or 0)
       reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", ev.icon or "", true)
+      if ev.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", ev.vol) end -- the shared mix (0.8+)
+      if ev.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", ev.pan) end
       setext(proj, sync.TRACKS, track_guid(tr), track_props(tr)) -- so this isn't seen as a local change
     end
   end
@@ -726,6 +883,24 @@ function sync.apply(proj, ev, dir, root)
     setext(proj, band.SECTION, "timeline", timeline_sig(proj))
     sync.resnap(proj)
     return true
+  end
+  if ev.type == "shift" then -- the driver inserted or removed time: same edit here, on every track
+    local ok, why = sync.shift(proj, ev.at, ev.len)
+    if not ok then band.log("couldn't follow " .. tostring(ev.user) .. "'s insert/remove at " .. tostring(ev.at) .. ": " .. tostring(why)) end
+    return true
+  end
+  if ev.type == "start" or ev.type == "stop" then -- Live sync's tick fires it at the right moment (lib/together.lua)
+    reaper.SetExtState(band.SECTION, "transport " .. tostring(proj), band.json_encode(ev), false)
+    return true
+  end
+  if ev.type == "note" or ev.type == "like" then
+    local it2, tk2 = ev.take and band.find_take(proj, ev.take)
+    if tk2 then -- shows on the take itself, where everyone sees it
+      local at = (ev.pos or reaper.GetMediaItemInfo_Value(it2, "D_POSITION")) - reaper.GetMediaItemInfo_Value(it2, "D_POSITION")
+        + reaper.GetMediaItemTakeInfo_Value(tk2, "D_STARTOFFS")
+      reaper.SetTakeMarker(tk2, -1, (ev.type == "like" and "+1 " or "") .. ev.user .. (ev.text and (": " .. ev.text) or ""), math.max(0, at))
+    end
+    return true -- notes without a take live in the panel's Notes list (and History)
   end
   if not ev.take then return true end -- "driver" and other take-less events: nothing to change in the project
   local it, tk = band.find_take(proj, ev.take)
@@ -775,7 +950,7 @@ function sync.apply(proj, ev, dir, root)
     end
     ev.pos = sync.here(proj, ev.pos, ev.qn)
     reaper.SetMediaItemInfo_Value(it, "D_POSITION", ev.pos)
-    reaper.SetMediaItemInfo_Value(it, "D_LENGTH", ev.len)
+    reaper.SetMediaItemInfo_Value(it, "D_LENGTH", ev.len + (tonumber(ext(proj, sync.TAILS, ev.take)) or 0))
     if ev.mute then reaper.SetMediaItemInfo_Value(it, "B_MUTE", ev.mute) end
     local offs = band.base_offs(tk) + (ev.offs or 0) -- offsets travel relative to where each print was placed
     for k = 0, reaper.CountTakes(it) - 1 do
@@ -861,7 +1036,7 @@ function sync.watch(proj, cfg, song, room, can)
         band.set_take_state(proj, sid, "deleted")
         local mit = band.find_midi(proj, sid) -- its MIDI copy goes with it
         if mit then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(mit), mit) end
-        if can(me, track, pos) then
+        if can(me, track, pos) or sync.author(sid) == sync.author_of(me) then -- your own take you may always take back
           sync.post(cfg, song, room, { type = "delete", take = sid, track = track, pos = pos })
           sync.trash(cfg, song, room, sid)
         end
@@ -873,11 +1048,27 @@ function sync.watch(proj, cfg, song, room, can)
           local pos, track = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"), track_name(hit[1])
           if can(me, track, pos) then
             sync.post(cfg, song, room, { type = "edit", take = id, pos = pos, qn = sync.qn(proj, pos), track = track,
-              len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH"), lane = lane_of(hit[1]),
+              len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") - (tonumber(ext(proj, sync.TAILS, id)) or 0), lane = lane_of(hit[1]),
               mute = reaper.GetMediaItemInfo_Value(hit[1], "B_MUTE"),
               offs = reaper.GetMediaItemTakeInfo_Value(hit[2], "D_STARTOFFS") - band.base_offs(hit[2]) })
+            sync.remember(proj, id, hit[1], hit[2])
+          else -- not yours to change (someone's claim, or the driver's): put it back where the band has it, and say so
+            local f = {}
+            for v in (snap .. "|"):gmatch("([^|]*)|") do f[#f + 1] = v end -- id|pos|len|offs|lane|mute|track
+            local it, tk = hit[1], hit[2]
+            if f[7] and f[7] ~= "" and track_name(it):lower() ~= f[7]:lower() then
+              local back = band.find_track(proj, f[7], true)
+              if back then reaper.MoveMediaItemToTrack(it, back) end
+            end
+            reaper.SetMediaItemInfo_Value(it, "D_POSITION", tonumber(f[2]) or 0)
+            reaper.SetMediaItemInfo_Value(it, "D_LENGTH", tonumber(f[3]) or reaper.GetMediaItemInfo_Value(it, "D_LENGTH"))
+            reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", tonumber(f[4]) or 0)
+            if tonumber(f[5]) then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", tonumber(f[5])) end
+            reaper.SetMediaItemInfo_Value(it, "B_MUTE", tonumber(f[6]) or 0)
+            reaper.UpdateItemInProject(it)
+            local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
+            band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, f[7] or track, owner))
           end
-          sync.remember(proj, id, hit[1], hit[2])
         end
       end
     end
@@ -904,15 +1095,18 @@ function sync.watch(proj, cfg, song, room, can)
         local bf, nf = {}, {}
         for v in (before .. "|"):gmatch("([^|]*)|") do bf[#bf + 1] = v end
         for v in (props .. "|"):gmatch("([^|]*)|") do nf[#nf + 1] = v end
-        for k, field in ipairs({ "name", "mute", "solo", "color", "icon" }) do if bf[k] ~= nf[k] then changed[#changed + 1] = field end end
+        for k, field in ipairs({ "name", "mute", "solo", "color", "icon", "vol", "pan" }) do
+          if bf[k] ~= nf[k] and not (k > 5 and bf[k] == nil) then changed[#changed + 1] = field end -- (snapshots before 0.8 had no fader)
+        end
         -- colour/icon alone don't go out: they're cosmetic, and auto-colouring (SWS) recolours tracks whenever tracks
         -- are added, which filled History with changes nobody made; they still travel with a real change
         local real = false
-        for _, f in ipairs(changed) do if f == "name" or f == "mute" or f == "solo" then real = true end end
+        for _, f in ipairs(changed) do if f ~= "color" and f ~= "icon" then real = true end end
         if real and before ~= "" and can(me, (was and was ~= "") and was or name, nil) then
           sync.post(cfg, song, room, { type = "track", track = name, was = (was ~= name) and was or nil, changed = changed,
             mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"), solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"),
-            color = reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon = props:match("([^|]*)$") })
+            color = reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon = nf[5],
+            vol = reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), pan = reaper.GetMediaTrackInfo_Value(tr, "D_PAN") })
         end
         setext(proj, sync.TRACKS, guid, props)
       end
@@ -990,7 +1184,8 @@ function sync.receive(proj, cfg, song, room, can)
   for _, ev in ipairs(pending) do
     if ev.type == "plays" and newest[ev.track or ""] ~= ev.id then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
-    elseif ev.user == cfg.user or not can(ev.user, ev.was or ev.track, ev.pos) then
+    elseif ev.user == cfg.user or not (sync.ANYONE[ev.type] or can(ev.user, ev.was or ev.track, ev.pos)
+        or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user))) then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own (already true here), or not theirs to change
     else
       if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
@@ -1005,7 +1200,10 @@ function sync.receive(proj, cfg, song, room, can)
         applied = applied + 1
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
           delete = "deleted " .. tostring(ev.take), undelete = "brought back " .. tostring(ev.take),
-          midi = "edited the notes of " .. tostring(ev.take), timeline = "changed the tempo map / markers" })[ev.type]
+          midi = "edited the notes of " .. tostring(ev.take), timeline = "changed the tempo map / markers",
+          start = (ev.rec and "record" or "play") .. " together at " .. tostring(ev.pos), stop = "stop together",
+          note = "note: " .. tostring(ev.text), like = "liked " .. tostring(ev.take),
+          shift = ((ev.len or 0) > 0 and "inserted " or "removed ") .. string.format("%.2f s at %.2f s", math.abs(ev.len or 0), ev.at or 0) })[ev.type]
         done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))
       end
     end

@@ -111,9 +111,9 @@ By hand:
 
 ## Session workflow
 
-**BandSync - Panel** puts all of it in one dockable window, in four tabs: **Session** (Live sync on/off, Hold
-sync, bandmates and what they have, who's driving, who owns what, drum maps), **Solo edit**, **Live**, and
-**History & restore**. The table below uses the separate actions, which still work without the panel.
+**BandSync - Panel** puts all of it in one dockable window, in five tabs: **Session** (Live sync on/off, Hold
+sync, bandmates and what they have, who's driving, who owns what, drum maps), **Together**, **Solo edit**,
+**Live**, and **History & restore**. The table below uses the separate actions, which still work without the panel.
 
 | Host | Bandmate |
 |---|---|
@@ -145,6 +145,29 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
   the same way. Translation goes through named drum sounds (General MIDI plus articulations such as rimshot,
   half-open hat and chokes, which fall back to the nearest GM sound where a kit lacks them). Maps are JSON files
   in `<shared folder>/drummaps` (`{"name": "...", "notes": {"kick": 36, "snare": 38, ...}}`); `gm` is built in.
+- **Together** (panel tab):
+  - *Play / Record / Stop together*: every machine running Live sync starts from the edit cursor at the same
+    moment (3 s after the click, with a count-in). Someone who gets the event late starts where the song has
+    got to by then. In Play along, set the listeners' lag to one NINJAM interval.
+  - *Notes and likes*: on the selected take (a take marker everyone sees) or at the cursor; click a note to
+    jump there. They're in History too.
+  - *Live ideas*: what Play along dropped on your timeline. Keep the selected ones, or dismiss someone's.
+  - *Take back my last take*: removes your newest take from everyone (it waits in the room's `_trash`).
+  - *Print selected MIDI as audio*: renders a synth or drum part through its instrument onto `<track> audio`,
+    which goes out as an ordinary audio take.
+  - *Use newest Solo edit mix*: the levels, pans and mutes of the latest Solo edit version.
+  - *Insert / Remove bars* (driver): moves every take, tempo marker and marker after the cursor, on every
+    machine. A take that crosses the edit point has to be split first.
+  - *Dry mode*: plays a bandmate's dry recording through *their* plug-in chain (it travels with each print).
+    Plug-ins you have load; the rest stay in the chain as missing, with their settings kept. Untick to go back
+    to the print.
+- **Shared mix**: volume and pan travel like mute and solo (the driver's, or a track owner's). Prints are made
+  at unity, so nobody's fader is baked in twice.
+- **Locked edits snap back**: moving or trimming a take that isn't yours to change puts it back, with a note
+  in the console. Your own takes you can always delete.
+- **Start Live sync with REAPER** (panel checkbox): Live sync comes back by itself for any session where it
+  was running when REAPER closed, until you stop it.
+- **Empty old trash** (panel, More): removes trashed takes and revisions older than 30 days.
 - **BandSync - Send takes / Send all takes**: send by hand (resend a selected item's active take, or every
   unsent pass). Live sync normally makes these unnecessary.
 - **BandSync - Settings** also sets how takes land in this project: `mirror` (default: as the sender has them),
@@ -212,8 +235,9 @@ layers fix that, best set up on the host's always-on machine:
 
 ## Limits
 
-- Wet prints include the item's own track (FX, volume, pan), not parent folders, sends or reverb tails past
-  the item's end.
+- Wet prints include the item's own track FX and 2 s of reverb/delay tail past the item's end; not parent
+  folders or sends. Volume and pan travel as the shared mix instead.
+- Dry mode replaces whatever plug-ins you had put on that band track; unticking leaves it empty.
 - Deleting one take out of a multi-take item happens when that project's tab is in front (REAPER/SWS only
   allow it there); whole items are deleted any time.
 - REAPER's lanes play one lane or all of them, so "which lane plays" mirrors as exactly that.

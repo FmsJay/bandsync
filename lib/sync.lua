@@ -193,6 +193,22 @@ local function split_keep(it, x)
   reaper.UpdateItemInProject(right)
   return right
 end
+-- Split `it` at x (lossless); the right part is new material: none of the left part's sent/take marks.
+local function split_piece(it, x)
+  local right = split_keep(it, x)
+  if right then
+    for k = 0, reaper.CountTakes(right) - 1 do
+      for _, key in ipairs({ "band_sent", "band_take", "band_fxhash", "band_base_offs", "band_base" }) do
+        band.set_take_ext(reaper.GetTake(right, k), key, "")
+      end
+    end
+    band.set_item_ext(right, "band_take", "")
+    band.set_item_ext(right, "band_group", "")
+    band.set_item_ext(right, "band_split", "1") -- made by a split, not played: "take back my last take" skips it
+  end
+  return right
+end
+
 local function split_crossing(proj, at, len, mine, stale)
   local n = 0
   for _, x in ipairs(len < 0 and { at, at - len } or { at }) do
@@ -204,18 +220,7 @@ local function split_crossing(proj, at, len, mine, stale)
         reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
         local id = tk and band.take_id(tk)
         if id then stale[id] = stale[id] or ext(proj, sync.SNAP, id) end -- the left part's trim must go out as an edit
-        local right = split_keep(it, x)
-        if right then -- the left part keeps the id; the right part is new
-          for k = 0, reaper.CountTakes(right) - 1 do
-            for _, key in ipairs({ "band_sent", "band_take", "band_fxhash", "band_base_offs", "band_base" }) do
-              band.set_take_ext(reaper.GetTake(right, k), key, "")
-            end
-          end
-          band.set_item_ext(right, "band_take", "")
-          band.set_item_ext(right, "band_group", "")
-          band.set_item_ext(right, "band_split", "1") -- made by a split, not played: "take back my last take" skips it
-          n = n + 1
-        end
+        if split_piece(it, x) then n = n + 1 end -- the left part keeps the id; the right part is new
       end
     end
   end
@@ -614,9 +619,9 @@ end
 -- already-sent audio; opts.selected: selected items only; opts.min_len: skip shorter items.
 function sync.own_takes(proj, opts)
   local out = {}
-  local n = opts.selected and reaper.CountSelectedMediaItems(proj) or reaper.CountMediaItems(proj)
+  local n = opts.items and #opts.items or opts.selected and reaper.CountSelectedMediaItems(proj) or reaper.CountMediaItems(proj)
   for i = 0, n - 1 do
-    local it = opts.selected and reaper.GetSelectedMediaItem(proj, i) or reaper.GetMediaItem(proj, i)
+    local it = opts.items and opts.items[i + 1] or opts.selected and reaper.GetSelectedMediaItem(proj, i) or reaper.GetMediaItem(proj, i)
     if band.track_ext(reaper.GetMediaItem_Track(it), "band_stem") == "" and band.item_ext(it, "band_take") == ""
         and band.item_ext(it, "band_live") == "" then -- live placeholders are someone else's audio, never ours to send
       local legacy = band.item_ext(it, "band_sent") -- 0.2 marked the item: carry it to the take that was active
@@ -671,6 +676,52 @@ function sync.own_takes(proj, opts)
     end
   end
   return out
+end
+
+-- Send selection: what's highlighted. Selected items, every item on selected tracks, and with opts.everything every
+-- item; with opts.from/to only what overlaps that stretch, and items of ours crossing its edges are split there
+-- (lossless), so only the inside goes. Takes the band already has are left alone (edits and reprints carry their
+-- changes). Returns the units for sync.send, the inside items (to select), and how many already-sent ones were left.
+function sync.selection_units(proj, opts)
+  local list, seen = {}, {}
+  local function want(it)
+    local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+    local e = p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+    if opts.from and (p >= opts.to - 1e-6 or e <= opts.from + 1e-6) then return end
+    if not seen[it] then seen[it] = true; list[#list + 1] = it end
+  end
+  for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do want(reaper.GetSelectedMediaItem(proj, i)) end
+  for t = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, t)
+    if opts.everything or reaper.IsTrackSelected(tr) then
+      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do want(reaper.GetTrackMediaItem(tr, j)) end
+    end
+  end
+  local ours = {} -- our own recordings only: bandmates' prints, MIDI copies and pasted copies of theirs are never cut
+  for _, u in ipairs(sync.own_takes(proj, { items = list, all = true, me = opts.me })) do ours[u[1]] = true end
+  local inside, had = {}, 0
+  for _, it in ipairs(list) do
+    if not ours[it] then goto next end
+    local with_band = false -- a take the band has (and hasn't deleted): not ours to cut up or send again
+    for k = 0, reaper.CountTakes(it) - 1 do
+      local id = band.take_ext(reaper.GetTake(it, k), "band_sent")
+      if id ~= "" and band.take_state(proj, id) ~= "deleted" then with_band = true end
+    end
+    if with_band then
+      had = had + 1
+    else
+      if opts.from then
+        local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+        if p < opts.from - 1e-6 then it = split_piece(it, opts.from) or it end -- the left part stays here
+        local e = reaper.GetMediaItemInfo_Value(it, "D_POSITION") + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+        if it and e > opts.to + 1e-6 then split_piece(it, opts.to) end -- and so does the right
+      end
+      inside[#inside + 1] = it
+    end
+    ::next::
+  end
+  local units = sync.own_takes(proj, { items = inside, all = opts.all_takes, unsent = true, min_len = sync.MIN_LEN, me = opts.me })
+  return units, inside, had
 end
 
 local function dirs(proj, cfg, b)

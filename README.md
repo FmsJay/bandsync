@@ -179,7 +179,12 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
 - **Start Live sync with REAPER** (panel checkbox): Live sync comes back by itself for any session where it
   was running when REAPER closed, until you stop it.
 - **Empty old trash** (panel, More): removes trashed takes and revisions older than 30 days.
-- **BandSync - Send takes / Send all takes**: send by hand (resend a selected item's active take, or every
+- **BandSync - Send selection** (panel: More): send what's highlighted, by hand: selected items, every item on
+  selected tracks, or with nothing selected everything in the time selection. With a time selection, choose
+  only its inside (items crossing its edges are split there) or whole items; optionally every take of each item.
+  Works from any project too (a sketch you worked on alone): pick the song and the takes land in it at the same
+  song positions, on tracks with the same names. Takes the band already has aren't sent again.
+- **BandSync - Send takes / Send all takes**: the older by-hand sends (a selected item's active take, or every
   unsent pass). Live sync normally makes these unnecessary.
 - **BandSync - Settings** also sets how takes land in this project: `mirror` (default: as the sender has them),
   `lanes`, `takes`, `person` (a `Takes - <name>` track) or `inbox` (one muted track to review first).

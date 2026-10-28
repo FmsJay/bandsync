@@ -538,7 +538,7 @@ end
 
 local function section_actions()
   ImGui.SeparatorText(ctx, "More")
-  for i, name in ipairs({ "Send takes", "Print my MIDI", "Settings", "Calibrate latency", "Update" }) do
+  for i, name in ipairs({ "Send selection", "Print my MIDI", "Settings", "Calibrate latency", "Update" }) do
     if i > 1 then ImGui.SameLine(ctx) end
     if ImGui.Button(ctx, name) then action(name) end
   end
@@ -712,7 +712,7 @@ local function section_ideas()
     if ImGui.SmallButton(ctx, "Dismiss##" .. who_) then tools.dismiss_ideas(proj, who_); ideas_at = 0 end
   end
   if ImGui.Button(ctx, "Keep selected") then band.log(tools.keep_ideas(proj) .. " idea(s) kept as your own items"); ideas_at = 0 end
-  ImGui.SetItemTooltip(ctx, "The selected placeholders stay for good (no take replaces them). Send them with Send takes if the band should have them.")
+  ImGui.SetItemTooltip(ctx, "The selected placeholders stay for good (no take replaces them). Send them with Send selection if the band should have them.")
 end
 
 local dry_at, dry_tracks = 0, {}

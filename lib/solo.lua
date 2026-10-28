@@ -78,7 +78,9 @@ local function copy_tree(src, dst, with_rpp)
   reaper.RecursiveCreateDirectory(dst, 0)
   for _, f in ipairs(band.files(src)) do
     local is_rpp = f:lower():match("%.rpp$")
-    if not skip(f) and (with_rpp or not is_rpp) and band.size(src .. "/" .. f) ~= band.size(dst .. "/" .. f) then
+    -- the project file always comes over: an edit can leave it the same size (2026-10-28: a checkout kept the old
+    -- copy and the check-in after it undid the other person's change)
+    if not skip(f) and (with_rpp or not is_rpp) and (is_rpp or band.size(src .. "/" .. f) ~= band.size(dst .. "/" .. f)) then
       band.copy_atomic(src .. "/" .. f, dst .. "/" .. f)
       n = n + 1
     end
@@ -263,7 +265,8 @@ function solo.print_wet(proj, dir)
           local p = find_print(it)
           if not p or band.take_ext(p, "band_print") ~= h then
             local guid = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)):gsub("[{}]", "")
-            local path = sync.print_item(proj, it, dry, dir .. "/prints", guid .. "-" .. h)
+            local done = dir .. "/prints/" .. guid .. "-" .. h .. ".flac" -- already printed (by anyone: the key is the same)
+            local path = reaper.file_exists(done) and done or sync.print_item(proj, it, dry, dir .. "/prints", guid .. "-" .. h)
             if path then
               local playing = reaper.GetActiveTake(it)
               if not p then p = reaper.AddTakeToMediaItem(it) end

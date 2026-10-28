@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.10.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.10.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -69,8 +69,13 @@ function band.write_atomic(path, data)
   local tmp = dir .. "/.syncthing." .. name .. ".tmp"
   local f = assert(io.open(tmp, "wb"))
   f:write(data); f:close()
-  os.remove(path)
-  assert(os.rename(tmp, path))
+  if os.rename(tmp, path) then return end -- POSIX: replaces it in one step
+  -- Windows won't rename over a file: move the old one aside first (never deleted before the new one is in place)
+  local old = dir .. "/.syncthing." .. name .. ".old"
+  os.remove(old)
+  os.rename(path, old)
+  if not os.rename(tmp, path) then os.rename(old, path); error("cannot replace " .. path) end
+  os.remove(old)
 end
 
 function band.copy_atomic(src, dst) band.write_atomic(dst, assert(band.read(src), "cannot read " .. src)) end
@@ -98,10 +103,13 @@ local function enum(fn, dir)
   return out
 end
 
+-- Sync conflict copies ("x.sync-conflict-20261028-071122-ABCDEF.json", Drive's "x (1).json") aren't files of
+-- ours: a copy of an event would be applied again on every pass (it never counts as applied).
+function band.is_conflict_copy(f) return f:find(".sync-conflict-", 1, true) ~= nil or f:match(" %(%d+%)%.[^.]+$") ~= nil end
 function band.files(dir, ext)
   local out = {}
   for _, f in ipairs(enum(reaper.EnumerateFiles, dir)) do
-    if not ext or f:lower():sub(-#ext) == ext then out[#out + 1] = f end
+    if (not ext or f:lower():sub(-#ext) == ext) and not band.is_conflict_copy(f) then out[#out + 1] = f end
   end
   return out
 end

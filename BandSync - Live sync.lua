@@ -98,9 +98,13 @@ local function with_tail(t, path)
   return nil
 end
 
+local import_failed = {} -- manifests that couldn't be imported: said once
 local function import(room)
   local tdir = band.takes_dir(cfg, b.song, room)
+  local idx = band.take_index(proj) -- once per pass (it walks every item and take)
   for _, f in ipairs(band.files(tdir, ".json")) do
+    -- one bad manifest (truncated, hand-edited, a newer format) mustn't stop every take and event behind it
+    local ok, err = pcall(function()
     local t = band.read_json(tdir .. "/" .. f)
     if t and t.id and t.full then
       band.check_version(t.bandsync, "A take from " .. t.user, true)
@@ -125,7 +129,8 @@ local function import(room)
             t.user, t.track, t.track))
         end
       end
-      local _, mine = band.find_take(proj, t.id)
+      local hit = idx[t.id:lower()]
+      local mine = hit and hit[2]
       if mine and band.take_ext(mine, "band_sent") == "" then mine = nil end
       if state == "full" and rev > held and mine then -- someone printed our MIDI take with their instrument
         sync.setext(proj, sync.REV, t.id, tostring(rev))
@@ -168,12 +173,19 @@ local function import(room)
         end
       end
     end
+    end)
+    if not ok and not import_failed[f] then
+      import_failed[f] = true
+      band.log("couldn't bring in " .. f .. ": " .. tostring(err))
+    end
   end
 end
 
 local last_driver
+local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
 local function poll()
-  local s = band.read_json(band.session_path(cfg, b.song))
+  local s = band.read_json(band.session_path(cfg, b.song)) or last_session
+  last_session = s
   local can, who = sync.authority(cfg, b.song, b.room, s)
   local driver = who.driver
   if last_driver and driver ~= last_driver then -- handovers are announced, never silent
@@ -293,7 +305,8 @@ end
 -- BandSync - Autostart.lua restarts us for this project after REAPER restarts, until the person stops us
 local autokey = "autosync " .. (select(2, reaper.EnumProjects(-1)) or ""):lower()
 if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
-local function tick()
+local tick
+local function tick_body() -- returns true to keep going
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end -- project closed: stop
   local now_b = band.binding(proj)
   if not now_b or now_b.role ~= b.role or now_b.song ~= b.song then -- became a solo working copy (or unbound): not ours any more
@@ -401,7 +414,17 @@ local function tick()
     local ok, err = pcall(poll)
     if not ok then band.log("sync error: " .. tostring(err)) end
   end
-  reaper.defer(tick)
+  return true
+end
+-- an error anywhere in a tick (a malformed cue from someone's machine, say) is logged, and Live sync carries on
+local said_at = -math.huge
+tick = function()
+  local ok, go = pcall(tick_body)
+  if not ok then
+    if reaper.time_precise() - said_at > 30 then said_at = reaper.time_precise(); band.log("live sync error: " .. tostring(go)) end
+    go = true
+  end
+  if go then reaper.defer(tick) end
 end
 
 band.log(string.format("live sync for '%s' (%s, room %s, takes as %s, driver %s)%s", b.song, b.role, b.room, mode,

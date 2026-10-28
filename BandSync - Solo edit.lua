@@ -91,7 +91,8 @@ local function confirmed()
     end
     if reaper.time_precise() - last > 30 then
       last = reaper.time_precise()
-      if not solo.beat(cfg, song) then
+      local ok, beat = pcall(solo.beat, cfg, song) -- the cloud folder can be briefly unwritable (asleep, syncing)
+      if ok and not beat then
         reaper.DeleteExtState(band.SECTION, "solo alive " .. song, false)
         return band.msg("Someone took over '" .. song .. "' (your lock had gone stale). Your changes here are no longer published.")
       end

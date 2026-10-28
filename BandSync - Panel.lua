@@ -78,7 +78,8 @@ local function part_name(tr)
   return m ~= "" and m or sync.base_name(select(2, reaper.GetTrackName(tr)))
 end
 local function claim(tracks, regions)
-  local c = sync.my_claims(cfg, b.song, b.room)
+  local c, why = sync.my_claims(cfg, b.song, b.room)
+  if not c then return band.msg(why) end
   c.tracks, c.regions = c.tracks or {}, c.regions or {}
   local function add(list, name)
     for _, n in ipairs(list) do if n:lower() == name:lower() then return end end
@@ -159,7 +160,8 @@ local function section_control()
   for i, o in ipairs(owned) do
     if o[2] then -- mine: let go of just this one
       if ImGui.SmallButton(ctx, "x##rel" .. i) then
-        local c = sync.my_claims(cfg, b.song, b.room)
+        local c, why = sync.my_claims(cfg, b.song, b.room)
+        if not c then return band.msg(why) end
         local keep = {}
         for _, n in ipairs(c[o[2]] or {}) do
           local same = o[2] == "times" and math.abs(n.from - o[3].from) < 1e-6 and math.abs(n.to - o[3].to) < 1e-6
@@ -190,7 +192,8 @@ local function section_control()
   if ImGui.Button(ctx, "Claim time selection") then
     local from, to = reaper.GetSet_LoopTimeRange2(proj, false, false, 0, 0, false)
     if to - from < 0.01 then band.msg("Drag across the timeline to select the stretch of time you want to own first.") else
-      local c = sync.my_claims(cfg, b.song, b.room)
+      local c, why = sync.my_claims(cfg, b.song, b.room)
+      if not c then return band.msg(why) end
       c.times = c.times or {}
       c.times[#c.times + 1] = { from = from, to = to }
       sync.set_claims(cfg, b.song, b.room, c)
@@ -199,7 +202,10 @@ local function section_control()
   ImGui.SetItemTooltip(ctx, "Takes that start inside the selected time are yours to change (a track someone claimed still wins).\n" ..
     "Everyone sees it as a region named [claimed: you].")
   ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, "Release mine") then sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {}, times = {} }) end
+  if ImGui.Button(ctx, "Release mine") and reaper.MB("Release all your claims (tracks, regions and time)? Everything you claimed follows the driver again.",
+      "BandSync", 4) == 6 then
+    sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {}, times = {} })
+  end
 end
 
 local function section_recall()
@@ -755,7 +761,8 @@ local function section_tools()
     end })
     reaper.Undo_EndBlock2(proj, string.format("BandSync: %s %d bar(s) at bar %s", sign > 0 and "insert" or "remove", bars, bar_of(pos)), -1)
     local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
-    sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = len, tempo = tempo, markers = markers })
+    local sid = sync.post(cfg, b.song, b.room, { type = "shift", at = pos, len = len, tempo = tempo, markers = markers })
+    reaper.SetProjExtState(proj, band.SECTION, "last_shift", sid) -- the edits it causes name it, so they're applied after it
     sync.session_timeline(cfg, b.song, tempo, markers)
   end
   if ImGui.Button(ctx, "Insert bars") then shift(1) end

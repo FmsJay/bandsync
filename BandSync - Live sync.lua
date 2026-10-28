@@ -1,4 +1,4 @@
--- @description BandSync: live sync for this project (runs in the background; run again to stop)
+-- @description BandSync: live sync for this project (runs in the background; the panel's Stop stops it)
 -- Keeps this project in step with the band:
 --   * your new recordings go out by themselves a moment after you stop (slivers under 0.5 s are skipped);
 --     what was already in the project when sync first ran stays put (send it with "Send takes" if wanted)
@@ -29,6 +29,11 @@ local function reached(t, theirs)
 end
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
+-- one Live sync per song tab: another tab's runs alongside (no "terminate instances?" box), and starting it again
+-- for this tab only says so
+if reaper.set_action_options then reaper.set_action_options(2) end
+local beat0 = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
+if beat0 and reaper.time_precise() - beat0 < 5 then return band.log("Live sync is already running for '" .. b.song .. "'") end
 local host = b.role == "host"
 local s0 = band.read_json(band.session_path(cfg, b.song)) or {}
 local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-take items as they are
@@ -263,6 +268,14 @@ local function poll()
   -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest
   -- is view-only (locked) so it can't silently drift from the band's version
   if not hold then sync.watch(proj, cfg, b.song, b.room, can) end
+  if sync.need_save then -- a delete went out: the project is saved, so a crash can't bring the take back here
+    sync.need_save = nil
+    for i = 0, 512 do
+      local p, fn = reaper.EnumProjects(i)
+      if not p then break end
+      if p == proj and fn ~= "" then reaper.Main_SaveProject(proj, false) end -- (an unsaved project would ask where)
+    end
+  end
   sync.apply_locks(proj, can, cfg.user)
   sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
 

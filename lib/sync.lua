@@ -1389,6 +1389,7 @@ function sync.watch(proj, cfg, song, room, can)
           sync.post(cfg, song, room, { type = "delete", take = sid, track = track, pos = pos })
           sync.trash(cfg, song, room, sid)
           setext(proj, "BandSync.mydel", sid, "1") -- if it reappears here, that's an undo of this delete
+          sync.need_save = true -- saved at once: after a crash the deleted take came back here (Mac, 2026-10-28)
         else -- not yours to delete: it comes back with the next import (the band still has it), placed, trimmed and
           -- muted as it was here: the manifest only knows how it was sent (break round 2: a re-import lost a mute)
           band.set_take_state(proj, sid, "")

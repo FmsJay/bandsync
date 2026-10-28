@@ -207,9 +207,23 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
     for i in $(seq 1 60); do pgrep -x REAPER >/dev/null && break; sleep 1; done
     sleep 8
   fi
-  # ONE request: the helper waits inside REAPER for ReaPack itself. A second "open" arriving while ReaPack's report
-  # window was up crashed REAPER on macOS (2026-10-28), so it's never sent again
-  open -a REAPER "$HELPER"
+  # Any Apple Event ("open -a") reaching REAPER while ReaPack's report window is open crashes it on macOS
+  # (2026-10-28). A REAPER running BandSync's background loop (Autostart, from __startup.lua) gets a request FILE
+  # instead; only a REAPER that isn't running is started with the helper.
+  local REQ="$RES/BandSync/install-request" HANDED=""
+  if pgrep -x REAPER >/dev/null && grep -q "BandSync autostart" "$RES/Scripts/__startup.lua" 2>/dev/null; then
+    mkdir -p "$RES/BandSync"; printf '%s' "$HELPER" > "$REQ"
+    for i in $(seq 1 20); do [ -f "$REQ" ] || { HANDED=1; break; }; sleep 1; done
+    rm -f "$REQ" # not picked up (an older BandSync, or a window holding REAPER): asked the other way below
+  fi
+  if [ -z "$HANDED" ]; then
+    if pgrep -x REAPER >/dev/null; then
+      say "REAPER is about to run BandSync's setup step. First close any ReaPack window in REAPER (like its"
+      say "'Transaction report'): one left open makes REAPER quit. Then press Return."
+      read -r </dev/tty
+    fi
+    open -a REAPER "$HELPER" # ONE request: the helper waits inside REAPER for ReaPack itself
+  fi
   GONE=""
   for i in $(seq 1 360); do
     [ -f "$HDIR/bandsync_setup_result.json" ] && break

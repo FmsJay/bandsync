@@ -103,17 +103,18 @@ By hand:
 6. Optional extras:
    - **Live** needs **Tailscale**. Bandmates don't join the host's tailnet: the host shares the server machine with
      each of them (admin console > the machine's **...** > *Share*), and they accept the link with their own account.
-   - **Solo edit** needs **Google Drive for desktop**. The host shares a `BandSync` folder in My Drive (Editor); each
-     bandmate adds it to their own Drive with *Shared with me > right-click > Organize > Add shortcut > My Drive*,
-     or it never reaches their computer. `G:/My Drive/BandSync` (Windows) and
-     `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/BandSync` (macOS) are found by themselves; anything
-     else goes in the panel's Solo edit tab.
+   - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**. The host shares a
+     `BandSync` folder in My Drive (Editor); each bandmate adds it to their own Drive with *Shared with me >
+     right-click > Organize > Add shortcut > My Drive*, or it never reaches their computer.
+     `G:/My Drive/BandSync` (Windows) and `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/BandSync` (macOS)
+     are found by themselves; anything else goes in the `drive_root` setting (ExtState), and the Session tab's
+     *Keep the band's copy on Google Drive* turns it off on one machine.
 
 ## Session workflow
 
-**BandSync - Panel** puts all of it in one dockable window, in five tabs: **Session** (Live sync on/off, Hold
-sync, bandmates and what they have, who's driving, who owns what, drum maps), **Together**, **Solo edit**,
-**Live**, and **History & restore**. The table below uses the separate actions, which still work without the panel.
+**BandSync - Panel** puts all of it in one dockable window, in four tabs: **Session** (*Same room*, Live sync
+on/off, Hold sync, bandmates and what they have, who's driving, who owns what, drum maps), **Together**, **Live**,
+and **History & restore**. The table below uses the separate actions, which still work without the panel.
 
 | Host | Bandmate |
 |---|---|
@@ -195,26 +196,34 @@ sync, bandmates and what they have, who's driving, who owns what, drum maps), **
 - **BandSync - Settings** also sets how takes land in this project: `mirror` (default: as the sender has them),
   `lanes`, `takes`, `person` (a `Takes - <name>` track) or `inbox` (one muted track to review first).
 
-### Solo edit: one person at a time, through Google Drive
+### Working alone, and the Google Drive copy
 
-For working on a song while the others are offline, without different versions piling up on different
-machines. The song's real REAPER project lives in a cloud folder (the panel's Solo edit tab; Google Drive
-`G:/My Drive/BandSync` by default).
+There's no separate mode for working on your own: open the song and Live sync runs as always.
 
-- **BandSync - Solo edit** checks the song out: it takes the song's lock, copies the current version to this
-  machine (`Documents/BandSync/<song>`; REAPER never edits files on the cloud drive) and opens it. Everyone's
-  panel shows who has it, since when and when they were last seen. Nobody else can check it out meanwhile; they
-  can open the latest version to look. A lock whose owner disappeared (no heartbeat for 5 minutes) can be taken over.
-- **BandSync - Check in** publishes your changes with an optional note, keeps the previous version, and hands the
-  song back (or keeps it checked out). New media is copied into the project folder, so the folder is always the
-  whole project.
-- **Versions** (Solo edit tab): every check-in, newest first, expandable to what changed on each track (items
-  added, removed, moved; FX changed; tracks added, removed, renamed). Restore any of them while you have the song
-  checked out; what you had is checked in first.
-- **Wet and dry are both kept.** At check-in every item on a track with FX gets a wet print as an extra take next
-  to its dry recording. Whoever lacks one of the track's plugins hears the prints (that track's FX are bypassed
-  while they edit); the dry recording stays underneath, edits move both, and the published version is always
-  dry + FX for whoever has the plugins. The same goes for live sessions: they now print `both` by default.
+- **Alone = full control.** While nobody else is in the room (no bandmate's Live sync seen in the last 45 s),
+  everything you change goes to the band, whoever drives or claimed it, and reaches them when they're back. The
+  Session tab says so in green. When someone joins, the usual rules (driver, claims) apply again.
+- **Both alone at once.** If two people worked alone at the same time (neither could see the other), each machine
+  saves a kept restore point "yours before <name>'s work done alone" before the other's changes land, so neither
+  side is ever lost. The newest change to each take wins; restore the point to go back to yours.
+- **The Google Drive copy.** Syncthing only moves files while two machines are on at the same time. Live sync
+  also copies each room to `<My Drive>/BandSync/<song>/rooms/<room>` every minute while stopped (both ways,
+  nothing deleted), so what someone did alone reaches the others whenever they next open the song, even if their
+  machines are never on together. Deletes and new revisions land in the right place (`takes/` or `_trash/`) on
+  both sides.
+- **End of session.** When Live sync stops (or after 20 minutes without a change) it saves a restore point marked
+  *(kept)*. Kept points are never cleaned up, and *Empty old trash* never removes the audio they need: the band's
+  history keeps where every session ended.
+- Solo edit (check out / check in) from earlier versions still opens old working copies; its versions show in
+  History & restore.
+
+### Same room
+
+The Session tab's **Same room** switch is the one to press for playing together: it connects Listen live
+(SonoBus, set up for the band's group) and turns on side by side with no lag. Whoever presses play, stop or record,
+everyone follows at the same spot and hears it at once. What someone records shows on everyone's timeline as they
+play: **live MIDI view** draws their notes a second or two behind on a muted "<name> (live)" track (you hear their
+instrument through SonoBus), and the placeholder gives way to their real take when they stop.
 
 ### Live: hear each other while it happens
 

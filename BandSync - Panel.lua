@@ -195,6 +195,7 @@ local function section_history()
           "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
           "Where things are now is saved as a recall point first, so you can come back.", g.user, local_time(g.to)), "BandSync", 4) == 6 then
         local st = recall.replay(entries, g.last)
+        st.timeline = st.timeline or (view.session and view.session.first_timeline) -- before any tempo change: as published
         band.log(recall.restore_state(proj, cfg, b.song, b.room, st, string.format("%s's changes at %s", g.user, local_time(g.to))) or "restore failed")
         last, hist_at = 0, 0
       end
@@ -354,7 +355,10 @@ local function section_live()
     ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in: click Connect in its window.")
   else
     ImGui.TextColored(ctx, GREEN, "ReaNINJAM is on your master track.")
-    if ImGui.Button(ctx, "Show it") then reaper.TrackFX_Show(master, idx, 3) end
+    if ImGui.Button(ctx, "Show it") then -- also takes it off other song tabs (one ReaNINJAM per REAPER) and loads it
+      local m2, i2 = live.fx(proj, true)
+      if m2 then reaper.TrackFX_Show(m2, i2, 3) end
+    end
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, "Leave") then reaper.TrackFX_Delete(master, idx) end
   end

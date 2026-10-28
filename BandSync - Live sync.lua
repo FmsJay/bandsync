@@ -52,6 +52,7 @@ local function import(room)
     local t = band.read_json(tdir .. "/" .. f)
     if t and t.id and t.full then
       band.check_version(t.bandsync, "A take from " .. t.user, true)
+      t.pos = sync.here(proj, t.pos, t.qn) -- by beat: right even if a tempo change crossed paths with it
       local state = band.take_state(proj, t.id)
       local full, prev = tdir .. "/" .. t.full, t.preview and (tdir .. "/" .. t.preview)
       local dry = t.dry and (tdir .. "/" .. t.dry)

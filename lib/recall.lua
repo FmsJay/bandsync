@@ -43,6 +43,7 @@ end
 function recall.save(proj, cfg, song, room, label)
   local st = capture(proj)
   st.label, st.by, st.time = label, cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ")
+  st.timeline = { tempo = band.capture_tempo(proj), markers = band.capture_markers(proj) } -- positions are in its seconds
   local dir = recall.dir(cfg, song, room)
   reaper.RecursiveCreateDirectory(dir, 0)
   local file = string.format("%s-%s-%s.json", os.date("!%Y%m%d-%H%M%SZ"), (cfg.user:gsub("[^%w%-_]", "_")),
@@ -113,12 +114,14 @@ function recall.replay(entries, upto)
     elseif e.kind == "track" then
       if e.was and st.tracks[e.was] then st.tracks[e.was] = nil end
       st.tracks[e.track] = { mute = e.mute, solo = e.solo, color = e.color, icon = e.icon }
+    elseif e.kind == "timeline" then
+      st.timeline = { tempo = e.tempo, markers = e.markers }
     end
   end
   -- which takes play: the newest "plays" per track picks the active take of each item
   local active = {}
   for _, list in pairs(st.plays) do for _, id in ipairs(list) do active[id:lower()] = true end end
-  local out = { takes = {}, plays = st.plays, tracks = st.tracks }
+  local out = { takes = {}, plays = st.plays, tracks = st.tracks, timeline = st.timeline }
   for lid, t in pairs(st.takes) do
     out.takes[t.id] = { track = t.track, pos = t.pos, len = t.len, lane = t.lane, mute = t.mute, offs = t.offs, active = active[lid] or nil }
   end
@@ -141,6 +144,10 @@ function recall.describe(e)
     return string.format("%s%s: %s%s", e.was and (e.was .. " renamed to ") or "", tostring(e.track),
       (e.mute or 0) > 0 and "muted" or "unmuted", (e.solo or 0) > 0 and ", soloed" or "")
   elseif e.kind == "driver" then return "took control from " .. tostring(e.from)
+  elseif e.kind == "timeline" then
+    local t, changes = e.tempo or {}, {}
+    for i, m in ipairs(t) do changes[#changes + 1] = string.format("%g bpm %d/%d at %.2f s", m.bpm, m.num, m.denom, m.time) end
+    return string.format("changed the tempo map (%s), %d marker(s)/region(s)", table.concat(changes, ", "), #(e.markers or {}))
   end
   return tostring(e.kind)
 end
@@ -179,6 +186,12 @@ function recall.restore_state(proj, cfg, song, room, st, label)
   local idx = band.take_index(proj)
   local moved, removed, revived = 0, 0, 0
   reaper.Undo_BeginBlock2(proj)
+  if st.timeline and st.timeline.tempo and band.json_encode({ st.timeline.tempo, st.timeline.markers or {} }) ~= sync.timeline_sig(proj) then
+    band.apply_tempo(proj, st.timeline.tempo)
+    band.apply_markers(proj, st.timeline.markers or {})
+    sync.post(cfg, song, room, { type = "timeline", tempo = st.timeline.tempo, markers = st.timeline.markers or {} })
+    sync.setext(proj, band.SECTION, "timeline", sync.timeline_sig(proj))
+  end
   for lid, hit in pairs(idx) do -- here now, not in the recall point: delete (it goes to _trash, recoverable)
     if not want[lid] and sync.delete_take(proj, hit[1], hit[2], band.take_id(hit[2]) or lid) then
       removed = removed + 1

@@ -80,12 +80,29 @@ end
 
 -- ReaNINJAM (or SonoBus, fx = live.SONOBUS) on the master track: it sends what you hear (your whole mix) and
 -- plays the band into it. SonoBus passes your mix through (its Dry Level is 1 in plugin mode).
+-- With add, ReaNINJAM is also taken off every other open project's master first: REAPER runs one ReaNINJAM per
+-- process, so a copy in another tab leaves this one "could not be loaded" while still listed on the master
+-- (2026-10-28 test: Play along in a second song tab silently did nothing).
 function live.fx(proj, add, fx)
   fx = fx or live.FX
   local master = reaper.GetMasterTrack(proj)
+  local freed = 0
+  if add and fx == live.FX then
+    for p = 0, math.huge do
+      local other = reaper.EnumProjects(p)
+      if not other then break end
+      if other ~= proj then
+        local m, x = live.fx(other, false)
+        if m then reaper.TrackFX_Delete(m, x); freed = freed + 1 end
+      end
+    end
+  end
   for i = 0, reaper.TrackFX_GetCount(master) - 1 do
     local _, name = reaper.TrackFX_GetFXName(master, i)
-    if name:find(fx, 1, true) and not name:find("Instrument", 1, true) then return master, i end
+    if name:find(fx, 1, true) and not name:find("Instrument", 1, true) then
+      if freed > 0 then reaper.TrackFX_SetOffline(master, i, true); reaper.TrackFX_SetOffline(master, i, false) end -- load it now that it may
+      return master, i
+    end
   end
   if not add then return nil end
   local i = reaper.TrackFX_AddByName(master, fx == live.SONOBUS and "VST3:SonoBus (Sonosaurus)" or fx, false, -1)
@@ -145,7 +162,9 @@ function live.session_stamp(dir)
   return os.date("!%Y%m%d-%H%M%SZ", os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(d), hour = tonumber(h), min = tonumber(mi), sec = 0 }))
 end
 
-live.HEARD = "BandSync.live_heard" -- clip GUID (upper case) -> UTC stamp of when its file first appeared here
+live.HEARD = "BandSync.live_heard" -- clip GUID (upper case) -> UTC stamp of when its file first appeared here.
+-- Kept in memory only (non-persistent ExtState): a session writes hundreds of clip files, our own included, and only
+-- the placed ones matter; each placeholder keeps its own time (band_live_heard) once placed.
 
 local function secs(stamp) -- "20261027-054500Z" -> seconds (only differences are used)
   local y, mo, d, h, mi, s = (stamp or ""):match("^(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)(%d%d)Z$")
@@ -174,8 +193,8 @@ function live.note_clips(proj, sessiondir)
   for _, sub in ipairs(band.subdirs(dir)) do
     for _, fn in ipairs(band.files(dir .. "/" .. sub)) do
       local guid = fn:match("^(%x+)")
-      if guid and #guid >= 16 and select(2, reaper.GetProjExtState(proj, live.HEARD, guid:upper())) == "" then
-        reaper.SetProjExtState(proj, live.HEARD, guid:upper(), now)
+      if guid and #guid >= 16 and reaper.GetExtState(live.HEARD, guid:upper()) == "" then
+        reaper.SetExtState(live.HEARD, guid:upper(), now, false)
       end
     end
   end
@@ -215,7 +234,7 @@ function live.place_clips(proj, sessiondir)
           if it then
             band.set_item_ext(it, "band_live", c.guid)
             band.set_item_ext(it, "band_live_since", since)
-            band.set_item_ext(it, "band_live_heard", select(2, reaper.GetProjExtState(proj, live.HEARD, key)))
+            band.set_item_ext(it, "band_live_heard", reaper.GetExtState(live.HEARD, key))
             n = n + 1
           end
           reaper.SetProjExtState(proj, live.SEEN, key, since ~= "" and since or "?")

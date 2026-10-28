@@ -14,6 +14,7 @@ local sync = {
   PENDING = "BandSync.pending", -- id -> where a revived take must sit once it has been imported again
   PRINTER = "BandSync.printer", -- id -> who made the current print (someone may print a take with their own instrument)
   MIDIHASH = "BandSync.midi",   -- id -> hash of the MIDI copy's notes as last seen/applied
+  SNAPQN = "BandSync.snapqn",   -- id -> position in quarter notes as last seen/applied (tells tempo moves from edits)
   MIN_LEN = 0.5,                -- shorter items are recording slivers, not takes
 }
 
@@ -22,6 +23,35 @@ local function setext(proj, sec, key, v) reaper.SetProjExtState(proj, sec, key, 
 sync.ext, sync.setext = ext, setext
 
 function sync.room_dir(cfg, song, room) return band.song_dir(cfg, song) .. "/rooms/" .. room end
+
+-- ---- the timeline: tempo map and markers/regions ---------------------------------------------------
+-- The driver's tempo or marker changes travel as one "timeline" event; every machine applies the same map and
+-- REAPER moves (and, in its default "beats (position, length, rate)" timebase, stretches) each item exactly as it
+-- would for a local tempo change. Positions also travel in quarter notes, so a take that crosses paths with a
+-- tempo change still lands on its beat.
+local function timeline_sig(proj) return band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }) end
+sync.timeline_sig = timeline_sig
+
+-- Whether this project follows the beat (REAPER's default) rather than the clock: then positions travel in beats.
+function sync.beats(proj) return reaper.GetSetProjectInfo(proj, "PROJECT_TIMEBASE", 0, false) ~= 0 end
+-- A position sent in seconds (pos) and quarter notes (qn), placed by beat when this project follows the beat.
+function sync.here(proj, pos, qn)
+  if qn and sync.beats(proj) then return reaper.TimeMap2_QNToTime(proj, qn) end
+  return pos
+end
+function sync.qn(proj, pos) return reaper.TimeMap2_timeToQN(proj, pos) end
+
+-- Everything REAPER moved for a tempo change is where it should be: take new snapshots, so none of it is sent
+-- as an edit. With only_tempo, an item whose beat position changed too (say "insert time" moved items and tempo
+-- markers together) keeps its old snapshot, so the next look sends it as a real edit.
+function sync.resnap(proj, only_tempo)
+  for id, hit in pairs(band.take_index(proj)) do
+    local tid = band.take_id(hit[2]) or id
+    local was = tonumber(ext(proj, sync.SNAPQN, tid))
+    local now = sync.qn(proj, reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"))
+    if not only_tempo or not was or math.abs(now - was) < 1e-6 then sync.remember(proj, tid, hit[1], hit[2]) end
+  end
+end
 
 -- The driver is whoever holds control of a room: the host, until someone runs "Take control".
 function sync.driver(cfg, song, room, s)
@@ -121,6 +151,7 @@ local function shape(it, tk)
 end
 function sync.remember(proj, id, it, tk)
   setext(proj, sync.SNAP, id, id .. "|" .. shape(it, tk))
+  setext(proj, sync.SNAPQN, id, string.format("%.9f", sync.qn(proj, reaper.GetMediaItemInfo_Value(it, "D_POSITION"))))
   -- our own takes also keep a copy of the whole item (source, take FX, fades), so a recall point can bring
   -- back the real item after a delete instead of its print
   if band.take_ext(tk, "band_sent") ~= "" then
@@ -336,8 +367,10 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
   reaper.SetActiveTake(take) -- renders render the item's active take
   reaper.SelectAllMediaItems(proj, false)
   reaper.SetMediaItemSelected(it, true)
-  local main = render_item(it, take, out, id .. suffix, mode ~= "dry")
-  local dry = mode == "both" and render_item(it, take, out, id .. "-dry" .. suffix, false)
+  local wet = mode ~= "dry" or reaper.TakeIsMIDI(take) -- MIDI without its instrument is silence: always print it wet
+  local main = render_item(it, take, out, id .. suffix, wet)
+  -- a MIDI take's dry is its notes (they travel as .midibuf); rendering it without the instrument is silence
+  local dry = mode == "both" and not reaper.TakeIsMIDI(take) and render_item(it, take, out, id .. "-dry" .. suffix, false)
   reaper.SetActiveTake(playing)
   if not reaper.file_exists(main .. ".flac") then band.log("render failed for take " .. id); return nil end
 
@@ -345,8 +378,9 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
   local m = {
     format = band.FORMAT, bandsync = band.VERSION, id = id, rev = rev, user = cfg.user, room = b.room,
     track = select(2, reaper.GetTrackName(tr)), pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION"),
+    qn = sync.qn(proj, reaper.GetMediaItemInfo_Value(it, "D_POSITION")),
     len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), session_version = tonumber(b.version),
-    sent = os.date("!%Y-%m-%dT%H:%M:%SZ"), full = id .. suffix .. ".flac", print = mode, wet = mode ~= "dry",
+    sent = os.date("!%Y-%m-%dT%H:%M:%SZ"), full = id .. suffix .. ".flac", print = mode, wet = wet,
     group = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)), -- passes of one item stay one item
     lane = lane, lane_name = lane and select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, "", false)) or nil,
     printed_by = cfg.user,
@@ -385,7 +419,7 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
   band.copy_atomic(main .. ".flac", takes .. "/" .. m.full)
   setext(proj, sync.REV, id, tostring(rev))
   setext(proj, sync.PRINTER, id, cfg.user)
-  band.set_take_ext(take, "band_fxhash", fxhash(it, take, mode ~= "dry"))
+  band.set_take_ext(take, "band_fxhash", fxhash(it, take, wet))
   if reaper.TakeIsMIDI(take) then sync.midi_seen(proj, id, take) end
   if twin then -- a MIDI copy printed with our instrument stays a copy; the print we hold becomes ours
     band.update_take(proj, m, takes .. "/" .. m.full, m.dry and (takes .. "/" .. m.dry))
@@ -437,7 +471,7 @@ function sync.reprint(proj, cfg, b, mode)
       local printer = id ~= "" and ext(proj, sync.PRINTER, id) or ""
       -- once someone else has printed this take with their own instrument, their print stands: we don't
       -- overwrite it with ours (our note edits still reach them as MIDI)
-      if id ~= "" and (printer == cfg.user or (printer == "" and not twin)) and band.take_ext(tk, "band_fxhash") ~= fxhash(it, tk, mode ~= "dry") then
+      if id ~= "" and (printer == cfg.user or (printer == "" and not twin)) and band.take_ext(tk, "band_fxhash") ~= fxhash(it, tk, mode ~= "dry" or reaper.TakeIsMIDI(tk)) then
         todo[#todo + 1] = { it, tk, id, twin }
       end
     end
@@ -648,6 +682,13 @@ end
 function sync.apply(proj, ev, dir, root)
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
+  if ev.type == "timeline" then -- REAPER moves the items for the new map, as it would for a local change
+    band.apply_tempo(proj, ev.tempo or {})
+    band.apply_markers(proj, ev.markers or {})
+    setext(proj, band.SECTION, "timeline", timeline_sig(proj))
+    sync.resnap(proj)
+    return true
+  end
   local it, tk = band.find_take(proj, ev.take)
   local mit, mtk = band.find_midi(proj, ev.take)
   if it then reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0) end -- view-only locks are for people, not for sync
@@ -679,6 +720,7 @@ function sync.apply(proj, ev, dir, root)
       if not dest then return false end -- needs this tab in front on REAPER < 7.18
       reaper.MoveMediaItemToTrack(it, dest)
     end
+    ev.pos = sync.here(proj, ev.pos, ev.qn)
     reaper.SetMediaItemInfo_Value(it, "D_POSITION", ev.pos)
     reaper.SetMediaItemInfo_Value(it, "D_LENGTH", ev.len)
     if ev.mute then reaper.SetMediaItemInfo_Value(it, "B_MUTE", ev.mute) end
@@ -712,6 +754,28 @@ end
 -- synced state, so releasing the hold sends the net result once.
 function sync.watch(proj, cfg, song, room, can)
   local me = cfg.user
+  -- tempo map / markers first: if they changed, REAPER has just moved items for it, and those moves aren't edits
+  local sig, seen = timeline_sig(proj), ext(proj, band.SECTION, "timeline")
+  if seen ~= sig then
+    if seen ~= "" then
+      if can(me, nil, nil) then -- the song's timeline is the driver's
+        local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
+        sync.post(cfg, song, room, { type = "timeline", tempo = tempo, markers = markers })
+        local sp = band.session_path(cfg, song) -- refreshing, or a bandmate joining later, gets this timeline too
+        local s = band.read_json(sp)
+        if s then
+          s.first_timeline = s.first_timeline or { tempo = s.tempo, markers = s.markers } -- history restores before this need it
+          s.tempo, s.markers = tempo, markers
+          band.write_json(sp, s)
+        end
+        band.log("sent the new tempo map and markers to the band")
+      else
+        band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")
+      end
+    end
+    setext(proj, band.SECTION, "timeline", sig)
+    sync.resnap(proj, true)
+  end
   local idx = band.take_index(proj)
   local i = 0
   while true do
@@ -740,7 +804,7 @@ function sync.watch(proj, cfg, song, room, can)
         elseif snap ~= id .. "|" .. shape(hit[1], hit[2]) then
           local pos, track = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"), track_name(hit[1])
           if can(me, track, pos) then
-            sync.post(cfg, song, room, { type = "edit", take = id, pos = pos, track = track,
+            sync.post(cfg, song, room, { type = "edit", take = id, pos = pos, qn = sync.qn(proj, pos), track = track,
               len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH"), lane = lane_of(hit[1]),
               mute = reaper.GetMediaItemInfo_Value(hit[1], "B_MUTE"),
               offs = reaper.GetMediaItemTakeInfo_Value(hit[2], "D_STARTOFFS") - band.base_offs(hit[2]) })
@@ -858,7 +922,7 @@ function sync.receive(proj, cfg, song, room, can)
         applied = applied + 1
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
           delete = "deleted " .. tostring(ev.take), undelete = "brought back " .. tostring(ev.take),
-          midi = "edited the notes of " .. tostring(ev.take) })[ev.type]
+          midi = "edited the notes of " .. tostring(ev.take), timeline = "changed the tempo map / markers" })[ev.type]
         done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))
       end
     end

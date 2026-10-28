@@ -50,6 +50,8 @@ reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
 if first_open then reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true) end
 band.apply_tempo(proj, s.tempo)
 band.apply_markers(proj, s.markers)
+-- the band's timeline, not a local edit: Live sync mustn't send it back (lib/sync.lua timeline_sig)
+reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }))
 local n = band.sync_stems(proj, cfg, song, s)
 if s.share then -- the host shares its real takes and lanes, so stems are only a mixed reference
   for i = 0, reaper.CountTracks(proj) - 1 do

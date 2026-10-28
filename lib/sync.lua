@@ -162,7 +162,7 @@ local function split_keep(it, x)
   reaper.UpdateItemInProject(right)
   return right
 end
-local function split_crossing(proj, at, len, mine)
+local function split_crossing(proj, at, len, mine, stale)
   local n = 0
   for _, x in ipairs(len < 0 and { at, at - len } or { at }) do
     for _, it in ipairs(sync.crossing(proj, x, 0)) do
@@ -171,6 +171,8 @@ local function split_crossing(proj, at, len, mine)
       -- (seen 2026-10-28: a midi event every 2 s). It stays as it is; the take it copies is what's split.
       if mine(it) and not (tk and band.take_ext(tk, "band_midi") ~= "") then
         reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
+        local id = tk and band.take_id(tk)
+        if id then stale[id] = stale[id] or ext(proj, sync.SNAP, id) end -- the left part's trim must go out as an edit
         local right = split_keep(it, x)
         if right then -- the left part keeps the id; the right part is new
           for k = 0, reaper.CountTakes(right) - 1 do
@@ -190,7 +192,8 @@ end
 function sync.shift(proj, at, len, opts)
   opts = opts or {}
   local cut_to = len < 0 and (at - len) or at
-  local split = opts.split and split_crossing(proj, at, len, opts.split) or 0
+  local stale = {}
+  local split = opts.split and split_crossing(proj, at, len, opts.split, stale) or 0
   local cross = {}
   for _, it in ipairs(sync.crossing(proj, at, len)) do cross[it] = true end
   local items, kept = {}, {}
@@ -237,6 +240,7 @@ function sync.shift(proj, at, len, opts)
   setext(proj, band.SECTION, "timeline", timeline_sig(proj))
   sync.resnap(proj)
   for id, snap in pairs(kept) do setext(proj, sync.SNAP, id, snap) end -- these go out as edits
+  for id, snap in pairs(stale) do if snap ~= "" then setext(proj, sync.SNAP, id, snap) end end -- and these trims
   reaper.UpdateArrange()
   return true, split
 end
@@ -697,6 +701,9 @@ local function print_take(proj, cfg, b, it, take, id, rev, mode, out, takes, twi
   band.set_take_state(proj, id, "full") -- this project already has it: its own sync must not re-import it
   setext(proj, sync.SENTKEYS, content_key(it, take), id)
   sync.remember(proj, id, it, take)
+  if reaper.GetMediaItemInfo_Value(it, "B_MUTE") ~= 0 then -- manifests don't carry mute: the next look sends it as an edit
+    setext(proj, sync.SNAP, id, (ext(proj, sync.SNAP, id):gsub("|1|([^|]*)$", "|0|%1")))
+  end
   return m
 end
 

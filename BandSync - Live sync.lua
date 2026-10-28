@@ -66,7 +66,7 @@ local function with_tail(t, path)
     c.len = t.len + (t.tail or 0)
     return c
   end
-  t.len = t.len + (t.tail or 0)
+  t.len, t.tailed = t.len + (t.tail or 0), true
   return nil
 end
 
@@ -84,7 +84,13 @@ local function import(room)
       local midi = t.midi and (tdir .. "/" .. t.midi)
       local function place_midi() -- the notes, as an editable MIDI copy under the print
         if not midi or not reaper.file_exists(midi) then return end
-        local _, mtk = band.place_midi(proj, t, midi, cfg.root)
+        local notes = t
+        if t.tailed then -- the copy holds the notes only, without the print's reverb tail
+          notes = {}
+          for k, v in pairs(t) do notes[k] = v end
+          notes.len = t.len - (t.tail or 0)
+        end
+        local _, mtk = band.place_midi(proj, notes, midi, cfg.root)
         if mtk then sync.midi_seen(proj, t.id, mtk) end
         if mtk and t.no_instrument then
           band.log(string.format("%s's MIDI on '%s' came without an instrument, so its print is silent: put one on '%s (MIDI)' to hear it (Print my MIDI shares that)",

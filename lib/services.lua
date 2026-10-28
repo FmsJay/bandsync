@@ -49,10 +49,11 @@ end
 -- Start `path args...` in the background, hidden, in `cwd` (optional). Returns true if launched.
 local function launch(path, args, cwd)
   if WIN then
+    local function sq(s) return "'" .. s:gsub("'", "''") .. "'" end -- PowerShell single quotes: ' is written ''
     local list = {}
-    for _, a in ipairs(args) do list[#list + 1] = "'" .. a .. "'" end
-    local ps = string.format("Start-Process -FilePath '%s'%s%s -WindowStyle Hidden", path,
-      #list > 0 and (" -ArgumentList " .. table.concat(list, ",")) or "", cwd and (" -WorkingDirectory '" .. cwd .. "'") or "")
+    for _, a in ipairs(args) do list[#list + 1] = sq(a) end
+    local ps = string.format("Start-Process -FilePath %s%s%s -WindowStyle Hidden", sq(path),
+      #list > 0 and (" -ArgumentList " .. table.concat(list, ",")) or "", cwd and (" -WorkingDirectory " .. sq(cwd)) or "")
     return reaper.ExecProcess('powershell -NoProfile -WindowStyle Hidden -Command ' .. q(ps), -1) ~= nil
   end
   local cmd = (cwd and ("cd " .. q(cwd) .. " && ") or "") .. "nohup " .. q(path) .. " " .. table.concat(args, " ") .. " >/dev/null 2>&1 &"

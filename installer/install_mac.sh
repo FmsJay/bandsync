@@ -57,10 +57,10 @@ from_dmg() { # url name app-name
   local pkg app
   pkg="$(find "$mnt" -maxdepth 1 -name '*.pkg' | head -1)"
   app="$(find "$mnt" -maxdepth 1 -name "${3:-*}.app" | head -1)"
-  if [ -n "$pkg" ]; then sudo installer -pkg "$pkg" -target / >/dev/null
-  elif [ -n "$app" ]; then ditto "$app" "/Applications/$(basename "$app")"
+  local rc=1 # neither a .pkg nor an .app in the image: not installed
+  if [ -n "$pkg" ]; then sudo installer -pkg "$pkg" -target / >/dev/null; rc=$?
+  elif [ -n "$app" ]; then ditto "$app" "/Applications/$(basename "$app")"; rc=$?
   fi
-  local rc=$?
   hdiutil detach "$mnt" -quiet
   [ $rc -eq 0 ] && ok "$2 installed" || warn "$2 didn't install: install it by hand"
 }

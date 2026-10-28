@@ -26,7 +26,7 @@ local function handover()
   require("recall").save(proj, cfg, b.song, b.room, "before " .. cfg.user .. " took over from " .. tostring(now))
   sync.set_driver(cfg, b.song, b.room, cfg.user)
   sync.post(cfg, b.song, b.room, { type = "driver", from = now, driver = cfg.user }) -- for the history
-  band.msg("You're driving '" .. b.song .. "' now.")
+  band.log("you're driving '" .. b.song .. "' now") -- not a dialog: one would pause Live sync until it's closed
 end
 
 local function describe(c)

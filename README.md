@@ -249,6 +249,10 @@ layers fix that, best set up on the host's always-on machine:
 - Wet prints include the item's own track FX and 2 s of reverb/delay tail past the item's end; not parent
   folders or sends. Volume and pan travel as the shared mix instead.
 - Dry mode replaces whatever plug-ins you had put on that band track; unticking leaves it empty.
+- Time-selection claims are kept in seconds: Insert/Remove bars doesn't move them (re-claim after one).
+- Pitch, playrate or FX you put on someone else's take stay on your machine (your monitoring), and aren't sent.
+- The shared folder trusts its members: an event says who made it, and nothing checks that beyond the folder's
+  own sharing. Share it only with your band. The events folder grows with the session (never pruned yet).
 - Deleting one take out of a multi-take item happens when that project's tab is in front (REAPER/SWS only
   allow it there); whole items are deleted any time.
 - REAPER's lanes play one lane or all of them, so "which lane plays" mirrors as exactly that.

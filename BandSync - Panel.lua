@@ -153,7 +153,9 @@ local function section_control()
   for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
   for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end
   for _, t in ipairs(who.times or {}) do
-    owned[#owned + 1] = { string.format("bars %s to %s: %s", bar_of(t.from), bar_of(t.to), t.user), t.user == cfg.user and "times", t }
+    local last = bar_of(t.to - 0.001):match("^%d+") -- ends on the next bar line: that bar isn't included
+    local first = bar_of(t.from):match("^%d+")
+    owned[#owned + 1] = { string.format("%s: %s", first == last and ("bar " .. first) or ("bars " .. first .. "-" .. last), t.user), t.user == cfg.user and "times", t }
   end
   table.sort(owned, function(x, y) return x[1] < y[1] end)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
@@ -195,7 +197,7 @@ local function section_control()
       local c, why = sync.my_claims(cfg, b.song, b.room)
       if not c then return band.msg(why) end
       c.times = c.times or {}
-      c.times[#c.times + 1] = { from = from, to = to }
+      c.times[#c.times + 1] = { from = from, to = to, at = os.date("!%Y-%m-%dT%H:%M:%SZ") } -- its own date (newest wins)
       sync.set_claims(cfg, b.song, b.room, c)
     end
   end

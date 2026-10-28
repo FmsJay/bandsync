@@ -106,6 +106,9 @@ local function import(room)
     -- one bad manifest (truncated, hand-edited, a newer format) mustn't stop every take and event behind it
     local ok, err = pcall(function()
     local t = band.read_json(tdir .. "/" .. f)
+    local missing
+    for _, k in ipairs({ "id", "full", "user", "track", "pos", "len" }) do if t and t[k] == nil then missing = k; break end end
+    if t and missing and missing ~= "id" and missing ~= "full" then error("it has no '" .. missing .. "'", 0) end
     if t and t.id and t.full then
       band.check_version(t.bandsync, "A take from " .. t.user, true)
       t.pos = sync.here(proj, t.pos, t.qn) -- by beat: right even if a tempo change crossed paths with it

@@ -345,7 +345,7 @@ function sync.authority(cfg, song, room, s)
     local c = band.read_json(dir .. "/" .. f)
     if c and c.user and c.time then
       for _, t in ipairs(c.times or {}) do
-        if tonumber(t.from) and tonumber(t.to) and t.to > t.from then times[#times + 1] = { user = c.user, time = c.time, from = t.from, to = t.to } end
+        if tonumber(t.from) and tonumber(t.to) and t.to > t.from then times[#times + 1] = { user = c.user, time = t.at or c.time, from = t.from, to = t.to } end
       end
       for _, list in ipairs({ { c.tracks, tracks }, { c.regions, regions } }) do
         for _, name in ipairs(list[1] or {}) do

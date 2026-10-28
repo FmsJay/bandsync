@@ -306,7 +306,22 @@ function solo.pull(cfg, song)
   local rpp = src .. "/" .. song .. ".rpp"
   if not reaper.file_exists(rpp) then return nil end
   copy_tree(src, dst, true)
-  return dst .. "/" .. song .. ".rpp"
+  local path = dst .. "/" .. song .. ".rpp"
+  band.write_atomic(path, solo.relative_paths(band.read(path))) -- versions checked in before 0.10.1 carry absolute paths
+  return path
+end
+
+-- A solo project's media lives next to it (media/, prints/): its FILE lines must say so relatively, or another
+-- machine looks for the files under the first person's own folders (2026-10-28: 14 files offline on the laptop,
+-- "C:/Users/admin/Documents/BandSync/Saltmarsh\media/..."; the mixed slashes kept REAPER from saving it relative).
+-- Any FILE path ending in /media/<name> or /prints/<name> becomes media/<name> or prints/<name>. Pure.
+function solo.relative_paths(text)
+  return ((text or ""):gsub('(\n%s*FILE ")([^"\n]+)(")', function(pre, path, post)
+    local p = path:gsub("\\", "/")
+    local sub, name = p:match("/(media)/([^/]+)$")
+    if not sub then sub, name = p:match("/(prints)/([^/]+)$") end
+    return pre .. (sub and (sub .. "/" .. name) or path) .. post
+  end))
 end
 
 -- History, newest first: { file, user, time, note, changes = {lines} }
@@ -373,11 +388,18 @@ function solo.push(proj, cfg, song, note)
     local _, n = reaper.TrackFX_GetFXName(master, f)
     if n:find("ReaNINJAM", 1, true) or n:find("SonoBus", 1, true) then reaper.TrackFX_Delete(master, f) end
   end
+  local offline = 0 -- items whose files aren't on this machine can't be printed: say so
+  for i = 0, reaper.CountMediaItems(proj) - 1 do
+    local tk = reaper.GetActiveTake(reaper.GetMediaItem(proj, i))
+    local src = tk and not reaper.TakeIsMIDI(tk) and reaper.GetMediaItemTake_Source(tk)
+    local fn = src and reaper.GetMediaSourceFileName(src) or ""
+    if fn ~= "" and not reaper.file_exists(fn) then offline = offline + 1 end
+  end
   local media = solo.consolidate(proj, here)
   solo.restore_dry(proj) -- the published file is dry-first, FX on: right for anyone who has the plugins
   local printed = solo.print_wet(proj, here)
   reaper.Main_SaveProjectEx(proj, here .. "/" .. song .. ".rpp", 8) -- 8: save there, no dialog
-  local text = band.read(here .. "/" .. song .. ".rpp") or ""
+  local text = solo.relative_paths(band.read(here .. "/" .. song .. ".rpp") or "")
   solo.use_prints_where_needed(proj) -- then back to what this person can hear
   local remote = solo.dir(cfg, song) .. "/project"
   local prev = band.read(remote .. "/" .. song .. ".rpp")
@@ -394,7 +416,8 @@ function solo.push(proj, cfg, song, note)
   band.write_atomic(hist .. "/" .. name .. ".rpp", text)
   band.write_json(hist .. "/" .. name .. ".json", { user = cfg.user, time = iso(), note = note ~= "" and note or nil,
     changes = changes, printed = printed, media = media })
-  return string.format("checked in '%s': %d change(s), %d wet print(s), %d file(s) uploaded", song, #changes, printed, copied)
+  return string.format("checked in '%s': %d change(s), %d wet print(s), %d file(s) uploaded%s", song, #changes, printed, copied,
+    offline > 0 and string.format(". %d item(s) are offline here (their files are missing), so they weren't printed", offline) or "")
 end
 
 -- Go back to a checked-in version (you must have the song checked out). Where things are now is checked in
@@ -411,7 +434,7 @@ function solo.restore(proj, cfg, song, file)
   -- nothing), so the old version opens under a temporary name next to it (same folder: its media paths still
   -- resolve) and is then saved back under the working copy's own name
   local tmp = solo.local_dir(cfg, song) .. "/" .. song .. " (restoring).rpp"
-  band.write_atomic(tmp, text)
+  band.write_atomic(tmp, solo.relative_paths(text)) -- versions checked in before 0.10.1 carry absolute paths
   if reaper.ValidatePtr2(0, proj, "ReaProject*") then reaper.SelectProjectInstance(proj) end
   reaper.Main_openProject("noprompt:" .. tmp) -- just checked in, so nothing unsaved is lost
   local p2 = reaper.EnumProjects(-1)

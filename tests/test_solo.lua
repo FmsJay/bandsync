@@ -111,4 +111,19 @@ assert(not stripped:find("SonoBus.vst3", 1, true) and not stripped:find("FXID {2
 assert(not stripped:find("reaninjam.dll", 1, true) and not stripped:find("FXID {3}", 1, true), "ReaNINJAM goes")
 assert(stripped:find('NAME "SonoBus notes"', 1, true), "a track merely named after it is untouched")
 assert(stripped:find("  >\n  <TRACK", 1, true), "the master list still closes")
+-- solo projects carry their media paths relative, whoever checked them in
+local abs = table.concat({
+  "    <SOURCE WAVE",
+  '      FILE "C:/Users/admin/Documents/BandSync/Saltmarsh\\media/takes_Laptop-1.flac"',
+  "    >",
+  "    <SOURCE WAVE",
+  '      FILE "C:\\Users\\admin\\Documents\\BandSync\\Saltmarsh\\prints\\6C85-b927m.flac" 1',
+  "    >",
+  '      FILE "D:/Samples/kick.wav"',
+  '      FILE "media/already.flac"' }, "\n")
+local rel = solo.relative_paths("\n" .. abs)
+assert(rel:find('FILE "media/takes_Laptop-1.flac"', 1, true), rel)
+assert(rel:find('FILE "prints/6C85-b927m.flac" 1', 1, true), "backslashes, and what follows the path, kept")
+assert(rel:find('FILE "D:/Samples/kick.wav"', 1, true), "files outside the project's media stay as they are")
+assert(rel:find('FILE "media/already.flac"', 1, true), "already relative: unchanged")
 print("ok")

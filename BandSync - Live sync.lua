@@ -14,6 +14,7 @@ local together = require("together")
 local transport -- a pending start/stop (lib/together.lua)
 local clip_said -- when we last warned about the master clipping
 local due_in = math.huge -- seconds until a pending start/stop fires
+local files_checked -- when our own prints in the shared folder were last checked
 
 local cfg = band.settings()
 if not cfg then return end
@@ -198,10 +199,11 @@ local function poll()
   local copies = sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
   if copies > 0 then band.log(copies .. " copied or split item(s) will go out as new takes") end
   if not hold and reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
-    local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN })
+    local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN, me = cfg.user })
     if #units > 0 then band.log("sent " .. sync.send(proj, cfg, b, units, print_mode) .. " new take(s)") end
     if now - last_reprint > 10 then
       last_reprint = now
+      if now - (files_checked or -1e9) > 60 then files_checked = now; sync.check_own_files(proj, cfg, b) end
       local n = sync.reprint(proj, cfg, b, print_mode)
       if n > 0 then band.log("reprinted " .. n .. " take(s) after a sound change") end
     end

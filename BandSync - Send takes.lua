@@ -15,8 +15,8 @@ local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
 if not b then return band.msg("Run 'BandSync - Open session' first.") end
 
-local items = sync.own_takes(proj, { selected = true, all = send_all, unsent = send_all })
-local unsent = sync.own_takes(proj, { all = send_all, unsent = true, min_len = sync.MIN_LEN })
+local items = sync.own_takes(proj, { selected = true, all = send_all, unsent = send_all, me = cfg.user })
+local unsent = sync.own_takes(proj, { all = send_all, unsent = true, min_len = sync.MIN_LEN, me = cfg.user })
 local chosen, left_out = {}, 0
 for _, u in ipairs(items) do chosen[u[2]] = true end
 for _, u in ipairs(unsent) do if not chosen[u[2]] then left_out = left_out + 1 end end

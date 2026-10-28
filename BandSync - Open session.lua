@@ -28,6 +28,15 @@ if not b then
   if not ok then return end
   room = band.clean(room)
   if room == "" then room = "main" end
+  for i = 0, math.huge do -- already open here? two tabs of one song share its file and its status (2026-10-28)
+    local p = reaper.EnumProjects(i)
+    if not p then break end
+    local ob = band.binding(p)
+    if ob and ob.song == song and ob.room == room and ob.role ~= "solo" then
+      reaper.SelectProjectInstance(p)
+      return band.msg("'" .. song .. "' (room " .. room .. ") is already open in another tab: switched to it.")
+    end
+  end
   if reaper.CountTracks(0) > 0 then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
   b = { role = "guest", song = song, room = room }
 end

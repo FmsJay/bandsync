@@ -34,6 +34,11 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
   Scripts run this way must not open dialogs (`GetUserInputs`, `MB`); those block REAPER until a human clicks.
   `gfx.showmenu` pickers only work when the user runs the action from REAPER's Action list. Have scripts
   write results to a file and read that.
+- **Windows: don't set things up from inside a sandboxed app's shell.** Programs started from the Claude desktop
+  app's shells get their AppData writes redirected to `%LOCALAPPDATA%\Packages\<app>\LocalCache\...`, so Syncthing's
+  identity or REAPER's settings created there are invisible to the same programs started normally (seen: a second
+  Syncthing identity that knew no other machine). Test with a probe file; launch Syncthing, REAPER and the installer
+  through `explorer.exe` or from inside REAPER. `install_windows.ps1` detects this and reopens itself via Explorer.
 - **macOS: don't trigger the Xcode Command Line Tools installer.** On a stock Mac, `python3`, `git`, `make` are
   stubs that pop a CLT dialog. Use `curl`, `grep`, `sed`, `plutil`, `defaults`, `hdiutil`, `ditto`,
   `codesign`, `spctl`, `osascript`, REAPER-hosted Lua, and Syncthing's bundled binary.

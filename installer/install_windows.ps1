@@ -19,6 +19,27 @@ $Repo = "FmsJay/bandsync"
 $ReaImGuiVer = "0.10.0.5" # shortcut: pinned; ReaPack keeps it updated only if later reinstalled through ReaPack
 $ReaPackVer = "v1.2.6"
 
+# Programs started from some sandboxed apps (seen: the Claude desktop app) get a private copy of AppData, so what
+# they set up (Syncthing's identity, REAPER's settings) is invisible to the same programs started normally. Seen
+# 2026-10-27: Syncthing started from REAPER made a second identity that knew no other machine. The process isn't
+# "packaged" (GetCurrentPackageFullName says so), so test what matters: does a write to AppData land in an app's
+# sandbox? Then reopen through Explorer, which starts things outside it, with the same answers.
+$probe = "bandsync_probe_" + [guid]::NewGuid().ToString("N")
+Set-Content (Join-Path $env:LOCALAPPDATA $probe) "x"
+$boxed = Get-ChildItem "$env:LOCALAPPDATA\Packages\*\LocalCache\Local\$probe" -ErrorAction SilentlyContinue
+Remove-Item (Join-Path $env:LOCALAPPDATA $probe) -ErrorAction SilentlyContinue
+if ($boxed) {
+  $argv = @("-Tag", $Tag, "-Scripts", $Scripts)
+  foreach ($k in "User", "HostId", "Root", "Hosting", "Live", "Solo", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
+  if ($NoApps) { $argv += "-NoApps" }
+  $quoted = ($argv | ForEach-Object { if ($_ -match '^-') { $_ } else { '"' + $_ + '"' } }) -join " "
+  $cmd = Join-Path $env:TEMP "bandsync_install_outside.cmd"
+  Set-Content $cmd "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $quoted`r`npause" -Encoding ascii
+  Start-Process explorer.exe -ArgumentList "`"$cmd`""
+  Write-Host "This window runs inside another app's sandbox; BandSync setup continues in a new window." -ForegroundColor Yellow
+  exit 0
+}
+
 function Say($t) { Write-Host $t -ForegroundColor Cyan }
 function Ok($t) { Write-Host "  OK  $t" -ForegroundColor Green }
 function Warn($t) { Write-Host "  !!  $t" -ForegroundColor Yellow }

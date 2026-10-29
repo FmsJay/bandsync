@@ -106,12 +106,20 @@ function rooms.open(from, cfg, b, name)
   return p
 end
 
+-- Why a room name can't be used, or nil. Pure. (Windows can't make folders called CON, NUL, COM1... at all.)
+function rooms.bad_name(name)
+  if not name:match("^[%w][%w %-_]*$") or #name > 30 then return "Room names: up to 30 letters, numbers, spaces, - or _." end
+  local l = name:lower():gsub("%s+$", "")
+  if l == "con" or l == "prn" or l == "aux" or l == "nul" or l:match("^com%d$") or l:match("^lpt%d$") then
+    return "'" .. name .. "' is a name Windows keeps for itself: pick another."
+  end
+end
+
 -- Make a side room from the room in tab `proj` (binding b), as it is now, and go there. You drive it.
 function rooms.create(proj, cfg, b, name)
   name = (name or ""):match("^%s*(.-)%s*$")
-  if not name:match("^[%w][%w %-_]*$") or #name > 30 then
-    return nil, "Room names: up to 30 letters, numbers, spaces, - or _."
-  end
+  local err = rooms.bad_name(name)
+  if err then return nil, err end
   for _, r in ipairs(rooms.list(cfg, b.song)) do
     if r.name:lower() == name:lower() then return nil, "There's already a room called '" .. r.name .. "'." end
   end

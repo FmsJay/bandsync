@@ -85,4 +85,8 @@ local saved = { takes = { ["A-20261029-100000Z-1"] = take("Gtr", 0, { mute = 0, 
 assert(#rooms.plan(saved, live, saved).items == 0 and #rooms.plan(saved, saved, live).items == 0, "0.0 is 0")
 local side3 = { takes = side.takes, plays = { Gtr = side.plays.Gtr, New = { "S-20261029-120000Z-1" } }, tracks = { Gtr = side.tracks.Gtr, New = { mute = 0, solo = 0 } }, timeline = tl }
 for _, it in ipairs(rooms.plan(base, main, side3).items) do assert(it.key ~= "New", "a new track's state isn't a change") end
+assert(rooms.bad_name("chorus ideas") == nil and rooms.bad_name("Take-2_b") == nil, "ordinary names")
+for _, n in ipairs({ "", " lead", "../up", "a/b", "dot.name", "CON", "nul", "Com1", "lpt9", string.rep("x", 31), "caf959" }) do
+  assert(rooms.bad_name(n), "refused: " .. n)
+end
 print("ok")

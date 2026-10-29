@@ -14,7 +14,13 @@ local b = band.binding(proj) or {}
 if not b.song then
   local todo = {}
   for _, r in ipairs(require("prep").scan(proj, cfg, nil)) do
-    if r.todo ~= nil and r.on and r.key ~= "autostart" then todo[#todo + 1] = "  - " .. r.title end
+    if r.key == "format" and r.todo ~= nil then
+      -- only a setting, nothing recorded changes: done here, without a question (2026-10-29: a brand-new project
+      -- was stopped by "isn't prepared" for this alone)
+      reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true)
+      reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", band.srate(proj), true)
+      reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
+    elseif r.todo ~= nil and r.on and r.key ~= "autostart" then todo[#todo + 1] = "  - " .. r.title end
   end
   if #todo > 0 then
     local r = reaper.MB("This project isn't prepared for BandSync yet:\n\n" .. table.concat(todo, "\n") ..

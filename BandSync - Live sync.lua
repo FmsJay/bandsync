@@ -30,8 +30,9 @@ local function reached(t, theirs)
 end
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
--- one Live sync per song tab: another tab's runs alongside (no "terminate instances?" box), and starting it again
--- for this tab only says so
+-- one Live sync per song tab: triggering this action again while it runs does nothing (no "terminate instances?"
+-- box); another tab's runs from a launcher action of its own (band.start_live), and starting it again for this tab
+-- only says so
 if reaper.set_action_options then reaper.set_action_options(2) end
 local beat0 = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if beat0 and reaper.time_precise() - beat0 < 5 then return band.log("Live sync is already running for '" .. b.song .. "'") end
@@ -76,6 +77,15 @@ for _, d in ipairs(band.subdirs(cfg.root)) do
       elseif not set then band.log("Syncthing: " .. tostring(err)) end
     end
   end
+end
+
+-- which plug-ins this machine has goes to the band, and the FX browser's "BandSync (everyone has)" folder follows
+-- what everyone has (lib/plugins.lua); a failure here must never stop syncing
+do
+  local plugins = require("plugins")
+  local ok, n, why = pcall(function() plugins.publish(cfg); return plugins.update_folder(cfg) end)
+  if ok and n then band.log(string.format("%d plug-ins everyone in the band has: FX browser folder '%s'", n, plugins.FOLDER))
+  elseif not ok then band.log("plug-in list: " .. tostring(n)) end
 end
 
 local _, _, section, cmd = reaper.get_action_context()
@@ -287,7 +297,13 @@ local function poll()
       (last_driver == cfg.user and ": you're no longer driving (what you don't own is view-only)" or "")))
   end
   last_driver = driver
-  local rooms = host and band.subdirs(band.song_dir(cfg, b.song) .. "/rooms") or { b.room }
+  -- the host's project gathers the rooms bandmates record into (BandSync before side rooms), never a side room:
+  -- that's its own tab, brought in when someone chooses to (lib/rooms.lua)
+  local rooms = { b.room }
+  if host then
+    rooms = {}
+    for _, r in ipairs(require("rooms").list(cfg, b.song)) do if not r.parent then rooms[#rooms + 1] = r.name end end
+  end
   for _, room in ipairs(rooms) do
     import(room)
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
@@ -406,9 +422,9 @@ local function poll()
   end
   local info = { driver = driver, role = b.role, song = b.song, hold = hold or nil,
     pending = sync.pending_events(proj, cfg, b.song, b.room), armed = armed, side = side_bars(),
-    playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil }
+    playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil, front = reaper.EnumProjects(-1) == proj }
   local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
-    tostring(info.side) .. tostring(info.playing)
+    tostring(info.side) .. tostring(info.playing) .. tostring(info.front)
   if fingerprint ~= status_json or now - last_status > 15 then
     status_json, last_status = fingerprint, now
     sync.write_status(proj, cfg, b.song, b.room, info)
@@ -462,7 +478,14 @@ do -- what's already there is history, not a cue
   while true do local f = reaper.EnumerateFiles(dir, i); if not f then break end; seen_ev[f] = true; i = i + 1 end
 end
 -- BandSync - Autostart.lua restarts us for this project after REAPER restarts, until the person stops us
-local autokey = "autosync " .. (select(2, reaper.EnumProjects(-1)) or ""):lower()
+-- (our tab's file, not the front one's: an update reloads every tab's Live sync while one tab is in front)
+local our_file = ""
+for i = 0, 512 do
+  local p, f = reaper.EnumProjects(i)
+  if not p then break end
+  if p == proj then our_file = f or "" end
+end
+local autokey = "autosync " .. our_file:lower()
 if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
 local tick
 local livemidi = require("livemidi")
@@ -485,6 +508,7 @@ local function tick_body() -- returns true to keep going
     return band.log("live sync stopped for '" .. b.song .. "'")
   end
   reaper.SetExtState(band.SECTION, "live " .. key, tostring(reaper.time_precise()), false)
+  if cmd > 0 then reaper.SetExtState(band.SECTION, "live cmd " .. cmd, tostring(reaper.time_precise()), false) end -- (band.start_live)
   -- the band's takes add up on your master: say so when it clips (at most every 30 s)
   if reaper.EnumProjects(-1) == proj and reaper.GetPlayState() & 1 == 1 then
     local m = reaper.GetMasterTrack(proj)
@@ -612,7 +636,8 @@ end
 -- an error anywhere in a tick (a malformed cue from someone's machine, say) is logged, and Live sync carries on
 local said_at = -math.huge
 tick = function()
-  if reaper.GetPlayStateEx(proj) & 4 == 0 and reaper.ValidatePtr2(0, proj, "ReaProject*") and updated() then
+  -- (the tab may have just been closed: check before asking about it, or REAPER stops us with an error box)
+  if reaper.ValidatePtr2(0, proj, "ReaProject*") and reaper.GetPlayStateEx(proj) & 4 == 0 and updated() then
     band.log("live sync for '" .. b.song .. "' reloaded for BandSync " .. tostring(seen_disk))
     reloaded = true
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)

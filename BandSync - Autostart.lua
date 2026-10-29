@@ -10,7 +10,7 @@ local band = require("band")
 
 local REQUEST = reaper.GetResourcePath() .. "/BandSync/install-request"
 local tried = {} -- project key -> when we last started it (don't hammer a Live sync that refuses to run)
-local cmd, at = nil, 0
+local at = 0
 local function loop()
   reaper.defer(loop)
   if reaper.time_precise() - at < 2 then return end -- every 2 s is plenty
@@ -35,13 +35,10 @@ local function loop()
       local alive = beat and reaper.time_precise() - beat < 5
       if not alive and reaper.time_precise() - (tried[key] or -1e9) > 30 then
         tried[key] = reaper.time_precise()
-        cmd = cmd or reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Live sync.lua", true)
-        if cmd > 0 then
-          band.log("starting Live sync again for " .. fn)
-          reaper.SelectProjectInstance(proj) -- Live sync takes the project in front: this one, for a moment
-          reaper.Main_OnCommand(cmd, 0)
-          if front and reaper.ValidatePtr2(0, front, "ReaProject*") then reaper.SelectProjectInstance(front) end
-        end
+        band.log("starting Live sync again for " .. fn)
+        reaper.SelectProjectInstance(proj) -- Live sync takes the project in front: this one, for a moment
+        band.start_live(dir) -- (each tab at once needs an action of its own)
+        if front and reaper.ValidatePtr2(0, front, "ReaProject*") then reaper.SelectProjectInstance(front) end
       end
     end
   end

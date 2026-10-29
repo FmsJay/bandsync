@@ -23,6 +23,15 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
 
   if not b then
     room = (room and room ~= "") and room or "main"
+    local rooms = require("rooms")
+    local m = rooms.meta(cfg, song, room)
+    if m and m.parent then -- a side room is a copy of the room it came from: made from your tab of that room
+      local from = rooms.tab(song, m.parent)
+      if not from then return band.msg("'" .. room .. "' is a side room of '" .. m.parent .. "'. Open '" .. m.parent .. "' first, then go there from the panel's Rooms tab.") end
+      local p, why = rooms.open(from, cfg, band.binding(from), room)
+      if not p then return band.msg(why) end
+      return band.msg("Opened the side room '" .. room .. "' in its own tab. Start Live sync there (panel: Start).")
+    end
     for i = 0, math.huge do -- already open here? two tabs of one song share its file and its status (2026-10-28)
       local p = reaper.EnumProjects(i)
       if not p then break end

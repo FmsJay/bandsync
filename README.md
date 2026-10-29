@@ -114,8 +114,9 @@ By hand:
 
 ## Session workflow
 
-**BandSync - Panel** puts all of it in one dockable window, in four tabs: **Session** (*Same room*, Live sync
-on/off, Hold sync, bandmates and what they have, who's driving, who owns what, drum maps), **Together**, **Live**,
+**BandSync - Panel** puts all of it in one dockable window, in five tabs: **Session** (*Same room*, Live sync
+on/off, Hold sync, bandmates and what they have, who's driving, who owns what, drum maps, plug-ins everyone has),
+**Rooms**, **Together**, **Live**,
 and **History & restore**. The table below uses the separate actions, which still work without the panel.
 
 | Host | Bandmate |
@@ -227,6 +228,49 @@ everyone follows at the same spot and hears it at once. What someone records sho
 play: **live MIDI view** draws their notes a second or two behind on a muted "<name> (live)" track (you hear their
 instrument through SonoBus), and the placeholder gives way to their real take when they stop.
 
+### Rooms: side rooms, and bringing work back
+
+The **Rooms** tab shows the song's rooms as squares, with who's in each (green: it's the tab in front of them;
+grey: they have it open in another tab). Every room is its own project tab, so going to one opens it once and after
+that it's a tab switch; each tab runs its own Live sync.
+
+- **Create side room**: a copy of the room you're in, as it is now, in a new tab (saved next to your project as
+  `<song> - <room> (room).rpp`, using the same media: nothing is copied). You drive it. Try your own edits there or
+  work on something else; what you record and change there stays in that room.
+- **Go there** on a square: bandmates join a side room from their own copy of the room it came from, and get
+  everything done there since. A side room keeps: its folder in the shared folder (`rooms/<name>`, with `room.json`
+  saying where it came from) and your tab's file. Close the tab, end the session, restart REAPER: **Go there** opens
+  the same file again, and Live sync catches up on what others did there meanwhile.
+- **Come see**: everyone with the song open gets "<you> asks you to come and see '<room>'" at the top of their
+  panel, with **Go** and **Not now**.
+- **Send selected to main** (the easy way back): the selected takes recorded in the side room are copied into the
+  room it came from as new takes, landing where they sit; move them to fit there.
+- **Bring into main...**: compares three versions (the side room as it started, main now, the side room now). Every
+  change made only in the side room comes over (moves, trims, mutes, deletes, what plays, track mute/solo, MIDI note
+  edits), plus its new recordings; changes made only in main stay. Where both changed the same take, track or "what
+  plays", it's listed as a clash with *keep main's* / *use this room's* (main's by default). Tick boxes per track
+  bring just some parts. Main gets a kept restore point first ("before bringing in <room>"), so it can be undone from
+  History & restore. Only main's driver (or someone alone there) can bring a room in.
+- Tempo or markers changed in either room: only new recordings come over (on the same bar and beat), unless the side
+  room changed them and you tick *use this room's tempo and markers*.
+- A new room's tab starts with SonoBus/ReaNINJAM offline (one machine mustn't join the band twice): turn **Same room**
+  on in the tab you're playing in.
+
+### Plug-ins everyone has
+
+Each machine sends the band the names of the plug-ins it has (`<shared folder>/plugins/<you>.json`) when Live sync
+starts. What every bandmate has goes in a folder of REAPER's FX browser, **BandSync (everyone has)** (VST3 first when
+a plug-in comes in several formats, since Windows and Mac both have VST3). Use those and the song sounds the same on
+every machine. The Session tab's *Plug-ins everyone has* updates it on demand. REAPER's own effects (ReaPlugs and the
+JSFX) are on every machine; JSFX from ReaPack work on Windows and Mac alike, once everyone installs the same package.
+
+Free plug-ins worth all of you installing (Windows and Mac; check each site for current formats):
+Surge XT (synth + effects, open source), Dexed (FM synth, open source), Vital (synth, free account), Airwindows
+Consolidated (hundreds of mixing effects, open source), Valhalla Supermassive and Space Modulator (reverb/delay,
+freeware), TAL-NoiseMaker and TAL-Chorus-LX (freeware), Dragonfly Reverb (open source), Chow Tape Model (open
+source), Neural Amp Modeler (guitar amps from captures, open source), MeldaProduction MFreeFXBundle (freeware).
+JSFX through ReaPack: ReaTeam JSFX (default repository), Saike's and Chokehold's (MIT), Tale's (WTFPL).
+
 ### Live: hear each other while it happens
 
 The **Live** tab has three modes:
@@ -271,6 +315,13 @@ layers fix that, best set up on the host's always-on machine:
 - Wet prints include the item's own track FX and 2 s of reverb/delay tail past the item's end; not parent
   folders or sends. Volume and pan travel as the shared mix instead.
 - Dry mode replaces whatever plug-ins you had put on that band track; unticking leaves it empty.
+- Bringing a side room in carries arrangement, mute/solo, what plays and MIDI notes; plug-in and mix changes made in
+  a side room stay there (*Share this sound* sends a track's sound). Restore points saved before 0.16.1 counted a
+  print's 2 s tail in its length: restoring one now takes the tail off first (before, each restore added it again).
+- Someone who joins a side room late starts from their copy of main as it is then, plus everything done in the
+  side room; bringing in, a take neither room's start had but both changed is a clash for you to pick.
+- The FX browser folder is written to `reaper-fxfolders.ini` while REAPER runs; REAPER may only show a changed
+  folder after a restart.
 - Time-selection claims are kept in seconds: Insert/Remove bars doesn't move them (re-claim after one).
 - Pitch, playrate or FX you put on someone else's take stay on your machine (your monitoring), and aren't sent.
 - The shared folder trusts its members: an event says who made it, and nothing checks that beyond the folder's

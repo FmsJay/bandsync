@@ -9,8 +9,10 @@ local recall = {}
 
 function recall.dir(cfg, song, room) return sync.room_dir(cfg, song, room) .. "/recall" end
 
+-- Lengths are the take's own, without the reverb tail its print carries (musical = true; points saved before
+-- 0.16.1 included the tail, and restoring one added it a second time).
 local function capture(proj)
-  local st = { takes = {}, plays = {}, tracks = {} }
+  local st = { takes = {}, plays = {}, tracks = {}, musical = true }
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     local active = reaper.GetActiveTake(it)
@@ -19,9 +21,12 @@ local function capture(proj)
       local id = band.take_id(tk)
       if id then
         st.takes[id] = { track = sync.track_name(it), pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION"),
-          len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), lane = sync.lane_of(it), mute = reaper.GetMediaItemInfo_Value(it, "B_MUTE"),
+          len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - (tonumber(sync.ext(proj, sync.TAILS, id)) or 0), lane = sync.lane_of(it), mute = reaper.GetMediaItemInfo_Value(it, "B_MUTE"),
           offs = reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS") - band.base_offs(tk), active = tk == active,
           rev = tonumber(sync.ext(proj, sync.REV, id)) } -- which print it was: a kept point's files are never cleaned up
+        -- its notes (a MIDI take, or a bandmate's take's "(MIDI)" copy), so bringing a side room in can tell an edit
+        local mtk = reaper.TakeIsMIDI(tk) and tk or select(2, band.find_midi(proj, id))
+        if mtk then st.takes[id].notes = select(2, reaper.MIDI_GetHash(mtk, true, "")) end
       end
     end
   end
@@ -40,6 +45,7 @@ local function capture(proj)
   end
   return st
 end
+recall.capture = capture
 
 -- `keep`: kept for good (end of session): "Empty old trash" never removes the audio it needs.
 function recall.save(proj, cfg, song, room, label, keep)
@@ -146,7 +152,7 @@ function recall.replay(entries, upto)
   -- which takes play: the newest "plays" per track picks the active take of each item
   local active = {}
   for _, list in pairs(st.plays) do for _, id in ipairs(list) do active[id:lower()] = true end end
-  local out = { takes = {}, plays = st.plays, tracks = st.tracks, timeline = st.timeline }
+  local out = { takes = {}, plays = st.plays, tracks = st.tracks, timeline = st.timeline, musical = true }
   for lid, t in pairs(st.takes) do
     out.takes[t.id] = { track = t.track, pos = t.pos, len = t.len, lane = t.lane, mute = t.mute, offs = t.offs, active = active[lid] or nil }
   end
@@ -227,11 +233,12 @@ function recall.restore(proj, cfg, song, room, file)
   return recall.restore_state(proj, cfg, song, room, st, st.label or file)
 end
 
--- Make this project match state st (a recall point, or recall.replay's result).
-function recall.restore_state(proj, cfg, song, room, st, label)
+-- Make this project match state st (a recall point, or recall.replay's result). `saved`: the caller already
+-- saved where things were.
+function recall.restore_state(proj, cfg, song, room, st, label, saved)
   st.label = label
   local file = label
-  recall.save(proj, cfg, song, room, "before restoring " .. (st.label or file))
+  if not saved then recall.save(proj, cfg, song, room, "before restoring " .. (st.label or file)) end
   local want = {}
   for id, t in pairs(st.takes or {}) do want[id:lower()] = { id = id, t = t } end
   local idx = band.take_index(proj)
@@ -254,6 +261,13 @@ function recall.restore_state(proj, cfg, song, room, st, label)
   local takes_dir, trash = band.takes_dir(cfg, song, room), sync.room_dir(cfg, song, room) .. "/_trash"
   for lid, w in pairs(want) do
     local hit, t = idx[lid], w.t
+    local tail = tonumber(sync.ext(proj, sync.TAILS, w.id)) or 0
+    if not st.musical and tail > 0 and t.len then -- an older point: its length included the tail
+      local c = {}
+      for k, v in pairs(t) do c[k] = v end
+      c.len = math.max(0, t.len - tail)
+      t = c
+    end
     if not hit then -- deleted since: bring its files back and let everyone (us included) import it again
       local found = false
       for _, f in ipairs(band.files(trash)) do
@@ -291,7 +305,7 @@ function recall.restore_state(proj, cfg, song, room, st, label)
         if dest then reaper.MoveMediaItemToTrack(it, dest) end
       end
       reaper.SetMediaItemInfo_Value(it, "D_POSITION", t.pos)
-      reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len + (tonumber(sync.ext(proj, sync.TAILS, w.id)) or 0))
+      reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len + tail)
       reaper.SetMediaItemInfo_Value(it, "B_MUTE", t.mute or 0)
       reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", band.base_offs(tk) + (t.offs or 0))
       if t.lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", t.lane) end

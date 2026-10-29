@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.15.8", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.16.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -46,6 +46,29 @@ local function norm(p) return (p:gsub("\\", "/"):gsub("/+$", "")) end
 band.norm = norm
 
 function band.msg(text) reaper.MB(text, "BandSync", 0) end
+
+-- Start Live sync for the tab in front. REAPER runs a script action once at a time (Live sync sets
+-- set_action_options(2): triggered again while running, it quietly does nothing), so each further session tab
+-- syncing at once gets a launcher action of its own: <resource>/Scripts/BandSync tabs/BandSync - Live sync (tab N).lua.
+-- Live sync stamps "live cmd <action>" while it runs, so a free one is found. Returns true if one was started.
+function band.start_live(dir)
+  local main = dir .. "/BandSync - Live sync.lua"
+  for n = 0, 16 do
+    local path = main
+    if n > 0 then
+      local d = reaper.GetResourcePath() .. "/Scripts/BandSync tabs"
+      path = d .. "/BandSync - Live sync (tab " .. n .. ").lua"
+      if not reaper.file_exists(path) then
+        reaper.RecursiveCreateDirectory(d, 0)
+        band.write_atomic(path, "-- BandSync: Live sync for one more session tab at once (see band.start_live)\ndofile([[" .. main .. "]])\n")
+      end
+    end
+    local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
+    local beat = cmd > 0 and tonumber(reaper.GetExtState(band.SECTION, "live cmd " .. cmd))
+    if cmd > 0 and not (beat and reaper.time_precise() - beat < 5) then reaper.Main_OnCommand(cmd, 0); return true end
+  end
+  return false
+end
 -- What BandSync did, for the panel's Activity list (the last 80 lines, this REAPER session). It no longer opens the
 -- ReaScript console, which popped up in front on every send and read like an error (Mac, 2026-10-28); the console
 -- still gets the line when it's already open (with js_ReaScriptAPI, which can tell).

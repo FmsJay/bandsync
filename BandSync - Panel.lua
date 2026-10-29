@@ -107,7 +107,7 @@ local function section_sync()
   ImGui.SameLine(ctx)
   if ImGui.SmallButton(ctx, running and "Stop" or "Start") then
     if running then reaper.SetExtState(band.SECTION, "stop " .. key, "1", false) -- Live sync sees it on its next tick
-    else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); action("Live sync") end
+    else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
   local auto = tools.autostart_on()
   local ach, av = ImGui.Checkbox(ctx, "Start Live sync with REAPER (for sessions where it was running)", auto)
@@ -350,6 +350,24 @@ end
 
 -- Drum map of the selected tracks. Changing it rewrites the BandSync MIDI on those tracks into the new map,
 -- so the notes keep hitting the same drums with the new instrument.
+-- Plug-ins everyone in the band has, as a folder in REAPER's FX browser (lib/plugins.lua).
+local plugins = require("plugins")
+local plug_info
+local function section_plugins()
+  if not ImGui.CollapsingHeader(ctx, "Plug-ins everyone has") then return end
+  ImGui.PushTextWrapPos(ctx, 0)
+  ImGui.TextDisabled(ctx, "Each machine sends the band its list of plug-ins (names only) when Live sync starts. What all of you have " ..
+    "goes in the FX browser folder '" .. plugins.FOLDER .. "': use those and the song sounds the same on every machine. " ..
+    "JSFX (REAPER's own effects, and ReaPack's) work on Windows and Mac alike.")
+  ImGui.PopTextWrapPos(ctx)
+  if plug_info then ImGui.Text(ctx, plug_info) end
+  if ImGui.Button(ctx, "Update the folder now") then
+    local ok, n, why, members = pcall(function() plugins.publish(cfg); return plugins.update_folder(cfg) end)
+    plug_info = not ok and ("Error: " .. tostring(n)) or n and string.format("%d plug-ins everyone has (lists from %s). Reopen the FX browser to see them.",
+      n, table.concat(members or {}, ", ")) or why
+  end
+end
+
 local drummap = require("drummap")
 local function section_drums()
   if not ImGui.CollapsingHeader(ctx, "Drum map (selected tracks)") then return end
@@ -632,7 +650,7 @@ local function section_setup()
     for _, r in ipairs(rows) do ImGui.TextColored(ctx, r[1] and GREEN or YELLOW, (r[1] and "OK   " or "--   ") .. (r[1] and r[2] or r[3])) end
     if not all then
       if ImGui.Button(ctx, "Set up everything I can") then
-        local notes = setup.all(cfg, b, proj, st, function() action("Live sync") end)
+        local notes = setup.all(cfg, b, proj, st, function() band.start_live(dir) end)
         setup_at, live_server = 0, nil -- re-check, and re-read the server address it may have filled in
         if #notes > 0 then band.log("Set up: " .. table.concat(notes, "; ")) end
       end
@@ -949,6 +967,204 @@ local function section_tools()
   end
 end
 
+-- ---- Rooms tab: the song's rooms as squares, side rooms, come see, and bringing work back --------------------
+local rooms = require("rooms")
+local room_view, room_at, new_room, merge, dismissed = nil, -math.huge, "", nil, {}
+local function live_running(p)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(p)))
+  return beat and reaper.time_precise() - beat < 5
+end
+local function go_room(name)
+  local p, why = rooms.open(proj, cfg, b, name)
+  if not p then return band.msg(why) end
+  if not live_running(p) then band.start_live(dir) end -- runs for the tab in front: the room's
+  reaper.SetExtState(band.SECTION, "panel rooms", "1", false)
+  room_at, merge = -math.huge, nil
+end
+local function refresh_rooms()
+  if reaper.time_precise() - room_at < 2 and room_view and room_view.room == b.room then return end
+  room_at = reaper.time_precise()
+  room_view = { room = b.room, list = rooms.list(cfg, b.song), people = {}, meta = rooms.meta(cfg, b.song, b.room) }
+  for _, r in ipairs(room_view.list) do room_view.people[r.name] = rooms.people(cfg, b.song, r.name) end
+end
+
+-- Bring this side room into the room it came from: what changed here and there since it was made, compared.
+local function look_merge(parent)
+  local mproj = rooms.tab(b.song, parent)
+  local m = room_view.meta or {}
+  local base = m.base and band.read_json(recall.dir(cfg, b.song, b.room) .. "/" .. m.base)
+  if not mproj or not base then
+    merge = { why = not mproj and ("Open '" .. parent .. "' here first (Go there), then look again.") or ("This room's starting point (" ..
+      tostring(m.base) .. ") isn't here yet (still syncing?).") }
+    return
+  end
+  local side, main = recall.capture(proj), recall.capture(mproj)
+  local plan = rooms.plan(base, main, side)
+  local tracks, order = {}, {}
+  local function track(n) if n and not tracks[n] then tracks[n] = true; order[#order + 1] = n end end
+  for _, it in ipairs(plan.items) do track(it.track) end
+  for _, id in ipairs(plan.new) do track((side.takes[id] or {}).track) end
+  table.sort(order)
+  merge = { plan = plan, side = side, mproj = mproj, parent = parent, tracks = tracks, order = order, timeline = false }
+end
+
+local function section_merge()
+  if merge.why then ImGui.TextColored(ctx, YELLOW, merge.why); return end
+  local plan = merge.plan
+  if #plan.items == 0 and #plan.new == 0 then ImGui.TextDisabled(ctx, "Nothing here that '" .. merge.parent .. "' doesn't have."); return end
+  if plan.timeline then
+    ImGui.PushTextWrapPos(ctx, 0)
+    if plan.timeline == "main" then
+      ImGui.TextColored(ctx, YELLOW, "'" .. merge.parent .. "' changed its tempo or markers since this room was made: only new recordings " ..
+        "can go (they land on the same bar and beat). Changes to existing takes stay here.")
+    else
+      local _, v = ImGui.Checkbox(ctx, "Use this room's tempo and markers in '" .. merge.parent .. "' too", merge.timeline)
+      merge.timeline = v
+      if not v then ImGui.TextDisabled(ctx, "Unticked: only new recordings go (on the same bar and beat); changes to existing takes stay here.") end
+    end
+    ImGui.PopTextWrapPos(ctx)
+  end
+  local moves = not plan.timeline or merge.timeline
+  local clashes = 0
+  for _, it in ipairs(plan.items) do if it.clash then clashes = clashes + 1 end end
+  ImGui.Text(ctx, string.format("%d new take(s), %d change(s)%s", #plan.new, #plan.items - clashes,
+    clashes > 0 and string.format(", %d clash(es): pick each one", clashes) or ""))
+  if ImGui.BeginChild(ctx, "merge", 0, 220, ImGui.ChildFlags_Borders) then
+    for _, name in ipairs(merge.order) do
+      ImGui.PushID(ctx, name)
+      local _, on = ImGui.Checkbox(ctx, name, merge.tracks[name])
+      merge.tracks[name] = on
+      ImGui.Indent(ctx)
+      ImGui.BeginDisabled(ctx, not on)
+      local n = 0
+      for _, id in ipairs(plan.new) do if (merge.side.takes[id] or {}).track == name then n = n + 1 end end
+      if n > 0 then ImGui.TextColored(ctx, GREEN, string.format("%d new recording(s)", n)) end
+      for i, it in ipairs(plan.items) do
+        if it.track == name then
+          ImGui.PushID(ctx, i)
+          local who = (it.kind == "take" or it.kind == "notes") and ((it.key:match("^(.-)%-%d+%-%d+Z") or it.key) .. "'s take: ") or ""
+          ImGui.BeginDisabled(ctx, not moves)
+          if it.clash then
+            ImGui.TextColored(ctx, YELLOW, who .. it.label .. " (changed in both)")
+            if ImGui.RadioButton(ctx, "keep " .. merge.parent .. "'s", (it.use or "main") == "main") then it.use = "main" end
+            ImGui.SameLine(ctx)
+            if ImGui.RadioButton(ctx, "use this room's", it.use == "side") then it.use = "side" end
+          else
+            ImGui.Text(ctx, who .. it.label)
+          end
+          ImGui.EndDisabled(ctx)
+          ImGui.PopID(ctx)
+        end
+      end
+      ImGui.EndDisabled(ctx)
+      ImGui.Unindent(ctx)
+      ImGui.PopID(ctx)
+    end
+    ImGui.EndChild(ctx)
+  end
+  local driver = sync.driver(cfg, b.song, merge.parent, view.session)
+  local alone = reaper.GetExtState(band.SECTION, "alone " .. tostring(merge.mproj)) ~= ""
+  local may = driver == cfg.user or alone
+  local parent = merge.parent
+  ImGui.BeginDisabled(ctx, not may)
+  if ImGui.Button(ctx, "Bring into " .. parent) and reaper.MB("Bring the ticked changes and recordings into '" .. parent .. "'?\n\n" ..
+      "Where '" .. parent .. "' is now is kept as a restore point first, so you can go back.", "BandSync", 4) == 6 then
+    local ok, res = pcall(rooms.merge, cfg, b.song, b.room, proj, merge.mproj, merge.plan, merge.side, merge.tracks, merge.timeline)
+    band.log(ok and ("brought '" .. b.room .. "' into '" .. parent .. "': " .. res) or ("bringing in failed: " .. tostring(res)))
+    if ok and not live_running(merge.mproj) then band.log("Live sync isn't running in '" .. parent .. "': start it there so the band gets this") end
+    merge = nil
+  end
+  ImGui.EndDisabled(ctx)
+  if not may then
+    ImGui.SameLine(ctx)
+    ImGui.TextDisabled(ctx, tostring(driver) .. " drives '" .. parent .. "': they bring it in (or take control there)")
+  end
+end
+
+local function section_rooms()
+  refresh_rooms()
+  ImGui.PushTextWrapPos(ctx, 0)
+  ImGui.TextDisabled(ctx, "Each room is its own project tab: going to one opens it once, then it's a tab switch. A side room starts " ..
+    "as a copy of the room you make it from: try your own edits there, have everyone come and see, then bring back what's good.")
+  ImGui.PopTextWrapPos(ctx)
+  local avail = ImGui.GetContentRegionAvail(ctx)
+  local w, gap = 165, 8
+  local per = math.max(1, math.floor((avail + gap) / (w + gap)))
+  for i, r in ipairs(room_view.list) do
+    if (i - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, gap) end
+    local here = r.name == b.room
+    if ImGui.BeginChild(ctx, "room " .. r.name, w, 118, ImGui.ChildFlags_Borders) then
+      if here then ImGui.TextColored(ctx, GREEN, r.name .. "  (this tab)") else ImGui.Text(ctx, r.name) end
+      ImGui.TextDisabled(ctx, r.parent and ("side room of " .. r.parent) or "the song")
+      local people = room_view.people[r.name] or {}
+      if #people == 0 then ImGui.TextDisabled(ctx, "nobody") end
+      for _, p in ipairs(people) do
+        if p.here then ImGui.TextColored(ctx, GREEN, p.user .. (p.me and " (you)" or ""))
+        else ImGui.TextDisabled(ctx, p.user .. (p.me and " (you)" or "") .. ": tab open") end
+      end
+      if not here and ImGui.SmallButton(ctx, "Go there") then go_room(r.name) end
+      ImGui.EndChild(ctx)
+    end
+  end
+  ImGui.Separator(ctx)
+  local _, v = ImGui.InputTextWithHint(ctx, "##newroom", "side room name (e.g. 'chorus ideas')", new_room, ImGui.InputTextFlags_None)
+  new_room = v
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Create side room") then
+    local p, why = rooms.create(proj, cfg, b, new_room)
+    if not p then band.msg(why) else
+      band.log("made the side room '" .. new_room .. "' from '" .. b.room .. "' (you drive it)")
+      new_room = ""
+      if not live_running(p) then band.start_live(dir) end
+      reaper.SetExtState(band.SECTION, "panel rooms", "1", false)
+      room_at = -math.huge
+    end
+  end
+  ImGui.SetItemTooltip(ctx, "A copy of this room as it is now, in its own tab. Bandmates can join it from here.")
+  local parent = room_view.meta and room_view.meta.parent
+  if ImGui.Button(ctx, "Come see") then
+    rooms.invite(cfg, b.song, b.room)
+    band.log("asked everyone to come and see '" .. b.room .. "'")
+  end
+  ImGui.SetItemTooltip(ctx, "Everyone with this song open gets 'come and see " .. b.room .. "' at the top of their panel, with a Go button.")
+  if not parent then return end
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Send selected to " .. parent) then
+    local list, had, unsent = rooms.selected_takes(proj, cfg, b.song, b.room, parent)
+    if #list == 0 then
+      band.msg(unsent > 0 and "Those haven't gone out yet: let Live sync send them (stop recording, or release Hold sync), then try again."
+        or ("Nothing to send: select takes recorded in this room (takes that came from '" .. parent .. "' are there already)."))
+    elseif reaper.MB(string.format("Copy %d take(s) recorded here into '%s'? They land where they sit here, for everyone there; move them " ..
+        "to fit.%s", #list, parent, had > 0 and string.format("\n\n(%d selected take(s) are in '%s' already.)", had, parent) or ""), "BandSync", 4) == 6 then
+      band.log(string.format("sent %d take(s) from '%s' to '%s'", rooms.copy_takes(cfg, b.song, b.room, parent, list), b.room, parent))
+    end
+  end
+  ImGui.SetItemTooltip(ctx, "The easy way back: the selected takes recorded here are copied into '" .. parent .. "' as new takes.")
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, merge and "Look again" or ("Bring into " .. parent .. "...")) then look_merge(parent) end
+  ImGui.SetItemTooltip(ctx, "Compares this room, '" .. parent .. "' and how this room started: everything changed here comes over, " ..
+    "except where '" .. parent .. "' changed the same thing too (you pick). New recordings come too.")
+  if merge then section_merge() end
+end
+
+-- Bandmates asking you to come and see their room (any tab of the song).
+local invites, invites_at = {}, -math.huge
+local function section_invites()
+  if reaper.time_precise() - invites_at > 3 then invites_at = reaper.time_precise(); invites = rooms.invites(cfg, b.song) end
+  for _, v in ipairs(invites) do
+    local key = v.from .. v.time
+    if v.room ~= b.room and not dismissed[key] then
+      ImGui.PushID(ctx, key)
+      ImGui.TextColored(ctx, YELLOW, v.from .. " asks you to come and see '" .. v.room .. "'")
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Go") then dismissed[key] = true; go_room(v.room) end
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Not now") then dismissed[key] = true end
+      ImGui.PopID(ctx)
+    end
+  end
+end
+
 local function frame()
   if reaper.time_precise() - last > 1.5 or reaper.EnumProjects(-1) ~= proj then
     last = reaper.time_precise()
@@ -972,6 +1188,7 @@ local function frame()
     ImGui.PopTextWrapPos(ctx)
     return section_solo()
   end
+  section_invites()
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
       section_room()
@@ -981,7 +1198,15 @@ local function frame()
       section_band()
       section_control()
       section_drums()
+      section_plugins()
       section_actions()
+      ImGui.EndTabItem(ctx)
+    end
+    -- a room you just made or went to opens on this tab (its panel is the new tab's: ExtState, so any panel sees it)
+    local to_rooms = reaper.GetExtState(band.SECTION, "panel rooms") ~= ""
+    if to_rooms then reaper.DeleteExtState(band.SECTION, "panel rooms", false) end
+    if ImGui.BeginTabItem(ctx, "Rooms", nil, to_rooms and ImGui.TabItemFlags_SetSelected or ImGui.TabItemFlags_None) then
+      section_rooms()
       ImGui.EndTabItem(ctx)
     end
     if ImGui.BeginTabItem(ctx, "Together") then

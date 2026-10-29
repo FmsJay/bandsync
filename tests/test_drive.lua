@@ -21,4 +21,12 @@ assert(drive.place("C-20261028-010101Z-1-r2.opus", trashed, cur) == "_trash", "a
 assert(drive.place("C-20261028-010101Z-1-r3.opus", trashed, cur) == "takes", "the current revision")
 assert(drive.place("C-20261028-010101Z-1.json", trashed, cur) == "takes", "the manifest stays with a live take")
 assert(drive.place("D-20261028-010101Z-1.flac", trashed, cur) == "takes", "a take with no manifest yet (still arriving)")
+local tree = { ["G:/My Drive"] = { "Music", "Photos" }, ["H:/My Drive"] = { "Stuff", "bandsync" } }
+local function subdirs(d) return tree[d] or {} end
+local root, missing = drive.find({ "G:/My Drive", "H:/My Drive", "Z:/My Drive" }, subdirs)
+assert(root == "H:/My Drive/bandsync" and not missing, "the account holding the shared folder, on any letter, its own spelling")
+root, missing = drive.find({ "G:/My Drive", "Z:/My Drive" }, subdirs)
+assert(root == nil and missing == "G:/My Drive", "My Drive without the shortcut: nothing made, and the panel is told where")
+root, missing = drive.find({ "Z:/My Drive" }, subdirs)
+assert(root == nil and missing == nil, "no Google Drive at all")
 print("ok")

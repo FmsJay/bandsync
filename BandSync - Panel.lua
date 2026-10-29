@@ -207,6 +207,14 @@ local function section_control()
   ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every few minutes, while stopped): what someone " ..
     "does alone reaches the band whenever they next open the song, and every end-of-session point is kept there.")
     or off and "Off on this machine." or "No Google Drive for desktop here (My Drive not found).")
+  local missing = not drive_root and not off and require("drive").missing
+  if missing then
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.TextColored(ctx, YELLOW, "No BandSync folder in " .. missing .. ". On drive.google.com, find the band's BandSync folder " ..
+      "(Shared with me), right-click > Organize > Add shortcut > My Drive, and keep the name BandSync. Starting a band? " ..
+      "Make a folder called BandSync in My Drive and share it with everyone as Editor.")
+    ImGui.PopTextWrapPos(ctx)
+  end
   local owned = {}
   for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
   for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end

@@ -12,21 +12,48 @@ local drive = {}
 -- Looking is cached for 5 minutes: listing My Drive asks Google's servers, and doing it every Live sync poll and
 -- panel frame on two machines of one account ran into Drive's rate limit (2026-10-28: 600+ "userRateLimitExceeded"
 -- in an hour, uploads held back for many minutes, "Can't add file" messages).
+-- The band's folder is a Drive folder one person shares with everyone (Editor), each on their own Google account,
+-- added to each person's My Drive as a shortcut named BandSync. It's only ever found, never made: making it in a My
+-- Drive without the shortcut would copy everything into a private folder nobody else sees.
+-- First My Drive (of `places`, in order) holding a BandSync folder -> its path; else nil, plus the first My Drive
+-- seen (so the panel can say the shortcut is missing). `subdirs(dir)` lists folder names. Pure.
+function drive.find(places, subdirs)
+  local missing
+  for _, md in ipairs(places) do
+    local dirs = subdirs(md)
+    for _, d in ipairs(dirs) do
+      if d:lower() == "bandsync" then return md .. "/" .. d end
+    end
+    if dirs[1] and not missing then missing = md end
+  end
+  return nil, missing
+end
+
+-- Where Google Drive for desktop may put My Drive: a drive letter on Windows (G: unless it's taken; one per
+-- signed-in account), the user folder (Windows mirroring), ~/Library/CloudStorage/GoogleDrive-<account> on macOS.
+local function places()
+  local out = { "G:/My Drive" }
+  for c = ("D"):byte(), ("Z"):byte() do
+    if c ~= ("G"):byte() then out[#out + 1] = string.char(c) .. ":/My Drive" end
+  end
+  local up = os.getenv("USERPROFILE")
+  if up then out[#out + 1] = up:gsub("\\", "/") .. "/My Drive" end
+  local cs = (os.getenv("HOME") or "") .. "/Library/CloudStorage"
+  for _, d in ipairs(band.subdirs(cs)) do
+    if d:match("^GoogleDrive%-") then out[#out + 1] = cs .. "/" .. d .. "/My Drive" end
+  end
+  return out
+end
+
 local found, found_at = nil, -math.huge
+drive.missing = nil -- a My Drive with no BandSync folder in it (the shared folder isn't added yet), for the panel
 function drive.root(cfg)
   local r = reaper.GetExtState(band.SECTION, "drive_root")
   if r == "off" then return nil end
   if r ~= "" then return r end
   if reaper.time_precise() - found_at < 300 then return found end
-  found, found_at = nil, reaper.time_precise()
-  if reaper.file_exists("G:/My Drive/desktop.ini") or reaper.file_exists("G:/My Drive/BandSync") or band.subdirs("G:/My Drive")[1] then
-    found = "G:/My Drive/BandSync"
-  else
-    local cs = (os.getenv("HOME") or "") .. "/Library/CloudStorage" -- Google Drive for desktop on macOS
-    for _, d in ipairs(band.subdirs(cs)) do
-      if d:match("^GoogleDrive%-") then found = cs .. "/" .. d .. "/My Drive/BandSync" end
-    end
-  end
+  found_at = reaper.time_precise()
+  found, drive.missing = drive.find(places(), band.subdirs)
   return found
 end
 

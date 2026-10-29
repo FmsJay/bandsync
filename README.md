@@ -103,11 +103,13 @@ By hand:
 6. Optional extras:
    - **Live** needs **Tailscale**. Bandmates don't join the host's tailnet: the host shares the server machine with
      each of them (admin console > the machine's **...** > *Share*), and they accept the link with their own account.
-   - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**. The host shares a
-     `BandSync` folder in My Drive (Editor); each bandmate adds it to their own Drive with *Shared with me >
-     right-click > Organize > Add shortcut > My Drive*, or it never reaches their computer.
-     `G:/My Drive/BandSync` (Windows) and `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/BandSync` (macOS)
-     are found by themselves; anything else goes in the `drive_root` setting (ExtState), and the Session tab's
+   - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**, each person signed in
+     with their **own** Google account (two computers on one account lose files: "Lost and Found"). The host makes a
+     `BandSync` folder in My Drive and shares it with everyone as Editor; each bandmate adds it to their own Drive
+     with *Shared with me > right-click > Organize > Add shortcut > My Drive*, keeping the name `BandSync`, or it
+     never reaches their computer. BandSync finds it in any My Drive on the machine (any drive letter, the Windows
+     user folder, every macOS account) and never makes one itself; the Session tab says when the shortcut is
+     missing. Anything else goes in the `drive_root` setting (ExtState), and the Session tab's
      *Keep the band's copy on Google Drive* turns it off on one machine.
 
 ## Session workflow
@@ -207,7 +209,7 @@ There's no separate mode for working on your own: open the song and Live sync ru
   saves a kept restore point "yours before <name>'s work done alone" before the other's changes land, so neither
   side is ever lost. The newest change to each take wins; restore the point to go back to yours.
 - **The Google Drive copy.** Syncthing only moves files while two machines are on at the same time. Live sync
-  also copies each room to `<My Drive>/BandSync/<song>/rooms/<room>` every minute while stopped (both ways,
+  also copies each room to `<My Drive>/BandSync/<song>/rooms/<room>` every few minutes while stopped (both ways,
   nothing deleted), so what someone did alone reaches the others whenever they next open the song, even if their
   machines are never on together. Deletes and new revisions land in the right place (`takes/` or `_trash/`) on
   both sides.

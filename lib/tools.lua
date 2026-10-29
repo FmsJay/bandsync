@@ -242,8 +242,48 @@ function tools.undo_mine(proj, cfg, b)
   if not c then return nil, why end
   local ok, err = c.apply()
   if not ok then return nil, err end
-  reaper.SetProjExtState(proj, UNDONE, c.ev.id, "1") -- the next press goes one further back
+  -- the next press goes one further back; the stamp (when) lets Redo find the newest undo
+  reaper.SetProjExtState(proj, UNDONE, c.ev.id, os.date("!%Y%m%d%H%M%S") .. string.format("%.6f", reaper.time_precise() % 1))
   return "undid " .. c.what
+end
+
+-- Redo: the change you undid last, made again (it goes to the band like any change, and Undo takes it back again).
+-- Returns a summary, or nil + why.
+function tools.redo_mine(proj, cfg, b)
+  local best, stamp
+  local i = 0
+  while true do
+    local ok, key, val = reaper.EnumProjExtState(proj, UNDONE, i)
+    if not ok then break end
+    i = i + 1
+    if #val > 1 and (not stamp or val > stamp) then best, stamp = key, val end -- ("1": undone before 0.17, no order)
+  end
+  if not best then return nil, "nothing of yours undone to redo" end
+  local ev
+  for _, e in ipairs(events_of(cfg, b)) do if e.id:lower() == best:lower() then ev = e end end
+  if not ev then return nil, "that change isn't in this room's history any more" end
+  if ev.type == "edit" and ev.take then
+    local it, tk = band.find_take(proj, ev.take)
+    if not it then return nil, "that take isn't here any more" end
+    if ev.pos then reaper.SetMediaItemInfo_Value(it, "D_POSITION", ev.pos) end
+    if ev.len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", ev.len + (tonumber(sync.ext(proj, sync.TAILS, ev.take)) or 0)) end
+    if ev.offs then reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", band.base_offs(tk) + ev.offs) end
+    if ev.mute then reaper.SetMediaItemInfo_Value(it, "B_MUTE", ev.mute) end
+    reaper.UpdateItemInProject(it)
+  elseif ev.type == "track" and ev.track then
+    local tr = band.find_track(proj, ev.track, true)
+    if not tr then return nil, "that track isn't here any more" end
+    if ev.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", ev.vol) end
+    if ev.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", ev.pan) end
+    if ev.mute then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", ev.mute) end
+  elseif ev.type == "delete" and ev.take then
+    local it, tk = band.find_take(proj, ev.take)
+    if not it or not sync.delete_take(proj, it, tk, ev.take) then return nil, "that take isn't here to delete again" end
+  else
+    return nil, "that kind of change can't be redone"
+  end
+  reaper.SetProjExtState(proj, UNDONE, ev.id, "") -- it's yours again: Undo can take it back
+  return "redid your change from " .. ev.time:sub(12, 19)
 end
 
 -- ---- which of a chain's plug-ins this machine has (before turning dry mode on) ---------------------------

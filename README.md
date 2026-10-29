@@ -114,13 +114,22 @@ By hand:
 
 ## Session workflow
 
-**BandSync - Panel** puts all of it in one dockable window. It opens in the app look: a top bar (the song, the
-room, whether it's syncing, who drives) and a sidebar of pages: **Home** (the *Same room* button, a card for each
-bandmate showing whether they're here, recording, driving and what they have armed, and this session's switches),
-**Rooms**, **Together**, **Live**, **History** and **Settings** (sync options, claims, Google Drive, set-up, drum
-maps, plug-ins, more actions). **BandSync - Classic panel** (or *Use the classic panel* in Settings) opens the
-same panel in its classic layout, with tabs: the backup look, everything the same underneath. The table below
-uses the separate actions, which still work without the panel.
+**BandSync - Panel** puts all of it in one dockable window. It opens in the app look:
+
+- **Top bar**: the song, the room, whether Live sync runs (Start/Stop), who drives, **Undo** / **Redo** (your own
+  changes only, for everyone: a bandmate's change that came in since is never touched, unlike Ctrl+Z), **Dock** /
+  **Undock**, and **Window** (fill the screen the panel is on, or its left/right/top/bottom half, and back).
+- **Pages** (a sidebar, or a row of tabs when the panel is short, as in a bottom docker): **Home** (*Same room*,
+  *Choose who you hear* once in, a card per bandmate showing whether they're here, recording, driving and what they
+  have armed, then who changes what: the driver, your switches and your claims), **Rooms**, **Together**, **Live**,
+  **History**, **Settings** (look, sync options, Google Drive, drum maps, plug-ins) and **Maintenance** (set up and
+  health: red = the band can't sync until it's fixed, yellow = an extra or worth a look, dismissable; the sidebar
+  shows the worst one still open; activity, updates, tidy-up).
+- Every page and control explains itself on hover. The window resizes from any edge.
+- **BandSync - Classic panel** (or *Use the classic panel* in Settings) opens the same panel in its classic layout,
+  with tabs: the backup look, everything the same underneath.
+
+The table below uses the separate actions, which still work without the panel.
 
 | Host | Bandmate |
 |---|---|

@@ -118,13 +118,13 @@ By hand:
 
 - **Top bar**: the song, the room, whether Live sync runs (Start/Stop), who drives, **Undo** / **Redo** (your own
   changes only, for everyone: a bandmate's change that came in since is never touched, unlike Ctrl+Z), **Dock** /
-  **Undock**, and **Window** (fill the screen the panel is on, or its left/right/top/bottom half, and back).
+  **Undock**, **Full screen** (the screen the panel is on, and back) and **Window** (that screen's left/right/top/bottom half).
 - **Pages** (a sidebar, or a row of tabs when the panel is short, as in a bottom docker): **Home** (*Same room*,
   *Choose who you hear* once in, a card per bandmate showing whether they're here, recording, driving and what they
   have armed, then who changes what: the driver, your switches and your claims), **Rooms**, **Together**, **Live**,
   **History**, **Settings** (look, sync options, Google Drive, drum maps, plug-ins) and **Maintenance** (set up and
   health: red = the band can't sync until it's fixed, yellow = an extra or worth a look, dismissable; the sidebar
-  shows the worst one still open; activity, updates, tidy-up).
+  shows the worst one still open; activity, updates, tidy-up; the BandSync logo and version at its foot).
 - Every page and control explains itself on hover. The window resizes from any edge.
 - **BandSync - Classic panel** (or *Use the classic panel* in Settings) opens the same panel in its classic layout,
   with tabs: the backup look, everything the same underneath.
@@ -150,7 +150,9 @@ The table below uses the separate actions, which still work without the panel.
   isn't one of the song's markers and never syncs as one). A track claim beats a time claim, which beats a
   region claim, which beats the driver. Each claim has its own x to release it; *Release mine* hands back all.
 - **History & restore** (panel tab): every take and every change in the room, newest first, grouped by who made
-  them (and who was driving), each group expandable to its individual changes. The driver can restore the
+  them (and who was driving), each group expandable to its individual changes. Filters narrow it to one person, one
+  kind of change (recordings, moves, deletes, what plays, track changes, MIDI, notes, tempo and arrangement...), one
+  track, or words in it; filtered, each change has its own *Restore* to right after it. The driver can restore the
   session to right after any group: later takes are put away, deleted ones come back out of `_trash`, positions
   and what plays go back. Named **recall points** (saved at every handover and with *Save point*) live there
   too. Every restore first saves where things are, so you can flip between versions.
@@ -189,9 +191,16 @@ The table below uses the separate actions, which still work without the panel.
     how many of them you have before you tick it. Untick to go back to the print.
 - **Shared mix**: volume and pan travel like mute and solo (the driver's, or a track owner's). Prints are made
   at unity, so nobody's fader is baked in twice.
-- **Locked edits snap back**: moving or trimming a take that isn't yours to change puts it back, with a note
-  in the console. Your own takes you may always move, trim, mute or delete, unless someone has claimed that
-  track or region.
+- **Editing modes** (Home, *Who changes what*; the driver picks, everyone sees it): **Driver only** (only the
+  driver changes what the band has), **Claims** (the default: the driver, and everyone on what they've claimed) or
+  **Open** (anyone changes anything nobody has claimed, the newest change wins; the tempo map stays the driver's).
+  Your own takes are yours to change while the driver isn't here; you can always take one back (delete it).
+- **What you see is what the band has**: a change you may not make (a move, trim, mute or delete) is put back,
+  with a note in Activity saying whose it is and how to get it (claim it, or take control). While someone else
+  drives, a slim banner at the foot of REAPER's timeline says what you can change (it never takes a click;
+  Settings turns it off). Recording always goes out. Yours alone: your faders, pan, mute and solo on tracks you
+  don't own (your monitoring), tracks you add (they reach the band when you record on them, under their name; BandSync
+  never deletes them), your plug-ins (they travel inside your prints). A band track you rename gets its name back.
 - **Start Live sync with REAPER** (panel checkbox): Live sync comes back by itself for any session where it
   was running when REAPER closed, until you stop it.
 - **Empty old trash** (panel, More): removes trashed takes and revisions older than 30 days.

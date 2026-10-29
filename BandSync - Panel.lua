@@ -275,6 +275,7 @@ local function action(name)
 end
 
 local proj, b, view, can, who, points, last, err = nil, nil, nil, nil, nil, {}, 0, nil
+local banner_text -- what the banner over REAPER says while someone else drives (set with the view, drawn by banner())
 local label = ""
 local function refresh()
   proj = reaper.EnumProjects(-1)
@@ -282,6 +283,19 @@ local function refresh()
   if not b then return end
   view = status.gather(cfg, b, proj)
   can, who = sync.authority(cfg, b.song, b.room, view.session)
+  banner_text = nil
+  local here = false -- the driver is someone else, and they're here
+  for _, r in ipairs(view.rows) do if r.name == view.driver and r.age < 45 then here = true end end
+  if here and view.driver ~= cfg.user and reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) == "" then
+    local mine = 0
+    for _, c in pairs(who.tracks) do if c.user == cfg.user then mine = mine + 1 end end
+    for _, c in pairs(who.regions) do if c.user == cfg.user then mine = mine + 1 end end
+    for _, t in ipairs(who.times or {}) do if t.user == cfg.user then mine = mine + 1 end end
+    banner_text = who.mode == "driver" and ("View only: " .. view.driver .. " is driving. Your changes are put back (recording still goes out).")
+      or who.mode == "open" and nil
+      or (mine > 0 and (view.driver .. " is driving: you can change what you've claimed.")
+        or ("View only: " .. view.driver .. " is driving. Claim a track (BandSync, Home) to edit it."))
+  end
   points = recall.list(cfg, b.song, b.room)
 end
 
@@ -350,11 +364,6 @@ local function section_sync()
   local ach, av = check("Start Live sync with REAPER (for sessions where it was running)", auto)
   if ach and not tools.set_autostart(av, dir) then band.msg("Couldn't write Scripts/__startup.lua") end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
-  local everyone = reaper.GetExtState(band.SECTION, "edit_mode") == "everyone"
-  local ech, ev = check("While someone else drives, my changes stay here (scratch)", not everyone)
-  if ech then reaper.SetExtState(band.SECTION, "edit_mode", ev and "" or "everyone", true) end
-  ImGui.SetItemTooltip(ctx, "On (the default): during a session only the driver's changes (and claimed tracks') go out; yours stay\n" ..
-    "here, so nobody's edits land in the middle of someone else's. Off: your own takes' changes go out too.")
   if ImGui.SmallButton(ctx, "Undo my last change") then
     local c, why = tools.my_last_change(proj, cfg, b)
     if not c then band.msg(why)
@@ -415,8 +424,27 @@ local function section_band()
 end
 
 local drive_root, drive_at = nil, -math.huge
+local MODE_INFO = {
+  { "driver", "Driver only", "Only the driver changes what the band has. Everyone else's changes are put back (record as usual)." },
+  { "claims", "Claims", "The driver, and everyone on what they've claimed (a track, a region, a stretch of time). Other changes are put back." },
+  { "open", "Open", "Anyone changes anything nobody has claimed; the newest change wins. The tempo map stays the driver's." },
+}
 local function section_driver()
   local driving = view.driver == cfg.user
+  local mode, alone = who.mode or "claims", reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) ~= ""
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.Text(ctx, "Editing:")
+  for _, m in ipairs(MODE_INFO) do
+    ImGui.SameLine(ctx)
+    ImGui.BeginDisabled(ctx, not (driving or alone))
+    if ImGui.RadioButton(ctx, m[2] .. "##mode", mode == m[1]) and mode ~= m[1] then
+      sync.set_mode(cfg, b.song, b.room, m[1], cfg.user)
+      band.log("editing in '" .. b.room .. "' is now " .. m[2] .. ": " .. m[3])
+      last = 0
+    end
+    ImGui.EndDisabled(ctx)
+    ImGui.SetItemTooltip(ctx, m[3] .. ((driving or alone) and "" or "\nThe driver picks this."))
+  end
   ImGui.Text(ctx, driving and "You're driving: what nobody has claimed follows you." or (tostring(view.driver) .. " is driving."))
   if not driving then
     ImGui.SameLine(ctx)
@@ -553,12 +581,97 @@ local function section_recall()
   end
 end
 
+local KINDS = {
+  { "Every kind" }, { "Recordings", { take = true } }, { "Moves and trims", { edit = true } },
+  { "Deletes and bring-backs", { delete = true, undelete = true } }, { "What plays", { plays = true } },
+  { "Track changes (mute, solo, fader, name)", { track = true } }, { "MIDI note edits", { midi = true } },
+  { "Notes and likes", { note = true, like = true } }, { "Tempo and arrangement", { timeline = true, shift = true } },
+  { "Driver changes", { driver = true } }, { "Played or recorded together", { start = true, stop = true } },
+  { "Solo edit versions", { solo = true } },
+}
+local hf = { who = "", kind = 1, track = "", text = "" }
+local function combo(label, cur, list, tip)
+  ImGui.SetNextItemWidth(ctx, 170)
+  local pick
+  if ImGui.BeginCombo(ctx, label, cur) then
+    for _, v in ipairs(list) do if ImGui.Selectable(ctx, v, v == cur) then pick = v end end
+    ImGui.EndCombo(ctx)
+  end
+  ImGui.SetItemTooltip(ctx, tip)
+  return pick
+end
+-- Filtered: the matching changes as one list (newest first), each with its own Restore up to there.
+local function history_filtered(driving)
+  local want = KINDS[hf.kind][2]
+  local text = hf.text:lower()
+  local n = 0
+  for i = #entries, 1, -1 do
+    local e = entries[i]
+    local line = recall.describe(e)
+    local ok = (hf.who == "" or e.user == hf.who) and (not want or want[e.kind]) and (hf.track == "" or (e.track or ""):lower() == hf.track:lower())
+      and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
+    if ok then
+      n = n + 1
+      ImGui.PushID(ctx, i)
+      ImGui.BeginDisabled(ctx, not driving or e.kind == "solo")
+      if ImGui.SmallButton(ctx, "Restore") and reaper.MB(string.format("Make the session look like it did right after this change (%s, %s)?\n\n" ..
+          "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
+          "Where things are now is saved as a recall point first, so you can come back.", e.user, local_time(e.time)), "BandSync", 4) == 6 then
+        local st = recall.replay(entries, i)
+        local s0 = view.session or {}
+        st.timeline = st.timeline or s0.first_timeline or (s0.tempo and { tempo = s0.tempo, markers = s0.markers })
+        band.log(recall.restore_state(proj, cfg, b.song, b.room, st, string.format("right after %s's change at %s", e.user, local_time(e.time))) or "restore failed")
+        last, hist_at = 0, 0
+      end
+      ImGui.EndDisabled(ctx)
+      ImGui.SetItemTooltip(ctx, driving and "Go back to right after this change (everything after it is undone)." or "Only the driver restores (take control first).")
+      ImGui.SameLine(ctx)
+      ImGui.TextDisabled(ctx, local_time(e.time))
+      ImGui.SameLine(ctx)
+      ImGui.TextWrapped(ctx, e.user .. ": " .. line)
+      ImGui.PopID(ctx)
+    end
+  end
+  if n == 0 then ImGui.TextDisabled(ctx, "Nothing matches.") end
+end
 local function section_history()
   if reaper.time_precise() - hist_at > 4 then hist_at = reaper.time_precise(); refresh_history() end
   ImGui.SeparatorText(ctx, "Every change, newest first")
   local driving = view.driver == cfg.user
   if #groups == 0 then ImGui.TextDisabled(ctx, "Nothing has happened in this room yet.") end
+  -- filters: who, what kind, which track, and words
+  local users, tracks, seen = { "Everyone" }, { "Every track" }, {}
+  for _, e in ipairs(entries) do
+    if e.user and not seen["u" .. e.user] then seen["u" .. e.user] = true; users[#users + 1] = e.user end
+    if e.track and not seen["t" .. e.track:lower()] then seen["t" .. e.track:lower()] = true; tracks[#tracks + 1] = e.track end
+  end
+  local kinds = {}
+  for i, k in ipairs(KINDS) do kinds[i] = k[1] end
+  local v = combo("##hwho", hf.who == "" and "Everyone" or hf.who, users, "Only this person's changes.")
+  if v then hf.who = v == "Everyone" and "" or v end
+  next_to("Every kind of change")
+  v = combo("##hkind", KINDS[hf.kind][1], kinds, "Only this kind of change.")
+  if v then for i, k in ipairs(kinds) do if k == v then hf.kind = i end end end
+  next_to("Every track")
+  v = combo("##htrack", hf.track == "" and "Every track" or hf.track, tracks, "Only changes on this track.")
+  if v then hf.track = v == "Every track" and "" or v end
+  next_to("words in it")
+  ImGui.SetNextItemWidth(ctx, 150)
+  local _, t = ImGui.InputTextWithHint(ctx, "##htext", "words in it", hf.text, ImGui.InputTextFlags_None)
+  hf.text = t
+  ImGui.SetItemTooltip(ctx, "Only changes whose description has these words (a take, a track, a note's text...).")
+  local filtered = hf.who ~= "" or hf.kind ~= 1 or hf.track ~= "" or hf.text ~= ""
+  if filtered then
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Clear filters") then hf = { who = "", kind = 1, track = "", text = "" } end
+    ImGui.SetItemTooltip(ctx, "Back to everything, grouped by who made it.")
+  end
   if ImGui.BeginChild(ctx, "history", 0, -4) then
+    if filtered then
+      history_filtered(driving)
+      ImGui.EndChild(ctx)
+      return
+    end
     for gi = #groups, 1, -1 do
       local g = groups[gi]
       ImGui.PushID(ctx, gi)
@@ -1510,6 +1623,16 @@ local function page_maintenance()
     section_actions()
     card_end()
   end
+  ImGui.Dummy(ctx, 0, 12)
+  local w = ImGui.GetContentRegionAvail(ctx)
+  ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + math.max(0, (w - 150) / 2))
+  logo(48)
+  ImGui.SameLine(ctx, 0, 10)
+  ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 8)
+  ImGui.BeginGroup(ctx)
+  wordmark(20)
+  ImGui.TextDisabled(ctx, "version " .. band.VERSION)
+  ImGui.EndGroup(ctx)
 end
 
 -- Home: playing together, who's here and what they're doing, and the session's switches.
@@ -1572,11 +1695,6 @@ local function page_home()
     local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
     local ch, v = switch_row("##hold", "Hold my changes", hold, "Try things: your changes go out once, when you switch this off.")
     if ch then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
-    local everyone = reaper.GetExtState(band.SECTION, "edit_mode") == "everyone"
-    ch, v = switch_row("##scratch", "Keep my edits here when I'm not driving", not everyone,
-      "For everyone who isn't driving, host or not. On (the default): only the driver's changes, and what you've claimed, go out; " ..
-      "your other edits stay on your machine. Off: changes to your own takes go out too.")
-    if ch then reaper.SetExtState(band.SECTION, "edit_mode", v and "" or "everyone", true) end
     section_claims()
     card_end()
   end
@@ -1593,6 +1711,10 @@ local function page_settings()
       "Off (the default): the panel's own dark title bar; right-click it or use Dock to dock. The panel reopens to switch.\n" ..
       "Either way, the Window button fills a screen or half of one.")
     if ch then reaper.SetExtState(band.SECTION, "panel_native", v and "on" or "", true); reload_now = true end
+    local bon = reaper.GetExtState(band.SECTION, "banner") ~= "off"
+    ch, v = switch_row("##banner", "Banner over REAPER while someone else drives", bon,
+      "A slim note at the foot of REAPER's timeline saying what you can change (it never takes a click).")
+    if ch then reaper.SetExtState(band.SECTION, "banner", v and "" or "off", true) end
     card_end()
   end
   if card("sync") then
@@ -1632,7 +1754,6 @@ local function frame_app()
   local fh = ImGui.GetFrameHeight(ctx)
   local y0 = ImGui.GetCursorPosY(ctx) + 8
   ImGui.SetCursorPos(ctx, 16, y0)
-  if compact then logo(fh); ImGui.SetItemTooltip(ctx, "BandSync " .. band.VERSION); ImGui.SameLine(ctx, 0, 8) end
   ImGui.PushFont(ctx, nil, 21)
   local _, th = ImGui.CalcTextSize(ctx, b.song)
   ImGui.SetCursorPosY(ctx, y0 + (fh - th) / 2)
@@ -1676,6 +1797,9 @@ local function frame_app()
   ImGui.SetItemTooltip(ctx, docked and "Back to a window of its own." or "Into REAPER's docker (drag the docker tab to move it, e.g. to the bottom).")
   if not docked then
     at_row()
+    if ImGui.Button(ctx, placed_from and "Exit full screen" or "Full screen") then place_window(placed_from and "Back to before" or "Fill this screen") end
+    ImGui.SetItemTooltip(ctx, placed_from and "Back to where the window was." or "Fill the screen the panel is on (drag it to another screen first to use that one).")
+    at_row()
     if ImGui.Button(ctx, "Window") then
       local pick = band.pick(WINDOW_MENU)
       if pick then place_window(pick) end
@@ -1712,12 +1836,6 @@ local function frame_app()
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 8, 10)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0, 0.5)
     if ImGui.BeginChild(ctx, "nav", 150, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
-      logo(34)
-      ImGui.SameLine(ctx, 0, 8)
-      ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 6)
-      wordmark(18)
-      ImGui.SetItemTooltip(ctx, "BandSync " .. band.VERSION)
-      ImGui.Dummy(ctx, 0, 4)
       ImGui.PushFont(ctx, nil, 16)
       for _, p in ipairs(PAGES) do nav_item(p, 0, 36) end
       ImGui.PopFont(ctx)
@@ -1827,6 +1945,37 @@ local function updated()
   return ready
 end
 
+-- While someone else drives and is here, a slim banner at the foot of REAPER's arrange view says what you can change.
+-- It takes no clicks (no inputs, no focus). Placed in ReaImGui's units from the screen's pixels of REAPER's main
+-- window and its arrange view. Settings can turn it off (ExtState banner = "off").
+local function banner()
+  if not banner_text or reaper.GetExtState(band.SECTION, "banner") == "off" or not reaper.JS_Window_FindChildByID then return end
+  local main = reaper.GetMainHwnd()
+  local arrange = reaper.JS_Window_FindChildByID(main, 1000)
+  if not arrange then return end
+  local _, ml, mt, mr, mb = reaper.JS_Window_GetRect(main)
+  local _, al, at, ar, ab = reaper.JS_Window_GetRect(arrange)
+  local vp = ImGui.GetMainViewport(ctx)
+  local vx, vy = ImGui.Viewport_GetPos(vp)
+  local vw, vh = ImGui.Viewport_GetSize(vp)
+  if mr - ml <= 0 or vw <= 0 then return end
+  local sx, sy = (mr - ml) / vw, (mb - mt) / vh
+  local cx, by = vx + ((al + ar) / 2 - ml) / sx, vy + (ab - mt) / sy
+  ImGui.SetNextWindowPos(ctx, cx, by - 10, ImGui.Cond_Always, 0.5, 1)
+  ImGui.SetNextWindowBgAlpha(ctx, 0.88)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowRounding, 8)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 6)
+  ImGui.PushStyleColor(ctx, ImGui.Col_WindowBg, 0x2A2010FF)
+  local f = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_NoInputs | ImGui.WindowFlags_NoFocusOnAppearing | ImGui.WindowFlags_NoNav |
+    ImGui.WindowFlags_NoDocking | ImGui.WindowFlags_AlwaysAutoResize | ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_TopMost
+  if ImGui.Begin(ctx, "BandSync banner", nil, f) then
+    ImGui.TextColored(ctx, YELLOW, banner_text)
+    ImGui.End(ctx)
+  end
+  ImGui.PopStyleColor(ctx)
+  ImGui.PopStyleVar(ctx, 2)
+end
+
 local function loop()
   if updated() or reload_now then -- reload in place: relaunching itself as an action is ignored (or asks to terminate instances)
     band.log("the panel reloaded for BandSync " .. tostring(seen_disk))
@@ -1861,6 +2010,7 @@ local function loop()
     ImGui.End(ctx)
   end
   if app then ImGui.PopFont(ctx); pop_theme() end
+  banner()
   if open then reaper.defer(loop) end
 end
 reaper.defer(loop)

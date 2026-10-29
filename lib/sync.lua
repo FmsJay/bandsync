@@ -365,8 +365,23 @@ end
 -- Who owns a take: its track's claimant, else the newest claim on a stretch of time it starts in (a time selection),
 -- else the claimant of the named region it starts in, else the driver. A take's author may change it (move, trim,
 -- mute) wherever nobody has claimed it that way.
+-- How a room shares editing, set by its driver (rooms/<room>/mode.json):
+--   "driver"  only the driver changes what the band has (claims are kept, but don't count while it's on)
+--   "claims"  the default: the driver, and everyone on what they've claimed
+--   "open"    anyone changes anything nobody has claimed (the newest change wins); the tempo map stays the driver's
+-- Changes someone may not make are put back where the band has them, never kept on their machine only.
+sync.MODES = { driver = true, claims = true, open = true }
+function sync.mode(cfg, song, room)
+  local m = band.read_json(sync.room_dir(cfg, song, room) .. "/mode.json")
+  return type(m) == "table" and sync.MODES[m.mode] and m.mode or "claims"
+end
+function sync.set_mode(cfg, song, room, mode, user)
+  band.write_json(sync.room_dir(cfg, song, room) .. "/mode.json", { mode = mode, by = user, time = os.date("!%Y-%m-%dT%H:%M:%SZ") })
+end
+
 function sync.authority(cfg, song, room, s)
   local driver = sync.driver(cfg, song, room, s)
+  local mode = sync.mode(cfg, song, room)
   local tracks, regions, times = {}, {}, {} -- lower name -> { user, time }; times: { user, time, from, to }
   local dir = sync.room_dir(cfg, song, room) .. "/claims"
   for _, f in ipairs(band.files(dir, ".json")) do
@@ -418,10 +433,13 @@ function sync.authority(cfg, song, room, s)
   end
   sync.owner_of = owner -- for messages ("... is James's to change")
   return function(user, track, pos, take, drv) -- drv: the driver to judge by (an event's own time), else today's
+      if mode == "driver" then return user == (drv or driver) end
       if owner(track, pos, drv) == user then return true end
+      -- open: anything nobody claimed, by anyone (not the song's tempo map and markers: track and pos are nil then)
+      if mode == "open" and (track or pos) and not claimed(track, pos) then return true end
       return take ~= nil and sync.author(take) == sync.author_of(user) and not claimed(track, pos)
     end,
-    { driver = driver, tracks = tracks, regions = regions, times = times, owner = owner, spans = spans }
+    { driver = driver, tracks = tracks, regions = regions, times = times, owner = owner, spans = spans, mode = mode }
 end
 
 -- Show the time claims as regions named "[claimed: <user>]" (this machine only; see band.CLAIM_MARK). Redrawn
@@ -1474,19 +1492,11 @@ function sync.watch(proj, cfg, song, room, can)
           sync.remember(proj, id, hit[1], hit[2]) -- first look at a take placed before snapshots existed
         elseif snap ~= id .. "|" .. shape(hit[1], hit[2]) then
           local pos, track = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION"), band_track_name(proj, hit[1])
-          -- "driver writes, others listen" (the default): while someone else drives and is here, only their changes
-          -- (and claimed tracks') go out, so nobody's edits land in the middle of anyone else's; ours stay here as
-          -- scratch. Our own take we may still change when nobody else is driving.
+          -- what the room's mode allows (sync.mode): while someone else drives and is here, our own takes are theirs to
+          -- arrange too, unless we've claimed them; with the driver away, we may still change our own. A change we may
+          -- not make is put back (below), never kept here only: what you see is what the band has.
           local allowed = can(me, track, pos) or (can(me, track, pos, id) and not sync.someone_drives)
-          if not allowed and sync.someone_drives then -- (someone_drives is only set in scratch mode)
-            -- kept here, not sent and not put back: it stays until the band changes that take (then theirs wins)
-            sync.remember(proj, id, hit[1], hit[2])
-            if ext(proj, "BandSync.scratch", id) == "" then
-              setext(proj, "BandSync.scratch", id, "1")
-              band.log(string.format("your change to '%s' on %s stays here only (scratch): %s is driving, so only their changes go out. " ..
-                "Claim the track, or take control, to send yours", id, tostring(track), tostring(sync.driver_name or "someone else")))
-            end
-          elseif allowed then
+          if allowed then
             local after = ext(proj, band.SECTION, "last_shift") -- set by Insert/Remove bars: receivers apply that first
             local ev = { type = "edit", take = id, after = after ~= "" and after or nil, pos = pos, qn = sync.qn(proj, pos), track = track,
               len = reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") - (tonumber(ext(proj, sync.TAILS, id)) or 0), lane = lane_of(hit[1]),

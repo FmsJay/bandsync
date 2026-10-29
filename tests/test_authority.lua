@@ -44,4 +44,19 @@ for _, order in ipairs({ { "claims/James.json", "claims/Laptop.json" }, { "claim
   assert(who.owner("Pad", 0) == "Laptop", "a same-second track claim tie is decided by name")
   assert(who.owner("Keys", 1) == "Laptop", "a same-second time claim tie is decided by name")
 end
+-- the room's editing mode (mode.json, set by the driver)
+with({ ["claims/Laptop.json"] = { user = "Laptop", time = "2026-10-28T03:28:00Z", tracks = { "Guitar" } } })
+can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
+assert(who.mode == "claims", "claims by default")
+claims["mode.json"] = { mode = "open" }
+can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
+assert(who.mode == "open" and can("Laptop", "Keys", 0), "open: anyone changes what nobody claimed")
+assert(not can("James", "Guitar", 12), "open: a claim still holds")
+assert(not can("Laptop", nil, nil), "open: the tempo map stays the driver's")
+claims["mode.json"] = { mode = "driver" }
+can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
+assert(can("James", "Guitar", 12) and not can("Laptop", "Guitar", 12), "driver only: claims don't count")
+assert(not can("Laptop", "Pad", 0, "Laptop-20261028-032939Z-1"), "driver only: not even your own take")
+claims["mode.json"] = { mode = "nonsense" }
+assert(select(2, sync.authority({ root = "root" }, "Saltmarsh", "main", s)).mode == "claims", "an unknown mode reads as claims")
 print("ok")

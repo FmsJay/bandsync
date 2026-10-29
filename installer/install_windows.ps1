@@ -9,6 +9,7 @@ param(
   [string]$Tag = "main",          # which BandSync version's helper files to use (the .cmd passes its own)
   [string]$User = "", [string]$HostId = "", [string]$Root = "",
   [ValidateSet("", "yes", "no")][string]$Hosting = "", [ValidateSet("", "yes", "no")][string]$Live = "", [ValidateSet("", "yes", "no")][string]$Solo = "",
+  [ValidateSet("", "yes", "no")][string]$Plugins = "", # the band plug-in pack (free, open source)
   [ValidateSet("reapack", "folder", "verify")][string]$Scripts = "reapack", # folder: band-internal copy in <root>/_tools/bandsync
   [string]$SyncthingHome = "",    # testing: drive a separate Syncthing instance (--home)
   [switch]$NoApps                 # testing: skip installing apps, only configure
@@ -30,7 +31,7 @@ $boxed = Get-ChildItem "$env:LOCALAPPDATA\Packages\*\LocalCache\Local\$probe" -E
 Remove-Item (Join-Path $env:LOCALAPPDATA $probe) -ErrorAction SilentlyContinue
 if ($boxed) {
   $argv = @("-Tag", $Tag, "-Scripts", $Scripts)
-  foreach ($k in "User", "HostId", "Root", "Hosting", "Live", "Solo", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
+  foreach ($k in "User", "HostId", "Root", "Hosting", "Live", "Solo", "Plugins", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
   if ($NoApps) { $argv += "-NoApps" }
   $quoted = ($argv | ForEach-Object { if ($_ -match '^-') { $_ } else { '"' + $_ + '"' } }) -join " "
   $cmd = Join-Path $env:TEMP "bandsync_install_outside.cmd"
@@ -66,6 +67,7 @@ if (-not $isHost) {
 $root = if ($Root) { $Root } else { Ask "Where should the shared BandSync folder be" (Join-Path $env:USERPROFILE "BandSync") }
 $wantLive = if ($Live) { $Live -eq "yes" } else { YesNo "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale" "y" }
 $wantSolo = if ($Solo) { $Solo -eq "yes" } else { YesNo "Will you use Solo edit (editing a song while the others are offline)? Installs Google Drive" "y" }
+$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds?" "y" }
 Write-Host ""
 
 # ---------- 1. apps ----------
@@ -97,6 +99,48 @@ if (-not $reaper) { Warn "REAPER wasn't found after installing: install it from 
 $exeDir = Split-Path $reaper
 $res = if (Test-Path (Join-Path $exeDir "reaper.ini")) { $exeDir } else { Join-Path $env:APPDATA "REAPER" } # portable installs keep everything beside reaper.exe
 Ok "REAPER: $reaper (settings in $res)"
+
+# ---------- 1b. the band plug-in pack (optional) ----------
+# Free, open-source plug-ins every bandmate can have, each from its official release (never bundled here): what
+# everyone has shows in REAPER's FX browser folder "BandSync (everyone has)". Installers that come as .exe open for
+# you to click through; a .zip of VST3 bundles goes into REAPER's own plug-in folder (UserPlugins\FX, scanned by
+# REAPER, no admin rights needed).
+function Release-Asset($repo, $pattern, $tag) {
+  $api = if ($tag) { "https://api.github.com/repos/$repo/releases/tags/$tag" } else { "https://api.github.com/repos/$repo/releases/latest" }
+  try { (Invoke-RestMethod $api -UseBasicParsing).assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1 } catch { $null }
+}
+function Install-Plugin($name, $repo, $pattern, $tag, $have) {
+  if ($NoApps) { return }
+  if (Test-Path $have) { Ok "$name is already installed"; return }
+  $a = Release-Asset $repo $pattern $tag
+  if (-not $a) { Warn "$name : no download found on github.com/$repo, skipped (install it by hand if you like)"; return }
+  $file = Join-Path $env:TEMP $a.name
+  Say "Downloading $name ($($a.name)) ..."
+  try { Invoke-WebRequest $a.browser_download_url -OutFile $file -UseBasicParsing } catch { Warn "$name didn't download: $_"; return }
+  if ($file -match '\.exe$') {
+    Say "  $name's own installer opens: click through it (the defaults are fine)."
+    Start-Process $file -Wait
+  } else {
+    $x = Join-Path $env:TEMP ("bandsync_" + [guid]::NewGuid().ToString("N"))
+    Expand-Archive $file $x -Force
+    $fx = Join-Path $res "UserPlugins\FX"
+    New-Item -ItemType Directory -Force $fx | Out-Null
+    # the bundles themselves, not the .vst3 file inside each bundle's Contents
+    Get-ChildItem $x -Recurse -Filter *.vst3 | Where-Object { $_.FullName.Substring($x.Length) -notmatch '\.vst3\\.' } |
+      ForEach-Object { Copy-Item $_.FullName (Join-Path $fx $_.Name) -Recurse -Force }
+    Remove-Item $x -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  if (Test-Path $have) { Ok "$name installed" } else { Warn "$name : not found where expected afterwards ($have); check it in REAPER's FX browser" }
+}
+if ($wantPlugins) {
+  $vst3 = Join-Path $env:CommonProgramFiles "VST3"
+  Install-App "SurgeSynth.SurgeXT" "Surge XT"
+  Install-Plugin "Dexed" "asb2m10/dexed" '-win\.exe$' $null (Join-Path $vst3 "Dexed*")
+  Install-Plugin "Airwindows Consolidated" "baconpaul/airwin2rack" '^(?!.*windows7).*Windows-64bit-setup\.exe$' "DAWPlugin" (Join-Path $vst3 "Airwindows*")
+  Install-Plugin "Dragonfly Reverb" "michaelwillis/dragonfly-reverb" 'win64\.zip$' $null (Join-Path $res "UserPlugins\FX\Dragonfly*")
+  Install-Plugin "Chow Tape Model" "jatinchowdhury18/AnalogTapeModel" 'Win-64bit.*\.exe$' $null (Join-Path $vst3 "CHOW*")
+  Ok "plug-in pack done: REAPER finds new plug-ins at its next start (or Options > Preferences > Plug-ins > VST > Re-scan)"
+}
 
 # ---------- 2. REAPER extensions: ReaPack and ReaImGui ----------
 $plugins = Join-Path $res "UserPlugins"
@@ -188,7 +232,7 @@ $src = Get-ChildItem $work -Directory | Select-Object -First 1
 $helper = Join-Path $src.FullName "installer\bandsync_setup.lua"
 $utf8 = New-Object System.Text.UTF8Encoding($false) # no BOM: the Lua JSON reader wants plain UTF-8
 function Request($mode) {
-  $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify") } | ConvertTo-Json
+  $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify"); jsfx = [bool]$wantPlugins } | ConvertTo-Json
   [IO.File]::WriteAllText((Join-Path (Split-Path $helper) "bandsync_setup.json"), $req, $utf8)
   $result = Join-Path (Split-Path $helper) "bandsync_setup_result.json"
   Remove-Item $result -ErrorAction SilentlyContinue

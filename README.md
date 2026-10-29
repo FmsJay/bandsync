@@ -114,10 +114,13 @@ By hand:
 
 ## Session workflow
 
-**BandSync - Panel** puts all of it in one dockable window, in five tabs: **Session** (*Same room*, Live sync
-on/off, Hold sync, bandmates and what they have, who's driving, who owns what, drum maps, plug-ins everyone has),
-**Rooms**, **Together**, **Live**,
-and **History & restore**. The table below uses the separate actions, which still work without the panel.
+**BandSync - Panel** puts all of it in one dockable window. It opens in the app look: a top bar (the song, the
+room, whether it's syncing, who drives) and a sidebar of pages: **Home** (the *Same room* button, a card for each
+bandmate showing whether they're here, recording, driving and what they have armed, and this session's switches),
+**Rooms**, **Together**, **Live**, **History** and **Settings** (sync options, claims, Google Drive, set-up, drum
+maps, plug-ins, more actions). **BandSync - Classic panel** (or *Use the classic panel* in Settings) opens the
+same panel in its classic layout, with tabs: the backup look, everything the same underneath. The table below
+uses the separate actions, which still work without the panel.
 
 | Host | Bandmate |
 |---|---|
@@ -264,12 +267,15 @@ a plug-in comes in several formats, since Windows and Mac both have VST3). Use t
 every machine. The Session tab's *Plug-ins everyone has* updates it on demand. REAPER's own effects (ReaPlugs and the
 JSFX) are on every machine; JSFX from ReaPack work on Windows and Mac alike, once everyone installs the same package.
 
-Free plug-ins worth all of you installing (Windows and Mac; check each site for current formats):
-Surge XT (synth + effects, open source), Dexed (FM synth, open source), Vital (synth, free account), Airwindows
-Consolidated (hundreds of mixing effects, open source), Valhalla Supermassive and Space Modulator (reverb/delay,
-freeware), TAL-NoiseMaker and TAL-Chorus-LX (freeware), Dragonfly Reverb (open source), Chow Tape Model (open
-source), Neural Amp Modeler (guitar amps from captures, open source), MeldaProduction MFreeFXBundle (freeware).
-JSFX through ReaPack: ReaTeam JSFX (default repository), Saike's and Chokehold's (MIT), Tale's (WTFPL).
+**The band plug-in pack** (the installers ask; free and open source, each from its official release, nothing
+bundled): Surge XT (synth + effects, GPL-3), Dexed (FM synth, GPL-3), Airwindows Consolidated (hundreds of mixing
+effects, MIT), Dragonfly Reverb (GPL-3), Chow Tape Model (GPL-3), and the JSFX repositories of Saike and Chokehold
+(both MIT) through ReaPack. On Windows, Surge XT comes through winget, Dexed/Airwindows/Chow open their own installer
+to click through, and Dragonfly's VST3s go into REAPER's `UserPlugins/FX`; on a Mac each disk image's installer runs
+(it may ask for your password), or its plug-ins are copied into `~/Library/Audio/Plug-Ins`. REAPER finds them at its
+next start. Worth adding by hand (free, but their terms don't allow passing them on, or they need an account):
+Vital, Valhalla Supermassive and Space Modulator, TAL-NoiseMaker and TAL-Chorus-LX, MeldaProduction MFreeFXBundle,
+Neural Amp Modeler (neuralampmodeler.com).
 
 ### Live: hear each other while it happens
 

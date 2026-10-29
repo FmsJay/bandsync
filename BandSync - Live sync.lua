@@ -422,9 +422,10 @@ local function poll()
   end
   local info = { driver = driver, role = b.role, song = b.song, hold = hold or nil,
     pending = sync.pending_events(proj, cfg, b.song, b.room), armed = armed, side = side_bars(),
-    playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil, front = reaper.EnumProjects(-1) == proj }
+    playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil, recording = reaper.GetPlayStateEx(proj) & 4 == 4 or nil,
+    front = reaper.EnumProjects(-1) == proj }
   local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
-    tostring(info.side) .. tostring(info.playing) .. tostring(info.front)
+    tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front)
   if fingerprint ~= status_json or now - last_status > 15 then
     status_json, last_status = fingerprint, now
     sync.write_status(proj, cfg, b.song, b.room, info)

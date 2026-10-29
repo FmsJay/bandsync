@@ -64,6 +64,13 @@ if req.mode == "reapack" then
   else
     local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
     step("add BandSync repository", added, err ~= "" and err or req.repo_url)
+    if req.jsfx then -- the plug-in pack's JSFX (both MIT): in this same ReaPack sync, never one of their own (see above)
+      for _, r in ipairs({ { "Saike", "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml" },
+                           { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" } }) do
+        local ok_r, e = reaper.ReaPack_AddSetRepository(r[1], r[2], true, 1)
+        step("add " .. r[1] .. " JSFX repository", ok_r, e ~= "" and e or r[2])
+      end
+    end
     reaper.ReaPack_ProcessQueue(true)
     local sync = reaper.NamedCommandLookup("_REAPACK_SYNC")
     if added and sync ~= 0 then reaper.Main_OnCommand(sync, 0) end

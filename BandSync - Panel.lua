@@ -424,29 +424,33 @@ end
 -- Same room: the one switch for playing together. Listen live (SonoBus, set up for the band's group) plus side by side
 -- with no lag: whoever presses play, stop or record, everyone follows at the same spot and hears it at once; what
 -- they record shows on your timeline as they play (MIDI notes) and lands as a take when they stop.
-local function section_room()
+local function same_room_on()
   local sm, si = live.fx(proj, false, live.SONOBUS)
   local sb_on = sm and not reaper.TrackFX_GetOffline(sm, si)
-  local side = select(2, reaper.GetProjExtState(proj, band.SECTION, "side"))
-  local on = sb_on and side == "0"
-  local ch, v = ImGui.Checkbox(ctx, "Same room: hear everyone and follow the session together", on)
-  if ch then
-    if v then
-      local link, why = setup.sonobus(cfg, b, proj, true)
-      if not link then band.msg(why) else
-        sb_link = link
-        reaper.SetProjExtState(proj, band.SECTION, "side", "0")
-        band.log("same room: Listen live is on and you follow the session (play, stop and record go to everyone)")
-      end
-    else
-      if sm then reaper.TrackFX_SetOffline(sm, si, true) end
-      reaper.SetProjExtState(proj, band.SECTION, "side", "")
-      band.log("same room off: SonoBus left the group and side by side is off (edits still sync)")
-    end
+  return sb_on and select(2, reaper.GetProjExtState(proj, band.SECTION, "side")) == "0", sm, si
+end
+local function set_same_room(v)
+  local _, sm, si = same_room_on()
+  if v then
+    local link, why = setup.sonobus(cfg, b, proj, true)
+    if not link then return band.msg(why) end
+    sb_link = link
+    reaper.SetProjExtState(proj, band.SECTION, "side", "0")
+    band.log("same room: Listen live is on and you follow the session (play, stop and record go to everyone)")
+  else
+    if sm then reaper.TrackFX_SetOffline(sm, si, true) end
+    reaper.SetProjExtState(proj, band.SECTION, "side", "")
+    band.log("same room off: SonoBus left the group and side by side is off (edits still sync)")
   end
-  ImGui.SetItemTooltip(ctx, "On: SonoBus joins the band's group on your master track (you hear each other right away), and side by side\n" ..
-    "follows with no lag: whoever presses play, stop or record, everyone follows. What someone records shows on your timeline\n" ..
-    "as they play (MIDI notes appear a few seconds behind) and lands as a take when they stop. Off: both off; edits keep syncing.")
+end
+local SAME_ROOM_TIP = "On: SonoBus joins the band's group on your master track (you hear each other right away), and side by side\n" ..
+  "follows with no lag: whoever presses play, stop or record, everyone follows. What someone records shows on your timeline\n" ..
+  "as they play (MIDI notes appear a few seconds behind) and lands as a take when they stop. Off: both off; edits keep syncing."
+local function section_room()
+  local on = same_room_on()
+  local ch, v = ImGui.Checkbox(ctx, "Same room: hear everyone and follow the session together", on)
+  if ch then set_same_room(v) end
+  ImGui.SetItemTooltip(ctx, SAME_ROOM_TIP)
   if on then ImGui.SameLine(ctx); ImGui.TextColored(ctx, GREEN, "on") end
 end
 
@@ -978,7 +982,7 @@ local function go_room(name)
   local p, why = rooms.open(proj, cfg, b, name)
   if not p then return band.msg(why) end
   if not live_running(p) then band.start_live(dir) end -- runs for the tab in front: the room's
-  reaper.SetExtState(band.SECTION, "panel rooms", "1", false)
+  reaper.SetExtState(band.SECTION, "panel page", "Rooms", false)
   room_at, merge = -math.huge, nil
 end
 local function refresh_rooms()
@@ -1088,12 +1092,18 @@ local function section_rooms()
     "as a copy of the room you make it from: try your own edits there, have everyone come and see, then bring back what's good.")
   ImGui.PopTextWrapPos(ctx)
   local avail = ImGui.GetContentRegionAvail(ctx)
-  local w, gap = 165, 8
+  local w, gap = 178, 8
   local per = math.max(1, math.floor((avail + gap) / (w + gap)))
   for i, r in ipairs(room_view.list) do
     if (i - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, gap) end
     local here = r.name == b.room
-    if ImGui.BeginChild(ctx, "room " .. r.name, w, 118, ImGui.ChildFlags_Borders) then
+    ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, 0x26292EFF) -- a card in either look
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 10)
+    local open = ImGui.BeginChild(ctx, "room " .. r.name, w, 142, ImGui.ChildFlags_Borders | ImGui.ChildFlags_AlwaysUseWindowPadding,
+      ImGui.WindowFlags_NoScrollbar)
+    ImGui.PopStyleVar(ctx)
+    ImGui.PopStyleColor(ctx)
+    if open then
       if here then ImGui.TextColored(ctx, GREEN, r.name .. "  (this tab)") else ImGui.Text(ctx, r.name) end
       ImGui.TextDisabled(ctx, r.parent and ("side room of " .. r.parent) or "the song")
       local people = room_view.people[r.name] or {}
@@ -1116,7 +1126,7 @@ local function section_rooms()
       band.log("made the side room '" .. new_room .. "' from '" .. b.room .. "' (you drive it)")
       new_room = ""
       if not live_running(p) then band.start_live(dir) end
-      reaper.SetExtState(band.SECTION, "panel rooms", "1", false)
+      reaper.SetExtState(band.SECTION, "panel page", "Rooms", false)
       room_at = -math.huge
     end
   end
@@ -1165,12 +1175,281 @@ local function section_invites()
   end
 end
 
+-- ---- the app look: sidebar pages, cards, pills and switches (the default). The classic panel (tabs, plain
+-- widgets) is the backup: "BandSync - Classic panel", or the switch on the Settings page. Same sections underneath.
+local function classic() return reaper.GetExtState(band.SECTION, "panel_ui") == "classic" end
+local ui_font = ImGui.CreateFont("sans-serif")
+ImGui.Attach(ctx, ui_font)
+local ACCENT, CARD, NAV, MUTED = 0x4C8DF6FF, 0x26292EFF, 0x1F2124FF, 0x8D939BFF
+local DARK = 0x15171AFF
+local THEME_COLS = {
+  { ImGui.Col_WindowBg, 0x1A1C1FFF }, { ImGui.Col_ChildBg, 0x00000000 }, { ImGui.Col_PopupBg, 0x24272BFF },
+  { ImGui.Col_Text, 0xE6E8EBFF }, { ImGui.Col_TextDisabled, MUTED }, { ImGui.Col_Border, 0x34383EFF },
+  { ImGui.Col_FrameBg, 0x2F3237FF }, { ImGui.Col_FrameBgHovered, 0x3A3E44FF }, { ImGui.Col_FrameBgActive, 0x42474EFF },
+  { ImGui.Col_Button, 0x33373DFF }, { ImGui.Col_ButtonHovered, 0x40454CFF }, { ImGui.Col_ButtonActive, ACCENT },
+  { ImGui.Col_Header, 0x2C3646FF }, { ImGui.Col_HeaderHovered, 0x33405AFF }, { ImGui.Col_HeaderActive, 0x3B4E74FF },
+  { ImGui.Col_CheckMark, ACCENT }, { ImGui.Col_SliderGrab, ACCENT }, { ImGui.Col_Separator, 0x34383EFF },
+  { ImGui.Col_SeparatorHovered, ACCENT }, { ImGui.Col_Tab, 0x2A2D32FF }, { ImGui.Col_TabHovered, 0x3A4558FF },
+  { ImGui.Col_TabSelected, 0x34415AFF }, { ImGui.Col_TitleBg, 0x15171AFF }, { ImGui.Col_TitleBgActive, 0x1E2126FF },
+  { ImGui.Col_TableHeaderBg, 0x2A2D32FF }, { ImGui.Col_TableRowBgAlt, 0x22252AFF }, { ImGui.Col_ScrollbarBg, 0x00000000 },
+}
+local THEME_VARS = {
+  { ImGui.StyleVar_WindowPadding, 0, 0 }, { ImGui.StyleVar_FramePadding, 10, 6 }, { ImGui.StyleVar_ItemSpacing, 8, 8 },
+  { ImGui.StyleVar_FrameRounding, 6 }, { ImGui.StyleVar_ChildRounding, 10 }, { ImGui.StyleVar_WindowRounding, 8 },
+  { ImGui.StyleVar_GrabRounding, 6 }, { ImGui.StyleVar_PopupRounding, 6 }, { ImGui.StyleVar_TabRounding, 6 },
+  { ImGui.StyleVar_ScrollbarRounding, 8 }, { ImGui.StyleVar_ChildBorderSize, 0 }, { ImGui.StyleVar_FrameBorderSize, 0 },
+}
+local function push_theme()
+  for _, c in ipairs(THEME_COLS) do ImGui.PushStyleColor(ctx, c[1], c[2]) end
+  for _, v in ipairs(THEME_VARS) do ImGui.PushStyleVar(ctx, v[1], v[2], v[3]) end
+end
+local function pop_theme()
+  ImGui.PopStyleVar(ctx, #THEME_VARS)
+  ImGui.PopStyleColor(ctx, #THEME_COLS)
+end
+
+-- A rounded label: status at a glance.
+local function pill(text, bg, fg)
+  local dl = ImGui.GetWindowDrawList(ctx)
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local w, h = ImGui.CalcTextSize(ctx, text)
+  ImGui.Dummy(ctx, w + 16, h + 6)
+  ImGui.DrawList_AddRectFilled(dl, x, y, x + w + 16, y + h + 6, bg, (h + 6) / 2)
+  ImGui.DrawList_AddText(dl, x + 8, y + 3, fg or DARK, text)
+end
+-- An on/off switch: returns changed, new value.
+local function switch(id, on)
+  local dl = ImGui.GetWindowDrawList(ctx)
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local h = ImGui.GetFrameHeight(ctx) - 4
+  local w = h * 1.8
+  ImGui.SetCursorScreenPos(ctx, x, y + 2)
+  local clicked = ImGui.InvisibleButton(ctx, id, w, h)
+  local now = on
+  if clicked then now = not on end
+  ImGui.DrawList_AddRectFilled(dl, x, y + 2, x + w, y + 2 + h, now and ACCENT or 0x4A4F57FF, h / 2)
+  ImGui.DrawList_AddCircleFilled(dl, now and (x + w - h / 2) or (x + h / 2), y + 2 + h / 2, h / 2 - 3, 0xFFFFFFFF)
+  return clicked, now
+end
+-- A switch with its label; tip shown on hover.
+local function switch_row(id, label, on, tip)
+  local ch, v = switch(id, on)
+  if tip then ImGui.SetItemTooltip(ctx, tip) end
+  ImGui.SameLine(ctx)
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.Text(ctx, label)
+  if tip then ImGui.SetItemTooltip(ctx, tip) end
+  return ch, v
+end
+local function heading(text, size)
+  ImGui.PushFont(ctx, nil, size or 19)
+  ImGui.Text(ctx, text)
+  ImGui.PopFont(ctx)
+end
+-- A card: a rounded panel sized to what's in it. Returns true when its content should be drawn (then call card_end).
+-- `h`: a fixed height, for cards laid side by side (a self-sizing one always took a row of its own).
+local function card(id, w, h)
+  ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, CARD)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 14, 12)
+  local open = ImGui.BeginChild(ctx, id, w or 0, h or 0, (h and 0 or ImGui.ChildFlags_AutoResizeY) | ImGui.ChildFlags_AlwaysUseWindowPadding,
+    ImGui.WindowFlags_NoScrollbar)
+  ImGui.PopStyleVar(ctx)
+  ImGui.PopStyleColor(ctx)
+  return open
+end
+local function card_end() ImGui.EndChild(ctx) end
+
+-- Home: the switch for playing together, who's here and what they're doing, and the session's rules.
+local function page_home()
+  local on = same_room_on()
+  if card("sameroom") then
+    heading("Play together")
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.TextDisabled(ctx, on and "You hear everyone, and play, stop and record follow whoever presses them." or
+      "Hear each other live and follow the session together: one press.")
+    ImGui.PopTextWrapPos(ctx)
+    ImGui.PushStyleColor(ctx, ImGui.Col_Button, on and 0x2E7D4FFF or ACCENT)
+    ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, on and 0x379660FF or 0x5E9BFAFF)
+    ImGui.PushFont(ctx, nil, 17)
+    if ImGui.Button(ctx, on and "In the same room  (press to leave)" or "Same room", -1, 44) then set_same_room(not on) end
+    ImGui.PopFont(ctx)
+    ImGui.PopStyleColor(ctx, 2)
+    ImGui.SetItemTooltip(ctx, SAME_ROOM_TIP)
+    card_end()
+  end
+  heading("Who's here")
+  local people = {}
+  local armed = {}
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    if reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 then armed[#armed + 1] = select(2, reaper.GetTrackName(tr)) end
+  end
+  local ps = reaper.GetPlayStateEx(proj)
+  people[1] = { name = cfg.user .. " (you)", state = "here", armed = armed, recording = ps & 4 == 4, playing = ps & 1 == 1,
+    driving = view.driver == cfg.user }
+  for _, r in ipairs(view.rows) do
+    people[#people + 1] = { name = r.name, state = r.state, armed = r.armed, recording = r.recording, playing = r.playing,
+      driving = r.name == view.driver, version = r.version, has = r.has }
+  end
+  local avail = ImGui.GetContentRegionAvail(ctx)
+  local w, gap = 158, 8
+  local per = math.max(1, math.floor((avail + gap) / (w + gap)))
+  for i, p in ipairs(people) do
+    if (i - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, gap) end
+    if card("who " .. p.name, w, 126) then
+      ImGui.PushFont(ctx, nil, 16)
+      ImGui.Text(ctx, p.name)
+      ImGui.PopFont(ctx)
+      local col = p.state == "here" and GREEN or rgba(status.COLORS[p.state] or { 0.55, 0.55, 0.55 })
+      pill(p.state == "here" and "here" or p.state, col)
+      if p.recording then ImGui.SameLine(ctx, 0, 4); pill("recording", RED)
+      elseif p.playing and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 4); pill("playing", 0x8FB3F8FF) end
+      if p.driving then ImGui.SameLine(ctx, 0, 4); pill("driving", YELLOW) end
+      local a = p.armed and #p.armed > 0 and table.concat(p.armed, ", ") or "nothing armed"
+      ImGui.PushTextWrapPos(ctx, 0)
+      ImGui.TextDisabled(ctx, a)
+      ImGui.PopTextWrapPos(ctx)
+      if p.version and p.version ~= band.VERSION then ImGui.TextColored(ctx, YELLOW, "BandSync " .. p.version) end
+      card_end()
+    end
+  end
+  if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
+  if card("session") then
+    heading("This session", 17)
+    ImGui.Text(ctx, string.format("Here: %d of %d takes%s", view.total - view.my_missing, view.total,
+      view.my_missing > 0 and (", " .. view.my_missing .. " still arriving") or ""))
+    if view.newer then
+      ImGui.TextColored(ctx, YELLOW, "BandSync " .. view.newer .. " is in use in the band.")
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Update##home") then action("Update") end
+    end
+    local driving = view.driver == cfg.user
+    ImGui.AlignTextToFramePadding(ctx)
+    ImGui.Text(ctx, driving and "You're driving." or (tostring(view.driver) .. " is driving."))
+    ImGui.SetItemTooltip(ctx, "What nobody has claimed follows the driver. Claims are on the Settings page.")
+    if not driving then
+      ImGui.SameLine(ctx)
+      if ImGui.Button(ctx, "Take control") then action("Take control") end
+    end
+    local away = reaper.GetExtState(band.SECTION, "driver_away " .. tostring(proj))
+    if away ~= "" and not driving then ImGui.TextColored(ctx, YELLOW, away .. " isn't here: take control to carry on.") end
+    if reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) ~= "" then
+      ImGui.TextColored(ctx, GREEN, "Nobody else is here: you have full control.")
+      ImGui.SetItemTooltip(ctx, "Everything you change goes to the band, and reaches them when they're back.")
+    end
+    local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
+    local ch, v = switch_row("##hold", "Hold my changes", hold, "Try things: your changes go out once, when you switch this off.")
+    if ch then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
+    local everyone = reaper.GetExtState(band.SECTION, "edit_mode") == "everyone"
+    ch, v = switch_row("##scratch", "Keep my edits here when I'm not driving", not everyone,
+      "On (the default): while someone else drives, only their changes (and claimed tracks') go out; yours stay here.")
+    if ch then reaper.SetExtState(band.SECTION, "edit_mode", v and "" or "everyone", true) end
+    if ImGui.Button(ctx, "Undo my last change") then
+      local c, why = tools.my_last_change(proj, cfg, b)
+      if not c then band.msg(why)
+      elseif reaper.MB("Put back " .. c.what .. " the way it was before?\n\nOnly your own changes, newest first: a bandmate's change in " ..
+          "between isn't touched. It goes to the band like any change.", "BandSync", 4) == 6 then
+        local msg, e = tools.undo_mine(proj, cfg, b)
+        if msg then band.log(msg) else band.msg(e) end
+      end
+    end
+    ImGui.SetItemTooltip(ctx, "Goes back through only your own changes (moves, trims, fader/pan/mute, deletes), unlike Ctrl+Z.")
+    card_end()
+  end
+end
+
+local function page_settings()
+  if card("look") then
+    heading("Look")
+    if ImGui.Button(ctx, "Use the classic panel") then reaper.SetExtState(band.SECTION, "panel_ui", "classic", true) end
+    ImGui.SetItemTooltip(ctx, "The plain panel with tabs (everything is the same underneath). 'BandSync - Classic panel' opens it too.")
+    card_end()
+  end
+  if card("sync") then
+    section_sync()
+    section_control()
+    card_end()
+  end
+  if card("settings") then
+    section_setup()
+    section_activity()
+    section_drums()
+    section_plugins()
+    section_actions()
+    card_end()
+  end
+end
+
+local PAGES = { "Home", "Rooms", "Together", "Live", "History", "Settings" }
+local page = "Home"
+local function frame_app()
+  -- top bar: the song, the room, whether it's syncing, who drives
+  ImGui.SetCursorPos(ctx, 16, ImGui.GetCursorPosY(ctx) + 10)
+  ImGui.PushFont(ctx, nil, 22)
+  ImGui.Text(ctx, b.song)
+  ImGui.PopFont(ctx)
+  local key = tostring(proj)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
+  local running = beat and reaper.time_precise() - beat < 5
+  ImGui.SameLine(ctx, 0, 12)
+  ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 4)
+  pill("room " .. b.room, 0x34415AFF, 0xD6E4FFFF)
+  ImGui.SameLine(ctx, 0, 6)
+  pill(running and "syncing" or "not syncing", running and GREEN or 0x5A5F66FF, running and DARK or 0xE6E8EBFF)
+  ImGui.SameLine(ctx, 0, 6)
+  if ImGui.SmallButton(ctx, running and "Stop" or "Start") then
+    if running then reaper.SetExtState(band.SECTION, "stop " .. key, "1", false)
+    else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
+  end
+  ImGui.SameLine(ctx, 0, 12)
+  ImGui.TextDisabled(ctx, view.driver == cfg.user and "you drive" or (tostring(view.driver) .. " drives"))
+  ImGui.SetCursorPosX(ctx, 16)
+  section_invites()
+  ImGui.Separator(ctx)
+  -- sidebar
+  -- a page asked for from elsewhere (a room you just made or went to opens on Rooms)
+  local want = reaper.GetExtState(band.SECTION, "panel page")
+  if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = want end
+  ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, NAV)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 8, 10)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0, 0.5)
+  if ImGui.BeginChild(ctx, "nav", 140, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
+    ImGui.PushFont(ctx, nil, 16)
+    for _, p in ipairs(PAGES) do
+      if p == page then
+        local x, y = ImGui.GetCursorScreenPos(ctx)
+        ImGui.DrawList_AddRectFilled(ImGui.GetWindowDrawList(ctx), x - 8, y + 6, x - 4, y + 30, ACCENT, 2)
+      end
+      if ImGui.Selectable(ctx, "  " .. p, p == page, ImGui.SelectableFlags_None, 0, 36) then page = p end
+    end
+    ImGui.PopFont(ctx)
+    ImGui.EndChild(ctx)
+  end
+  ImGui.PopStyleVar(ctx, 2)
+  ImGui.PopStyleColor(ctx)
+  ImGui.SameLine(ctx, 0, 0)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
+  if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
+    heading(page, 20)
+    if page == "Home" then page_home()
+    elseif page == "Rooms" then section_rooms()
+    elseif page == "Together" then section_together(); section_notes(); section_ideas(); section_tools()
+    elseif page == "Live" then section_live()
+    elseif page == "History" then section_recall(); section_history()
+    elseif page == "Settings" then page_settings() end
+    ImGui.EndChild(ctx)
+  end
+  ImGui.PopStyleVar(ctx)
+end
+
 local function frame()
   if reaper.time_precise() - last > 1.5 or reaper.EnumProjects(-1) ~= proj then
     last = reaper.time_precise()
     local ok, e = pcall(refresh)
     err = not ok and tostring(e) or nil
   end
+  local app = not classic()
+  if app then ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 10); ImGui.Indent(ctx, 16) end -- (the app window has no padding of its own)
   if err then return ImGui.TextColored(ctx, RED, "Error: " .. err) end
   if not b then
     ImGui.TextWrapped(ctx, "This project isn't a BandSync session yet.")
@@ -1181,13 +1460,17 @@ local function frame()
     ImGui.SetItemTooltip(ctx, "Before publishing a busy project: takes into lanes, FLAC recording, clear track names, media in the project folder, tidy-up. Shows a checklist first.")
     return
   end
-  ImGui.Text(ctx, string.format("%s  ·  room %s  ·  %s  ·  you are %s", b.song, b.room, b.role, cfg.user))
+  if not app or b.role == "solo" then
+    ImGui.Text(ctx, string.format("%s  ·  room %s  ·  %s  ·  you are %s", b.song, b.room, b.role, cfg.user))
+  end
   if b.role == "solo" then -- a Solo edit working copy: no Live sync here, only checking out/in and its versions
     ImGui.PushTextWrapPos(ctx, 0)
     ImGui.TextDisabled(ctx, "This tab is your Solo edit copy of '" .. b.song .. "'. Live sync never runs here: what you change goes to the band when you check in. The live session is in its own tab.")
     ImGui.PopTextWrapPos(ctx)
     return section_solo()
   end
+  if app then ImGui.Unindent(ctx, 16); return frame_app() end
+  if ImGui.SmallButton(ctx, "Switch to the new look") then reaper.DeleteExtState(band.SECTION, "panel_ui", true) end
   section_invites()
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
@@ -1203,8 +1486,8 @@ local function frame()
       ImGui.EndTabItem(ctx)
     end
     -- a room you just made or went to opens on this tab (its panel is the new tab's: ExtState, so any panel sees it)
-    local to_rooms = reaper.GetExtState(band.SECTION, "panel rooms") ~= ""
-    if to_rooms then reaper.DeleteExtState(band.SECTION, "panel rooms", false) end
+    local to_rooms = reaper.GetExtState(band.SECTION, "panel page") == "Rooms"
+    if to_rooms then reaper.DeleteExtState(band.SECTION, "panel page", false) end
     if ImGui.BeginTabItem(ctx, "Rooms", nil, to_rooms and ImGui.TabItemFlags_SetSelected or ImGui.TabItemFlags_None) then
       section_rooms()
       ImGui.EndTabItem(ctx)
@@ -1253,12 +1536,17 @@ local function loop()
   local wx, wy = ImGui.Viewport_GetWorkPos(ImGui.GetMainViewport(ctx)) -- first time: inside REAPER, below its menus
   ImGui.SetNextWindowPos(ctx, wx + 60, wy + 90, ImGui.Cond_FirstUseEver)
   -- no collapse arrow: collapsed and opened again, the window came back tiny on macOS (dock it, or close it instead)
-  local visible, open = ImGui.Begin(ctx, "BandSync", true, ImGui.WindowFlags_NoCollapse)
+  local app = not classic() -- (read once: the Settings page can switch it mid-frame)
+  if app then push_theme(); ImGui.PushFont(ctx, ui_font, 15) end
+  -- (the app's pages scroll inside; the window itself never does, so the top bar stays put)
+  local flags = ImGui.WindowFlags_NoCollapse | (app and (ImGui.WindowFlags_NoScrollbar | ImGui.WindowFlags_NoScrollWithMouse) or 0)
+  local visible, open = ImGui.Begin(ctx, "BandSync", true, flags)
   if visible then
     local ok, e = pcall(frame) -- an error in our logic must still reach End
     if not ok then err = tostring(e) end
     ImGui.End(ctx)
   end
+  if app then ImGui.PopFont(ctx); pop_theme() end
   if open then reaper.defer(loop) end
 end
 reaper.defer(loop)

@@ -45,6 +45,7 @@ ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandS
 ROOT="${ROOT%/}"
 LIVE="${BS_LIVE:-$(ask "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale (y/n)" y)}"
 SOLO="${BS_SOLO:-$(ask "Will you use Solo edit (editing a song while the others are offline)? Installs Google Drive (y/n)" y)}"
+PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? (y/n)" y)}"
 echo
 
 # ---------- 1. apps ----------
@@ -68,6 +69,32 @@ gh_asset() { # repo regex -> download URL of the latest release asset matching i
   curl -fsSL "https://api.github.com/repos/$1/releases/latest" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(http[^"]*\)"/\1/' | grep -E "$2" | head -1
 }
 have() { [ -d "/Applications/$1.app" ]; }
+gh_asset_tag() { # repo tag regex -> download URL of that release's asset matching it
+  curl -fsSL "https://api.github.com/repos/$1/releases/tags/$2" | grep -o '"browser_download_url": *"[^"]*"' | sed 's/.*"\(http[^"]*\)"/\1/' | grep -E "$3" | head -1
+}
+# A plug-in's disk image: its .pkg if it has one, else its plug-in bundles copied into your own Plug-Ins folders
+# (no password needed). `pattern`: a glob that's there once it's installed, in /Library or ~/Library.
+plugin_found() { find /Library/Audio/Plug-Ins "$HOME/Library/Audio/Plug-Ins" -maxdepth 2 -name "$1" 2>/dev/null | grep -q .; }
+plugin_dmg() { # url name pattern
+  [ -n "$1" ] || { warn "$2: no download found, skipped"; return 1; }
+  if plugin_found "$3"; then ok "$2 is already installed"; return 0; fi
+  local dmg="$WORK/$2.dmg" mnt="$WORK/mnt_plugin"
+  say "Installing $2 ..."
+  curl -fsSL "$1" -o "$dmg" || { warn "$2: download failed"; return 1; }
+  mkdir -p "$mnt"
+  hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" >/dev/null </dev/tty || { warn "$2: couldn't open the disk image"; return 1; }
+  local pkg; pkg="$(find "$mnt" -maxdepth 2 -name '*.pkg' | head -1)"
+  if [ -n "$pkg" ]; then password_note; sudo installer -pkg "$pkg" -target / >/dev/null
+  else
+    local d="$HOME/Library/Audio/Plug-Ins"
+    mkdir -p "$d/VST3" "$d/Components" "$d/CLAP"
+    find "$mnt" -maxdepth 3 -name '*.vst3' -prune | while read -r b; do ditto "$b" "$d/VST3/$(basename "$b")"; done
+    find "$mnt" -maxdepth 3 -name '*.component' -prune | while read -r b; do ditto "$b" "$d/Components/$(basename "$b")"; done
+    find "$mnt" -maxdepth 3 -name '*.clap' -prune | while read -r b; do ditto "$b" "$d/CLAP/$(basename "$b")"; done
+  fi
+  hdiutil detach "$mnt" -quiet
+  plugin_found "$3" && ok "$2 installed" || warn "$2 didn't install: install it by hand"
+}
 told_pw=""
 password_note() { # before the first sudo: a bare "Password:" looks like something's wrong
   [ -n "$told_pw" ] && return
@@ -131,6 +158,15 @@ if yes "$LIVE" && [ -x "$TS" ]; then
       else warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."; fi
     fi
   fi
+fi
+# the band plug-in pack (optional): free, open-source plug-ins every bandmate can have, each from its official release
+# (never bundled here); what everyone has shows in REAPER's FX browser folder "BandSync (everyone has)"
+if yes "$PLUGINS"; then
+  plugin_dmg "$(gh_asset_tag surge-synthesizer/releases-xt "$(curl -fsSL https://api.github.com/repos/surge-synthesizer/releases-xt/releases/latest | grep -o '"tag_name": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')" 'macOS-[0-9.]+\.dmg$')" "Surge XT" "Surge XT*"
+  plugin_dmg "$(gh_asset asb2m10/dexed 'macOS\.dmg$')" "Dexed" "Dexed*"
+  plugin_dmg "$(gh_asset_tag baconpaul/airwin2rack DAWPlugin 'macOS.*\.dmg$')" "Airwindows Consolidated" "Airwindows*"
+  plugin_dmg "$(gh_asset michaelwillis/dragonfly-reverb 'macos-universal\.dmg$')" "Dragonfly Reverb" "Dragonfly*"
+  plugin_dmg "$(gh_asset jatinchowdhury18/AnalogTapeModel 'Mac.*\.dmg$')" "Chow Tape Model" "CHOW*"
 fi
 have REAPER || { warn "REAPER isn't installed: get it from reaper.fm and run this again."; exit 1; }
 
@@ -197,8 +233,9 @@ HELPER="$(find "$WORK/src" -path '*/installer/bandsync_setup.lua' | head -1)"
 HDIR="$(dirname "$HELPER")"
 request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR/bandsync_setup_result.json
   local panel=false; [ "$1" = verify ] && panel=true
-  printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s}' \
-    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" > "$HDIR/bandsync_setup.json"
+  local jsfx=false; yes "$PLUGINS" && jsfx=true
+  printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s,"jsfx":%s}' \
+    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" "$jsfx" > "$HDIR/bandsync_setup.json"
   rm -f "$HDIR/bandsync_setup_result.json"
   if [ -n "${REOPEN:-}" ] && ! pgrep -x REAPER >/dev/null; then
     # we quit REAPER: start it the way you do, so it reopens your project tabs as it always does (started WITH the

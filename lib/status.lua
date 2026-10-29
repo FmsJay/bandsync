@@ -57,7 +57,7 @@ function status.gather(cfg, b, proj)
         local behind = (st.pending or 0) > 0 or (st.time or "") < newest_event
         rows[#rows + 1] = { name = st.user, age = a, version = st.version or "?", missing = missing,
           has = total - missing, mine = count(st.takes or {}, cfg.user), pending = st.pending or 0, hold = st.hold,
-          armed = st.armed, side = st.side, playing = st.playing,
+          armed = st.armed, side = st.side, playing = st.playing, recording = st.recording,
           behind = behind,
           state = a > 60 and "offline" or ((missing == 0 and not behind) and "in sync" or "catching up") }
       end

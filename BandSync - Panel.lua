@@ -23,6 +23,7 @@ if not cfg then return end
 if reaper.set_action_options then reaper.set_action_options(1) end -- running it again closes it (no task dialog)
 local section, cmd = select(3, reaper.get_action_context())
 if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 1); reaper.RefreshToolbar2(section, cmd) end
+reaper.SetExtState(band.SECTION, "panel_open", "1", true) -- (Autostart reopens it with REAPER; closing the window clears it)
 local restarting = false -- an update landed: a new panel took over, and its toolbar state is on
 reaper.atexit(function() if cmd > 0 and not restarting then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end end)
 
@@ -1684,7 +1685,7 @@ local function layout(parts) -- { { fn, width } }
       ImGui.PushTextWrapPos(ctx, 0)
       part[1]()
       ImGui.PopTextWrapPos(ctx)
-      more = ImGui.GetScrollY(ctx) < ImGui.GetScrollMaxY(ctx) - 2
+      more = ImGui.GetScrollMaxY(ctx) - ImGui.GetScrollY(ctx) > fh -- (less than a line out of sight isn't "more")
       ImGui.EndChild(ctx)
     end
     if more then
@@ -2259,6 +2260,7 @@ local function loop()
   end
   if app then ImGui.PopFont(ctx); pop_theme() end
   banner()
-  if open then reaper.defer(loop) end
+  reaper.SetExtState(band.SECTION, "panel alive", tostring(reaper.time_precise()), false) -- (so Autostart never opens a second one)
+  if open then reaper.defer(loop) else reaper.DeleteExtState(band.SECTION, "panel_open", true) end
 end
 reaper.defer(loop)

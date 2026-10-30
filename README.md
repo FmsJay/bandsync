@@ -127,6 +127,8 @@ By hand:
   shows the worst one still open; activity, updates, tidy-up; the BandSync logo and version at its foot).
 - Every page and control explains itself on hover. The window resizes from any edge; the *Window* menu fills the
   screen, takes half of it, moves it to the next screen, docks or undocks it.
+- The panel opens again with REAPER if it was open when REAPER closed (closing its window turns that off), as
+  Live sync does for its tabs.
 - **Docked** in a wide, short docker, each page lays out in columns side by side (scroll sideways for more; a column
   with more below says so).
 - **BandSync - Classic panel** (or *Use the classic panel* in Settings) opens the same panel in its classic layout,

@@ -67,7 +67,7 @@ if (-not $isHost) {
 $root = if ($Root) { $Root } else { Ask "Where should the shared BandSync folder be" (Join-Path $env:USERPROFILE "BandSync") }
 $wantLive = if ($Live) { $Live -eq "yes" } else { YesNo "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale" "y" }
 $wantSolo = if ($Solo) { $Solo -eq "yes" } else { YesNo "Will you use Solo edit (editing a song while the others are offline)? Installs Google Drive" "y" }
-$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds?" "y" }
+$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
 Write-Host ""
 
 # ---------- 1. apps ----------
@@ -139,7 +139,7 @@ if ($wantPlugins) {
   Install-Plugin "Airwindows Consolidated" "baconpaul/airwin2rack" '^(?!.*windows7).*Windows-64bit-setup\.exe$' "DAWPlugin" (Join-Path $vst3 "Airwindows*")
   Install-Plugin "Dragonfly Reverb" "michaelwillis/dragonfly-reverb" 'win64\.zip$' $null (Join-Path $res "UserPlugins\FX\Dragonfly*")
   Install-Plugin "Chow Tape Model" "jatinchowdhury18/AnalogTapeModel" 'Win-64bit.*\.exe$' $null (Join-Path $vst3 "CHOW*")
-  Ok "plug-in pack done: REAPER finds new plug-ins at its next start (or Options > Preferences > Plug-ins > VST > Re-scan)"
+  Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the band's 'everyone has' list only takes them after a restart)"
 }
 
 # ---------- 2. REAPER extensions: ReaPack and ReaImGui ----------

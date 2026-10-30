@@ -45,7 +45,7 @@ ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandS
 ROOT="${ROOT%/}"
 LIVE="${BS_LIVE:-$(ask "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale (y/n)" y)}"
 SOLO="${BS_SOLO:-$(ask "Will you use Solo edit (editing a song while the others are offline)? Installs Google Drive (y/n)" y)}"
-PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? (y/n)" y)}"
+PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
 echo
 
 # ---------- 1. apps ----------

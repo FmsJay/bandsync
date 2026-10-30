@@ -36,6 +36,11 @@ if not b then return band.msg("Publish (host) or open (guest) a session in this 
 if reaper.set_action_options then reaper.set_action_options(2) end
 local beat0 = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if beat0 and reaper.time_precise() - beat0 < 5 then return band.log("Live sync is already running for '" .. b.song .. "'") end
+-- the newest Live sync for a tab owns it: while a dialog is open every script pauses, its heartbeat goes stale, and
+-- Autostart may start another one for the tab; when the dialog closes the older one sees it was replaced and stops
+-- (2026-10-29, laptop: tabs could end up with two Live syncs after a long dialog)
+local my_token = string.format("%.6f-%d", reaper.time_precise(), math.random(1, 1e9))
+reaper.SetExtState(band.SECTION, "live owner " .. tostring(proj), my_token, false)
 local host = b.role == "host"
 local s0 = band.read_json(band.session_path(cfg, b.song)) or {}
 local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-take items as they are
@@ -525,6 +530,9 @@ local function tick_body() -- returns true to keep going
   if not now_b or now_b.role ~= b.role or now_b.song ~= b.song then -- became a solo working copy (or unbound): not ours any more
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
     return band.log("live sync stopped: this tab is now " .. (now_b and now_b.role == "solo" and "a Solo edit working copy" or "no longer this session"))
+  end
+  if reaper.GetExtState(band.SECTION, "live owner " .. key) ~= my_token then -- a newer Live sync took this tab over
+    return band.log("a newer Live sync took over '" .. b.song .. "' (room " .. b.room .. "): this one stops")
   end
   if reaper.GetExtState(band.SECTION, "stop " .. key) ~= "" then
     reaper.DeleteExtState(band.SECTION, "stop " .. key, false)

@@ -254,6 +254,42 @@ function recall.groups(entries, host)
   return groups
 end
 
+-- Only some tracks back to state `st` (a recall point or recall.replay's result): `now` (this project's capture) with
+-- the takes, what plays and the mute/solo of the tracks in `names` (lower-case set) taken from `st`. Takes on those
+-- tracks that `st` doesn't have go (to the trash, as a restore does); everything else stays as it is now. Pure.
+function recall.for_tracks(now, st, names)
+  local out = { takes = {}, plays = {}, tracks = {}, musical = now.musical }
+  local function on(t) return type(t) == "table" and t.track and names[t.track:lower()] end
+  for id, t in pairs(now.takes or {}) do if not on(t) then out.takes[id] = t end end
+  for id, t in pairs(st.takes or {}) do if on(t) then out.takes[id] = t end end
+  for n, l in pairs(now.plays or {}) do out.plays[n] = l end
+  for n, l in pairs(st.plays or {}) do if names[n:lower()] then out.plays[n] = l end end
+  for n, p in pairs(now.tracks or {}) do out.tracks[n] = p end
+  for n, p in pairs(st.tracks or {}) do if names[n:lower()] then out.tracks[n] = p end end
+  return out
+end
+
+-- The tracks in `names` back to state `st`, the rest left as they are (see for_tracks). Returns a summary.
+function recall.restore_tracks(proj, cfg, song, room, st, label, names)
+  local now = capture(proj)
+  if not st.musical then -- an older point measured lengths with the print's tail: take it off, as restore_state does
+    local c = {}
+    for id, t in pairs(st.takes or {}) do
+      local tail = tonumber(sync.ext(proj, sync.TAILS, id)) or 0
+      local x = {}
+      for k, v in pairs(t) do x[k] = v end
+      if x.len and tail > 0 then x.len = math.max(0, x.len - tail) end
+      c[id] = x
+    end
+    st = { takes = c, plays = st.plays, tracks = st.tracks }
+  end
+  recall.save(proj, cfg, song, room, "before putting tracks back to " .. label)
+  local list = {}
+  for n in pairs(names) do list[#list + 1] = n end
+  table.sort(list)
+  return recall.restore_state(proj, cfg, song, room, recall.for_tracks(now, st, names), table.concat(list, ", ") .. " back to " .. label, true)
+end
+
 -- Make this project match recall point `file`. Only the driver should call this (Live sync posts only
 -- what this person may change). Returns a short summary.
 function recall.restore(proj, cfg, song, room, file)

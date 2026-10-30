@@ -125,7 +125,10 @@ By hand:
   **History**, **Settings** (look, sync options, Google Drive, drum maps, plug-ins) and **Maintenance** (set up and
   health: red = the band can't sync until it's fixed, yellow = an extra or worth a look, dismissable; the sidebar
   shows the worst one still open; activity, updates, tidy-up; the BandSync logo and version at its foot).
-- Every page and control explains itself on hover. The window resizes from any edge.
+- Every page and control explains itself on hover. The window resizes from any edge; the *Window* menu fills the
+  screen, takes half of it, moves it to the next screen, docks or undocks it.
+- **Docked** in a wide, short docker, each page lays out in columns side by side (scroll sideways for more; a column
+  with more below says so).
 - **BandSync - Classic panel** (or *Use the classic panel* in Settings) opens the same panel in its classic layout,
   with tabs: the backup look, everything the same underneath.
 
@@ -152,10 +155,16 @@ The table below uses the separate actions, which still work without the panel.
 - **History & restore** (panel tab): every take and every change in the room, newest first, grouped by who made
   them (and who was driving), each group expandable to its individual changes. Filters narrow it to one person, one
   kind of change (recordings, moves, deletes, what plays, track changes, MIDI, notes, tempo and arrangement...), one
-  track, or words in it; filtered, each change has its own *Restore* to right after it. The driver can restore the
-  session to right after any group: later takes are put away, deleted ones come back out of `_trash`, positions
-  and what plays go back. Named **recall points** (saved at every handover and with *Save point*) live there
-  too. Every restore first saves where things are, so you can flip between versions.
+  track, or words in it. Three ways back, smallest first:
+  - *Undo this* (on each change, filtered or in an expanded group): only that change goes back (a move, trim, mute,
+    delete, recording, what plays, a track's mute/solo/fader); everything else stays.
+  - *Selected tracks to here* (filtered changes and recall points): select tracks in REAPER and only those go back
+    to that moment (their takes, positions, what plays, mute/solo); the rest of the song and the tempo stay.
+  - *Go back to here* (driver only): the whole session to right after that change or group: later takes are put
+    away, deleted ones come back out of `_trash`, positions and what plays go back.
+  The first two work for the driver, or on tracks you've claimed, and go to the band as normal changes (new lines in
+  History, so they can be undone the same way). Named **recall points** (saved at every handover and with *Save
+  point*) live there too. Every restore first saves where things are, so you can flip between versions.
 - **Hold sync** (panel checkbox): work without sending anything; on release your net changes go out once.
 - **BandSync - Print my MIDI**: put your own instrument on a "<track> (MIDI)" track (a better drum VST,
   say), select its MIDI items and run this. Your render replaces the print everyone hears, and from then on

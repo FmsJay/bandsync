@@ -32,7 +32,8 @@ local function loop()
     local key = tostring(proj)
     if fn ~= "" and reaper.GetExtState(band.SECTION, "autosync " .. fn:lower()) == "1" and band.binding(proj) then
       local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
-      local alive = beat and reaper.time_precise() - beat < 5
+      -- (30 s, not 5: a dialog left open a few seconds pauses every script, and isn't a Live sync that stopped)
+      local alive = beat and reaper.time_precise() - beat < 30
       if not alive and reaper.time_precise() - (tried[key] or -1e9) > 30 then
         tried[key] = reaper.time_precise()
         band.log("starting Live sync again for " .. fn)

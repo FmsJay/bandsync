@@ -286,6 +286,72 @@ function tools.redo_mine(proj, cfg, b)
   return "redid your change from " .. ev.time:sub(12, 19)
 end
 
+-- ---- undo one change from History: that change only, not the whole session ------------------------------------
+-- What it changed goes back to how it was just before it; everything else stays. It's done here, so Live sync sends it
+-- like any change (a new line in History, and Undo/Go back to here work on it too). `entries` = recall.entries, `i`
+-- the change's index, `can(user, track, pos, take)` the room's authority. Returns what it did, or nil + why.
+function tools.undo_change(proj, cfg, b, entries, i, can)
+  local e = entries[i]
+  if not e then return nil, "that change isn't in History any more" end
+  local id = e.take
+  local mine = id and sync.author(id) == sync.author_of(cfg.user)
+  local function refused(track, pos)
+    local who = sync.owner_of and sync.owner_of(track, pos) or "the driver"
+    return nil, who .. " decides about that now: take control (or claim the track) first"
+  end
+  local function earlier(match) -- the newest entry before this one that `match`es
+    for j = i - 1, 1, -1 do if match(entries[j]) then return entries[j] end end
+  end
+  local same_take = function(x) return x.take and id and x.take:lower() == id:lower() end
+  if e.kind == "edit" and id then
+    local it, tk = band.find_take(proj, id)
+    if not it then return nil, "that take isn't here any more (deleted since?)" end
+    local before = type(e.before) == "table" and e.before
+      or earlier(function(x) return same_take(x) and (x.kind == "edit" or x.kind == "take") end)
+    if not before then return nil, "BandSync doesn't know how that take was before this change" end
+    if not (can(cfg.user, e.track, before.pos or e.pos, id) or can(cfg.user, e.track, before.pos or e.pos)) then return refused(e.track, e.pos) end
+    if before.pos then reaper.SetMediaItemInfo_Value(it, "D_POSITION", before.pos) end
+    if before.len then reaper.SetMediaItemInfo_Value(it, "D_LENGTH", before.len + (tonumber(sync.ext(proj, sync.TAILS, id)) or 0)) end
+    if before.offs then reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", band.base_offs(tk) + before.offs) end
+    reaper.SetMediaItemInfo_Value(it, "B_MUTE", before.mute or 0)
+    reaper.UpdateItemInProject(it)
+  elseif e.kind == "delete" and id then
+    if band.find_take(proj, id) then return nil, "that take is back already" end
+    if not (mine or can(cfg.user, e.track, e.pos)) then return refused(e.track, e.pos) end
+    sync.untrash(cfg, b.song, b.room, id)
+    band.set_take_state(proj, id, "") -- it's imported again, here and everywhere
+    sync.post(cfg, b.song, b.room, { type = "undelete", take = id, track = e.track, pos = e.pos })
+  elseif (e.kind == "take" or e.kind == "undelete") and id then
+    local it, tk = band.find_take(proj, id)
+    if not it then return nil, "that take isn't here any more" end
+    if not (mine or can(cfg.user, e.track, e.pos)) then return refused(e.track, e.pos) end
+    if not sync.delete_take(proj, it, tk, id) then return nil, "couldn't remove it (bring this song's tab to the front)" end
+  elseif e.kind == "track" and e.track then
+    local name = e.was or e.track
+    local before = earlier(function(x) return x.kind == "track" and x.track and x.track:lower() == name:lower() end)
+      or { mute = 0, solo = 0, vol = 1, pan = 0 } -- (nothing before it: as a new track starts)
+    if not can(cfg.user, e.track, nil) then return refused(e.track, nil) end
+    local tr = band.find_track(proj, e.track, true) or band.find_track(proj, e.track .. " (band)", true)
+    if not tr then return nil, "that track isn't here" end
+    for _, f in ipairs(e.changed or { "mute", "solo" }) do -- only what that change changed
+      if f == "mute" then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", before.mute or 0)
+      elseif f == "solo" then reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", before.solo or 0)
+      elseif f == "vol" and before.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", before.vol)
+      elseif f == "pan" and before.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", before.pan) end
+    end
+  elseif e.kind == "plays" and e.track then
+    local before = earlier(function(x) return x.kind == "plays" and x.track and x.track:lower() == e.track:lower() end)
+    if not before then return nil, "BandSync doesn't know what played on " .. e.track .. " before this change" end
+    if not can(cfg.user, e.track, nil) then return refused(e.track, nil) end
+    sync.set_plays(proj, e.track, before.takes or {})
+    sync.post(cfg, b.song, b.room, { type = "plays", track = e.track, takes = before.takes or {} })
+  else
+    return nil, "this kind of change can't be undone on its own: use Go back to here"
+  end
+  reaper.UpdateArrange()
+  return "undid " .. e.user .. "'s change: " .. require("recall").describe(e)
+end
+
 -- ---- which of a chain's plug-ins this machine has (before turning dry mode on) ---------------------------
 -- From the chain text: { { name, have } }. A plug-in counts as here when REAPER's own plug-in lists (the
 -- reaper-*plugins*.ini / reaper-clap-*.ini caches next to reaper.ini) or its Effects folder (JSFX) name it.

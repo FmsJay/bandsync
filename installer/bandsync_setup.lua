@@ -55,6 +55,8 @@ local function already_installed()
   return n >= 5
 end
 
+local JSFX_REPOS = { { "Saike", "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml" },
+                     { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" } }
 if req.mode == "reapack" then
   if not reaper.APIExists("ReaPack_AddSetRepository") then
     step("ReaPack installed", false, "install ReaPack (reapack.com) and restart REAPER first")
@@ -65,8 +67,7 @@ if req.mode == "reapack" then
     local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
     step("add BandSync repository", added, err ~= "" and err or req.repo_url)
     if req.jsfx then -- the plug-in pack's JSFX (both MIT): in this same ReaPack sync, never one of their own (see above)
-      for _, r in ipairs({ { "Saike", "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml" },
-                           { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" } }) do
+      for _, r in ipairs(JSFX_REPOS) do
         local ok_r, e = reaper.ReaPack_AddSetRepository(r[1], r[2], true, 1)
         step("add " .. r[1] .. " JSFX repository", ok_r, e ~= "" and e or r[2])
       end
@@ -87,6 +88,24 @@ elseif req.mode == "folder" then
   end
   for n, path in ipairs(scripts) do reaper.AddRemoveReaScript(true, 0, path, n == #scripts) end
   step("register actions from shared folder", #scripts > 0, #scripts .. " scripts in " .. dir)
+  -- the plug-in pack's JSFX: BandSync came from the folder, so there's no BandSync ReaPack sync to ride along with; a
+  -- sync of their own, only when one of them is missing (a re-run with both there leaves ReaPack alone, see above)
+  if req.jsfx and reaper.APIExists("ReaPack_AddSetRepository") then
+    local added = false
+    for _, r in ipairs(JSFX_REPOS) do
+      local have = reaper.APIExists("ReaPack_GetRepositoryInfo") and reaper.ReaPack_GetRepositoryInfo(r[1])
+      if not have then
+        local ok_r, e = reaper.ReaPack_AddSetRepository(r[1], r[2], true, 1)
+        step("add " .. r[1] .. " JSFX repository", ok_r, e ~= "" and e or r[2])
+        added = added or ok_r
+      end
+    end
+    if added then
+      reaper.ReaPack_ProcessQueue(true)
+      local sync = reaper.NamedCommandLookup("_REAPACK_SYNC")
+      if sync ~= 0 then reaper.Main_OnCommand(sync, 0) end
+    end
+  end
 end
 
 -- What's registered now, autostart, the result file, and the panel. With ReaPack, run once its sync has brought the

@@ -143,10 +143,10 @@ if ($wantPlugins) {
 }
 
 # ---------- 2. REAPER extensions: ReaPack and ReaImGui ----------
-$plugins = Join-Path $res "UserPlugins"
+$userPlugins = Join-Path $res "UserPlugins"
 $need = @()
-if (-not (Test-Path (Join-Path $plugins "reaper_reapack-x64.dll"))) { $need += @{ file = "reaper_reapack-x64.dll"; url = "https://github.com/cfillion/reapack/releases/download/$ReaPackVer/reaper_reapack-x64.dll" } }
-if (-not (Test-Path (Join-Path $plugins "reaper_imgui-x64.dll"))) { $need += @{ file = "reaper_imgui-x64.dll"; url = "https://github.com/cfillion/reaimgui/releases/download/v$ReaImGuiVer/reaper_imgui-x64.dll" } }
+if (-not (Test-Path (Join-Path $userPlugins "reaper_reapack-x64.dll"))) { $need += @{ file = "reaper_reapack-x64.dll"; url = "https://github.com/cfillion/reapack/releases/download/$ReaPackVer/reaper_reapack-x64.dll" } }
+if (-not (Test-Path (Join-Path $userPlugins "reaper_imgui-x64.dll"))) { $need += @{ file = "reaper_imgui-x64.dll"; url = "https://github.com/cfillion/reaimgui/releases/download/v$ReaImGuiVer/reaper_imgui-x64.dll" } }
 if ($need.Count -gt 0) {
   if (Get-Process reaper -ErrorAction SilentlyContinue) {
     Say "REAPER has to restart to load its new extensions. Press Enter and REAPER is asked to close (it asks to save"
@@ -160,8 +160,8 @@ if ($need.Count -gt 0) {
       if ($waited % 30 -eq 0) { Say "Still waiting for REAPER to close (answer its save question if it asked one) ..." }
     }
   }
-  New-Item -ItemType Directory -Force $plugins | Out-Null
-  foreach ($n in $need) { Invoke-WebRequest -UseBasicParsing $n.url -OutFile (Join-Path $plugins $n.file); Ok "$($n.file) installed" }
+  New-Item -ItemType Directory -Force $userPlugins | Out-Null
+  foreach ($n in $need) { Invoke-WebRequest -UseBasicParsing $n.url -OutFile (Join-Path $userPlugins $n.file); Ok "$($n.file) installed" }
 } else { Ok "ReaPack and ReaImGui are already installed" }
 $api = Join-Path $res "Scripts\ReaTeam Extensions\API"
 if (-not (Test-Path (Join-Path $api "imgui.lua"))) { # ReaImGui's version shim, which scripts load with require "imgui"

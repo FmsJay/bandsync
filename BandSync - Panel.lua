@@ -322,10 +322,12 @@ local function refresh()
     for _, c in pairs(who.tracks) do if c.user == cfg.user then mine = mine + 1 end end
     for _, c in pairs(who.regions) do if c.user == cfg.user then mine = mine + 1 end end
     for _, t in ipairs(who.times or {}) do if t.user == cfg.user then mine = mine + 1 end end
-    banner_text = who.mode == "driver" and ("View only: " .. view.driver .. " is driving. Your changes are put back (recording still goes out).")
-      or who.mode == "open" and nil
-      or (mine > 0 and (view.driver .. " is driving: you can change what you've claimed.")
-        or ("View only: " .. view.driver .. " is driving. Claim a track (BandSync, Home) to edit it."))
+    -- (open: no banner; "x and nil or y" can't say that in Lua, it gives y)
+    if who.mode == "driver" then banner_text = "View only: " .. view.driver .. " is driving. Your changes are put back (recording still goes out)."
+    elseif who.mode ~= "open" then
+      banner_text = mine > 0 and (view.driver .. " is driving: you can change what you've claimed.")
+        or ("View only: " .. view.driver .. " is driving. Claim a track (BandSync, Home) to edit it.")
+    end
   end
   points = recall.list(cfg, b.song, b.room)
 end

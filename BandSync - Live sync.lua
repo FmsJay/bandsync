@@ -362,6 +362,11 @@ local function poll()
   local now = reaper.time_precise()
   local copies = sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
   if copies > 0 then band.log(copies .. " copied or split item(s) will go out as new takes") end
+  -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest is put back,
+  -- so it can't silently drift from the band's version. Before sending and reprinting: a tempo change that isn't ours
+  -- is put back first, not rendered into a new print and then rendered back (2026-10-29, laptop: two needless reprints,
+  -- and the put-back came 4.5 s late behind them)
+  if not hold then sync.watch(proj, cfg, b.song, b.room, my_can) end
   if not hold and reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
     local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN, me = cfg.user })
     if #units > 0 then band.log("sent " .. sync.send(proj, cfg, b, units, print_mode) .. " new take(s)") end
@@ -384,9 +389,6 @@ local function poll()
     if retired > 0 then band.log(retired .. " placeholder(s) replaced by the real takes") end
   end
 
-  -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest
-  -- is view-only (locked) so it can't silently drift from the band's version
-  if not hold then sync.watch(proj, cfg, b.song, b.room, my_can) end
   -- the driver's mix layer (buses, sends into them, master plug-ins) goes to the band once it has settled; only
   -- while stopped, since automation moves plug-in settings during playback
   if driver == cfg.user and not hold and reaper.GetPlayStateEx(proj) == 0 then

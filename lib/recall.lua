@@ -11,6 +11,23 @@ function recall.dir(cfg, song, room) return sync.room_dir(cfg, song, room) .. "/
 
 -- Lengths are the take's own, without the reverb tail its print carries (musical = true; points saved before
 -- 0.16.1 included the tail, and restoring one added it a second time).
+-- A take's notes as a fingerprint: each note's start, length, channel, pitch, velocity and mute, nothing else ("n2:"
+-- first). REAPER's own MIDI hash changed with more than the notes (2026-10-29: every MIDI take looked "edited" in a
+-- side room's preview, nobody had touched a note). Positions are the take's own, so moving the item doesn't change it.
+local function notes_print(tk)
+  local _, n = reaper.MIDI_CountEvts(tk)
+  local parts = {}
+  for i = 0, (n or 0) - 1 do
+    local _, _, muted, s, e, ch, pitch, vel = reaper.MIDI_GetNote(tk, i)
+    parts[#parts + 1] = string.format("%d:%d:%d:%d:%d:%d", math.floor(s + 0.5), math.floor(e - s + 0.5), ch, pitch, vel, muted and 1 or 0)
+  end
+  table.sort(parts)
+  local h = 5381
+  for c in table.concat(parts, ","):gmatch(".") do h = (h * 33 + c:byte()) % 4294967296 end
+  return string.format("n2:%d:%08x", #parts, h)
+end
+recall.notes_print = notes_print
+
 local function capture(proj)
   local st = { takes = {}, plays = {}, tracks = {}, musical = true }
   for i = 0, reaper.CountMediaItems(proj) - 1 do
@@ -26,7 +43,7 @@ local function capture(proj)
           rev = tonumber(sync.ext(proj, sync.REV, id)) } -- which print it was: a kept point's files are never cleaned up
         -- its notes (a MIDI take, or a bandmate's take's "(MIDI)" copy), so bringing a side room in can tell an edit
         local mtk = reaper.TakeIsMIDI(tk) and tk or select(2, band.find_midi(proj, id))
-        if mtk then st.takes[id].notes = select(2, reaper.MIDI_GetHash(mtk, true, "")) end
+        if mtk then st.takes[id].notes = notes_print(mtk) end
       end
     end
   end
@@ -166,6 +183,18 @@ function recall.describe(e)
   if e.kind == "take" then
     return string.format("recorded %s%s at %.2f s%s", e.midi and "a MIDI take" or "a take", on, e.pos or 0, e.lane and (" (lane " .. (e.lane + 1) .. ")") or "")
   elseif e.kind == "edit" then
+    -- what it did, when the shape before it came along (0.14.5+): "muted", "trimmed", "moved", not always "moved/trimmed"
+    local b = type(e.before) == "table" and e.before or nil
+    if b then
+      local function differ(x, y) return x ~= nil and y ~= nil and math.abs(x - y) > 1e-4 end
+      local moved = differ(b.pos, e.pos)
+      local trimmed = differ(b.len, e.len) or differ(b.offs, e.offs)
+      local muted = b.mute ~= nil and e.mute ~= nil and ((b.mute or 0) > 0) ~= ((e.mute or 0) > 0)
+      local mute_note = muted and (((e.mute or 0) > 0) and ", muted" or ", unmuted") or ""
+      if not moved and not trimmed and muted then return ((e.mute or 0) > 0 and "muted " or "unmuted ") .. whose .. on end
+      if not moved and trimmed then return "trimmed " .. whose .. on .. mute_note end
+      if moved and not trimmed then return string.format("moved %s%s to %.2f s%s", whose, on, e.pos or 0, mute_note) end
+    end
     return string.format("moved/trimmed %s%s to %.2f s%s", whose, on, e.pos or 0, (e.mute or 0) > 0 and ", muted" or "")
   elseif e.kind == "delete" then return "deleted " .. whose .. on
   elseif e.kind == "undelete" then return "brought back " .. whose .. on

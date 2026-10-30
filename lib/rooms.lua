@@ -228,7 +228,22 @@ local function lower_keys(t) local o = {}; for k, v in pairs(t or {}) do o[k:low
 -- Pure. Returns { items = { {kind, key, track, side, main, clash, label} }, new = { ids recorded in the side room
 -- only }, timeline = nil | "side" | "main" | "both" }. kind: "take" (side/main = a shape, or false = deleted),
 -- "plays" (lists), "track" (props), "notes" (MIDI hashes). Items are only the side room's changes.
-function rooms.plan(base, main, side)
+-- What changed in a take's shape, in words (moved, trimmed, muted...). Pure.
+local function shape_words(b, s)
+  local w = {}
+  local function differ(x, y) return x ~= nil and y ~= nil and math.abs((tonumber(x) or 0) - (tonumber(y) or 0)) > 1e-4 end
+  if b.track ~= s.track then w[#w + 1] = "moved to " .. tostring(s.track)
+  elseif differ(b.pos, s.pos) then w[#w + 1] = "moved" end
+  if differ(b.len, s.len) or differ(b.offs, s.offs) then w[#w + 1] = "trimmed" end
+  if ((tonumber(b.mute) or 0) > 0) ~= ((tonumber(s.mute) or 0) > 0) then w[#w + 1] = (tonumber(s.mute) or 0) > 0 and "muted" or "unmuted" end
+  if tostring(b.lane) ~= tostring(s.lane) and differ(b.lane or 0, s.lane or 0) then w[#w + 1] = "lane changed" end
+  if (b.active and true or false) ~= (s.active and true or false) then w[#w + 1] = s.active and "now plays" or "no longer plays" end
+  return #w > 0 and table.concat(w, ", ") or "changed"
+end
+
+-- `notes`: compare MIDI notes too. Only when all three were captured on this machine: a drum map translates notes on
+-- each machine, so another machine's base can't tell an edit from a translation (and old bases used REAPER's hash).
+function rooms.plan(base, main, side, notes)
   local out = { items = {}, new = {} }
   local B, M, S = lower_keys(base.takes), lower_keys(main.takes), lower_keys(side.takes)
   local function add(kind, key, track, s, m, clash, label)
@@ -249,13 +264,14 @@ function rooms.plan(base, main, side)
     if ss ~= bs and ss ~= ms then
       local track = (s or m or b).track
       local clash = ms ~= bs or not b -- (not in the base: which of the two is newer can't be told, so you pick)
-      local label = not s and "deleted" or not m and "brought back (deleted in the parent)" or not b and "changed" or
-        (s.track ~= (m or b).track and ("moved to " .. tostring(s.track))) or "moved/trimmed/muted"
+      local label = not s and "deleted" or not m and "brought back (deleted in the parent)" or not b and "changed" or shape_words(b, s)
       add("take", id, track, s or false, m or false, clash, label)
     end
     local bn, mn, sn = b and b.notes, m and m.notes, s and s.notes
     if not b then bn = mn end
-    if s and m and sn and sn ~= bn and sn ~= mn then add("notes", id, s.track, sn, mn, mn ~= bn or not b, "notes edited") end
+    local comparable = notes and type(sn) == "string" and sn:sub(1, 3) == "n2:" and type(mn) == "string" and mn:sub(1, 3) == "n2:"
+      and type(bn) == "string" and bn:sub(1, 3) == "n2:"
+    if comparable and s and m and sn ~= bn and sn ~= mn then add("notes", id, s.track, sn, mn, mn ~= bn or not b, "notes edited") end
   end
   local names = {}
   for _, st in ipairs({ base, main, side }) do for n in pairs(st.plays or {}) do names[n] = true end end
@@ -277,6 +293,17 @@ function rooms.plan(base, main, side)
   return out
 end
 
+-- Changes on what someone else has claimed in the parent can't come over (the parent's Live sync would put them back:
+-- 2026-10-29, a delete on a track the laptop had claimed came straight back): marked `blocked` = whose claim it is,
+-- so the preview says so and merged() leaves them. `can`, `owner`: sync.authority's for the parent room. Pure.
+function rooms.mark_blocked(plan, can, owner, me)
+  for _, it in ipairs(plan.items) do
+    local sh = type(it.side) == "table" and it.side or type(it.main) == "table" and it.main or nil
+    local pos = sh and sh.pos
+    if it.track and not can(me, it.track, pos) then it.blocked = owner(it.track, pos) or "someone" end
+  end
+end
+
 -- Pure. The parent's state after taking `items` (each with .use = "side" or "main"; clashes default to main,
 -- the rest to side) and only those whose track is in `tracks` (nil = all): what recall.restore_state makes the
 -- parent's tab match. With `timeline`, the side room's tempo and markers too.
@@ -289,7 +316,7 @@ function rooms.merged(main, side, items, tracks, timeline)
   for k in pairs(st.takes) do idx[k:lower()] = k end
   for _, it in ipairs(items) do
     local use = it.use or (it.clash and "main" or "side")
-    if use == "side" and (not tracks or tracks[it.track or ""]) then
+    if use == "side" and not it.blocked and (not tracks or tracks[it.track or ""]) then
       if it.kind == "take" then
         local key = idx[it.key:lower()] or it.key
         st.takes[key] = it.side or nil

@@ -113,21 +113,23 @@ local function arrow_button(id, redo, tip)
   local clicked = ImGui.InvisibleButton(ctx, id, s, s)
   local bg = ImGui.IsItemActive(ctx) and ACCENT or ImGui.IsItemHovered(ctx) and 0x40454CFF or 0x33373DFF
   ImGui.DrawList_AddRectFilled(dl, x, y, x + s, y + s, bg, 6)
-  local cx, cy, r, col = x + s / 2, y + s / 2 + 1, s * 0.22, 0xE6E8EBFF
-  -- an arc over the top (angles run clockwise on screen: pi is left, 1.5 pi is up, 2 pi is right), its tail dipping a
-  -- little past the far side; the arrowhead sits on the near end, pointing down (undo: left end, redo: right end)
-  if redo then ImGui.DrawList_PathArcTo(dl, cx, cy, r, math.pi * 0.9, math.pi * 2.0)
-  else ImGui.DrawList_PathArcTo(dl, cx, cy, r, math.pi * 1.0, math.pi * 2.1) end
+  -- one arrow, drawn as points and mirrored for redo, so the two are the same size exactly (the arc call drew them
+  -- unequal); centred on whole pixels so neither side blurs differently
+  local cx, cy, r, col = math.floor(x + s / 2 + 0.5), math.floor(y + s / 2 + 1.5), math.floor(s * 0.24 + 0.5), 0xE6E8EBFF
+  local function px(dx) return redo and (cx - dx) or (cx + dx) end -- undo as drawn; redo flipped left to right
+  for i = 0, 12 do -- an arc over the top from the left end round to just past the right
+    local a = math.pi * (1.0 + 1.1 * i / 12)
+    ImGui.DrawList_PathLineTo(dl, px(math.cos(a) * r), cy + math.sin(a) * r)
+  end
   ImGui.DrawList_PathStroke(dl, col, ImGui.DrawFlags_None, 2)
-  -- the arrowhead at the arc's start (left for undo, right for redo)
-  local hx = redo and (cx + r) or (cx - r)
-  local d = redo and 1 or -1
-  ImGui.DrawList_AddTriangleFilled(dl, hx - 4 * d, cy - 1, hx + 4 * d, cy - 1, hx, cy + 5, col)
+  local h = math.max(3, math.floor(r * 0.7 + 0.5)) -- the arrowhead at the left end (redo: right), pointing down
+  ImGui.DrawList_AddTriangleFilled(dl, px(-r - h), cy - 1, px(-r + h), cy - 1, px(-r), cy + h + 1, col)
   if tip then ImGui.SetItemTooltip(ctx, tip) end
   return clicked
 end
+local wide = false -- docked wide and short (see layout): everything a little tighter
 local function heading(text, size)
-  ImGui.PushFont(ctx, nil, size or 19)
+  ImGui.PushFont(ctx, nil, wide and 15 or (size or 19))
   ImGui.Text(ctx, text)
   ImGui.PopFont(ctx)
 end
@@ -180,8 +182,9 @@ local reload_now, dock_req -- (Settings: switching the window frame reopens the 
 local placed_from, placed_how -- where the window was before the Window menu moved it (screen pixels), and how it's placed
 local banner_docked -- (docked, the panel never covers the arrange view)
 local place_req, win_rect -- a placement for the next frame (ReaImGui units); the window as ReaImGui last drew it
-local WINDOW_MENU = { "Fill this screen", "Left half", "Right half", "Top half", "Bottom half", "Back to before" }
+local WINDOW_MENU = { "Fill this screen", "Left half", "Right half", "Top half", "Bottom half", "Move to the next screen", "Back to before" }
 local function place_window(how)
+  if how == "Dock" or how == "Undock" then dock_req = how == "Dock" and -1 or 0; return end -- (asked for from a script)
   local h = reaper.JS_Window_Find and reaper.JS_Window_Find("BandSync", true)
   if not h then return band.msg("Placing the window needs js_ReaScriptAPI (ReaPack: 'js_ReaScriptAPI').") end
   local _, l, t, r, btm = reaper.JS_Window_GetRect(h)
@@ -200,6 +203,14 @@ local function place_window(how)
   placed_how = how
   placed_from = placed_from or { l, t, r - l, btm - t }
   local L, T, R, B = reaper.JS_Window_GetViewportFromRect(l, t, r, btm, true) -- the screen it's on, without the taskbar
+  if how == "Move to the next screen" then -- the screen to the right (else the left), filled
+    local my = (T + B) // 2
+    local nL, nT, nR, nB = reaper.JS_Window_GetViewportFromRect(R + 20, my, R + 21, my + 1, true)
+    if nL == L then nL, nT, nR, nB = reaper.JS_Window_GetViewportFromRect(L - 21, my, L - 20, my + 1, true) end
+    if nL == L then return band.msg("There's only one screen.") end
+    L, T, R, B = nL, nT, nR, nB
+    placed_how = "Fill this screen"
+  end
   local W, H = R - L, B - T
   local x, y, w, hh = L, T, W, H
   if how == "Left half" then w = W // 2
@@ -620,7 +631,7 @@ local function describe(e)
   return (recall.describe(e):gsub("( [at][to]?) (%d+%.%d+) s", function(w, n) return w .. " bar " .. bar_of(tonumber(n)) end))
 end
 local KINDS = {
-  { "Every kind" }, { "Recordings", { take = true } }, { "Moves and trims", { edit = true } },
+  { "Every kind" }, { "Recordings", { take = true } }, { "Moves, trims and mutes", { edit = true } },
   { "Deletes and bring-backs", { delete = true, undelete = true } }, { "What plays", { plays = true } },
   { "Track changes (mute, solo, fader, name)", { track = true } }, { "MIDI note edits", { midi = true } },
   { "Notes and likes", { note = true, like = true } }, { "Tempo and arrangement", { timeline = true, shift = true } },
@@ -1404,7 +1415,9 @@ local function look_merge(parent)
     return
   end
   local side, main = recall.capture(proj), recall.capture(mproj)
-  local plan = rooms.plan(base, main, side)
+  local plan = rooms.plan(base, main, side, base.by == cfg.user) -- (notes only when the room was made on this machine)
+  local mcan, mwho = sync.authority(cfg, b.song, parent, view.session)
+  rooms.mark_blocked(plan, mcan, mwho.owner, cfg.user)
   local tracks, order = {}, {}
   local function track(n) if n and not tracks[n] then tracks[n] = true; order[#order + 1] = n end end
   for _, it in ipairs(plan.items) do track(it.track) end
@@ -1434,7 +1447,8 @@ local function section_merge()
   for _, it in ipairs(plan.items) do if it.clash then clashes = clashes + 1 end end
   ImGui.Text(ctx, string.format("%d new take(s), %d change(s)%s", #plan.new, #plan.items - clashes,
     clashes > 0 and string.format(", %d clash(es): pick each one", clashes) or ""))
-  if ImGui.BeginChild(ctx, "merge", 0, 220, ImGui.ChildFlags_Borders) then
+  -- as tall as its list: the page scrolls it (a fixed-height box inside the page didn't take the mouse wheel)
+  if ImGui.BeginChild(ctx, "merge", 0, 0, ImGui.ChildFlags_Borders | ImGui.ChildFlags_AutoResizeY) then
     for _, name in ipairs(merge.order) do
       ImGui.PushID(ctx, name)
       local _, on = ImGui.Checkbox(ctx, name, merge.tracks[name])
@@ -1448,8 +1462,10 @@ local function section_merge()
         if it.track == name then
           ImGui.PushID(ctx, i)
           local who = (it.kind == "take" or it.kind == "notes") and ((it.key:match("^(.-)%-%d+%-%d+Z") or it.key) .. "'s take: ") or ""
-          ImGui.BeginDisabled(ctx, not moves)
-          if it.clash then
+          ImGui.BeginDisabled(ctx, not moves or it.blocked ~= nil)
+          if it.blocked then
+            ImGui.TextDisabled(ctx, who .. it.label .. ": can't bring, " .. it.blocked .. " has claimed it in " .. merge.parent)
+          elseif it.clash then
             ImGui.TextColored(ctx, YELLOW, who .. it.label .. " (changed in both)")
             if ImGui.RadioButton(ctx, "keep " .. merge.parent .. "'s", (it.use or "main") == "main") then it.use = "main" end
             ImGui.SameLine(ctx)
@@ -1488,10 +1504,12 @@ end
 
 local function section_rooms()
   refresh_rooms()
-  ImGui.PushTextWrapPos(ctx, 0)
-  ImGui.TextDisabled(ctx, "Each room is its own project tab: going to one opens it once, then it's a tab switch. A side room starts " ..
-    "as a copy of the room you make it from: try your own edits there, have everyone come and see, then bring back what's good.")
-  ImGui.PopTextWrapPos(ctx)
+  ImGui.TextDisabled(ctx, "Try ideas in a side room, then bring back what works. (?)")
+  ImGui.SetItemTooltip(ctx, "Each room is its own project tab: Go there opens it once, then it's a tab switch, and it's still there next " ..
+    "session.\n\nCreate side room: a copy of the room you're in, as it is now; you drive it. Try your own edits there, or work on " ..
+    "something else.\n\nCome see: everyone with the song open is asked to join you.\n\nSend selected to main: the takes you pick " ..
+    "come over as new takes. Bring into main: everything changed in the side room comes over, except where main changed the same " ..
+    "thing too (you pick); main's driver does this, and it can be undone from History.")
   local avail = ImGui.GetContentRegionAvail(ctx)
   local w, gap = 178, 8
   local per = math.max(1, math.floor((avail + gap) / (w + gap)))
@@ -1578,6 +1596,30 @@ local function section_invites()
 end
 
 
+-- Docked wide and short (a bottom docker), a page's parts stand side by side as columns, each scrolling up and down on
+-- its own, and the page scrolls sideways when they don't all fit; otherwise they come one under the other.
+local function layout(parts) -- { { fn, width } }
+  if not wide then
+    for _, part in ipairs(parts) do part[1]() end
+    return
+  end
+  local _, h = ImGui.GetContentRegionAvail(ctx)
+  for i, part in ipairs(parts) do
+    if i > 1 then ImGui.SameLine(ctx, 0, 10) end
+    ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, 0x202327FF)
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 10)
+    local open = ImGui.BeginChild(ctx, "col" .. i, part[2] or 340, h, ImGui.ChildFlags_AlwaysUseWindowPadding)
+    ImGui.PopStyleVar(ctx)
+    ImGui.PopStyleColor(ctx)
+    if open then
+      ImGui.PushTextWrapPos(ctx, 0)
+      part[1]()
+      ImGui.PopTextWrapPos(ctx)
+      ImGui.EndChild(ctx)
+    end
+  end
+end
+
 -- Maintenance: what's set up and working. Red: the band can't sync until it's fixed. Yellow: an extra, or worth a
 -- look (dismissable). The sidebar shows the worst one still open.
 local maint_st, maint_at = nil, -math.huge
@@ -1624,7 +1666,7 @@ local function dot(col)
   ImGui.DrawList_AddCircleFilled(ImGui.GetWindowDrawList(ctx), x + 5, y + h / 2 + 1, 5, col)
   ImGui.Dummy(ctx, 12, h)
 end
-local function page_maintenance()
+local function maint_health()
   local gone = dismissed_set()
   if card("health") then
     heading("Set up and health", 17)
@@ -1659,6 +1701,8 @@ local function page_maintenance()
     ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Live server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
     card_end()
   end
+end
+local function maint_upkeep()
   if card("upkeep") then
     heading("Upkeep and activity", 17)
     section_activity()
@@ -1678,25 +1722,28 @@ local function page_maintenance()
 end
 
 -- Home: playing together, who's here and what they're doing, and the session's switches.
-local function page_home()
+local function home_play()
   local on = same_room_on()
   if card("sameroom") then
-    heading("Play together")
-    ImGui.TextDisabled(ctx, on and "You hear everyone, and play, stop and record follow whoever presses them." or
-      "Off: takes and edits still sync, but you don't hear each other or follow each other's play and stop. One press:")
+    local text = on and "You hear everyone, and play, stop and record follow whoever presses them." or
+      "Off: takes and edits still sync, but you don't hear each other or follow each other's play and stop."
+    if not wide then heading("Play together"); ImGui.TextDisabled(ctx, text) end
     ImGui.PushStyleColor(ctx, ImGui.Col_Button, on and 0x2E7D4FFF or ACCENT)
     ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, on and 0x379660FF or 0x5E9BFAFF)
-    ImGui.PushFont(ctx, nil, 17)
-    if ImGui.Button(ctx, on and "In the same room  (press to leave)" or "Same room", -1, 44) then set_same_room(not on) end
+    ImGui.PushFont(ctx, nil, wide and 15 or 17)
+    if ImGui.Button(ctx, on and "In the same room  (press to leave)" or "Same room", -1, wide and 32 or 44) then set_same_room(not on) end
     ImGui.PopFont(ctx)
     ImGui.PopStyleColor(ctx, 2)
     ImGui.SetItemTooltip(ctx, SAME_ROOM_TIP)
+    if wide then ImGui.TextDisabled(ctx, text) end
     if on then
       if ImGui.SmallButton(ctx, "Choose who you hear") then sonobus_open() end
       ImGui.SetItemTooltip(ctx, "Opens SonoBus: each bandmate has their own volume and mute there, so you can hear only who you want.")
     end
     card_end()
   end
+end
+local function home_who()
   heading("Who's here")
   local people, armed = {}, {}
   for i = 0, reaper.CountTracks(proj) - 1 do
@@ -1709,6 +1756,18 @@ local function page_home()
   for _, r in ipairs(view.rows) do
     people[#people + 1] = { name = r.name, state = r.state, armed = r.armed, recording = r.recording, playing = r.playing,
       driving = r.name == view.driver, version = r.version }
+  end
+  if wide then
+    for _, p in ipairs(people) do
+      dot(p.state == "here" and GREEN or rgba(status.COLORS[p.state] or { 0.55, 0.55, 0.55 }))
+      ImGui.SameLine(ctx, 0, 4)
+      ImGui.Text(ctx, p.name)
+      ImGui.SetItemTooltip(ctx, p.state .. (p.armed and #p.armed > 0 and (", armed: " .. table.concat(p.armed, ", ")) or ", nothing armed") ..
+        (p.version and p.version ~= band.VERSION and (", BandSync " .. p.version) or ""))
+      if p.recording then ImGui.SameLine(ctx, 0, 6); pill("recording", RED) elseif p.driving then ImGui.SameLine(ctx, 0, 6); pill("driving", YELLOW) end
+    end
+    if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
+    return
   end
   local avail = ImGui.GetContentRegionAvail(ctx)
   local w, gap = 158, 8
@@ -1731,6 +1790,8 @@ local function page_home()
     end
   end
   if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
+end
+local function home_session()
   if card("session") then
     heading("Who changes what", 17)
     section_driver()
@@ -1742,8 +1803,10 @@ local function page_home()
   end
 end
 
-local page_note
-local function page_settings()
+local function page_maintenance() layout({ { maint_health, 460 }, { maint_upkeep, 520 } }) end
+local function page_home() layout({ { home_play, 300 }, { home_who, 360 }, { home_session, 400 } }) end
+
+local function settings_look()
   if card("look") then
     heading("Look", 17)
     if ImGui.Button(ctx, "Use the classic panel") then reaper.SetExtState(band.SECTION, "panel_ui", "classic", true) end
@@ -1759,19 +1822,29 @@ local function page_settings()
     if ch then reaper.SetExtState(band.SECTION, "banner", v and "" or "off", true) end
     card_end()
   end
+end
+local function settings_sync()
   if card("sync") then
     section_sync()
     card_end()
   end
+end
+local function settings_drive()
   if card("drive") then
     section_drive()
     card_end()
   end
+end
+local function settings_more()
   if card("more") then
     section_drums()
     section_plugins()
     card_end()
   end
+end
+
+local function page_settings()
+  layout({ { settings_look, 320 }, { settings_sync, 420 }, { settings_drive, 360 }, { settings_more, 400 } })
 end
 
 local PAGES = {
@@ -1794,6 +1867,18 @@ local function frame_app()
   if reaper.time_precise() - level_at > 2 then level_at, level = reaper.time_precise(), maint_level() end
   -- top bar: one row, every piece the height of a button
   local fh = ImGui.GetFrameHeight(ctx)
+  wide = compact and ww > wh * 2
+  local function nav_item(p, w, h)
+    local x, y = ImGui.GetCursorScreenPos(ctx)
+    if ImGui.Selectable(ctx, (compact and "" or "  ") .. p[1] .. "##nav", p[1] == page, ImGui.SelectableFlags_None, w, h) then page = p[1] end
+    ImGui.SetItemTooltip(ctx, p[2])
+    local c = nav_dot(p[1])
+    if c then
+      local iw = ImGui.GetItemRectSize(ctx)
+      ImGui.DrawList_AddCircleFilled(ImGui.GetWindowDrawList(ctx), x + iw - 10, y + h / 2, 4.5, c)
+    end
+    if p[1] == page and not compact then ImGui.DrawList_AddRectFilled(ImGui.GetWindowDrawList(ctx), x - 8, y + 6, x - 4, y + h - 6, ACCENT, 2) end
+  end
   local y0 = ImGui.GetCursorPosY(ctx) + 8
   ImGui.SetCursorPos(ctx, 16, y0)
   ImGui.PushFont(ctx, nil, 21)
@@ -1839,6 +1924,15 @@ local function frame_app()
     local msg, e = tools.redo_mine(proj, cfg, b)
     if msg then band.log(msg) else band.msg(e) end
   end
+  if wide then -- the pages, in the bar
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
+    for i, p in ipairs(PAGES) do
+      ImGui.SameLine(ctx, 0, i == 1 and 24 or 2)
+      ImGui.SetCursorPosY(ctx, y0)
+      nav_item(p, ImGui.CalcTextSize(ctx, p[1]) + 28, fh)
+    end
+    ImGui.PopStyleVar(ctx)
+  end
   local docked = ImGui.IsWindowDocked(ctx)
   -- the window's own buttons sit at the right end of the bar (when they fit there), apart from the session's
   local labels = docked and { "Undock" } or { "Undock", "Exit full screen", "Window" }
@@ -1866,18 +1960,7 @@ local function frame_app()
   section_invites()
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = want end
-  local function nav_item(p, w, h)
-    local x, y = ImGui.GetCursorScreenPos(ctx)
-    if ImGui.Selectable(ctx, (compact and "" or "  ") .. p[1] .. "##nav", p[1] == page, ImGui.SelectableFlags_None, w, h) then page = p[1] end
-    ImGui.SetItemTooltip(ctx, p[2])
-    local c = nav_dot(p[1])
-    if c then
-      local iw = ImGui.GetItemRectSize(ctx)
-      ImGui.DrawList_AddCircleFilled(ImGui.GetWindowDrawList(ctx), x + iw - 10, y + h / 2, 4.5, c)
-    end
-    if p[1] == page and not compact then ImGui.DrawList_AddRectFilled(ImGui.GetWindowDrawList(ctx), x - 8, y + 6, x - 4, y + h - 6, ACCENT, 2) end
-  end
-  if compact then
+  if compact and not wide then
     ImGui.SetCursorPosX(ctx, 16)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
     for i, p in ipairs(PAGES) do
@@ -1902,14 +1985,14 @@ local function frame_app()
     ImGui.SameLine(ctx, 0, 0)
   end
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
-  if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
+  if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
     ImGui.PushTextWrapPos(ctx, 0) -- text wraps to the page, whatever its width
     if not compact then heading(page == "Maintenance" and "Maintenance" or page, 20) end
     if page == "Home" then page_home()
-    elseif page == "Rooms" then section_rooms()
-    elseif page == "Together" then section_together(); section_notes(); section_ideas(); section_tools()
-    elseif page == "Live" then section_live()
-    elseif page == "History" then section_recall(); section_history()
+    elseif page == "Rooms" then layout({ { section_rooms, 640 } })
+    elseif page == "Together" then layout({ { section_together, 380 }, { function() section_notes(); section_ideas() end, 400 }, { section_tools, 420 } })
+    elseif page == "Live" then layout({ { section_live, 480 } })
+    elseif page == "History" then layout({ { section_recall, 400 }, { section_history, 600 } })
     elseif page == "Settings" then page_settings()
     elseif page == "Maintenance" then page_maintenance() end
     ImGui.PopTextWrapPos(ctx)

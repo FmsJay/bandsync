@@ -16,7 +16,7 @@ local base = { takes = {
   ["A-20261029-100000Z-2"] = take("Gtr", 8),   -- moved in both, differently: a clash
   ["B-20261029-100000Z-1"] = take("Bass", 0),  -- deleted in the side room
   ["B-20261029-100000Z-2"] = take("Bass", 8),  -- deleted in the side room, moved in main: a clash
-  ["C-20261029-100000Z-1"] = take("Keys", 0, { notes = "h1" }), -- notes edited in the side room
+  ["C-20261029-100000Z-1"] = take("Keys", 0, { notes = "n2:3:aa" }), -- notes edited in the side room
   ["C-20261029-100000Z-2"] = take("Keys", 8),  -- deleted in main, untouched in the side room: stays deleted
   ["D-20261029-100000Z-1"] = take("Vox", 0),   -- moved in main only: stays as main has it
 }, plays = { Gtr = { "A-20261029-100000Z-1" } }, tracks = { Gtr = { mute = 0, solo = 0 } }, timeline = tl }
@@ -25,20 +25,20 @@ local main = { takes = {
   ["A-20261029-100000Z-2"] = take("Gtr", 9),
   ["B-20261029-100000Z-1"] = take("Bass", 0),
   ["B-20261029-100000Z-2"] = take("Bass", 9),
-  ["C-20261029-100000Z-1"] = take("Keys", 0, { notes = "h1" }),
+  ["C-20261029-100000Z-1"] = take("Keys", 0, { notes = "n2:3:aa" }),
   ["D-20261029-100000Z-1"] = take("Vox", 2),
   ["E-20261029-110000Z-1"] = take("Drums", 0), -- recorded in main after the room was made
 }, plays = { Gtr = { "A-20261029-100000Z-1" } }, tracks = { Gtr = { mute = 0, solo = 0 } }, timeline = tl }
 local side = { takes = {
   ["A-20261029-100000Z-1"] = take("Gtr", 1),
   ["A-20261029-100000Z-2"] = take("Gtr", 10),
-  ["C-20261029-100000Z-1"] = take("Keys", 0, { notes = "h2" }),
+  ["C-20261029-100000Z-1"] = take("Keys", 0, { notes = "n2:3:bb" }),
   ["C-20261029-100000Z-2"] = take("Keys", 8),
   ["D-20261029-100000Z-1"] = take("Vox", 0),
   ["S-20261029-120000Z-1"] = take("Gtr", 16), -- recorded in the side room
 }, plays = { Gtr = { "A-20261029-100000Z-1", "S-20261029-120000Z-1" } }, tracks = { Gtr = { mute = 1, solo = 0 } }, timeline = tl }
 
-local plan = rooms.plan(base, main, side)
+local plan = rooms.plan(base, main, side, true)
 local by = {}
 for _, it in ipairs(plan.items) do by[it.kind .. ":" .. it.key] = it end
 assert(#plan.new == 1 and plan.new[1] == "S-20261029-120000Z-1", "the side room's own recording is new")
@@ -47,6 +47,12 @@ assert(by["take:A-20261029-100000Z-2"].clash, "moved in both: a clash")
 assert(by["take:B-20261029-100000Z-1"].side == false and not by["take:B-20261029-100000Z-1"].clash, "deleted only here: brought")
 assert(by["take:B-20261029-100000Z-2"].clash and by["take:B-20261029-100000Z-2"].side == false, "deleted here, moved there: a clash")
 assert(by["notes:C-20261029-100000Z-1"] and not by["notes:C-20261029-100000Z-1"].clash, "notes edited only here")
+for _, it in ipairs(rooms.plan(base, main, side, false).items) do assert(it.kind ~= "notes", "notes not compared when asked not to") end
+local function oldhash(st) local c = { takes = {}, plays = st.plays, tracks = st.tracks, timeline = st.timeline }
+  for k, v in pairs(st.takes) do local t = {}; for a, x in pairs(v) do t[a] = x end; if t.notes then t.notes = "reaperhash" .. k end; c.takes[k] = t end
+  return c end
+for _, it in ipairs(rooms.plan(oldhash(base), main, side, true).items) do assert(it.kind ~= "notes", "an old base (REAPER's hash) is never compared") end
+assert(by["take:A-20261029-100000Z-1"].label == "moved" and by["take:B-20261029-100000Z-1"].label == "deleted", "labels say what changed")
 assert(not by["take:C-20261029-100000Z-2"], "deleted in main and untouched here: nothing to bring")
 assert(not by["take:D-20261029-100000Z-1"], "moved only in main: nothing to bring")
 assert(not by["take:E-20261029-110000Z-1"], "main's new take isn't the side room's business")
@@ -89,4 +95,13 @@ assert(rooms.bad_name("chorus ideas") == nil and rooms.bad_name("Take-2_b") == n
 for _, n in ipairs({ "", " lead", "../up", "a/b", "dot.name", "CON", "nul", "Com1", "lpt9", string.rep("x", 31), "caf959" }) do
   assert(rooms.bad_name(n), "refused: " .. n)
 end
+-- a change on a track someone else claimed in the parent is marked and left out
+local plan4 = rooms.plan(base, main, side, true)
+rooms.mark_blocked(plan4, function(user, track) return track ~= "Gtr" end, function() return "Laptop" end, "James")
+local blocked = 0
+for _, it in ipairs(plan4.items) do if it.track == "Gtr" then assert(it.blocked == "Laptop"); blocked = blocked + 1 end end
+assert(blocked > 0, "the claimed track's changes are marked")
+local st4 = rooms.merged(main, side, plan4.items)
+assert(st4.takes["A-20261029-100000Z-1"].pos == 0, "and stay as the parent has them")
+assert(st4.takes["B-20261029-100000Z-1"] == nil, "other tracks' changes still come")
 print("ok")

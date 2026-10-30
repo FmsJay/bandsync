@@ -74,6 +74,8 @@ sync.ANYONE = { start = true, stop = true, note = true, like = true }
 -- A take's author, from its id (<user>-YYYYMMDD-HHMMSSZ-n), normalised like user names in ids.
 function sync.author(id) local who = (id or ""):match("^(.-)%-%d+%-%d+Z"); return who and who:lower():gsub("_", " ") end
 function sync.author_of(user) return (user or ""):lower():gsub("_", " ") end
+-- "James's take" (as a musician says it), not the take's id
+function sync.take_words(id) local who = (id or ""):match("^(.-)%-%d+%-%d+Z"); return who and (who:gsub("_", " ") .. "'s take") or "a take" end
 
 -- ---- state chunks: a top-level block (e.g. <FXCHAIN ... >) of a track's chunk -----------------------------
 local function chunk_lines(s)
@@ -1507,7 +1509,7 @@ function sync.watch(proj, cfg, song, room, can)
               len = (tonumber(f[3]) or 0) - (tonumber(ext(proj, sync.TAILS, sid)) or 0), lane = tonumber(f[5]), mute = tonumber(f[6]),
               offs = (tonumber(f[4]) or 0) - (tonumber(ext(proj, "BandSync.base", sid)) or 0) }))
           end
-          band.log(string.format("'%s' on %s is %s's to delete: it comes back", sid, tostring(track), tostring(sync.owner_of and sync.owner_of(track, pos) or "someone else")))
+          band.log(string.format("%s on %s is %s's to delete: it comes back", sync.take_words(sid), tostring(track), tostring(sync.owner_of and sync.owner_of(track, pos) or "someone else")))
         end
       else
         local id = band.take_id(hit[2]) or sid -- the take's own id keeps its case; state keys may be upper-cased
@@ -1560,13 +1562,13 @@ function sync.watch(proj, cfg, song, room, can)
             local where = f[7] or track
             if sync.room_mode == "driver" then
               sync.put_back(string.format("%s on %s: only %s (driving) changes things in this room now: put back (take control to change it)",
-                sync.author(id) == sync.author_of(me) and "your take" or ("'" .. id .. "'"), where, drv))
+                sync.author(id) == sync.author_of(me) and "your take" or sync.take_words(id), where, drv))
             elseif sync.author(id) == sync.author_of(me) then -- your own take: the rule, not "it's theirs"
               sync.put_back(string.format("your take on %s: while %s drives and is here, only they, or a claim, change it: put back " ..
                 "(claim the track to change it)", where, drv))
             else
               local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
-              sync.put_back(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, where, owner))
+              sync.put_back(string.format("%s on %s is %s's to change: put back (claim it, or take control)", sync.take_words(id), where, owner))
             end
             if snap ~= id .. "|" .. shape(it, tk) then sync.remember(proj, id, it, tk) end -- couldn't land exactly: don't fight it every pass
           end

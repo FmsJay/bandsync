@@ -642,7 +642,7 @@ local function section_recall()
       ImGui.SameLine(ctx)
       tracks_button("'" .. p.label .. "'", function() return band.read_json(recall.dir(cfg, b.song, b.room) .. "/" .. p.file) or {} end,
         "at '" .. p.label .. "'")
-      ImGui.SameLine(ctx)
+      if ImGui.GetContentRegionAvail(ctx) > 520 then ImGui.SameLine(ctx) end -- narrow (docked): the words go under the buttons
       ImGui.TextWrapped(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), local_time(p.time), p.takes))
       ImGui.PopID(ctx)
     end
@@ -1671,8 +1671,10 @@ local function layout(parts) -- { { fn, width } }
         local wx, wy = ImGui.GetWindowPos(ctx)
         local cw, ch = ImGui.GetWindowSize(ctx)
         local dl = ImGui.GetWindowDrawList(ctx)
-        ImGui.DrawList_AddRectFilled(dl, wx, wy + ch - 20, wx + cw, wy + ch, 0x202327E6, 0)
+        ImGui.DrawList_PushClipRect(dl, wx, wy, wx + cw, wy + ch) -- (the column clips its padding, where the strip sits)
+        ImGui.DrawList_AddRectFilled(dl, wx, wy + ch - 20, wx + cw - 10, wy + ch, 0x202327FF, 0)
         ImGui.DrawList_AddText(dl, wx + cw / 2 - 30, wy + ch - 18, MUTED, "more below")
+        ImGui.DrawList_PopClipRect(dl)
       end
       ImGui.EndChild(ctx)
     end

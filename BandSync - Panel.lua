@@ -114,9 +114,10 @@ local function arrow_button(id, redo, tip)
   local bg = ImGui.IsItemActive(ctx) and ACCENT or ImGui.IsItemHovered(ctx) and 0x40454CFF or 0x33373DFF
   ImGui.DrawList_AddRectFilled(dl, x, y, x + s, y + s, bg, 6)
   local cx, cy, r, col = x + s / 2, y + s / 2 + 1, s * 0.22, 0xE6E8EBFF
-  local a0, a1 = math.pi * 1.0, math.pi * 2.15 -- an arc over the top, its open end at the lower right (undo: mirrored)
-  if redo then ImGui.DrawList_PathArcTo(dl, cx, cy, r, a0 - math.pi * 0.15, a1 - math.pi * 0.15)
-  else ImGui.DrawList_PathArcTo(dl, cx, cy, r, -math.pi * 0.15 - math.pi * 0.0, math.pi * 1.0 + math.pi * 0.0) end
+  -- an arc over the top (angles run clockwise on screen: pi is left, 1.5 pi is up, 2 pi is right), its tail dipping a
+  -- little past the far side; the arrowhead sits on the near end, pointing down (undo: left end, redo: right end)
+  if redo then ImGui.DrawList_PathArcTo(dl, cx, cy, r, math.pi * 0.9, math.pi * 2.0)
+  else ImGui.DrawList_PathArcTo(dl, cx, cy, r, math.pi * 1.0, math.pi * 2.1) end
   ImGui.DrawList_PathStroke(dl, col, ImGui.DrawFlags_None, 2)
   -- the arrowhead at the arc's start (left for undo, right for redo)
   local hx = redo and (cx + r) or (cx - r)

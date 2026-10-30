@@ -522,6 +522,7 @@ local livemidi = require("livemidi")
 local midi_view_at, midi_view_err = 0, nil
 local undo_since, undo_said -- when you undid one of BandSync's own changes (tick_body waits a while)
 local function tick_body() -- returns true to keep going
+  if sync.tip_at and reaper.time_precise() - sync.tip_at > 6 then sync.tip_at = nil; reaper.TrackCtl_SetToolTip("", 0, 0, true) end
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then -- project closed: stop, and say so
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
     return band.log("live sync stopped: '" .. b.song .. "' was closed (reopened, it starts again by itself if 'Start Live sync with REAPER' is on; otherwise press Start)")

@@ -23,7 +23,7 @@ if not cfg then return end
 if reaper.set_action_options then reaper.set_action_options(1) end -- running it again closes it (no task dialog)
 local section, cmd = select(3, reaper.get_action_context())
 if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 1); reaper.RefreshToolbar2(section, cmd) end
-reaper.SetExtState(band.SECTION, "panel_open", "1", true) -- (Autostart reopens it with REAPER; closing the window clears it)
+reaper.DeleteExtState(band.SECTION, "panel_open", true) -- (0.21.5 kept this; Autostart now opens the panel with any BandSync session)
 local restarting = false -- an update landed: a new panel took over, and its toolbar state is on
 reaper.atexit(function() if cmd > 0 and not restarting then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end end)
 
@@ -2261,6 +2261,6 @@ local function loop()
   if app then ImGui.PopFont(ctx); pop_theme() end
   banner()
   reaper.SetExtState(band.SECTION, "panel alive", tostring(reaper.time_precise()), false) -- (so Autostart never opens a second one)
-  if open then reaper.defer(loop) else reaper.DeleteExtState(band.SECTION, "panel_open", true) end
+  if open then reaper.defer(loop) end
 end
 reaper.defer(loop)

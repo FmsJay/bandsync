@@ -23,14 +23,22 @@ local function loop()
   end
   seen_disk = disk
   reaper.defer(loop)
-  -- once per REAPER session: the panel was open when REAPER closed (and nobody closed its window), so open it again
-  if reaper.GetExtState(band.SECTION, "panel reopened") == "" then
-    reaper.SetExtState(band.SECTION, "panel reopened", "1", false) -- (not persisted: an Autostart reload doesn't do it twice)
-    local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
-    if reaper.GetExtState(band.SECTION, "panel_open") == "1" and not (beat and reaper.time_precise() - beat < 30) then
-      local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Panel.lua", true)
-      if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
+  -- a BandSync session that opens (or is open when REAPER starts) opens the panel, once per opening: closing the panel
+  -- keeps it closed until another BandSync session opens. (Marks aren't persisted, and survive an Autostart reload.)
+  local opened = false
+  for i = 0, 512 do
+    local proj, fn = reaper.EnumProjects(i)
+    if not proj then break end
+    local mark = "panel for " .. tostring(proj) .. " " .. fn:lower()
+    if fn ~= "" and reaper.GetExtState(band.SECTION, mark) == "" and band.binding(proj) then
+      reaper.SetExtState(band.SECTION, mark, "1", false)
+      opened = true
     end
+  end
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
+  if opened and not (beat and reaper.time_precise() - beat < 10) then
+    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Panel.lua", true)
+    if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
   end
   local helper = band.read(REQUEST)
   if helper then

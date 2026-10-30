@@ -21,6 +21,17 @@ local sync = {
   NEWEST = "BandSync.newest",   -- "take:<id>" / "track:<name>" -> time..id of the newest change made or applied here
 }
 
+-- An edit put back says why in the Activity list, and, with the panel closed (no banner either), in a tooltip by the
+-- mouse, where the edit was just made: otherwise it just slid back with no word (laptop, 2026-10-30).
+function sync.put_back(text)
+  band.log(text)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
+  if not (beat and reaper.time_precise() - beat < 5) then
+    local x, y = reaper.GetMousePosition()
+    reaper.TrackCtl_SetToolTip("BandSync: " .. text, x + 14, y + 14, true)
+    sync.tip_at = reaper.time_precise() -- (Live sync takes it away after a few seconds: REAPER leaves it up)
+  end
+end
 local function ext(proj, sec, key) return select(2, reaper.GetProjExtState(proj, sec, key)) end
 -- Seconds since an ISO UTC time ("2026-10-28T07:05:36Z"); huge if it can't be read.
 local function iso_age(iso)
@@ -1442,7 +1453,7 @@ function sync.watch(proj, cfg, song, room, can)
           band.apply_markers(proj, before[2] or {})
           reaper.Undo_EndBlock2(proj, "BandSync: put the band's tempo map and markers back", -1)
           sig = timeline_sig(proj)
-          band.log("only the driver changes the tempo map and markers: put back (take control to change them)")
+          sync.put_back("only the driver changes the tempo map and markers: put back (take control to change them)")
         else
           band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")
         end
@@ -1548,14 +1559,14 @@ function sync.watch(proj, cfg, song, room, can)
             local drv = sync.driver_name or "the driver"
             local where = f[7] or track
             if sync.room_mode == "driver" then
-              band.log(string.format("%s on %s: only %s (driving) changes things in this room now: put back (take control to change it)",
+              sync.put_back(string.format("%s on %s: only %s (driving) changes things in this room now: put back (take control to change it)",
                 sync.author(id) == sync.author_of(me) and "your take" or ("'" .. id .. "'"), where, drv))
             elseif sync.author(id) == sync.author_of(me) then -- your own take: the rule, not "it's theirs"
-              band.log(string.format("your take on %s: while %s drives and is here, only they, or a claim, change it: put back " ..
+              sync.put_back(string.format("your take on %s: while %s drives and is here, only they, or a claim, change it: put back " ..
                 "(claim the track to change it)", where, drv))
             else
               local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
-              band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, where, owner))
+              sync.put_back(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, where, owner))
             end
             if snap ~= id .. "|" .. shape(it, tk) then sync.remember(proj, id, it, tk) end -- couldn't land exactly: don't fight it every pass
           end
@@ -1603,7 +1614,7 @@ function sync.watch(proj, cfg, song, room, can)
           -- level stay yours to change locally (listening); the name goes back.
           local full = select(2, reaper.GetTrackName(tr))
           reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", was .. (full:match(" %(band%)$") or ""), true)
-          band.log(string.format("'%s' is %s's track to rename: name put back", was, tostring(sync.owner_of and sync.owner_of(was) or "someone else")))
+          sync.put_back(string.format("'%s' is %s's track to rename: name put back", was, tostring(sync.owner_of and sync.owner_of(was) or "someone else")))
           props = track_props(tr)
         end
         setext(proj, sync.TRACKS, guid, props)

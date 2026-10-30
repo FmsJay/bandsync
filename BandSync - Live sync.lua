@@ -290,7 +290,7 @@ local function poll()
   local can, who = sync.authority(cfg, b.song, b.room, s)
   local driver = who.driver
   -- someone else drives and is here (their status receipt is fresh): then the room's mode decides what we may change
-  sync.driver_name = driver
+  sync.driver_name, sync.room_mode = driver, who.mode -- (put-back messages say who and why)
   local dst = (driver and driver ~= cfg.user) and band.read_json(sync.room_dir(cfg, b.song, b.room) .. "/status/" .. (driver:gsub("[^%w%-_ ]", "")) .. ".json") or nil
   sync.someone_drives = type(dst) == "table" and band.age(dst.time) < 30
   -- Alone = full control: with no bandmate in the room, everything we change goes out, whoever drives or claimed it

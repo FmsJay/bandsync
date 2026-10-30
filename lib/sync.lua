@@ -1544,12 +1544,18 @@ function sync.watch(proj, cfg, song, room, can)
             if tonumber(f[5]) then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", tonumber(f[5])) end
             reaper.SetMediaItemInfo_Value(it, "B_MUTE", tonumber(f[6]) or 0)
             reaper.UpdateItemInProject(it)
-            local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
-            if sync.author(id) == sync.author_of(me) then -- your own take: the rule, not "it's theirs"
+            -- say why, in the room's mode: in Driver only claims don't count, so only the driver (or taking control) helps
+            local drv = sync.driver_name or "the driver"
+            local where = f[7] or track
+            if sync.room_mode == "driver" then
+              band.log(string.format("%s on %s: only %s (driving) changes things in this room now: put back (take control to change it)",
+                sync.author(id) == sync.author_of(me) and "your take" or ("'" .. id .. "'"), where, drv))
+            elseif sync.author(id) == sync.author_of(me) then -- your own take: the rule, not "it's theirs"
               band.log(string.format("your take on %s: while %s drives and is here, only they, or a claim, change it: put back " ..
-                "(claim the track to change it)", f[7] or track, owner))
+                "(claim the track to change it)", where, drv))
             else
-              band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, f[7] or track, owner))
+              local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
+              band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, where, owner))
             end
             if snap ~= id .. "|" .. shape(it, tk) then sync.remember(proj, id, it, tk) end -- couldn't land exactly: don't fight it every pass
           end

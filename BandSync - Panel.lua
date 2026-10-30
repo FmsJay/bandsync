@@ -627,7 +627,8 @@ local function section_recall()
     last = 0
   end
   local driving = view.driver == cfg.user
-  if ImGui.BeginChild(ctx, "points", 0, 110, ImGui.ChildFlags_Borders) then
+  -- (docked, the list takes the column's height instead of a short box inside it)
+  if ImGui.BeginChild(ctx, "points", 0, wide and math.max(110, select(2, ImGui.GetContentRegionAvail(ctx)) - 4) or 110, ImGui.ChildFlags_Borders) then
     if #points == 0 then ImGui.TextDisabled(ctx, "None yet. Every handover saves one by itself.") end
     for i, p in ipairs(points) do
       ImGui.PushID(ctx, i)
@@ -699,10 +700,17 @@ local function history_filtered(driving)
     if ok then
       n = n + 1
       ImGui.PushID(ctx, i)
+      local roomy = ImGui.GetContentRegionAvail(ctx) > 620 -- narrow (docked): the change on its own line, its buttons under it
+      if not roomy then
+        if n > 1 then ImGui.Spacing(ctx) end
+        ImGui.TextDisabled(ctx, local_time(e.time))
+        ImGui.SameLine(ctx)
+        ImGui.TextWrapped(ctx, e.user .. ": " .. line)
+      end
       undo_button(i)
       ImGui.SameLine(ctx)
-      tracks_button(string.format("right after %s's change at %s", e.user, local_time(e.time)), function()
-        local st = recall.replay(entries, i); st.musical = true; return st end, "right after this change")
+      tracks_button(string.format("right after %s's change at %s", e.user, local_time(e.time)), function() return recall.replay(entries, i) end,
+        "right after this change")
       ImGui.SameLine(ctx)
       ImGui.BeginDisabled(ctx, not driving or e.kind == "solo")
       if ImGui.SmallButton(ctx, "Go back to here") and reaper.MB(string.format("Make the whole session look like it did right after this change (%s, %s)?\n\n" ..
@@ -717,10 +725,12 @@ local function history_filtered(driving)
       ImGui.EndDisabled(ctx)
       ImGui.SetItemTooltip(ctx, driving and "The whole session goes back to right after this change: everything after it is undone (where things are now is saved first)."
         or "Only the driver restores (take control first).")
-      ImGui.SameLine(ctx)
-      ImGui.TextDisabled(ctx, local_time(e.time))
-      ImGui.SameLine(ctx)
-      ImGui.TextWrapped(ctx, e.user .. ": " .. line)
+      if roomy then
+        ImGui.SameLine(ctx)
+        ImGui.TextDisabled(ctx, local_time(e.time))
+        ImGui.SameLine(ctx)
+        ImGui.TextWrapped(ctx, e.user .. ": " .. line)
+      end
       ImGui.PopID(ctx)
     end
   end
@@ -915,23 +925,26 @@ local function section_room()
 end
 
 local server_at = 0
-local function section_live()
+local function section_live(part) -- part: "mode" or "rest" (docked, side by side), nil for all of it
   local lfile = band.song_dir(cfg, b.song) .. "/live.json"
   -- the host may fill the address in after this panel opened (it arrives through the shared folder): re-read it
   -- every few seconds while it's still empty here
   if not live_server or (live_server == "" and reaper.time_precise() - server_at > 3) then
     server_at, live_server = reaper.time_precise(), (band.read_json(lfile) or {}).server or ""
   end
-  ImGui.SeparatorText(ctx, "Mode")
-  for _, m in ipairs(LIVE_MODES) do
-    if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
+  if part ~= "rest" then
+    ImGui.SeparatorText(ctx, "Mode")
+    for _, m in ipairs(LIVE_MODES) do
+      if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
+    end
+    ImGui.TextWrapped(ctx, ({
+      synced = "Play to the song; the others hear you in time with it, a bar or two behind you. What you play also shows up on their timeline as an idea until your real take arrives.",
+      listen = "Hear each other right away, with no server to run. Best on wired internet, with bandmates not too far away; otherwise use Play along.",
+      jam = "Everyone plays at once and hears the others one cycle late (classic NINJAM).",
+    })[live_mode])
+    ImGui.Spacing(ctx)
   end
-  ImGui.TextWrapped(ctx, ({
-    synced = "Play to the song; the others hear you in time with it, a bar or two behind you. What you play also shows up on their timeline as an idea until your real take arrives.",
-    listen = "Hear each other right away, with no server to run. Best on wired internet, with bandmates not too far away; otherwise use Play along.",
-    jam = "Everyone plays at once and hears the others one cycle late (classic NINJAM).",
-  })[live_mode])
-  ImGui.Spacing(ctx)
+  if part == "mode" then return end
   if live_mode == "listen" then
     local sm, si = live.fx(proj, false, live.SONOBUS)
     local on = sm and not reaper.TrackFX_GetOffline(sm, si)
@@ -1672,7 +1685,9 @@ local function layout(parts) -- { { fn, width } }
         local cw, ch = ImGui.GetWindowSize(ctx)
         local dl = ImGui.GetWindowDrawList(ctx)
         ImGui.DrawList_PushClipRect(dl, wx, wy, wx + cw, wy + ch) -- (the column clips its padding, where the strip sits)
-        ImGui.DrawList_AddRectFilled(dl, wx, wy + ch - 20, wx + cw - 10, wy + ch, 0x202327FF, 0)
+        -- a fade, so a line cut off above it reads as "continues" rather than as hidden behind it
+        ImGui.DrawList_AddRectFilledMultiColor(dl, wx, wy + ch - 34, wx + cw - 10, wy + ch - 18, 0x20232700, 0x20232700, 0x202327FF, 0x202327FF)
+        ImGui.DrawList_AddRectFilled(dl, wx, wy + ch - 18, wx + cw - 10, wy + ch, 0x202327FF, 0)
         ImGui.DrawList_AddText(dl, wx + cw / 2 - 30, wy + ch - 18, MUTED, "more below")
         ImGui.DrawList_PopClipRect(dl)
       end
@@ -1682,7 +1697,7 @@ local function layout(parts) -- { { fn, width } }
   if h < 170 and reaper.GetExtState(band.SECTION, "dock_hint") == "" then -- once: a short docker hides most of each page
     ImGui.SameLine(ctx, 0, 10)
     ImGui.BeginGroup(ctx)
-    ImGui.TextColored(ctx, YELLOW, "Short on room: drag the docker's top edge up to see more.")
+    ImGui.TextColored(ctx, YELLOW, "Short on room: drag the thin line just above the docker's tabs upward to see more.")
     if ImGui.SmallButton(ctx, "Got it") then reaper.SetExtState(band.SECTION, "dock_hint", "1", true) end
     ImGui.EndGroup(ctx)
   end
@@ -2077,7 +2092,9 @@ local function frame_app()
     if page == "Home" then page_home()
     elseif page == "Rooms" then layout({ { rooms_squares, 560 }, { rooms_actions, 560 } })
     elseif page == "Together" then layout({ { section_together, 380 }, { function() section_notes(); section_ideas() end, 400 }, { section_tools, 420 } })
-    elseif page == "Live" then layout({ { section_live, 480 } })
+    elseif page == "Live" then
+      if wide then layout({ { function() section_live("mode") end, 420 }, { function() section_live("rest") end, 520 } })
+      else layout({ { section_live, 480 } }) end
     elseif page == "History" then layout({ { section_recall, 400 }, { section_history, 600 } })
     elseif page == "Settings" then page_settings()
     elseif page == "Maintenance" then page_maintenance() end

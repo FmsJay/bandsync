@@ -364,6 +364,11 @@ function recall.restore_state(proj, cfg, song, room, st, label, saved)
     end
     if hit then
       local it, tk = hit[1], hit[2]
+      local function shape() -- (only takes that actually change count as set)
+        return string.format("%.4f %.4f %d %.4f %s", reaper.GetMediaItemInfo_Value(it, "D_POSITION"), reaper.GetMediaItemInfo_Value(it, "D_LENGTH"),
+          reaper.GetMediaItemInfo_Value(it, "B_MUTE"), reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS"), sync.track_name(it))
+      end
+      local was = shape()
       reaper.SetMediaItemInfo_Value(it, "C_LOCK", 0)
       if t.track and sync.track_name(it):lower() ~= t.track:lower() then
         local dest = band.dest_track(proj, t.track, band.take_ext(tk, "band_wet") == "1")
@@ -382,7 +387,7 @@ function recall.restore_state(proj, cfg, song, room, st, label, saved)
         reaper.SetMediaItemInfo_Value(mit, "D_LENGTH", t.len)
         reaper.UpdateItemInProject(mit)
       end
-      moved = moved + 1
+      if shape() ~= was then moved = moved + 1 end
     end
   end
   for name, list in pairs(st.plays or {}) do sync.set_plays(proj, name, list) end

@@ -10,11 +10,19 @@ local band = require("band")
 
 local REQUEST = reaper.GetResourcePath() .. "/BandSync/install-request"
 local tried = {} -- project key -> when we last started it (don't hammer a Live sync that refuses to run)
-local at = 0
+local at, seen_disk = 0, nil
 local function loop()
-  reaper.defer(loop)
-  if reaper.time_precise() - at < 2 then return end -- every 2 s is plenty
+  if reaper.time_precise() - at < 2 then return reaper.defer(loop) end -- every 2 s is plenty
   at = reaper.time_precise()
+  -- an update: the new code takes over in place (once the version on disk has held for two looks), as Live sync does;
+  -- before 0.21.3 a running Autostart kept its old rules until REAPER restarted
+  local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
+  if disk and disk ~= band.VERSION and disk == seen_disk then
+    for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
+    return dofile(dir .. "/BandSync - Autostart.lua")
+  end
+  seen_disk = disk
+  reaper.defer(loop)
   local helper = band.read(REQUEST)
   if helper then
     os.remove(REQUEST)

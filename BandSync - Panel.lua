@@ -768,10 +768,11 @@ local function section_history()
     if ImGui.SmallButton(ctx, "Clear filters") then hf = { who = "", kind = 1, track = "", text = "" } end
     ImGui.SetItemTooltip(ctx, "Back to everything, grouped by who made it.")
   end
-  if ImGui.BeginChild(ctx, "history", 0, -4) then
+  -- (docked, no list box of its own: under the filters it had no height left, so the column itself scrolls instead)
+  if wide or ImGui.BeginChild(ctx, "history", 0, -4) then
     if filtered then
       history_filtered(driving)
-      ImGui.EndChild(ctx)
+      if not wide then ImGui.EndChild(ctx) end
       return
     end
     for gi = #groups, 1, -1 do
@@ -814,7 +815,7 @@ local function section_history()
       end
       ImGui.PopID(ctx)
     end
-    ImGui.EndChild(ctx)
+    if not wide then ImGui.EndChild(ctx) end
   end
 end
 
@@ -1673,26 +1674,26 @@ local function layout(parts) -- { { fn, width } }
     if i > 1 then ImGui.SameLine(ctx, 0, 10) end
     ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, 0x202327FF)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 10)
-    local open = ImGui.BeginChild(ctx, "col" .. i, part[2] or 340, h, ImGui.ChildFlags_AlwaysUseWindowPadding)
+    ImGui.BeginGroup(ctx)
+    local fh = ImGui.GetTextLineHeightWithSpacing(ctx) -- a line under the column says when it hides more (drawn over the column, it covered text)
+    local open = ImGui.BeginChild(ctx, "col" .. i, part[2] or 340, h - fh, ImGui.ChildFlags_AlwaysUseWindowPadding)
     ImGui.PopStyleVar(ctx)
     ImGui.PopStyleColor(ctx)
+    local more = false
     if open then
       ImGui.PushTextWrapPos(ctx, 0)
       part[1]()
       ImGui.PopTextWrapPos(ctx)
-      if ImGui.GetScrollY(ctx) < ImGui.GetScrollMaxY(ctx) - 2 then -- more below: say so at the column's foot
-        local wx, wy = ImGui.GetWindowPos(ctx)
-        local cw, ch = ImGui.GetWindowSize(ctx)
-        local dl = ImGui.GetWindowDrawList(ctx)
-        ImGui.DrawList_PushClipRect(dl, wx, wy, wx + cw, wy + ch) -- (the column clips its padding, where the strip sits)
-        -- a fade, so a line cut off above it reads as "continues" rather than as hidden behind it
-        ImGui.DrawList_AddRectFilledMultiColor(dl, wx, wy + ch - 34, wx + cw - 10, wy + ch - 18, 0x20232700, 0x20232700, 0x202327FF, 0x202327FF)
-        ImGui.DrawList_AddRectFilled(dl, wx, wy + ch - 18, wx + cw - 10, wy + ch, 0x202327FF, 0)
-        ImGui.DrawList_AddText(dl, wx + cw / 2 - 30, wy + ch - 18, MUTED, "more below")
-        ImGui.DrawList_PopClipRect(dl)
-      end
+      more = ImGui.GetScrollY(ctx) < ImGui.GetScrollMaxY(ctx) - 2
       ImGui.EndChild(ctx)
     end
+    if more then
+      ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + 12)
+      ImGui.TextDisabled(ctx, "more below: scroll this column")
+    else
+      ImGui.Dummy(ctx, 1, fh - 4)
+    end
+    ImGui.EndGroup(ctx)
   end
   if h < 170 and reaper.GetExtState(band.SECTION, "dock_hint") == "" then -- once: a short docker hides most of each page
     ImGui.SameLine(ctx, 0, 10)
@@ -2205,8 +2206,9 @@ local function banner()
   local cx, by = vx + ((al + ar) / 2 - ml) / sx, vy + (ab - mt) / sy
   -- the panel floating over that spot (the banner was drawn on top of it): no banner then, the panel says it all
   if win_rect and not banner_docked and cx > win_rect[1] - 200 and cx < win_rect[1] + win_rect[3] + 200
-      and by > win_rect[2] and by - 40 < win_rect[2] + win_rect[4] then return end
-  ImGui.SetNextWindowPos(ctx, cx, by - 10, ImGui.Cond_Always, 0.5, 1)
+      and by > win_rect[2] and by - 70 < win_rect[2] + win_rect[4] then return end
+  -- (40 up: lower, it sat on the bottom docker's splitter and caught the drag meant for it)
+  ImGui.SetNextWindowPos(ctx, cx, by - 40, ImGui.Cond_Always, 0.5, 1)
   ImGui.SetNextWindowBgAlpha(ctx, 0.88)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowRounding, 8)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 6)

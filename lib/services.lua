@@ -41,8 +41,9 @@ end
 
 -- Whether a process named `exe` (e.g. "syncthing") is running. Answers from the last background check
 -- (at most ~15 s old); the very first time, it waits for one.
-function services.running(exe)
-  local out = background("ps-" .. exe, WIN and ('tasklist /FI "IMAGENAME eq ' .. exe .. '.exe" /NH') or ("/usr/bin/pgrep -x " .. exe .. " || echo none"), 15)
+-- `fresh`: ask now and wait (the background answer can be up to 15 s old: before starting something, that's too old)
+function services.running(exe, fresh)
+  local out = not fresh and background("ps-" .. exe, WIN and ('tasklist /FI "IMAGENAME eq ' .. exe .. '.exe" /NH') or ("/usr/bin/pgrep -x " .. exe .. " || echo none"), 15)
   if not out then -- nothing yet: ask once and wait
     out = reaper.ExecProcess(WIN and ('tasklist /FI "IMAGENAME eq ' .. exe .. '.exe" /NH') or ("/usr/bin/pgrep -x " .. exe), 5000) or ""
     if not WIN then return out:match("^0\n") ~= nil end
@@ -82,7 +83,7 @@ end
 
 -- Make sure Syncthing runs. Returns "running", "started", or nil + why.
 function services.ensure_syncthing()
-  if services.running("syncthing") then return "running" end
+  if services.running("syncthing", true) then return "running" end
   local path = services.syncthing_path()
   if not path then return nil, "Syncthing isn't running and wasn't found (set its path: ExtState BandSync/syncthing_path)" end
   if not launch(path, { "serve", "--no-browser" }) then return nil, "couldn't start " .. path end

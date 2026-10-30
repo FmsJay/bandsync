@@ -586,13 +586,17 @@ local function section_recall()
       ImGui.EndDisabled(ctx)
       if not driving then ImGui.SetItemTooltip(ctx, "Only the driver restores (take control first).") end
       ImGui.SameLine(ctx)
-      ImGui.Text(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), (p.time or ""):sub(1, 16):gsub("T", " "), p.takes))
+      ImGui.TextWrapped(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), local_time(p.time), p.takes))
       ImGui.PopID(ctx)
     end
     ImGui.EndChild(ctx)
   end
 end
 
+-- A change in words, its positions as bars ("to bar 9 beat 3", not "to 20.50 s", which also broke mid-number when wrapped).
+local function describe(e)
+  return (recall.describe(e):gsub("( [at][to]?) (%d+%.%d+) s", function(w, n) return w .. " bar " .. bar_of(tonumber(n)) end))
+end
 local KINDS = {
   { "Every kind" }, { "Recordings", { take = true } }, { "Moves and trims", { edit = true } },
   { "Deletes and bring-backs", { delete = true, undelete = true } }, { "What plays", { plays = true } },
@@ -619,7 +623,7 @@ local function history_filtered(driving)
   local n = 0
   for i = #entries, 1, -1 do
     local e = entries[i]
-    local line = recall.describe(e)
+    local line = describe(e)
     local ok = (hf.who == "" or e.user == hf.who) and (not want or want[e.kind]) and (hf.track == "" or (e.track or ""):lower() == hf.track:lower())
       and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
     if ok then
@@ -702,17 +706,19 @@ local function section_history()
         or driving and "Go back to right after this group of changes." or "Only the driver restores (take control first).")
       ImGui.SameLine(ctx)
       local n = g.last - g.first + 1
-      local first = recall.describe(entries[g.first]) -- what it was about, without opening it
-      if #first > 48 then first = first:sub(1, 46) .. "..." end
-      local head = string.format("%s%s  ·  %s%s  ·  %s%s", g.user, g.solo and " (Solo edit)" or g.user == g.driver and " (driving)" or "",
-        local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "", first, n > 1 and string.format("  (+%d more)", n - 1) or "")
+      local head = string.format("%s%s  ·  %s%s", g.user, g.solo and " (Solo edit)" or g.user == g.driver and " (driving)" or "",
+        local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "")
       local open = ImGui.TreeNodeEx(ctx, "g", head, ImGui.TreeNodeFlags_SpanAvailWidth)
-      ImGui.SetItemTooltip(ctx, head) -- (a narrow panel cuts the line short)
+      if not open then -- what it was about, wrapped under the line that opens it
+        ImGui.Indent(ctx)
+        ImGui.TextDisabled(ctx, describe(entries[g.first]) .. (n > 1 and string.format("  (+%d more)", n - 1) or ""))
+        ImGui.Unindent(ctx)
+      end
       if open then
         for i = g.first, g.last do
           ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))
           ImGui.SameLine(ctx)
-          ImGui.TextWrapped(ctx, recall.describe(entries[i]))
+          ImGui.TextWrapped(ctx, describe(entries[i]))
         end
         ImGui.TreePop(ctx)
       end
@@ -1201,11 +1207,16 @@ local function section_notes()
     if #notes == 0 then ImGui.TextDisabled(ctx, "No notes yet.") end
     for i, e in ipairs(notes) do
       if i > 30 then break end
-      if ImGui.Selectable(ctx, string.format("%s  %s: %s%s##n%d", local_time(e.time):sub(7), e.user, recall.describe(e),
-          e.take and e.pos and (" (bar " .. bar_of(e.pos) .. ")") or "", i), false) then
+      ImGui.PushID(ctx, i)
+      if ImGui.SmallButton(ctx, "Go") then
         local it2 = e.take and band.find_take(proj, e.take)
         reaper.SetEditCurPos2(proj, e.pos or (it2 and reaper.GetMediaItemInfo_Value(it2, "D_POSITION")) or 0, true, false)
       end
+      ImGui.SetItemTooltip(ctx, "Put the edit cursor there.")
+      ImGui.SameLine(ctx)
+      ImGui.TextWrapped(ctx, string.format("%s  %s: %s%s", local_time(e.time):sub(7), e.user, describe(e),
+        e.take and e.pos and (" (bar " .. bar_of(e.pos) .. ")") or ""))
+      ImGui.PopID(ctx)
     end
     ImGui.EndChild(ctx)
   end

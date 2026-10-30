@@ -67,11 +67,12 @@ end
 
 -- the shared folder only moves while Syncthing runs: start it if it isn't (a cloud-drive root needs nothing)
 local tune_left, tune_at = 0, 0 -- the folder's live-use settings, tried again while a Syncthing we just started comes up
+local st_started -- when we started Syncthing: a fresh look 20 s on says whether it really runs
 for _, d in ipairs(band.subdirs(cfg.root)) do
   if d == ".stfolder" then -- Syncthing marks the folders it shares with this
     local services = require("services")
     local ok, why = services.ensure_syncthing()
-    if ok == "started" then band.log("started Syncthing") elseif not ok then band.log("Syncthing: " .. why) end
+    if ok == "started" then band.log("started Syncthing"); st_started = reaper.time_precise() elseif not ok then band.log("Syncthing: " .. why) end
     if ok then -- quick hand-off for live use (lib/services.lua): the live MIDI view a couple of seconds behind
       local set, err = services.tune_band_folder()
       if set and #set > 0 then band.log("Syncthing's band folder tuned for live use: " .. table.concat(set, ", "))
@@ -267,6 +268,13 @@ local function editing()
 end
 
 local function poll()
+  if st_started and reaper.time_precise() - st_started > 20 then
+    st_started = nil
+    if not require("services").running("syncthing", true) then
+      band.log("Syncthing didn't start, so nothing reaches the band or comes in: start Syncthing yourself (Start menu, or its tray icon), " ..
+        "then Live sync carries on by itself")
+    end
+  end
   if tune_left > 0 and reaper.time_precise() - tune_at > 30 then
     tune_left, tune_at = tune_left - 1, reaper.time_precise()
     local set, err = require("services").tune_band_folder()

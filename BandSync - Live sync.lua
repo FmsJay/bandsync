@@ -42,7 +42,7 @@ local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-ta
 local baseline = sync.mark_baseline(proj)
 sync.audio_follow_tempo(proj) -- band audio follows tempo changes piece by piece (REAPER auto-stretch), never drifting
 
--- Side by side (panel, Together tab): press play/stop/record as usual; every machine with it on follows, `lag`
+-- Side by side (panel, Together): press play/stop/record as usual; every machine with it on follows, `lag`
 -- seconds behind whoever pressed (0 with Listen live; a bar or two with Play along, so you hear them in time with
 -- the song). Non-persistent ExtState "side <proj>" = lag in bars ("" = off).
 local side = { playing = false, pos = 0, t = 0, quiet_until = 0 }
@@ -310,7 +310,7 @@ local function poll()
   local driver_away = not alone and driver and driver ~= cfg.user
   if driver_away then for _, o in ipairs(others) do if o == driver then driver_away = false end end end
   if driver_away ~= sync.driver_away then
-    if driver_away then band.log(tostring(driver) .. " is driving but isn't here: anyone can Take control (Session tab) to carry on") end
+    if driver_away then band.log(tostring(driver) .. " is driving but isn't here: anyone can Take control (BandSync panel) to carry on") end
     sync.driver_away = driver_away
     reaper.SetExtState(band.SECTION, "driver_away " .. tostring(proj), driver_away and tostring(driver) or "", false)
   end

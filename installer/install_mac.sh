@@ -3,7 +3,7 @@
 # Run it with "Install BandSync (Mac).command" (right-click > Open the first time), or in Terminal:
 #   curl -fsSL https://github.com/FmsJay/bandsync/raw/main/installer/install_mac.sh | bash
 # REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), and optionally
-# SonoBus + Tailscale (Live) and Google Drive for desktop (Solo edit). Every app comes from its official source.
+# SonoBus + Tailscale (Live) and Google Drive for desktop (the band's copy; BS_SOLO is its old name). Every app comes from its official source.
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes/no), BS_HOST_ID, BS_ROOT,
 # BS_LIVE (yes/no), BS_SOLO (yes/no), BS_SCRIPTS (reapack/folder/verify), BS_TAG.
@@ -44,7 +44,7 @@ fi
 ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandSync")}"
 ROOT="${ROOT%/}"
 LIVE="${BS_LIVE:-$(ask "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale (y/n)" y)}"
-SOLO="${BS_SOLO:-$(ask "Will you use Solo edit (editing a song while the others are offline)? Installs Google Drive (y/n)" y)}"
+SOLO="${BS_SOLO:-$(ask "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive (y/n)" y)}"
 PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
 echo
 

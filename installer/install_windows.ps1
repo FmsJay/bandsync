@@ -1,7 +1,7 @@
 # BandSync setup for Windows: installs and sets up everything BandSync needs, skipping whatever is already there.
 # Run it with "Install BandSync (Windows).cmd" (double-click). Windows PowerShell 5.1 compatible.
 #   REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), and optionally
-#   SonoBus + Tailscale (Live) and Google Drive for desktop (Solo edit).
+#   SonoBus + Tailscale (Live) and Google Drive for desktop (the band's copy; -Solo is its old name).
 # Each app comes from its official source (winget, or the extension's own release); each installer may show a
 # Windows permission prompt. Sign-ins (Tailscale, Google Drive) stay the musician's own clicks.
 # Every question can be answered up front (for an AI installer or a test run); anything not given is asked.
@@ -66,7 +66,7 @@ if (-not $isHost) {
 }
 $root = if ($Root) { $Root } else { Ask "Where should the shared BandSync folder be" (Join-Path $env:USERPROFILE "BandSync") }
 $wantLive = if ($Live) { $Live -eq "yes" } else { YesNo "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale" "y" }
-$wantSolo = if ($Solo) { $Solo -eq "yes" } else { YesNo "Will you use Solo edit (editing a song while the others are offline)? Installs Google Drive" "y" }
+$wantSolo = if ($Solo) { $Solo -eq "yes" } else { YesNo "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive" "y" }
 $wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
 Write-Host ""
 

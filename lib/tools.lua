@@ -1,5 +1,5 @@
 -- The panel's tools: dry mode with a bandmate's plug-ins, take back my last take, print a MIDI part as an audio
--- take, a Solo edit version's mix into the live session, keep/dismiss live ideas, and starting Live sync with REAPER.
+-- take, keep/dismiss live ideas, and starting Live sync with REAPER.
 local band = require("band")
 local sync = require("sync")
 local tools = {}
@@ -377,38 +377,6 @@ function tools.print_audio(proj, cfg, b)
     end
   end
   reaper.UpdateArrange()
-  return n
-end
-
--- ---- a Solo edit version's mix, into the live session ---------------------------------------------------------
--- Levels, pans and mutes of the newest solo version, onto the live session's tracks of the same names (and their
--- band mirrors). With the shared mix, Live sync then sends whatever this person may change.
-function tools.solo_mix(cfg, song)
-  local solo = require("solo")
-  local list = solo.history(cfg, song)
-  if not list[1] then return nil, "no Solo edit version of " .. song end
-  local text = band.read(solo.dir(cfg, song) .. "/history/" .. list[1].file .. ".rpp")
-  if not text then return nil, "can't read the newest Solo edit version" end
-  local mix, parsed = {}, solo.parse(text)
-  for _, g in ipairs(parsed.order) do
-    local t = parsed.tracks[g]
-    if t.name ~= "" then mix[t.name:lower()] = t end
-  end
-  return mix, list[1]
-end
-function tools.apply_mix(proj, mix)
-  local n = 0
-  for i = 0, reaper.CountTracks(proj) - 1 do
-    local tr = reaper.GetTrack(proj, i)
-    local name = select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", ""):lower()
-    local m = mix[name]
-    if m and band.track_ext(tr, "band_stem") == "" then
-      if m.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", m.vol) end
-      if m.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", m.pan) end
-      if m.mute ~= nil then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", m.mute and 1 or 0) end
-      n = n + 1
-    end
-  end
   return n
 end
 

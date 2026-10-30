@@ -1,4 +1,4 @@
--- @description BandSync: check in your solo edits (publish them, keep a restorable version, hand the song back)
+-- @description BandSync: (older) check in a Solo edit working copy made before Live sync took over working alone
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")

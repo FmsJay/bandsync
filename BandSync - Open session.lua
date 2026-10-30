@@ -27,10 +27,11 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     local m = rooms.meta(cfg, song, room)
     if m and m.parent then -- a side room is a copy of the room it came from: made from your tab of that room
       local from = rooms.tab(song, m.parent)
-      if not from then return band.msg("'" .. room .. "' is a side room of '" .. m.parent .. "'. Open '" .. m.parent .. "' first, then go there from the panel's Rooms tab.") end
+      if not from then return band.msg("'" .. room .. "' is a side room of '" .. m.parent .. "'. Open '" .. m.parent .. "' first, then go there from Rooms in the BandSync panel.") end
       local p, why = rooms.open(from, cfg, band.binding(from), room)
       if not p then return band.msg(why) end
-      return band.msg("Opened the side room '" .. room .. "' in its own tab. Start Live sync there (panel: Start).")
+      band.start_live(dir) -- (the tab in front: the room's)
+      return band.log("opened the side room '" .. room .. "' in its own tab, Live sync started")
     end
     for i = 0, math.huge do -- already open here? two tabs of one song share its file and its status (2026-10-28)
       local p = reaper.EnumProjects(i)
@@ -82,9 +83,14 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
 
   if first_open then reaper.Main_SaveProject(proj, false) end
 
-  band.msg(string.format("'%s' v%d by %s, room '%s': %d stem track(s) updated.\n\n" ..
-    "Name your recording track like the host's to land in its lanes:\n%s\n\n" ..
-    "Run 'BandSync - Live sync' and record: each take goes out by itself when you stop.", song, s.version, s.host, b.room, n, table.concat(s.tracks or {}, ", ")))
+  -- no dialog to click through: the band's tracks are already here under their own names, so there's nothing to set up;
+  -- Live sync starts by itself (2026-10-29: the old box asked people to name tracks that were already there)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
+  local running = beat and reaper.time_precise() - beat < 5
+  if not running then band.start_live(dir) end
+  band.log(string.format("opened '%s' v%d by %s, room '%s' (%d stem track(s) updated)%s: record on any of the band's tracks, " ..
+    "or a track of your own (the band sees it under its name); each take goes out when you stop",
+    song, s.version, s.host, b.room, n, running and "" or ", Live sync started"))
 end
 
 if b then return open_song(b.song) end

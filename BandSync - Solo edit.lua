@@ -1,4 +1,4 @@
--- @description BandSync: check out a song to edit it alone (one person at a time, through the cloud folder)
+-- @description BandSync: (older) check out a song to edit it alone; working alone is part of Live sync now
 -- Takes the song's lock, copies its current version to this machine and opens it. While you have it, your
 -- bandmates see that you're editing (and since when); nobody else can check it out. Run "BandSync - Check
 -- in" to publish your changes and hand it back. Tracks whose plugins you don't have play their wet prints.

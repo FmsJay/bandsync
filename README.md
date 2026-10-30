@@ -62,7 +62,7 @@ timeline without cluttering main.
 **Easiest: the installer.** Download the `installer` folder (or just the one file) and double-click
 **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (right-click > Open the first
 time). It asks your name, whether you're the host (if not, the host's Syncthing device ID), and whether you'll use
-Live and Solo edit, then installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, Syncthing,
+Live and the Google Drive copy, then installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, Syncthing,
 and optionally SonoBus + Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with the
 host, installs BandSync through ReaPack and opens the panel. What's left needs you, and it lists it at the end:
 signing in to Tailscale and Google Drive, the host adding your device, and the latency cable. (Windows: tested.
@@ -73,8 +73,8 @@ macOS: written the same way, not yet run on a Mac.)
 explains each prompt before it appears, and asks before every download.
 
 **In the project:** the panel's first screen offers *Publish this project* (host) or *Open a band session*, and the
-Session tab's **Set up** list shows what's in place for this project and machine (shared folder syncing, Live sync,
-SonoBus, the Live server, the Solo edit folder, latency). **Set up everything I can** does every fix that needs no
+Maintenance page's **Set up and health** list shows what's in place for this project and machine (shared folder syncing,
+Live sync, SonoBus, the Live server, latency). **Set up everything I can** does every fix that needs no
 human: starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in its Tailscale address as the
 Live server and starts the NINJAM server.
 
@@ -98,8 +98,8 @@ By hand:
    input and run **BandSync - Calibrate latency**. It plays three clicks, records them back in a temporary
    project, and tells you how many samples early or late your recordings land. Under 1 ms is fine. If it says
    LATE N, add +N to *Preferences > Audio > Recording > Input manual offset* (EARLY: subtract) and run it again.
-5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live, Solo edit and
-   History tabs, needs it.
+5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
+   History pages, needs it.
 6. Optional extras:
    - **Live** needs **Tailscale**. Bandmates don't join the host's tailnet: the host shares the server machine with
      each of them (admin console > the machine's **...** > *Share*), and they accept the link with their own account.
@@ -108,15 +108,15 @@ By hand:
      `BandSync` folder in My Drive and shares it with everyone as Editor; each bandmate adds it to their own Drive
      with *Shared with me > right-click > Organize > Add shortcut > My Drive*, keeping the name `BandSync`, or it
      never reaches their computer. BandSync finds it in any My Drive on the machine (any drive letter, the Windows
-     user folder, every macOS account) and never makes one itself; the Session tab says when the shortcut is
-     missing. Anything else goes in the `drive_root` setting (ExtState), and the Session tab's
+     user folder, every macOS account) and never makes one itself; Settings says when the shortcut is
+     missing. Anything else goes in the `drive_root` setting (ExtState), and Settings
      *Keep the band's copy on Google Drive* turns it off on one machine.
 
 ## Session workflow
 
 **BandSync - Panel** puts all of it in one dockable window. It opens in the app look:
 
-- **Top bar**: the song, the room, whether Live sync runs (Start/Stop), who drives, **Undo** / **Redo** (your own
+- **Top bar**: the song, the room, whether Live sync runs (*Start* when it doesn't; *Stop* is in Settings), who drives, **Undo** / **Redo** (your own
   changes only, for everyone: a bandmate's change that came in since is never touched, unlike Ctrl+Z), **Dock** /
   **Undock**, **Full screen** (the screen the panel is on, and back) and **Window** (that screen's left/right/top/bottom half).
 - **Pages** (a sidebar, or a row of tabs when the panel is short, as in a bottom docker): **Home** (*Same room*,
@@ -182,7 +182,6 @@ The table below uses the separate actions, which still work without the panel.
   - *Take back my last take*: removes your newest take from everyone (it waits in the room's `_trash`).
   - *Print selected MIDI as audio*: renders a synth or drum part through its instrument onto `<track> audio`,
     which goes out as an ordinary audio take.
-  - *Copy mix from Solo edit*: your faders, pans and mutes become those of the latest Solo edit version.
   - *Insert / Remove bars* (driver): moves every take, tempo marker and marker after the cursor, on every
     machine. Takes that play across the edit point are split there by whoever recorded them, on their own
     machine (it asks first), so both parts stay theirs. "(MIDI)" copies aren't split.
@@ -226,7 +225,7 @@ There's no separate mode for working on your own: open the song and Live sync ru
 
 - **Alone = full control.** While nobody else is in the room (no bandmate's Live sync seen in the last 45 s),
   everything you change goes to the band, whoever drives or claimed it, and reaches them when they're back. The
-  Session tab says so in green. When someone joins, the usual rules (driver, claims) apply again.
+  Home says so in green. When someone joins, the usual rules (driver, claims) apply again.
 - **Both alone at once.** If two people worked alone at the same time (neither could see the other), each machine
   saves a kept restore point "yours before <name>'s work done alone" before the other's changes land, so neither
   side is ever lost. The newest change to each take wins; restore the point to go back to yours.
@@ -243,7 +242,7 @@ There's no separate mode for working on your own: open the song and Live sync ru
 
 ### Same room
 
-The Session tab's **Same room** switch is the one to press for playing together: it connects Listen live
+Home's **Same room** button is the one to press for playing together: it connects Listen live
 (SonoBus, set up for the band's group) and turns on side by side with no lag. Whoever presses play, stop or record,
 everyone follows at the same spot and hears it at once. What someone records shows on everyone's timeline as they
 play: **live MIDI view** draws their notes a second or two behind on a muted "<name> (live)" track (you hear their
@@ -282,7 +281,7 @@ that it's a tab switch; each tab runs its own Live sync.
 Each machine sends the band the names of the plug-ins it has (`<shared folder>/plugins/<you>.json`) when Live sync
 starts. What every bandmate has goes in a folder of REAPER's FX browser, **BandSync (everyone has)** (VST3 first when
 a plug-in comes in several formats, since Windows and Mac both have VST3). Use those and the song sounds the same on
-every machine. The Session tab's *Plug-ins everyone has* updates it on demand. REAPER's own effects (ReaPlugs and the
+every machine. Settings' *Plug-ins everyone has* updates it on demand. REAPER's own effects (ReaPlugs and the
 JSFX) are on every machine; JSFX from ReaPack work on Windows and Mac alike, once everyone installs the same package.
 
 **The band plug-in pack** (the installers ask; free and open source, each from its official release, nothing

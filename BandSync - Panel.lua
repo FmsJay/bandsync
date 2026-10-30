@@ -105,6 +105,26 @@ local function switch_row(id, label, on, tip)
   if tip then ImGui.SetItemTooltip(ctx, tip) end
   return ch, v
 end
+-- A small square button with a drawn curved arrow: undo points left, redo right. Returns clicked.
+local function arrow_button(id, redo, tip)
+  local dl = ImGui.GetWindowDrawList(ctx)
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local s = ImGui.GetFrameHeight(ctx)
+  local clicked = ImGui.InvisibleButton(ctx, id, s, s)
+  local bg = ImGui.IsItemActive(ctx) and ACCENT or ImGui.IsItemHovered(ctx) and 0x40454CFF or 0x33373DFF
+  ImGui.DrawList_AddRectFilled(dl, x, y, x + s, y + s, bg, 6)
+  local cx, cy, r, col = x + s / 2, y + s / 2 + 1, s * 0.22, 0xE6E8EBFF
+  local a0, a1 = math.pi * 1.0, math.pi * 2.15 -- an arc over the top, its open end at the lower right (undo: mirrored)
+  if redo then ImGui.DrawList_PathArcTo(dl, cx, cy, r, a0 - math.pi * 0.15, a1 - math.pi * 0.15)
+  else ImGui.DrawList_PathArcTo(dl, cx, cy, r, -math.pi * 0.15 - math.pi * 0.0, math.pi * 1.0 + math.pi * 0.0) end
+  ImGui.DrawList_PathStroke(dl, col, ImGui.DrawFlags_None, 2)
+  -- the arrowhead at the arc's start (left for undo, right for redo)
+  local hx = redo and (cx + r) or (cx - r)
+  local d = redo and 1 or -1
+  ImGui.DrawList_AddTriangleFilled(dl, hx - 4 * d, cy - 1, hx + 4 * d, cy - 1, hx, cy + 5, col)
+  if tip then ImGui.SetItemTooltip(ctx, tip) end
+  return clicked
+end
 local function heading(text, size)
   ImGui.PushFont(ctx, nil, size or 19)
   ImGui.Text(ctx, text)
@@ -243,7 +263,6 @@ local TIPS = {
   ["Like selected take"] = "Tell the band you like the selected take.",
   ["Take back my last take"] = "Remove your newest take for everyone (it waits in the room's trash).",
   ["Print selected MIDI as audio"] = "Render the selected MIDI through its instrument as an audio take everyone hears.",
-  ["Copy mix from Solo edit"] = "Take the faders, pans and mutes of the latest Solo edit version.",
   ["Insert bars"] = "Insert bars at the edit cursor on every machine (driver only).",
   ["Remove bars"] = "Remove bars at the edit cursor on every machine (driver only).",
   ["Go there"] = "Go to this room (its own project tab).",
@@ -292,10 +311,10 @@ local label = ""
 local function refresh()
   proj = reaper.EnumProjects(-1)
   b = band.binding(proj)
+  banner_text = nil -- (a tab that isn't a band session has no banner: it showed over a new empty tab)
   if not b then return end
   view = status.gather(cfg, b, proj)
   can, who = sync.authority(cfg, b.song, b.room, view.session)
-  banner_text = nil
   local here = false -- the driver is someone else, and they're here
   for _, r in ipairs(view.rows) do if r.name == view.driver and r.age < 45 then here = true end end
   if here and view.driver ~= cfg.user and reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) == "" then
@@ -1023,10 +1042,9 @@ local function section_setup()
     { st.sync, "Live sync is running", "Live sync is off" },
     { st.sonobus, "SonoBus is ready on the master track (Listen live)", "SonoBus isn't on the master track" },
     { st.server, "Live server address is set", b.role == "host" and "Live server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Live server address" },
-    { st.solo, "Solo edit folder found", "Solo edit folder not found: " .. tostring(st.solo_root) .. " (share it / add the Drive shortcut, or set it in Solo edit)" },
-    { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: More > Calibrate latency)" },
+    { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency)" },
   }
-  if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder in the Live tab)" }) end
+  if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder on Live)" }) end
   local all, essential, left = true, st.audio and st.folder and st.connected and st.sync, 0
   for _, r in ipairs(rows) do all = all and r[1]; if not r[1] then left = left + 1 end end
   -- only what stops the band from syncing opens this by itself; extras (Listen live, latency...) just count
@@ -1110,11 +1128,11 @@ local function section_together()
     side_bars_edit = math.max(0, lv)
     if side ~= "" then reaper.SetProjExtState(proj, band.SECTION, "side", tostring(side_bars_edit)) end
   end
-  ImGui.SetItemTooltip(ctx, "With Play along (Live tab): 1-2 bars, so you hear them in time with the song.\nWith Listen live: 0, everyone at the same spot.")
+  ImGui.SetItemTooltip(ctx, "With Play along (Live): 1-2 bars, so you hear them in time with the song.\nWith Listen live: 0, everyone at the same spot.")
   if side ~= "" then
     local n = tonumber(side) or 0
     local live_mode_note = live.fx(proj, false) and "Play along / Jam is connected." or (live.fx(proj, false, live.SONOBUS) and "Listen live is on."
-      or "To hear each other, connect in the Live tab.")
+      or "To hear each other, connect on Live.")
     ImGui.PushTextWrapPos(ctx, 0)
     ImGui.TextDisabled(ctx, string.format("On: you follow %s behind whoever plays. %s", n == 0 and "right along" or (n .. (n == 1 and " bar" or " bars")), live_mode_note))
     local cm = live.fx(proj, false) and live.channel_mode()
@@ -1254,13 +1272,6 @@ local function section_tools()
     if n then band.log(n .. " MIDI item(s) printed to audio tracks") else band.msg(why) end
   end
   ImGui.SetItemTooltip(ctx, "Renders your MIDI part through its instrument\nonto a '<track> audio' track (the MIDI stays, muted).")
-  ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, "Copy mix from Solo edit") then
-    local mix, h = tools.solo_mix(cfg, b.song)
-    if not mix then band.msg(h)
-    elseif reaper.MB(string.format("Set your faders, pans and mutes to the ones in %s's Solo edit version from %s?\n\nWhat you may change goes to the band too.",
-        tostring(h.user), local_time(h.time)), "BandSync", 4) == 6 then band.log(string.format("levels/pans/mutes of %d track(s) from %s's Solo edit version", tools.apply_mix(proj, mix), tostring(h.user))) end
-  end
   ImGui.SeparatorText(ctx, "Arrangement (driver)")
   local driving = view.driver == cfg.user
   ImGui.BeginDisabled(ctx, not driving)
@@ -1799,37 +1810,41 @@ local function frame_app()
   local key = tostring(proj)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
   local running = beat and reaper.time_precise() - beat < 5
-  at_row("room " .. b.room); pill("room " .. b.room, 0x34415AFF, 0xD6E4FFFF, fh)
+  at_row("room: " .. b.room); pill("room: " .. b.room, 0x34415AFF, 0xD6E4FFFF, fh)
   ImGui.SetItemTooltip(ctx, "The room this tab is in (Rooms page: side rooms).")
   at_row(running and "syncing" or "not syncing"); pill(running and "syncing" or "not syncing", running and GREEN or 0x5A5F66FF, running and DARK or 0xE6E8EBFF, fh)
   ImGui.SetItemTooltip(ctx, running and "Live sync is running in this tab: your takes and changes go out, the band's come in." or "Live sync is off in this tab.")
-  at_row("Start")
-  if ImGui.Button(ctx, running and "Stop" or "Start") then
-    if running then reaper.SetExtState(band.SECTION, "stop " .. key, "1", false)
-    else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
+  if not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
+    at_row("Start")
+    if ImGui.Button(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
   local drives = view.driver == cfg.user and "you drive" or (tostring(view.driver) .. " drives")
   at_row(drives); ImGui.AlignTextToFramePadding(ctx)
   ImGui.TextDisabled(ctx, drives)
   ImGui.SetItemTooltip(ctx, "The driver's changes go to everyone, except on what someone has claimed.")
   at_row("Undo")
-  if ImGui.Button(ctx, "Undo") then
+  if arrow_button("##undo", false, "Undo your own last change (move, trim, fader/pan/mute, delete), for everyone. Unlike Ctrl+Z, a " ..
+      "bandmate's change that came in since is never touched. Press again to go further back.") then
     local c, why = tools.my_last_change(proj, cfg, b)
     if not c then band.msg(why) else
       local msg, e = tools.undo_mine(proj, cfg, b)
       if msg then band.log(msg) else band.msg(e) end
     end
   end
-  ImGui.SetItemTooltip(ctx, "Undo your own last change (move, trim, fader/pan/mute, delete), for everyone. Unlike Ctrl+Z, a bandmate's change\n" ..
-    "that came in since is never touched. Press again to go further back.")
-  at_row("Redo")
-  if ImGui.Button(ctx, "Redo") then
+  ImGui.SameLine(ctx, 0, 4); ImGui.SetCursorPosY(ctx, y0)
+  if arrow_button("##redo", true, "Redo: make the change you undid last again (for everyone).") then
     local msg, e = tools.redo_mine(proj, cfg, b)
     if msg then band.log(msg) else band.msg(e) end
   end
-  ImGui.SetItemTooltip(ctx, "Make the change you undid last again (for everyone).")
-  at_row("Undock")
   local docked = ImGui.IsWindowDocked(ctx)
+  -- the window's own buttons sit at the right end of the bar (when they fit there), apart from the session's
+  local labels = docked and { "Undock" } or { "Undock", "Exit full screen", "Window" }
+  local need = 0
+  for _, l in ipairs(labels) do need = need + ImGui.CalcTextSize(ctx, l) + 28 end
+  ImGui.SameLine(ctx, 0, 8)
+  local room = ImGui.GetContentRegionAvail(ctx)
+  if room > need + 12 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
+  else at_row("Undock") end
   if ImGui.Button(ctx, docked and "Undock" or "Dock") then dock_req = docked and 0 or -1 end
   ImGui.SetItemTooltip(ctx, docked and "Back to a window of its own." or "Into REAPER's docker (drag the docker tab to move it, e.g. to the bottom).")
   if not docked then

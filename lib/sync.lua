@@ -1545,7 +1545,12 @@ function sync.watch(proj, cfg, song, room, can)
             reaper.SetMediaItemInfo_Value(it, "B_MUTE", tonumber(f[6]) or 0)
             reaper.UpdateItemInProject(it)
             local owner = sync.owner_of and sync.owner_of(track, pos) or "someone else"
-            band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, f[7] or track, owner))
+            if sync.author(id) == sync.author_of(me) then -- your own take: the rule, not "it's theirs"
+              band.log(string.format("your take on %s: while %s drives and is here, only they, or a claim, change it: put back " ..
+                "(claim the track to change it)", f[7] or track, owner))
+            else
+              band.log(string.format("'%s' on %s is %s's to change: put back (claim it, or take control)", id, f[7] or track, owner))
+            end
             if snap ~= id .. "|" .. shape(it, tk) then sync.remember(proj, id, it, tk) end -- couldn't land exactly: don't fight it every pass
           end
         end

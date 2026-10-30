@@ -1,6 +1,6 @@
 -- The background programs BandSync leans on, started when a session needs them (never at login):
 --   Syncthing   moves the shared folder; Live sync makes sure it runs on every machine
---   ninjamsrv   the NINJAM server for Live; the host's Live tab starts it when connecting
+--   ninjamsrv   the NINJAM server for Live; the host's Connect (panel: Live) starts it
 -- Paths can be set in ExtState (section BandSync: syncthing_path, ninjam_dir); otherwise the usual install
 -- locations are tried.
 local band = require("band")
@@ -203,7 +203,7 @@ function services.ensure_ninjam()
   if services.running("ninjamsrv") then return "running" end
   local dir = services.ninjam_dir()
   local exe = dir ~= "" and first_existing({ dir .. "/ninjamsrv.exe", dir .. "/ninjamsrv" })
-  if not exe then return nil, "set the NINJAM server folder (the one with ninjamsrv and bandsync.cfg) in the Live tab" end
+  if not exe then return nil, "set the NINJAM server folder (the one with ninjamsrv and bandsync.cfg) on the panel's Live page" end
   if not reaper.file_exists(dir .. "/bandsync.cfg") then return nil, "no bandsync.cfg in " .. dir end
   if not launch(exe, { "bandsync.cfg" }, dir) then return nil, "couldn't start " .. exe end
   return "started"

@@ -104,7 +104,7 @@ function setup.all(cfg, b, proj, st, start_sync)
   end
   if not st.sonobus then
     local link, why = setup.sonobus(cfg, b, proj, false)
-    notes[#notes + 1] = link and "SonoBus added to the master track (off until you Connect in the Live tab)" or why
+    notes[#notes + 1] = link and "SonoBus added to the master track (off until you press Same room)" or why
   end
   return notes
 end

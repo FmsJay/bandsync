@@ -79,7 +79,9 @@ function page.realtime(ctx, ImGui, proj)
     local label = d and string.format("Measure again (%d ms)", d) or "Measure their delay"
     beside(label)
     if ImGui.SmallButton(ctx, label) then run("Measure guest delay") end
-    ImGui.SetItemTooltip(ctx, "They clap along to 8 clicks; BandSync times where the claps land. Once is enough per guest and connection.")
+    ImGui.SetItemTooltip(ctx, "They clap along to 8 clicks; BandSync times where the claps land. Measure right before you record:
+" ..
+      "the delay through SonoBus drifts as it adjusts its buffers (tested over Wi-Fi: 426-555 ms within two minutes).")
     if d then
       beside("Line up their takes")
       if ImGui.SmallButton(ctx, "Line up their takes") then

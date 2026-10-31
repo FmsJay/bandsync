@@ -51,7 +51,7 @@ local function finish(note)
   end
   reaper.SetProjExtState(proj, band.SECTION, "guest delay", string.format("%.0f", late * 1000))
   band.log(string.format("guest delay: their claps land %.0f ms late (%d of %d heard). Their takes are lined up by that, " ..
-    "and Their time uses it.", late * 1000, found, #beats))
+    "and Their time uses it. It drifts as SonoBus adjusts: measure again right before you record.", late * 1000, found, #beats))
   if select(2, reaper.GetProjExtState(proj, band.SECTION, "hear their time")) == "1" then require("hear").set_delay(proj, late * 1000) end
 end
 

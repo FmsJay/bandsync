@@ -244,7 +244,8 @@ With Real time mode on:
 - **Guest**: for someone who joins with only SonoBus (a singer at home, no REAPER, no copy of the song). They hear
   your whole mix, and what they sing is recorded on the Real time track whenever you record. **Measure their delay**
   plays them a bar of count-in and 8 clicks to clap along to, and times where the claps land (the whole round trip;
-  the idea is from ReaConnect). **Line up their takes** then moves what you recorded onto a band track of theirs,
+  the idea is from ReaConnect). Measure right before you record: the delay drifts as SonoBus adjusts its buffers
+  (tested PC to laptop over Wi-Fi: 426 to 555 ms within two minutes), so a take can land that far off and need a nudge. **Line up their takes** then moves what you recorded onto a band track of theirs,
   earlier by that delay, and the band gets it like any take.
 - SonoBus has to actually join the band's group: BandSync checks it did (SonoBus saves each join), tries twice more,
   then tells you to press Connect in its window. Turning Real time mode on also takes any other tab's SonoBus offline,

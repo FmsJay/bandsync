@@ -197,7 +197,9 @@ local function poll()
   sync.someone_drives = type(dst) == "table" and band.age(dst.time) < 30
   -- Alone = full control: with no bandmate in the room, everything we change goes out, whoever drives or claimed it
   -- (what Solo edit was for, without a separate copy of the song). Once anyone is here, the band's rules are back.
-  local others = sync.present(cfg, b.song, b.room)
+  -- (gone for 90 s before you're alone, back at once: a dialog left open on their machine pauses its status for a
+  -- while, and each pause handed the laptop full control for a moment, 2026-10-31)
+  local others = sync.present(cfg, b.song, b.room, sync.alone and 45 or 90)
   local alone = #others == 0
   if alone ~= sync.alone then
     if alone or sync.alone ~= nil then

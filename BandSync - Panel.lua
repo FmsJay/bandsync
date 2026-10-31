@@ -140,6 +140,7 @@ local function heading(text, size)
 end
 -- A card: a rounded panel sized to what's in it. Returns true when its content should be drawn (then call card_end).
 -- `h`: a fixed height, for cards laid side by side (a self-sizing one always took a row of its own).
+local open_cards = 0 -- (cards still open when a frame errors: closed before End, or End itself fails and the panel dies)
 local function card(id, w, h)
   ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, CARD)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 14, 12)
@@ -147,10 +148,10 @@ local function card(id, w, h)
     ImGui.WindowFlags_NoScrollbar)
   ImGui.PopStyleVar(ctx)
   ImGui.PopStyleColor(ctx)
-  if open then ImGui.PushTextWrapPos(ctx, 0) end
+  if open then ImGui.PushTextWrapPos(ctx, 0); open_cards = open_cards + 1 end
   return open
 end
-local function card_end() ImGui.PopTextWrapPos(ctx); ImGui.EndChild(ctx) end
+local function card_end() ImGui.PopTextWrapPos(ctx); ImGui.EndChild(ctx); open_cards = open_cards - 1 end
 
 -- The logo (James's idea): a sink dripping through a portal into another sink, drawn, so it's sharp at any size.
 -- `s` = its height; it's 0.8 s wide. Drawn at the cursor, taking that space.
@@ -1613,7 +1614,7 @@ local function home_who()
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project") else ImGui.TextColored(ctx, RED, "project differs") end
       end
       if p.state ~= "here" and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 6); tools.follow_button(p.name) end
-      if p.state ~= "here" then require("page_hear").person(ctx, ImGui, proj, p.name) end -- (hear them live or not)
+      if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
     end
     if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
     return home_play()
@@ -1641,7 +1642,7 @@ local function home_who()
           "Setup > Health says more, and the Console names what came out different.") end
       end
       if p.state ~= "here" and p.state ~= "offline" then tools.follow_button(p.name) end
-      if p.state ~= "here" then require("page_hear").person(ctx, ImGui, proj, p.name) end -- (hear them live or not)
+      if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
       card_end()
     end
   end
@@ -2200,8 +2201,13 @@ local function loop()
     local ww, wh = ImGui.GetWindowSize(ctx)
     win_rect = { wx, wy, ww, wh }
     banner_docked = ImGui.IsWindowDocked(ctx)
+    open_cards = 0
     local ok, e = pcall(frame) -- an error in our logic must still reach End
-    if not ok then err = tostring(e) end
+    if not ok then -- (and End must find no card open: 0.33.2's broken lib file failed inside one, and End killed the panel)
+      err = tostring(e)
+      for _ = 1, open_cards do ImGui.PopTextWrapPos(ctx); ImGui.EndChild(ctx) end
+      open_cards = 0
+    end
     if banner_docked then reaper.DeleteExtState(band.SECTION, "dock armed", false) -- docked: drag-to-dock did its job
     elseif not native then
       -- the top corners resize too (Dear ImGui only has grips at the bottom); the grips sit over the frame's corners

@@ -155,14 +155,16 @@ end
 local last_driver
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
 local joined = {} -- machines this Live sync has already let in
--- Are we in the middle of editing? (the project changed in the last 2 s): the band's changes wait for a pause, so
--- none lands mid-drag. Never more than 10 s, so a long edit can't hold them up for good.
+-- Are we in the middle of editing? (the project changed in the last 2 s, or the mouse button is down): the band's
+-- changes wait for a pause, so none lands mid-drag. Never more than 10 s, so a long edit can't hold them up for good.
+-- (A drag counts as no change until the drop: laptop, 2026-10-31, a band change applied 2 s into a drag undid it.)
+local function mouse_down() return reaper.JS_Mouse_GetState ~= nil and reaper.JS_Mouse_GetState(1) & 1 == 1 end
 local change_count, changed_at, held_since = -1, -math.huge, nil
 local function editing()
   local c = reaper.GetProjectStateChangeCount(proj)
   local t = reaper.time_precise()
   if c ~= change_count then change_count, changed_at = c, t end
-  local busy = t - changed_at < 2
+  local busy = t - changed_at < 2 or mouse_down()
   if busy then held_since = held_since or t else held_since = nil end
   return busy and t - held_since < 10
 end
@@ -234,7 +236,8 @@ local function poll()
     -- a full look reads every track and item: only when REAPER says the project changed, or the band's changes just
     -- came in, and at least every 10 s anyway (anything REAPER doesn't count as a change still gets seen)
     local cc = reaper.GetProjectStateChangeCount(proj)
-    if cc ~= mirror_cc or mirror_due or now - mirror_at > 10 then
+    -- (not mid-drag: watch would skip it, and the change it skipped mustn't count as seen)
+    if (cc ~= mirror_cc or mirror_due or now - mirror_at > 10) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
       local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix, held = held })

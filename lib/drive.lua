@@ -16,10 +16,13 @@ local drive = {}
 -- added to each person's My Drive as a shortcut named BandSync. It's only ever found, never made: making it in a My
 -- Drive without the shortcut would copy everything into a private folder nobody else sees.
 -- First My Drive (of `places`, in order) holding a BandSync folder -> its path; else nil, plus the first My Drive
--- seen (so the panel can say the shortcut is missing). `subdirs(dir)` lists folder names. Pure.
-function drive.find(places, subdirs)
+-- seen (so the panel can say the shortcut is missing). `subdirs(dir)` lists folder names; `has(path)`, if given, says
+-- whether a folder is there even when a listing leaves it out (on a Mac the shortcut is a symlink into
+-- .shortcut-targets-by-id, 2026-10-31). Pure.
+function drive.find(places, subdirs, has)
   local missing
   for _, md in ipairs(places) do
+    if has and has(md .. "/BandSync") then return md .. "/BandSync" end
     local dirs = subdirs(md)
     for _, d in ipairs(dirs) do
       if d:lower() == "bandsync" then return md .. "/" .. d end
@@ -56,7 +59,15 @@ function drive.root(cfg)
   if r ~= "" then return r end
   if reaper.time_precise() - found_at < 300 then return found end
   found_at = reaper.time_precise()
-  found, drive.missing = drive.find(places(), band.subdirs)
+  found, drive.missing = drive.find(places(), band.subdirs,
+    function(p) return reaper.EnumerateSubdirectories(p, 0) ~= nil or reaper.EnumerateFiles(p, 0) ~= nil end)
+  -- the band's Drive was here and isn't now: that Google account signed out, or Drive switched to another one (Mac,
+  -- 2026-10-31: a personal and a band account on one machine). Said, not guessed at: drive.away, for the panel.
+  local seen = reaper.GetExtState(band.SECTION, "drive_seen")
+  if found then
+    drive.away = nil
+    if seen ~= found then reaper.SetExtState(band.SECTION, "drive_seen", found, true) end
+  elseif seen ~= "" then drive.away, drive.missing = seen, nil end
   return found
 end
 

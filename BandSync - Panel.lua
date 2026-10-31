@@ -639,8 +639,11 @@ local function back_button(i, what, single)
   if single then
     ImGui.BeginDisabled(ctx, not e or e.kind ~= "obj")
     if ImGui.SmallButton(ctx, "Undo") then
-      local others = mirror.later_by_others(entries, i)
-      if #others == 0 or reaper.MB(table.concat(others, ", ") .. " changed it after this: undoing it takes their change back too. Undo anyway?",
+      local others, me = mirror.later_by_others(entries, i), false
+      for k = #others, 1, -1 do if others[k] == cfg.user then table.remove(others, k); me = true end end
+      if me then table.insert(others, 1, "You") end -- (it named you in the third person: laptop 0.34.4)
+      local whose = #others == 1 and me and "your" or "their"
+      if #others == 0 or reaper.MB(table.concat(others, ", ") .. " changed it after this: undoing it takes " .. whose .. " change back too. Undo anyway?",
           "BandSync", 4) == 6 then
         band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo(entries, i), opts)); hist_at = 0
       end
@@ -1514,6 +1517,12 @@ local function maint_rows()
   if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "BandSync " .. view.newer .. " is in use in the band; you have " .. band.VERSION .. ": press Update below." } end
   local dmiss = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").missing
   if dmiss then rows[#rows + 1] = { "drive", false, "yellow", "", "Google Drive: no shared BandSync folder in " .. dmiss .. " (at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive)." } end
+  local daway = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").away
+  if daway then
+    local who = daway:match("GoogleDrive%-([^/]+)/") or daway:match("^(%a:)")
+    rows[#rows + 1] = { "drive away", false, "yellow", "", "Google Drive: the band's folder (" .. tostring(who) .. ") isn't here now. Is that Google " ..
+      "account signed out of Drive, or switched for another? Everything still syncs between you; the Drive copy catches up once it's back." }
+  end
   return rows
 end
 local function dismissed_set()

@@ -47,6 +47,7 @@ done
 # Pairing: with whoever in the band is already set up (any of them: every machine passes the folder on). "Host" is
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
 if [ -n "${BS_HOSTING:-}" ]; then HOSTING="$BS_HOSTING" # (the old way of saying "I'm the first")
+elif [ -n "${BS_HOST_ID:-}" ]; then HOSTING=n # (an invitation: someone is set up, and that's their ID)
 elif yes "$(ask "Is someone in the band already set up with BandSync? (y/n)" y)"; then HOSTING=n
 else HOSTING=y; fi
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
@@ -77,9 +78,18 @@ done
 # (James, 2026-10-31: "it feels like a core feature"); BS_LIVE=no / BS_SOLO=no still leave them out.
 LIVE="${BS_LIVE:-y}"
 SOLO="${BS_SOLO:-y}"
-PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, about 350 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
+if [ -z "${BS_PLUGINS:-}" ]; then
+  say "The band plug-in pack (free, about 350 MB): Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD"
+  say "guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha"
+  say "JSFX with drum kits and keys, so everyone has the same sounds. (Adding the JSFX also updates your other ReaPack packages.)"
+fi
+PLUGINS="${BS_PLUGINS:-$(ask "Install the plug-in pack? (y/n)" y)}"
 EXTRAS="${BS_EXTRAS:-n}"
-yes "$PLUGINS" && [ -z "${BS_EXTRAS:-}" ] && EXTRAS="$(ask "Also the larger extras (about 880 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, the Salamander Grand piano for sforzando)? (y/n)" n)"
+if yes "$PLUGINS" && [ -z "${BS_EXTRAS:-}" ]; then
+  say "The larger extras (about 880 MB): Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, and the"
+  say "Salamander Grand piano for sforzando."
+  EXTRAS="$(ask "Install the extras too? (y/n)" n)"
+fi
 echo
 
 # ---------- 1. apps ----------
@@ -224,21 +234,36 @@ fi
 # Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds
 # the shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). Return skips.
 if yes "$SOLO" && have "Google Drive"; then
-  mydrive() { ls -d "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive" 2>/dev/null | head -1; }
+  # (one My Drive per Google account signed in; with several, the one that has BandSync is the band's, as BandSync
+  # itself looks: lib/drive.lua. Mac 0.34.4: a personal and a band account, and head -1 watched the wrong one.)
+  drives() { ls -d "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive" 2>/dev/null; }
+  mydrive() {
+    [ -n "${PICKED:-}" ] && [ -d "$PICKED" ] && { echo "$PICKED"; return; }
+    local d; while IFS= read -r d; do [ -d "$d/BandSync" ] && { echo "$d"; return; }; done < <(drives)
+    drives | head -1
+  }
+  account() { echo "$1" | sed -n 's#.*/GoogleDrive-\([^/]*\)/My Drive$#\1#p'; } # the account's e-mail, from its folder
   if [ -z "$(mydrive)" ]; then
     open -a "Google Drive"
-    say "Sign in to Google Drive in its window (your own Google account; allow its extension if macOS asks)."
+    say "Sign in to Google Drive in its window, with the Google account the band's Drive folder is shared with (yours,"
+    say "or the band's own account if you have one). Allow its extension if macOS asks."
     say "Waiting for it; press Return to skip and do it later."
     while [ -z "$(mydrive)" ]; do read -t 3 -r </dev/tty && break; done
   fi
   MD="$(mydrive)"
-  if [ -n "$MD" ] && [ -d "$MD/BandSync" ]; then ok "Google Drive: the band's BandSync folder is there"; DRIVE_OK=1
+  if [ -n "$MD" ] && [ ! -d "$MD/BandSync" ] && [ "$(drives | wc -l)" -gt 1 ]; then
+    say "Google Drive has several accounts signed in here. Which one is the band's (it gets the band's folder)?"
+    i=0; while IFS= read -r d; do i=$((i + 1)); echo "    $i) $(account "$d")"; done < <(drives)
+    n="$(ask "Number" 1)"
+    PICKED="$(drives | sed -n "${n}p")"; [ -n "$PICKED" ] && MD="$PICKED"
+  fi
+  if [ -n "$MD" ] && [ -d "$MD/BandSync" ]; then ok "Google Drive: the band's BandSync folder is there ($(account "$MD"))"; DRIVE_OK=1
   elif [ -n "$MD" ] && yes "$HOSTING"; then
     mkdir -p "$MD/BandSync" && ok "Google Drive: made BandSync in your My Drive (share it at the end)"; DRIVE_OK=1
   elif [ -n "$MD" ]; then
     say "Add the band's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
     say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press Return to skip."
-    open "https://drive.google.com/drive/shared-with-me"
+    open "https://drive.google.com/drive/shared-with-me?authuser=$(account "$MD")" # (in that account, not whichever the browser has)
     while [ ! -d "$MD/BandSync" ]; do read -t 3 -r </dev/tty && break; done
     [ -d "$MD/BandSync" ] && { ok "Google Drive: the band's BandSync folder is there"; DRIVE_OK=1; }
   fi

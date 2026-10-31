@@ -29,4 +29,8 @@ root, missing = drive.find({ "G:/My Drive", "Z:/My Drive" }, subdirs)
 assert(root == nil and missing == "G:/My Drive", "My Drive without the shortcut: nothing made, and the panel is told where")
 root, missing = drive.find({ "Z:/My Drive" }, subdirs)
 assert(root == nil and missing == nil, "no Google Drive at all")
+-- a Mac's shortcut is a symlink a folder listing may leave out: found by looking for it directly
+local mac = "/Users/x/Library/CloudStorage/GoogleDrive-b@y.com/My Drive"
+root = drive.find({ "G:/My Drive", mac }, subdirs, function(p) return p == mac .. "/BandSync" end)
+assert(root == mac .. "/BandSync", "the shortcut, though no listing shows it")
 print("ok")

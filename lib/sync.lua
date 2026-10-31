@@ -1006,9 +1006,11 @@ function sync.receive(proj, cfg, song, room, can)
   local dir = sync.room_dir(cfg, song, room) .. "/events"
   local pending = {}
   local drivers = sync.driver_history(proj, cfg, song, room)
+  -- (files read once while they wait: a backlog of 300 was read and decoded again on every pass; laptop, 0.34.4)
+  local cache, kept = sync.ev_cache[dir] or {}, {}
   for _, f in ipairs(band.files(dir, ".json")) do
     if ext(proj, sync.APPLIED, f:sub(1, -6)) == "" then
-      local ev = band.read_json(dir .. "/" .. f)
+      local ev = cache[f] or band.read_json(dir .. "/" .. f)
       -- a malformed or half-synced file must not stop everything behind it; one still unreadable after 2 minutes
       -- (not a file a cloud drive is still writing) is skipped for good, or it counts as "still to come" for ever
       -- and Who's here never shows the same project again (laptop, block K: a truncated file left pending at 1)
@@ -1022,6 +1024,7 @@ function sync.receive(proj, cfg, song, room, can)
         end
       end
       if good then
+        kept[f] = ev
         -- 0.14.4 sent an edit's previous shape as "was", which is a track's old name everywhere else
         if type(ev.was) == "table" then ev.before, ev.was = ev.before or ev.was, nil end
         pending[#pending + 1] = ev
@@ -1072,9 +1075,11 @@ function sync.receive(proj, cfg, song, room, can)
       if not cur or mirror_newer(ev, cur) then latest[ev.oid] = ev end
     end
   end
+  sync.ev_cache[dir] = kept
   local t0, budget_out = reaper.time_precise(), false -- (and a quarter second of applying per pass: the rest next pass)
   require("mirror").index_for(proj)
   local applied, done, undo_open = 0, {}, false
+  sync.backlog = false
   local rdir = sync.room_dir(cfg, song, room)
   for _, ev in ipairs(pending) do
     if budget_out then break end
@@ -1112,7 +1117,7 @@ function sync.receive(proj, cfg, song, room, can)
       elseif res then
         setext(proj, sync.APPLIED, ev.id, "1")
         stamp(proj, ev)
-        if reaper.time_precise() - t0 > 0.25 then budget_out = true end
+        if reaper.time_precise() - t0 > 0.25 then budget_out, sync.backlog = true, true end
         local theirs = ev.user ~= cfg.user -- (your own changes come back too: they aren't "from the band")
         if theirs then applied = applied + 1 end
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
@@ -1157,13 +1162,16 @@ end
 
 -- How many of the room's events this project hasn't applied (or set aside) yet.
 function sync.pending_events(proj, cfg, song, room)
-  local n = 0
+  local n, mine = 0, (cfg.user:gsub(" ", "_")) .. "-"
   for _, f in ipairs(band.files(sync.room_dir(cfg, song, room) .. "/events", ".json")) do
     local id = f:sub(1, -6)
-    if ext(proj, sync.APPLIED, id) == "" and not sync.deferred[id] then n = n + 1 end -- waiting on a claim isn't "behind"
+    -- waiting on a claim isn't "behind", and neither is our own change on its way back (the pill read "Receiving 321"
+    -- right after a restore we sent: laptop, 0.34.4)
+    if ext(proj, sync.APPLIED, id) == "" and not sync.deferred[id] and id:sub(1, #mine) ~= mine then n = n + 1 end
   end
   return n
 end
+sync.ev_cache = {} -- events dir -> { file -> decoded event }, for the files still waiting (sync.receive)
 
 -- Events refused for now (authority not synced here yet): retried until 10 minutes old. And the room's driver
 -- changes, read once and then kept up to date from incoming events: { [id] = { time, user } }.

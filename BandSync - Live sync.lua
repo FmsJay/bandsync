@@ -287,9 +287,16 @@ local function poll()
   -- a bandmate who has every change has had a different project from ours for a minute, and we're caught up too:
   -- something never landed here. Bring it in line with the band's newest version (at most every 5 minutes).
   if s and s.sync == "mirror" and not hold then
-    local mine, differs = require("mirror").root(proj), false
+    local mine, differs, same = require("mirror").root(proj), false, false
     for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
       if st.mirror and st.pending == 0 and st.mirror ~= mine then differs = true end
+      if st.mirror and st.pending == 0 and st.mirror == mine then same = true end
+    end
+    -- the same project as everyone again: an old "came out different" is history, not news (it kept Health red after
+    -- the Mac matched: 0.34.4)
+    if same and not differs and reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj)) ~= "" then
+      reaper.DeleteExtState(band.SECTION, "mirror drift " .. tostring(proj), false)
+      reaper.DeleteExtState(band.SECTION, "mirror drift last", false)
     end
     if differs and sync.pending_events(proj, cfg, b.song, b.room) == 0 then heal_since = heal_since or now else heal_since = nil end
     if heal_since and now - heal_since > 60 and now - healed_at > 300 and reaper.EnumProjects(-1) == proj then
@@ -575,6 +582,9 @@ local function tick_body() -- returns true to keep going
     last = reaper.time_precise()
     local ok, err = pcall(poll)
     if not ok then band.log("sync error: " .. tostring(err)) end
+    -- more of the band's changes waiting than one pass applies: the next pass in 0.3 s, not 2 s (320 moved items
+    -- took 73 s to land at 2 s a pass; laptop, 0.34.4). Each pass still applies at most a quarter second.
+    if sync.backlog then last = reaper.time_precise() - every + 0.3 end
   end
   return true
 end

@@ -59,7 +59,7 @@ $user = $User -replace '[^\w\- ]', ''
 while (-not $user) { $user = (Ask "Your name, as the band will see it" $env:USERNAME) -replace '[^\w\- ]', '' }
 # Pairing: with whoever in the band is already set up (any of them: every machine passes the folder on). "Host" is
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
-$isHost = if ($Hosting) { $Hosting -eq "yes" } else { -not (YesNo "Is someone in the band already set up with BandSync?" "y") }
+$isHost = if ($Hosting) { $Hosting -eq "yes" } elseif ($HostId) { $false } else { -not (YesNo "Is someone in the band already set up with BandSync?" "y") } # (-HostId: an invitation)
 if ($isHost -and -not $Hosting) { Say "You're the first: at the end you get your Syncthing ID to send to each bandmate who installs." }
 $hostId = $HostId.ToUpper()
 $idPattern = '^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
@@ -398,10 +398,15 @@ if ($wantLive) {
 # Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds the
 # shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). A key skips.
 if ($wantSolo) {
-  $myDrive = { foreach ($l in [char[]](67..90)) { $d = [string]$l + ":\My Drive"; if (Test-Path $d) { return $d } }; $null }
+  # (one drive letter per Google account signed in: the one that has BandSync is the band's, as BandSync itself looks)
+  $myDrive = {
+    $all = @(foreach ($l in [char[]](67..90)) { $d = [string]$l + ":\My Drive"; if (Test-Path $d) { $d } })
+    $band = @($all | Where-Object { Test-Path "$_\BandSync" })
+    if ($band) { $band[0] } elseif ($all) { $all[0] } else { $null }
+  }
   $driveOk = $false
   if (-not (& $myDrive)) {
-    Say "Sign in to Google Drive (its window, or its taskbar icon), with your own Google account. Waiting for it; press any key to skip."
+    Say "Sign in to Google Drive (its window, or its taskbar icon), with the Google account the band's Drive folder is shared with (yours, or the band's own account if you have one). Waiting for it; press any key to skip."
     $null = Wait-Until { & $myDrive }
   }
   $md = & $myDrive

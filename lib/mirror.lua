@@ -1462,6 +1462,10 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   for _, p in ipairs(list) do
     local rev, h, evid = mirror.known(proj, p.oid)
     local name = p.t and p.t.name or ""
+    if p.t and p.t.obj ~= "track" and p.t.track then -- (a part or item: on the track as it's called now, not was; laptop 0.34.4)
+      local tr = mirror.find(proj, "track", p.t.track)
+      if tr then name = select(2, reaper.GetTrackName(tr)) end
+    end
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
     elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or (opts.mode ~= "driver" and mirror.is_creator(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid, cfg.user))) then

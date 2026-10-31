@@ -188,7 +188,7 @@ function chooser.open(cfg, opts, done)
     if shown then
       local list = visible_rows()
       if not sel or not chooser.match(sel, text) or picked_for ~= text then -- what's typed changed: its best match
-        sel = chooser.best(chooser.groups(list), text)
+        sel = text:match("%S") and chooser.best(chooser.groups(list), text) or list[1] -- (nothing typed: the newest song)
         room = sel and sel.rooms[1]
         picked_for = text
       end

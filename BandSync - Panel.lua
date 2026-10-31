@@ -395,7 +395,10 @@ local function section_sync()
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
   local running = beat and reaper.time_precise() - beat < 5
   ImGui.TextColored(ctx, running and GREEN or RED, running and "Live sync is running" or "Live sync is not running")
-  if not running then -- (no Stop: a BandSync project always syncs, or the band's copies drift apart)
+  if not running and band.synced_elsewhere(proj) then -- (a second copy of the song: syncing it would work on a stale one)
+    ImGui.SameLine(ctx)
+    ImGui.TextColored(ctx, YELLOW, "this song is open and syncing in another tab: work there")
+  elseif not running then -- (no Stop: a BandSync project always syncs, or the band's copies drift apart)
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
@@ -1887,7 +1890,11 @@ local function frame_app()
   ImGui.SetItemTooltip(ctx, "The room this tab is in (Rooms page: side rooms).")
   at_row(running and "Sync on" or "Sync off"); pill(running and "Sync on" or "Sync off", running and GREEN or RED, DARK, fh)
   ImGui.SetItemTooltip(ctx, running and "Live sync is running in this tab: your takes and changes go out, the band's come in." or "Live sync is off in this tab.")
-  if not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
+  if not running and band.synced_elsewhere(proj) then -- (a second copy of the song: syncing it would work on a stale one)
+    at_row("open in another tab")
+    pill("open in another tab", YELLOW, DARK, fh)
+    ImGui.SetItemTooltip(ctx, "This song is already open and syncing in another tab: work there. This tab is a second copy, not synced.")
+  elseif not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
     at_row("Start")
     if ImGui.Button(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end

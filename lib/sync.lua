@@ -951,8 +951,19 @@ function sync.receive(proj, cfg, song, room, can)
   for _, f in ipairs(band.files(dir, ".json")) do
     if ext(proj, sync.APPLIED, f:sub(1, -6)) == "" then
       local ev = band.read_json(dir .. "/" .. f)
-      -- a malformed or half-synced file must not stop everything behind it
-      if type(ev) == "table" and type(ev.id) == "string" and type(ev.time) == "string" and type(ev.user) == "string" and type(ev.type) == "string" then
+      -- a malformed or half-synced file must not stop everything behind it; one still unreadable after 2 minutes
+      -- (not a file a cloud drive is still writing) is skipped for good, or it counts as "still to come" for ever
+      -- and Who's here never shows the same project again (laptop, block K: a truncated file left pending at 1)
+      local good = type(ev) == "table" and type(ev.id) == "string" and type(ev.time) == "string" and type(ev.user) == "string" and type(ev.type) == "string"
+      if not good then
+        local id = f:sub(1, -6)
+        sync.unreadable[id] = sync.unreadable[id] or reaper.time_precise()
+        if reaper.time_precise() - sync.unreadable[id] > 120 then
+          setext(proj, sync.APPLIED, id, "1")
+          band.log("skipped a file in the band's folder that BandSync can't read (" .. f .. ")")
+        end
+      end
+      if good then
         -- 0.14.4 sent an edit's previous shape as "was", which is a track's old name everywhere else
         if type(ev.was) == "table" then ev.before, ev.was = ev.before or ev.was, nil end
         pending[#pending + 1] = ev
@@ -1076,6 +1087,7 @@ end
 -- Events refused for now (authority not synced here yet): retried until 10 minutes old. And the room's driver
 -- changes, read once and then kept up to date from incoming events: { [id] = { time, user } }.
 sync.deferred = {}
+sync.unreadable = {} -- event file id -> when it was first found unreadable (sync.receive)
 local driver_cache = {}
 function sync.driver_history(proj, cfg, song, room)
   local key = song .. "/" .. room

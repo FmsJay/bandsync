@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.33.5", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.33.6", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -252,6 +252,21 @@ function band.binding(proj)
     b[k] = v ~= "" and v or nil
   end
   return b.song and b or nil
+end
+-- Another tab already syncing this song's room (the same .rpp opened twice): that tab, or nil. A second copy's Live
+-- sync would work on a stale or empty copy of the song (laptop, block K: the panel offered Start in it).
+function band.synced_elsewhere(proj)
+  local b = band.binding(proj)
+  if not b then return nil end
+  for k = 0, 512 do
+    local p = reaper.EnumProjects(k)
+    if not p then break end
+    local o = p ~= proj and band.binding(p)
+    if o and o.song == b.song and (o.room or "main") == (b.room or "main") then
+      local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(p)))
+      if beat and reaper.time_precise() - beat < 30 then return p end
+    end
+  end
 end
 
 function band.bind(proj, b)

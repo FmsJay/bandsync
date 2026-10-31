@@ -101,6 +101,9 @@ local function loop()
   local proj = reaper.EnumProjects(-1)
   local b = band.binding(proj)
   if not b then return reaper.defer(loop) end -- (not a BandSync tab: nothing to show; keeps running for when one is)
+  -- ReaImGui lets go of a context that went a frame unused (the frames above, in another tab), so it's made again:
+  -- the laptop's "expected a valid ImGui_Context*" after closing a second Mirror Test tab (block K)
+  if not ImGui.ValidatePtr(ctx, "ImGui_Context*") then ctx, placed = ImGui.CreateContext("BandSync drawings"), nil end
   local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
   hold_mouse(drawing)
   local L = layout(proj)

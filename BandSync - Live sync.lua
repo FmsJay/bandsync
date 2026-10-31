@@ -33,6 +33,9 @@ if not b then return band.msg("Publish (host) or open (guest) a session in this 
 if reaper.set_action_options then reaper.set_action_options(2) end
 local beat0 = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if beat0 and reaper.time_precise() - beat0 < 5 then return band.log("Live sync is already running for '" .. b.song .. "'") end
+if band.synced_elsewhere(proj) then
+  return band.log("'" .. b.song .. "' is already syncing in another tab: work there (this tab is a second copy of the song, and isn't synced)")
+end
 -- the newest Live sync for a tab owns it: while a dialog is open every script pauses, its heartbeat goes stale, and
 -- Autostart may start another one for the tab; when the dialog closes the older one sees it was replaced and stops
 -- (2026-10-29, laptop: tabs could end up with two Live syncs after a long dialog)

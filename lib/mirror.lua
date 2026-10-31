@@ -1310,6 +1310,21 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     if (a.t and 1 or 0) ~= (x.t and 1 or 0) then return a.t ~= false end
     if a.t then return ka < kx else return ka > kx end
   end)
+  -- and a track only after the one it sits under, when that comes back too: put back first, Keys found no K4 Inner
+  -- yet and went to the top, out of its folder (laptop, block K)
+  local back, placed, sorted = {}, {}, {}
+  for _, p in ipairs(list) do if p.t and p.t.obj == "track" then back[p.oid] = p end end
+  local function place(p, depth)
+    if placed[p] then return end
+    local after = type(p.t.state) == "table" and p.t.state.after or ""
+    if back[after] and depth < 512 then place(back[after], depth + 1) end
+    placed[p] = true
+    sorted[#sorted + 1] = p
+  end
+  for _, p in ipairs(list) do
+    if p.t and p.t.obj == "track" then place(p, 0) elseif not placed[p] then placed[p] = true; sorted[#sorted + 1] = p end
+  end
+  list = sorted
   local done, refused = 0, 0
   reaper.Undo_BeginBlock2(proj)
   for _, p in ipairs(list) do

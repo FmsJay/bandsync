@@ -251,6 +251,12 @@ layers fix that, best set up on the host's always-on machine:
   missed start", as your user so the cloud drive is mounted). Never sync the same folder with both Syncthing
   and the cloud drive.
 
+Closing REAPER without saving (or a crash) is safe. Next to each BandSync project sits
+`<project>.bandsync-ids.json`, this machine's record of which track and item is which. When you reopen an older
+save, BandSync recognises its tracks and items, brings back what changed since as the band has it, and sends
+nothing new. Leave the file where it is. Without it, a reopened older save would show up for everyone with its
+tracks twice.
+
 ## Limits
 
 - Plug-in chains change only while the transport is stopped (replacing a chain reloads its plug-ins), and a

@@ -228,8 +228,37 @@ function mirror.known(proj, oid)
   local rev, h, ev, order = ext(proj, oid):match("^(%d+)|([^|]*)|([^|]*)|?(.*)$")
   return tonumber(rev), h, ev, order
 end
+-- This machine's ids also live in a file beside the project (<project>.bandsync-ids.json): REAPER's GUID -> oid, and
+-- what was last known of each oid. The project only keeps them once it's saved, so one reopened without its last
+-- save (closed unsaved, a crash) saw its tracks and items as new and sent them again as copies (2026-10-30: Mirror
+-- Test came back with every track twice). Untitled projects have no file.
+local idc = {}
+local function ids(proj)
+  local fn
+  for i = 0, math.huge do
+    local p, f = reaper.EnumProjects(i)
+    if not p or p == proj then fn = p and f or ""; break end
+  end
+  if fn == "" then return nil end
+  local c = idc[proj]
+  if not c or c.fn ~= fn then
+    local path = (fn:gsub("\\", "/"):gsub("%.[Rr][Pp][Pp]$", "")) .. ".bandsync-ids.json"
+    local d = require("band").read_json(path) or {}
+    c = { fn = fn, path = path, guid = d.guid or {}, rec = d.rec or {} }
+    idc[proj] = c
+  end
+  return c
+end
+function mirror.save_ids(proj)
+  local c = idc[proj]
+  if c and c.dirty then c.dirty = false; require("band").write_json(c.path, { guid = c.guid, rec = c.rec }) end
+end
+
 local function remember(proj, oid, rev, h, evid, order)
-  setext(proj, oid, string.format("%d|%s|%s|%s", rev or 0, h or "", evid or "", order or ""))
+  local v = string.format("%d|%s|%s|%s", rev or 0, h or "", evid or "", order or "")
+  setext(proj, oid, v)
+  local c = ids(proj)
+  if c and c.rec[oid] ~= v then c.rec[oid], c.dirty = v, true end
 end
 mirror.remember = remember
 
@@ -309,7 +338,19 @@ end
 -- it: the source would then look new and be put back); the others become new objects. Returns the oid per entry.
 mirror.GSEC = "BandSync.mirrorg" -- oid -> REAPER GUID of the object holding it here (this machine's own)
 local function settle_ids(proj, list, kind, user, set_oid)
-  local keeper, matched = {}, {}
+  local keeper, matched, c, held = {}, {}, ids(proj), {}
+  -- no oid, but this machine gave its GUID one before (the project wasn't saved since): it gets that oid back
+  for _, x in ipairs(list) do if x.oid ~= "" then held[x.oid] = true end end
+  for _, x in ipairs(list) do
+    local was = x.oid == "" and c and c.guid[x.guid]
+    if was and not held[was] then
+      x.oid, x.restored, held[was] = was, true, true
+      set_oid(x.ptr, was)
+      for _, oid in ipairs({ was, kind == "T" and "F" .. was:sub(2) or nil }) do -- what this machine knew of it, too
+        if c.rec[oid] and ext(proj, oid) == "" then setext(proj, oid, c.rec[oid]) end
+      end
+    end
+  end
   for k, x in ipairs(list) do
     if x.oid ~= "" and not matched[x.oid] then
       local known = x.guid == select(2, reaper.GetProjExtState(proj, mirror.GSEC, x.oid))
@@ -319,8 +360,16 @@ local function settle_ids(proj, list, kind, user, set_oid)
   for k, x in ipairs(list) do
     if x.oid == "" or keeper[x.oid] ~= k then x.oid = mirror.new_oid(kind, user); set_oid(x.ptr, x.oid) end
     if select(2, reaper.GetProjExtState(proj, mirror.GSEC, x.oid)) ~= x.guid then reaper.SetProjExtState(proj, mirror.GSEC, x.oid, x.guid) end
+    if c and c.guid[x.guid] ~= x.oid then c.guid[x.guid], c.dirty = x.oid, true end
+    if x.restored then
+      mirror.reopened[tostring(proj) .. x.oid] = true
+      if kind == "T" then mirror.reopened[tostring(proj) .. "F" .. x.oid:sub(2)] = true end -- (its plug-ins too)
+    end
   end
 end
+-- oids given back after an unsaved reopen whose state here is older than the band's: put back, never sent, until they
+-- match what this machine last knew (proj .. oid -> true)
+mirror.reopened = {}
 
 function mirror.scan(proj, user, media_dir, local_mix)
   local objs, by_oid, tracks = {}, {}, {}
@@ -579,14 +628,19 @@ function mirror.watch(proj, cfg, song, room, opts)
         " (the band's version hasn't arrived here yet): it stays as it is for now")
     end
     back = back + 1
-    sync.put_back(why.text)
+    if why.text then sync.put_back(why.text) end
   end
   local seen = {}
   for _, o in ipairs(objs) do
     seen[o.oid] = true
     local ok, err = pcall(function()
       local rev, h, evid = mirror.known(proj, o.oid)
-      if h == o.hash then return end
+      local rk = tostring(proj) .. o.oid
+      if h == o.hash then mirror.reopened[rk] = nil; return end
+      if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
+        say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
+        return put_back(o, rev, evid, { name = perm_name(o, by_oid) })
+      end
       if o.kind == "fx" then -- only while stopped, once it has settled: not a whole chain (or a put-back) per knob turn
         if not rev and o.state == "" then return end -- (an empty chain nobody has sent: nothing to share)
         local key = tostring(proj) .. o.oid -- (per tab: a side room's copy shares the oid)
@@ -670,6 +724,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     end)
     if not ok then say_once("err" .. g.oid, "mirror sync skipped " .. g.oid .. ": " .. tostring(err)) end
   end
+  mirror.save_ids(proj)
   return sent, back
 end
 

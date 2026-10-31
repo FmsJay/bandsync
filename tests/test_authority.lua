@@ -52,11 +52,19 @@ claims["mode.json"] = { mode = "open" }
 can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
 assert(who.mode == "open" and can("Laptop", "Keys", 0), "open: anyone changes what nobody claimed")
 assert(not can("James", "Guitar", 12), "open: a claim still holds")
-assert(not can("Laptop", nil, nil), "open: the tempo map stays the driver's")
+assert(can("Laptop", nil, nil), "open: anyone changes the tempo map and markers too")
 claims["mode.json"] = { mode = "driver" }
 can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
 assert(can("James", "Guitar", 12) and not can("Laptop", "Guitar", 12), "driver only: claims don't count")
 assert(not can("Laptop", "Pad", 0, "Laptop-20261028-032939Z-1"), "driver only: not even your own take")
 claims["mode.json"] = { mode = "nonsense" }
 assert(select(2, sync.authority({ root = "root" }, "Saltmarsh", "main", s)).mode == "claims", "an unknown mode reads as claims")
+-- the driver released Laptop's claims while Laptop was away: those don't count; a claim made after still does
+claims["mode.json"] = nil
+claims["released.json"] = { Laptop = "2026-10-29T00:00:00Z" }
+can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
+assert(can("James", "Guitar", 12) and not can("Laptop", "Guitar", 12), "a released claim follows the driver again")
+claims["claims/Laptop.json"] = { user = "Laptop", time = "2026-10-30T09:00:00Z", tracks = { "Guitar" }, since = { ["tracks:guitar"] = "2026-10-30T09:00:00Z" } }
+can, who = sync.authority({ root = "root" }, "Saltmarsh", "main", s)
+assert(can("Laptop", "Guitar", 12) and not can("James", "Guitar", 12), "claimed again after the release: theirs")
 print("ok")

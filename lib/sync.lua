@@ -238,6 +238,53 @@ function sync.set_claims(cfg, song, room, claims)
   band.write_json(sync.claims_path(cfg, song, room, cfg.user), claims)
 end
 
+-- Claims the driver released for someone away (rooms/<room>/released.json: { user = time }): a claim made before
+-- that time doesn't count. Only the driver writes it; a bandmate's own claims file stays theirs alone, and Live sync
+-- empties it when they're back (James, 2026-10-31: someone who left the band kept their tracks locked for everyone).
+function sync.released(cfg, song, room)
+  local r = band.read_json(sync.room_dir(cfg, song, room) .. "/released.json")
+  return type(r) == "table" and r or {}
+end
+function sync.release_claims(cfg, song, room, user)
+  local r = sync.released(cfg, song, room)
+  r[user] = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  band.write_json(sync.room_dir(cfg, song, room) .. "/released.json", r)
+end
+-- Keep my claims on the tracks I claimed when they're renamed (a claim is by name; the track's id says which one
+-- it was), and drop them if the driver released them while I was away. Run by Live sync every few seconds.
+function sync.follow_claims(proj, cfg, song, room)
+  local c = sync.my_claims(cfg, song, room)
+  if not c or #(c.tracks or {}) + #(c.regions or {}) + #(c.times or {}) == 0 then return end
+  local gone = sync.released(cfg, song, room)[cfg.user]
+  if gone and (c.time or "") <= gone then
+    sync.set_claims(cfg, song, room, { tracks = {}, regions = {}, times = {} })
+    return band.log("the driver released your claims while you were away: claim again what you're working on")
+  end
+  local mirror = require("mirror")
+  c.oids, c.since = c.oids or {}, c.since or {}
+  local changed = false
+  for i, name in ipairs(c.tracks or {}) do
+    local k = name:lower()
+    local oid = c.oids[k]
+    local tr = oid and mirror.find(proj, "track", oid)
+    if not oid then -- (claimed before 0.34: find it by name, once)
+      for t = 0, reaper.CountTracks(proj) - 1 do
+        local x = reaper.GetTrack(proj, t)
+        if base_name(select(2, reaper.GetTrackName(x))):lower() == k then oid, tr = mirror.track_oid(x), x; break end
+      end
+      if oid and oid ~= "" then c.oids[k], changed = oid, true end
+    end
+    local now = tr and base_name(select(2, reaper.GetTrackName(tr)))
+    if now and now ~= "" and now:lower() ~= k then -- renamed: the claim goes with it, keeping its date
+      c.tracks[i] = now
+      c.oids[now:lower()], c.oids[k] = oid, nil
+      c.since["tracks:" .. now:lower()], c.since["tracks:" .. k] = c.since["tracks:" .. k], nil
+      changed = true
+    end
+  end
+  if changed then band.write_json(sync.claims_path(cfg, song, room, cfg.user), c) end
+end
+
 -- Returns can(user, track, pos, take) -> bool, plus { driver, tracks, regions, times, owner(track, pos) } for display.
 -- Who owns a take: its track's claimant, else the newest claim on a stretch of time it starts in (a time selection),
 -- else the claimant of the named region it starts in, else the driver. A take's author may change it (move, trim,
@@ -245,7 +292,7 @@ end
 -- How a room shares editing, set by its driver (rooms/<room>/mode.json):
 --   "driver"  only the driver changes what the band has (claims are kept, but don't count while it's on)
 --   "claims"  the default: the driver, and everyone on what they've claimed
---   "open"    anyone changes anything nobody has claimed (the newest change wins); the tempo map stays the driver's
+--   "open"    anyone changes anything nobody has claimed (the newest change wins), the tempo map and markers too
 -- Changes someone may not make are put back where the band has them, never kept on their machine only.
 sync.MODES = { driver = true, claims = true, open = true }
 function sync.mode(cfg, song, room)
@@ -261,18 +308,23 @@ function sync.authority(cfg, song, room, s)
   local mode = sync.mode(cfg, song, room)
   local tracks, regions, times = {}, {}, {} -- lower name -> { user, time }; times: { user, time, from, to }
   local dir = sync.room_dir(cfg, song, room) .. "/claims"
+  local released = sync.released(cfg, song, room) -- (claims the driver let go of for someone who was away)
   for _, f in ipairs(band.files(dir, ".json")) do
     local c = band.read_json(dir .. "/" .. f)
     if c and c.user and c.time then
+      local gone = released[c.user]
       for _, t in ipairs(c.times or {}) do
-        if tonumber(t.from) and tonumber(t.to) and t.to > t.from then times[#times + 1] = { user = c.user, time = t.at or c.time, from = t.from, to = t.to } end
+        local at = t.at or c.time
+        if tonumber(t.from) and tonumber(t.to) and t.to > t.from and not (gone and at <= gone) then
+          times[#times + 1] = { user = c.user, time = at, from = t.from, to = t.to }
+        end
       end
       for _, list in ipairs({ { c.tracks, tracks }, { c.regions, regions } }) do
         for _, name in ipairs(list[1] or {}) do
           local k = name:lower()
           local t = (c.since or {})[(list[2] == tracks and "tracks:" or "regions:") .. k] or c.time
           local o = list[2][k] -- newest wins; the same second goes to the later name, so every machine agrees
-          if not o or o.time < t or (o.time == t and o.user < c.user) then list[2][k] = { user = c.user, time = t, name = name } end
+          if not (gone and t <= gone) and (not o or o.time < t or (o.time == t and o.user < c.user)) then list[2][k] = { user = c.user, time = t, name = name } end
         end
       end
     end
@@ -312,8 +364,9 @@ function sync.authority(cfg, song, room, s)
   return function(user, track, pos, take, drv) -- drv: the driver to judge by (an event's own time), else today's
       if mode == "driver" then return user == (drv or driver) end
       if owner(track, pos, drv) == user then return true end
-      -- open: anything nobody claimed, by anyone (not the song's tempo map and markers: track and pos are nil then)
-      if mode == "open" and (track or pos) and not claimed(track, pos) then return true end
+      -- open: anything nobody claimed, by anyone, the song's tempo map, markers and settings too (James, 2026-10-31:
+      -- Open means open; before, those stayed the driver's)
+      if mode == "open" and not claimed(track, pos) then return true end
       return take ~= nil and sync.author(take) == sync.author_of(user) and not claimed(track, pos)
     end,
     { driver = driver, tracks = tracks, regions = regions, times = times, owner = owner, spans = spans, mode = mode }
@@ -937,7 +990,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
           band.apply_markers(proj, before[2] or {})
           reaper.Undo_EndBlock2(proj, "BandSync: put the band's tempo map and markers back", -1)
           sig = timeline_sig(proj)
-          sync.put_back("only the driver changes the tempo map, markers and project settings: put back (take control to change them)")
+          sync.put_back("the tempo map, markers and project settings are the driver's to change: put back (take control, or the driver can set Editing to Open)")
         else
           band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")
         end

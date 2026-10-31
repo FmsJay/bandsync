@@ -1226,7 +1226,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       local last = rev and event_file(room_dir, evid) or nil
       -- allowed where it is now, and where it was (moving an item off a claimed track, or renaming a claimed track,
       -- mustn't slip past the claim)
-      local ok_now = allowed(o, name, o.pos)
+      local ok_now = allowed(o, name, o.pos) or (o.kind == "track" and last ~= nil and allowed(o, last.name or "", last.pos))
       local ok_before = not last or last.gone or allowed(o, last.name or "", last.pos)
       if ok_now and ok_before then
         local state = o.state

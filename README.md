@@ -187,7 +187,7 @@ Who may change what:
   here) makes you the driver; it checks everyone has caught up first, and every handover saves a recall point.
 - **Editing modes** (Home; the driver picks): **Driver only**, **Claims** (default: the driver, and everyone on
   what they've claimed, plus the new tracks they make themselves) or **Open** (anyone changes anything unclaimed;
-  the newest change wins; the tempo map stays the driver's).
+  the newest change wins; the tempo map, markers and project settings too).
 - **Claims**: *Claim selected tracks*, *Claim region at cursor* or *Claim time selection* (shown to everyone as a
   `[claimed: you]` region). A track claim beats a time claim, which beats a region claim, which beats the driver.
 - **What you see is what the band has**: anything you change that isn't yours to change is put back at once,

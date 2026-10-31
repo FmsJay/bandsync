@@ -448,7 +448,7 @@ local drive_root, drive_at = nil, -math.huge
 local MODE_INFO = {
   { "driver", "Driver only", "Only the driver changes what the band has. Everyone else's changes are put back (record as usual)." },
   { "claims", "Claims", "The driver, and everyone on what they've claimed (a track, a region, a stretch of time). Other changes are put back." },
-  { "open", "Open", "Anyone changes anything nobody has claimed; the newest change wins. The tempo map stays the driver's." },
+  { "open", "Open", "Anyone changes anything nobody has claimed, the tempo map and markers too; the newest change wins." },
 }
 local function section_driver()
   local driving = view.driver == cfg.user
@@ -544,6 +544,25 @@ local function section_claims()
       ImGui.SetItemTooltip(ctx, over_x and "Release it: it follows the driver again." or "Yours: only you change it, whoever drives.")
     else
       ImGui.SetItemTooltip(ctx, "Theirs: only they change it, whoever drives.")
+    end
+  end
+  if view.driver == cfg.user then -- the driver lets go of claims held by someone who isn't here (left the band, away)
+    local away = {}
+    for _, o in ipairs(owned) do
+      local who_ = o[2] == false and (type(o[3]) == "table" and o[3].user or o[1]:match(": (.-)$"))
+      if who_ and who_ ~= cfg.user then
+        local here = false
+        for _, r in ipairs(view.rows) do if r.name == who_ and r.state ~= "offline" then here = true end end
+        if not here then away[who_] = true end
+      end
+    end
+    for who_ in pairs(away) do
+      if ImGui.SmallButton(ctx, "Release " .. who_ .. "'s claims##rel" .. who_) and reaper.MB(who_ .. " isn't here. Release everything " .. who_ ..
+          " has claimed, so it follows you (the driver) again? They're told when they're back, and can claim again.", "BandSync", 4) == 6 then
+        sync.release_claims(cfg, b.song, b.room, who_)
+        band.log("released " .. who_ .. "'s claims: what they had follows the driver now")
+      end
+      ImGui.SetItemTooltip(ctx, who_ .. " isn't here: their claims keep those parts locked for everyone until released.")
     end
   end
   if ImGui.Button(ctx, "Claim selected tracks") then

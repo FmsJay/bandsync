@@ -1135,12 +1135,16 @@ local function section_together()
   ImGui.SetItemTooltip(ctx, "Whoever presses play, stop or record (or jumps somewhere while playing), everyone in side by side follows.\n" ..
     "The one who records records; the others hear it. Edits land as usual, every half second.")
   ImGui.SetNextItemWidth(ctx, 118)
+  local rt = same_room_on() -- (Real time mode is following at 0 bars: changing it here would quietly switch Real time off)
+  ImGui.BeginDisabled(ctx, rt)
   local lc, lv = ImGui.InputInt(ctx, "bars behind whoever plays", side_bars_edit)
   if lc then
     side_bars_edit = math.max(0, lv)
     if side ~= "" then reaper.SetProjExtState(proj, band.SECTION, "side", tostring(side_bars_edit)) end
   end
-  ImGui.SetItemTooltip(ctx, "With Play along (Live): 1-2 bars, so you hear them in time with the song.\nWith Listen live: 0, everyone at the same spot.")
+  ImGui.EndDisabled(ctx)
+  ImGui.SetItemTooltip(ctx, rt and "Real time mode is on (Home): everyone follows at the same spot, 0 bars behind. Switch it off there to follow later." or
+    "With Play along: 1-2 bars, so you hear them in time with the song.\nWith Real time: 0, everyone at the same spot.")
   if side ~= "" then
     local n = tonumber(side) or 0
     local live_mode_note = live.fx(proj, false) and "Play along / Jam is connected." or (live.fx(proj, false, live.SONOBUS) and "Listen live is on."

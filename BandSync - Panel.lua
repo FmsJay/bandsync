@@ -1579,6 +1579,7 @@ local function home_play()
     ImGui.TextDisabled(ctx, on and "You hear everyone live, and play, stop and record follow whoever presses them."
       or "Off: changes still sync, but you don't hear each other live or follow each other's play and stop.")
   end
+  if on then require("page_hear").realtime(ctx, ImGui, proj) end -- (my time / their time, a guest)
 end
 local function home_who()
   heading("Who's here")
@@ -1612,6 +1613,7 @@ local function home_who()
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project") else ImGui.TextColored(ctx, RED, "project differs") end
       end
       if p.state ~= "here" and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 6); tools.follow_button(p.name) end
+      if p.state ~= "here" then require("page_hear").person(ctx, ImGui, proj, p.name) end -- (hear them live or not)
     end
     if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
     return home_play()
@@ -1639,6 +1641,7 @@ local function home_who()
           "Setup > Health says more, and the Console names what came out different.") end
       end
       if p.state ~= "here" and p.state ~= "offline" then tools.follow_button(p.name) end
+      if p.state ~= "here" then require("page_hear").person(ctx, ImGui, proj, p.name) end -- (hear them live or not)
       card_end()
     end
   end

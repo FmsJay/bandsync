@@ -695,13 +695,16 @@ end
 
 -- Find a track or item by oid.
 -- The master track travels as two parts only, F-MASTER (its plug-ins) and E-MASTER (its automation): its fader and
--- pan are each person's listening level. ReaNINJAM and SonoBus on it are this machine's live link, never sent.
+-- pan are each person's listening level. ReaNINJAM and SonoBus on it are this machine's live link, never sent, and so
+-- is BandSync's live mix (lib/hear.lua: who you hear, and in whose time).
 mirror.MASTER = "T-MASTER"
 function mirror.live_fx(tr)
   local set = {}
   for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
     local _, name = reaper.TrackFX_GetFXName(tr, i, "")
-    if name:find("ReaNINJAM", 1, true) or name:find("SonoBus", 1, true) then set[reaper.TrackFX_GetFXGUID(tr, i)] = true end
+    if name:find("ReaNINJAM", 1, true) or name:find("SonoBus", 1, true) or name:find("BandSync live mix", 1, true) then
+      set[reaper.TrackFX_GetFXGUID(tr, i)] = true
+    end
   end
   return set
 end
@@ -809,11 +812,9 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local p = mirror.find(proj, kind == "fx" and "track" or kind, kind == "fx" and ev.track or oid)
     if p and kind == "item" then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(p), p)
     elseif p and kind == "track" then -- (auto-colour rules recolour the rest when a track goes: theirs are the band's)
-      local colours = {}
-      for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); colours[x] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
+      local colours = mirror.track_colours(proj)
       reaper.DeleteTrack(p)
-      mirror.keep_colours = { proj = proj, colours = colours, till = reaper.time_precise() + 5 }
-      mirror.hold_colours()
+      mirror.hold_colours(proj, colours)
     end
     return true, ""
   end
@@ -823,11 +824,9 @@ function mirror.apply(proj, ev, media_dir, local_mix)
       local idx = 0 -- under the track it sat under there (or first)
       local above = ev.state.after ~= "" and mirror.find(proj, "track", ev.state.after)
       if above then idx = math.floor(reaper.GetMediaTrackInfo_Value(above, "IP_TRACKNUMBER")) end
-      local colours = {} -- (auto-colour rules recolour the other tracks when one goes in: theirs are the band's)
-      for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); colours[x] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
+      local colours = mirror.track_colours(proj) -- (auto-colour rules recolour the other tracks when one goes in: theirs are the band's)
       reaper.InsertTrackInProject(proj, idx, 0) -- (InsertTrackAtIndex only knows the tab in front; REAPER 7.18+)
-      mirror.keep_colours = { proj = proj, colours = colours, till = reaper.time_precise() + 5 }
-      mirror.hold_colours()
+      mirror.hold_colours(proj, colours)
       tr = reaper.GetTrack(proj, idx)
       reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true)
     end
@@ -996,25 +995,44 @@ local function keep_track(proj, name)
     local tr = reaper.GetTrack(proj, t)
     if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)) == label and local_track(tr) then return tr end
   end
-  local colours = {} -- (auto-colouring recoloured Keys when this track went in, on the laptop: 2026-10-31)
-  for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); colours[x] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
+  return mirror.add_local_track(proj, label, "yours") -- (auto-colouring recoloured Keys when this track went in, on the laptop: 2026-10-31)
+end
+-- A track of this machine's own (never mirrored) at the end, with the band's colours held.
+function mirror.add_local_track(proj, name, tag)
+  local colours = mirror.track_colours(proj)
   local idx = reaper.CountTracks(proj)
   reaper.InsertTrackInProject(proj, idx, 0)
   local tr = reaper.GetTrack(proj, idx)
-  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", label, true)
-  reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "yours", true)
-  mirror.keep_colours = { proj = proj, colours = colours, till = reaper.time_precise() + 5 }
-  mirror.hold_colours()
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", name, true)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", tag, true)
+  mirror.hold_colours(proj, colours)
   return tr
 end
--- The band's track colours as they were before a track of your own went in, put back for a few seconds (auto-colour
--- rules may run a moment later).
-function mirror.hold_colours()
-  local k = mirror.keep_colours
-  if not k or reaper.time_precise() > k.till then mirror.keep_colours = nil; return end
-  for x, c in pairs(k.colours) do
-    if reaper.ValidatePtr2(k.proj, x, "MediaTrack*") and reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") ~= c then
-      reaper.SetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR", c)
+-- The band's track colours (by REAPER GUID), as they are before a track goes in or out: auto-colour rules recolour
+-- the rest then, and again a moment later, so mirror.hold_colours puts them back for 5 s. The hold is kept in
+-- ExtState: the panel adds tracks too (Real time mode's), and only Live sync's look runs often enough to hold them.
+function mirror.track_colours(proj)
+  local c = {}
+  for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); c[reaper.GetTrackGUID(x)] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
+  return c
+end
+function mirror.hold_colours(proj, colours)
+  local band = require("band")
+  if proj then
+    reaper.SetExtState(band.SECTION, "colour hold", band.json_encode({ proj = tostring(proj), till = reaper.time_precise() + 5, colours = colours }), false)
+  end
+  local k = band.json_decode(reaper.GetExtState(band.SECTION, "colour hold"))
+  if not k then return end
+  if reaper.time_precise() > (tonumber(k.till) or 0) then return reaper.DeleteExtState(band.SECTION, "colour hold", false) end
+  for i = 0, 512 do
+    local p = reaper.EnumProjects(i)
+    if not p then break end
+    if tostring(p) == k.proj then
+      for t = 0, reaper.CountTracks(p) - 1 do
+        local x = reaper.GetTrack(p, t)
+        local c = k.colours[reaper.GetTrackGUID(x)]
+        if c and reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") ~= c then reaper.SetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR", c) end
+      end
     end
   end
 end

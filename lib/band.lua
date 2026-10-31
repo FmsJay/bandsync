@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.32.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.33.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -449,11 +449,6 @@ function band.empty_trash(dir, days, keep)
   return n
 end
 
-function band.track_has_fx(tr)
-  for f = 0, reaper.TrackFX_GetCount(tr) - 1 do if reaper.TrackFX_GetEnabled(tr, f) then return true end end
-  return false
-end
-
 -- ---- items, tracks, P_EXT tags --------------------------------------------------------------
 
 function band.track_ext(tr, key) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. key, "", false)) end
@@ -551,45 +546,6 @@ local function best(dir, st)
   local full, prev = dir .. "/" .. st.file, st.preview and (dir .. "/" .. st.preview)
   if reaper.file_exists(full) then return full, "full" end
   if prev and reaper.file_exists(prev) then return prev, "preview" end
-end
-
--- Make the active project's stem tracks match session s. With upgrade_only, just swap preview
--- stems for full-quality files that have since arrived. Returns the number of tracks changed.
-function band.sync_stems(proj, cfg, song, s, upgrade_only)
-  local dir = band.song_dir(cfg, song)
-  local existing = {}
-  for i = 0, reaper.CountTracks(proj) - 1 do
-    local tr = reaper.GetTrack(proj, i)
-    local key = band.track_ext(tr, "band_stem")
-    if key ~= "" then existing[key] = tr end
-  end
-  local changed = 0
-  for idx, st in ipairs(s.stems or {}) do
-    local path, quality = best(dir, st)
-    local tr = existing[st.name]
-    local item = tr and reaper.GetTrackMediaItem(tr, 0)
-    if path and upgrade_only then
-      if item and quality == "full" and band.item_ext(item, "band_quality") == "preview" then
-        band.swap_source(reaper.GetActiveTake(item), band.localize(proj, path))
-        band.set_item_ext(item, "band_quality", quality)
-        changed = changed + 1
-      end
-    elseif path then
-      if not tr then
-        reaper.InsertTrackAtIndex(idx - 1, true)
-        tr = reaper.GetTrack(proj, idx - 1)
-        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "[stem] " .. st.name, true)
-        reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_stem", st.name, true)
-      end
-      for i = reaper.CountTrackMediaItems(tr) - 1, 0, -1 do
-        reaper.DeleteTrackMediaItem(tr, reaper.GetTrackMediaItem(tr, i))
-      end
-      item = band.add_item(tr, band.localize(proj, path), 0)
-      if item then band.set_item_ext(item, "band_quality", quality) end
-      changed = changed + 1
-    end
-  end
-  return changed
 end
 
 -- ---- takes ----------------------------------------------------------------------------------
@@ -762,41 +718,6 @@ local function add_dry(item, take, t, dry_path)
   reaper.SetActiveTake(playing or take) -- what was playing keeps playing; the dry print is a click away
 end
 
--- A new revision of an already-placed take (the sender reprinted it after an FX/volume change):
--- swap the audio, line it up with the print again, keep its lane/take and play state.
-function band.update_take(proj, t, path, dry_path)
-  local item, take = band.find_take(proj, t.id)
-  if not item then return false end
-  band.swap_source(take, band.localize(proj, path))
-  -- a revision is rendered at the current tempo map, so it plays straight: no stretch left over from stretching the
-  -- previous print at a tempo change (2026-10-28: leftover markers put an outro a second off). Auto-stretch stays on
-  -- for the next tempo change.
-  for k = 0, reaper.CountTakes(item) - 1 do
-    local tk = reaper.GetTake(item, k)
-    if tk == take or band.take_ext(tk, "band_dry"):lower() == t.id:lower() then
-      local n = reaper.GetTakeNumStretchMarkers(tk)
-      if n > 0 then reaper.DeleteTakeStretchMarkers(tk, 0, n) end
-      reaper.SetMediaItemTakeInfo_Value(tk, "D_PLAYRATE", 1)
-    end
-  end
-  if reaper.CountTakes(item) <= 2 then -- the item is this take (+ its dry twin): follow the sender's extent
-    reaper.SetMediaItemInfo_Value(item, "D_POSITION", t.pos)
-    reaper.SetMediaItemInfo_Value(item, "D_LENGTH", t.len)
-  end
-  local offs = reaper.GetMediaItemInfo_Value(item, "D_POSITION") - t.pos
-  reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", offs)
-  band.mark_base(take)
-  for k = 0, reaper.CountTakes(item) - 1 do
-    local tk = reaper.GetTake(item, k)
-    if band.take_ext(tk, "band_dry"):lower() == t.id:lower() then
-      if dry_path then band.swap_source(tk, band.localize(proj, dry_path)) end
-      reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", offs)
-    end
-  end
-  reaper.UpdateItemInProject(item)
-  return true
-end
-
 -- ---- MIDI copies ------------------------------------------------------------------------------
 -- A MIDI take's notes travel with its print. Each receiver gets them as an editable MIDI item (tagged
 -- band_midi = id) on a muted "<track> (MIDI)" track: edit the notes and everyone follows, or put your own
@@ -817,85 +738,6 @@ function band.to_track_map(root, buf, from, tr)
   if not root or (from or "") == "" or to == "" or from == to then return buf end
   local dm = require("drummap")
   return dm.translate(buf, dm.table(dm.load(root, from), dm.load(root, to)))
-end
-
--- Place or update the MIDI copy of take manifest t from its .midibuf file. Returns item, take.
--- `root` (the shared folder) lets drum takes land in this track's drum map.
-function band.place_midi(proj, t, path, root)
-  local buf = band.read(path)
-  if not buf then return nil end
-  local it, tk = band.find_midi(proj, t.id)
-  if not it then
-    local name = t.track .. " (MIDI)"
-    local tr
-    for i = 0, reaper.CountTracks(proj) - 1 do
-      local c = reaper.GetTrack(proj, i)
-      if band.track_ext(c, "band_midi_track"):lower() == t.track:lower() then tr = c end
-    end
-    if not tr then
-      tr = band.new_track(proj, name)
-      if not tr then return nil end
-      reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) -- the print plays; this is for editing and re-printing
-      reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_midi_track", t.track, true)
-    end
-    it = reaper.CreateNewMIDIItemInProj(tr, t.pos, t.pos + t.len)
-    tk = it and reaper.GetActiveTake(it)
-    if not tk then return nil end
-    band.set_take_ext(tk, "band_midi", t.id)
-    reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", t.user .. " · " .. t.track .. " (MIDI)", true)
-  end
-  reaper.SetMediaItemInfo_Value(it, "D_POSITION", t.pos)
-  reaper.SetMediaItemInfo_Value(it, "D_LENGTH", t.len)
-  reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", t.midi_offs or 0) -- same tempo map: same source start, same notes
-  band.mark_base(tk)
-  reaper.MIDI_SetAllEvts(tk, band.to_track_map(root, buf, t.drummap, reaper.GetMediaItem_Track(it)))
-  reaper.MIDI_Sort(tk)
-  reaper.UpdateItemInProject(it)
-  return it, tk
-end
-
--- Insert take t (a take manifest) from path (plus its dry twin for "both" prints), or upgrade its
--- source if already placed (preview -> full).
-function band.place_take(proj, t, path, mode, dry_path)
-  path = band.localize(proj, path)
-  if dry_path then dry_path = band.localize(proj, dry_path) end
-  local found_item, found = band.find_take(proj, t.id)
-  if found then -- preview -> full; a "both" print's dry twin arrives with the full file
-    band.swap_source(found, path)
-    if dry_path then
-      local has_twin = false
-      for k = 0, reaper.CountTakes(found_item) - 1 do
-        if band.take_ext(reaper.GetTake(found_item, k), "band_dry"):lower() == t.id:lower() then has_twin = true end
-      end
-      if not has_twin then add_dry(found_item, found, t, dry_path) end
-    end
-    return true
-  end
-  local label = t.sound and string.format("%s · %s", t.sound, (t.sent or ""):sub(12, 16)) -- "James's sound · 10:42"
-    or string.format("%s · %s · %s", t.room, t.user, (t.sent or ""):sub(12, 16))
-  local item, take, tr, lane
-  if mode == "mirror" then
-    item, take = mirror(proj, t, path)
-  elseif mode == "takes" then
-    item, take = add_as_take(proj, t, path)
-  else
-    tr, lane = target(proj, t, mode)
-    if not tr then return false end
-    item, take = band.add_item(tr, path, t.pos, t.len)
-  end
-  if not item then return false end
-  band.set_take_ext(take, "band_take", t.id)
-  band.set_take_ext(take, "band_wet", t.wet and "1" or "") -- a cross-track move keeps wet prints on mirror tracks
-  band.mark_base(take)
-  reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", label .. " · " .. t.track, true)
-  add_dry(item, take, t, dry_path)
-  if lane then -- name the lane only once an item lives in it, or the name doesn't stick
-    reaper.SetMediaItemInfo_Value(item, "I_FIXEDLANE", lane)
-    reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, label, true)
-    reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. lane, 0) -- never change what is already playing
-  end
-  if mode == "inbox" then reaper.GetSetMediaItemInfo_String(item, "P_NOTES", label .. " → " .. t.track, true) end
-  return true
 end
 
 return band

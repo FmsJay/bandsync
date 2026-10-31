@@ -37,13 +37,39 @@ function setup.sonobus(cfg, b, proj, open)
       return nil, "SonoBus isn't installed here (sonobus.net, free), or REAPER hasn't seen it yet: REAPER finds new plug-ins when it starts, so restart REAPER after installing it."
     end
   end
+  if open then -- one SonoBus per machine in the group: another tab's still in it was a second you ("Laptop 4"), and
+    -- the group then renamed this one "Laptop 5" (laptop, 2026-10-31). Theirs go offline while this one's on.
+    for k = 0, 512 do
+      local p = reaper.EnumProjects(k)
+      if not p then break end
+      local om, oi
+      if p ~= proj then om, oi = live.fx(p, false, live.SONOBUS) end
+      if om and not reaper.TrackFX_GetOffline(om, oi) then reaper.TrackFX_SetOffline(om, oi, true) end
+    end
+  end
+  local was_offline = reaper.TrackFX_GetOffline(m, i)
   reaper.TrackFX_SetOffline(m, i, false) -- its state can only be read and written while it's loaded
   local _, chunk = reaper.TrackFX_GetNamedConfigParm(m, i, "vst_chunk")
+  local hear = require("hear")
+  local outs = hear.order(hear.bandmates(cfg, b), cfg.user) -- each bandmate on an output pair of their own (who you hear)
+  local new = chunk
   if not sonobus.is_set_up(chunk, group, cfg.user) then
-    local new, why = sonobus.join_state(chunk, { user = cfg.user, group = group, password = pw })
+    local why
+    new, why = sonobus.join_state(chunk, { user = cfg.user, group = group, password = pw })
     if not new then return nil, "Couldn't set SonoBus up (" .. why .. "): join by hand with its Connect button." end
+  end
+  for name, start in pairs(outs) do
+    if sonobus.output_of(new, name) ~= start then new = sonobus.set_outputs(new, outs) or new; break end
+  end
+  if new ~= chunk then
     reaper.TrackFX_SetNamedConfigParm(m, i, "vst_chunk", new)
     reaper.TrackFX_SetOffline(m, i, true) -- reloading it with that state is what makes it join
+    was_offline = true
+  end
+  hear.set_pairs(proj, outs)
+  hear.route(proj, m)
+  if open and was_offline then -- (when it went online: Live sync checks it joined after that; lib/live.lua join_check)
+    reaper.SetProjExtState(proj, band.SECTION, "sonobus online", tostring(os.time()))
   end
   reaper.TrackFX_SetOffline(m, i, not open)
   return live.sonobus_link(group, pw), m, i

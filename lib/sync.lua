@@ -74,8 +74,6 @@ sync.ANYONE = { start = true, stop = true, note = true, like = true }
 -- A take's author, from its id (<user>-YYYYMMDD-HHMMSSZ-n), normalised like user names in ids.
 function sync.author(id) local who = (id or ""):match("^(.-)%-%d+%-%d+Z"); return who and who:lower():gsub("_", " ") end
 function sync.author_of(user) return (user or ""):lower():gsub("_", " ") end
--- "James's take" (as a musician says it), not the take's id
-function sync.take_words(id) local who = (id or ""):match("^(.-)%-%d+%-%d+Z"); return who and (who:gsub("_", " ") .. "'s take") or "a take" end
 
 -- ---- state chunks: a top-level block (e.g. <FXCHAIN ... >) of a track's chunk -----------------------------
 local function chunk_lines(s)
@@ -594,26 +592,6 @@ function sync.post(cfg, song, room, ev, proj)
   return ev.id
 end
 
--- A deleted take's files back from the room's _trash (an undone delete): everyone imports it again.
-function sync.untrash(cfg, song, room, id)
-  local to, from, lid = band.takes_dir(cfg, song, room), sync.room_dir(cfg, song, room) .. "/_trash", id:lower()
-  for _, f in ipairs(band.files(from)) do
-    local lf = f:lower()
-    if lf:sub(1, #lid + 1) == lid .. "." or lf:sub(1, #lid + 1) == lid .. "-" then os.rename(from .. "/" .. f, to .. "/" .. f) end
-  end
-end
-
--- Move a deleted take's files to the room's _trash, so nobody imports it later and nothing is lost.
-function sync.trash(cfg, song, room, id)
-  local from, to = band.takes_dir(cfg, song, room), sync.room_dir(cfg, song, room) .. "/_trash"
-  reaper.RecursiveCreateDirectory(to, 0)
-  for _, f in ipairs(band.files(from)) do
-    if f:lower():sub(1, #id + 1) == (id .. "."):lower() or f:lower():sub(1, #id + 1) == (id .. "-"):lower() then
-      band.to_trash(from, to, f)
-    end
-  end
-end
-
 -- Delete a take and its dry twin; the whole item when nothing else is in it. Deleting one take can
 -- rebuild the item (SWS's NF_DeleteTakeFromItem left the old item pointer invalid), so after every
 -- delete the item is found again by GUID and the next doomed take by its BandSync tags. Without SWS,
@@ -755,9 +733,6 @@ local function track_props(tr)
     20 * math.log(math.max(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), 1e-9), 10), reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
 end
 local function track_guid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)) end
--- What we just did to this track (dry mode muting the print or its MIDI copy) is how we hear it, not a change for the
--- band: Live sync takes it as already seen (2026-10-28: Dry on a claimed Keys muted everyone's Keys).
-function sync.track_seen(proj, tr) setext(proj, sync.TRACKS, track_guid(tr), track_props(tr)) end
 
 local function apply_track(proj, ev)
   local from, found = ev.was or ev.track, false

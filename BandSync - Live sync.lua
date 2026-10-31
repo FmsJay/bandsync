@@ -514,7 +514,7 @@ local function tick_body() -- returns true to keep going
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
   -- Real time mode: only what's armed feeds SonoBus (lib/live.lua rt_sends), checked about once a second
-  if now - rt_at > 1 then rt_at = now; pcall(live.rt_sends, proj) end
+  if now - rt_at > 1 then rt_at = now; pcall(live.rt_sends, proj); pcall(live.join_check, proj) end
   -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs
   if reaper.EnumProjects(-1) == proj then livemidi.send_tick(proj, cfg, b, st & 4 ~= 0) end -- (input goes to the tab in front)
   if st & 4 == 0 and now - midi_view_at > 0.5 then

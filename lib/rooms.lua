@@ -187,28 +187,6 @@ function rooms.shape(proj, id, it)
     len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - (tonumber(sync.ext(proj, sync.TAILS, id)) or 0) }
 end
 
--- The selected items' takes recorded in side room `from` and not yet in `to`, ready for copy_takes:
--- list, plus how many selected takes were already there or not sent yet.
-function rooms.selected_takes(proj, cfg, song, from, to)
-  local list, had, unsent = {}, 0, 0
-  for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do
-    local it = reaper.GetSelectedMediaItem(proj, i)
-    for k = 0, reaper.CountTakes(it) - 1 do
-      local id = band.take_id(reaper.GetTake(it, k))
-      if not id then
-        unsent = unsent + 1
-      elseif reaper.file_exists(band.takes_dir(cfg, song, to) .. "/" .. id .. ".json") then
-        had = had + 1
-      elseif reaper.file_exists(band.takes_dir(cfg, song, from) .. "/" .. id .. ".json") then
-        list[#list + 1] = { id = id, shape = rooms.shape(proj, id, it) }
-      else
-        had = had + 1 -- the parent's own take (it came with the copy)
-      end
-    end
-  end
-  return list, had, unsent
-end
-
 -- ---- bring into: a three-way merge ------------------------------------------------------------------------
 -- Changes are compared in recall-point form (lib/recall.lua capture: takes {track, pos, len, lane, mute, offs,
 -- active, notes}, plays, tracks, timeline). For each take, track and "what plays": changed only in the side

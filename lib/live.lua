@@ -159,21 +159,23 @@ function live.rt_track(proj, add)
     if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) == "realtime" then return tr end
   end
   if not add then return nil end
-  local idx = reaper.CountTracks(proj)
-  reaper.InsertTrackInProject(proj, idx, 0)
-  local tr = reaper.GetTrack(proj, idx)
-  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", live.RT_NAME, true)
-  reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "realtime", true)
+  local tr = require("mirror").add_local_track(proj, live.RT_NAME, "realtime") -- (with the band's colours held: laptop, 2026-10-31)
   reaper.SetMediaTrackInfo_Value(tr, "B_MAINSEND", 1)
   return tr
 end
 
 -- Keep Real time mode's sends in step with what's armed: an armed track feeds SonoBus, nothing else does (the
--- backing is everyone's own copy of the song, so sending it too made everyone hear it twice, out of time).
--- Returns how many tracks feed it.
+-- backing is everyone's own copy of the song, so sending it too made everyone hear it twice, out of time). With a
+-- guest (someone with only SonoBus, lib/guest.lua) they have no copy: every band track feeds it then, and so does
+-- the measuring click. Returns how many tracks feed it.
 function live.rt_sends(proj)
   local rt = live.rt_track(proj, false)
   if not rt then return 0 end
+  local guest = select(2, reaper.GetProjExtState(proj, band.SECTION, "guest")) == "1"
+  local function feeds(tr)
+    local tag = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false))
+    return tr ~= rt and (reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 or tag == "click" or (guest and tag == ""))
+  end
   -- its receives, in order, by source track number (the chunk's AUXRECV lines: core REAPER can't hand a send's
   -- track to Lua without SWS, which not every bandmate has)
   local _, chunk = reaper.GetTrackStateChunk(rt, "", false)
@@ -182,18 +184,54 @@ function live.rt_sends(proj)
   local fed = {}
   for r = #from, 1, -1 do -- from the end, so the receive numbers stay right while removing
     local src = reaper.GetTrack(proj, from[r])
-    if src and reaper.GetMediaTrackInfo_Value(src, "I_RECARM") == 1 and not fed[src] then fed[src] = true
+    if src and feeds(src) and not fed[src] then fed[src] = true
     else reaper.RemoveTrackSend(rt, -1, r - 1) end
   end
   local n = 0
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
-    if tr ~= rt and reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 then
-      n = n + 1
+    if feeds(tr) and (not guest or reaper.GetParentTrack(tr) == nil or reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1) then
+      n = n + 1 -- (a guest gets the top-level tracks: a folder's children already reach it through the folder)
       if not fed[tr] then reaper.CreateTrackSend(tr, rt) end
     end
   end
   return n
+end
+
+-- Did SonoBus join the band's group after going online (setup.sonobus notes when)? Its saved state gets a new recent
+-- connection when it joins; a join written but never made keeps BandSync's (laptop, 2026-10-31: "Reconnect Last" did
+-- nothing there, and only Connect by hand joined). Checked about once a second by Live sync: after 15 s without a join
+-- it's taken offline and on again (twice), then you're told. Returns "joined", "waiting", "gave up" or nil.
+live.JOIN_WAIT, live.JOIN_TRIES = 15, 2
+function live.join_check(proj)
+  local since = tonumber(select(2, reaper.GetProjExtState(proj, band.SECTION, "sonobus online")))
+  if not since then return nil end
+  local m, i = live.fx(proj, false, live.SONOBUS)
+  if not m or reaper.TrackFX_GetOffline(m, i) then return nil end
+  local sonobus = require("sonobus")
+  local _, chunk = reaper.TrackFX_GetNamedConfigParm(m, i, "vst_chunk")
+  local tries = tonumber(select(2, reaper.GetProjExtState(proj, band.SECTION, "sonobus tries"))) or 0
+  if sonobus.joined_since(chunk, (since - 2) * 1000) then
+    reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
+    reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
+    band.log("SonoBus joined the band's group" .. (tries > 0 and " (after " .. tries .. " retr" .. (tries == 1 and "y" or "ies") .. ")" or "") ..
+      " as " .. tostring(sonobus.state_user(chunk)))
+    return "joined"
+  end
+  if os.time() - since < live.JOIN_WAIT then return "waiting" end
+  if tries >= live.JOIN_TRIES then
+    reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
+    reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
+    band.log("SonoBus hasn't joined the band's group: press Configure SonoBus (Home), then Connect, and Connect to Group " ..
+      "(the band's group is filled in). Real time mode needs it to hear each other.")
+    return "gave up"
+  end
+  reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", tostring(tries + 1))
+  reaper.SetProjExtState(proj, band.SECTION, "sonobus online", tostring(os.time()))
+  reaper.TrackFX_SetOffline(m, i, true) -- (loading it again is what makes "Reconnect Last" join)
+  reaper.TrackFX_SetOffline(m, i, false)
+  band.log("SonoBus hasn't joined the band's group yet: trying again")
+  return "waiting"
 end
 
 -- The band's SonoBus group: { group, password }, made once and kept in <shared folder>/sonobus.json for everyone

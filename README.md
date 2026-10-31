@@ -233,6 +233,23 @@ everyone already plays the song from their own copy, so only what you're playing
 *Configure SonoBus* opens its own window (volume and mute per bandmate, buffer), which you don't need to play
 together.
 
+With Real time mode on:
+- **Who you hear**: each bandmate in Who's here gets a **hear** / **muted** button. BandSync gives everyone their
+  own SonoBus output pair (written into SonoBus's per-person settings, which it keeps by name) and mixes them on your
+  master with **BandSync live mix**, a small effect of your own that never goes to the band. Up to 7 bandmates get a
+  pair; anyone else (a guest, an eighth bandmate) shares one.
+- **My time / Their time**: in your time you hear them as it arrives, a little late. *Their time* holds your own
+  backing back by that much, so what they play lines up with it: for listening along, not for playing. SonoBus's window
+  shows each person's delay (the number after the down arrow); with a guest, use their measured delay.
+- **Guest**: for someone who joins with only SonoBus (a singer at home, no REAPER, no copy of the song). They hear
+  your whole mix, and what they sing is recorded on the Real time track whenever you record. **Measure their delay**
+  plays them a bar of count-in and 8 clicks to clap along to, and times where the claps land (the whole round trip;
+  the idea is from ReaConnect). **Line up their takes** then moves what you recorded onto a band track of theirs,
+  earlier by that delay, and the band gets it like any take.
+- SonoBus has to actually join the band's group: BandSync checks it did (SonoBus saves each join), tries twice more,
+  then tells you to press Connect in its window. Turning Real time mode on also takes any other tab's SonoBus offline,
+  so you're only in the group once.
+
 ### Rooms: side rooms, and bringing work back
 
 - **Create side room**: a copy of the room you're in, as it is now, in a new tab, to try things without changing the
@@ -327,8 +344,10 @@ tracks twice.
   Its placeholders appear when the listener disconnects (ReaNINJAM writes its clip log only then).
 - Real time mode: REAPER only sees a newly installed SonoBus after a restart. Setting SonoBus up relies on its saved
   state's layout (checked against SonoBus 1.7.2); if a later SonoBus changes it, BandSync says so and you join with
-  SonoBus's own Connect button. What you hear from others is a little late (the network): line-up against the grid
-  is being worked on.
+  SonoBus's own Connect button. What you hear from others is a little late (the network): *Their time* lines it up
+  for listening, but its delay is one number for everyone (set by hand for bandmates; SonoBus doesn't let other
+  programs read its measurements). Changing a person's output in SonoBus's own window while people come and go has
+  crashed REAPER once (SonoBus 1.7.2): leave the outputs to BandSync.
 
 ## Licence
 

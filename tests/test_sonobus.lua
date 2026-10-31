@@ -30,4 +30,23 @@ assert(sonobus.state_user(joined) == "Mary Jo", tostring(sonobus.state_user(join
 assert(sonobus.is_set_up(joined, "BandSync abcd", "Mary Jo") and not sonobus.is_set_up(joined, "BandSync abcd", "Mary"), "set up as this bandmate")
 assert(not sonobus.is_set_up(b64, "BandSync SessionTest 4xt2"), "right group but SonoBus's own buffer defaults: not set up")
 assert(not sonobus.join_state("bm90IGEgc3RhdGU=", { user = "x", group = "g", password = "p" }), "garbage refused")
+assert(sonobus.same_user("Laptop 5", "Laptop") and sonobus.same_user("Laptop", "Laptop") and not sonobus.same_user("Laptop 5b", "Laptop")
+  and not sonobus.same_user("Laptops", "Laptop") and not sonobus.same_user(nil, "Laptop") and not sonobus.same_user("Mary", "Mary Jo"), "server renames")
+
+-- joined: a join puts a newer entry on top; BandSync's own written entry has the time it was written
+assert(sonobus.joined_since(joined, 1792999999 * 1000) and not sonobus.joined_since(joined, 1793000000 * 1000), "joined after a time")
+
+-- output pairs per bandmate, in SonoBus's own per-person cache (a real one: the laptop's, with "James" and "Laptop 4")
+local cf = assert(io.open("tests/fixtures/sonobus_1.7.2_cache.bin", "rb"))
+local cache = sonobus.b64encode(cf:read("a"))
+cf:close()
+assert(sonobus.output_of(cache, "James") == 0 and sonobus.output_of(cache, "Laptop 4") == 0 and not sonobus.output_of(cache, "Laptop"), "cache as saved")
+local routed = assert(sonobus.set_outputs(cache, { James = 2, Laptop = 4, Drums = 6 }))
+assert(sonobus.output_of(routed, "James") == 2, "an existing entry moves")
+assert(sonobus.output_of(routed, "Laptop") == 4 and sonobus.output_of(routed, "Laptop 4") == 4, "a new entry, and the renamed copy follows")
+assert(sonobus.output_of(routed, "Drums") == 6 and sonobus.state_group(routed) == "BandSync test", "a new person, nothing else touched")
+local d = sonobus.b64decode(routed)
+assert(8 + string.unpack("<I4", d) + 8 == #d and d:sub(-8 - 15 - 8, -9):find("JUCEPrivateData", 1, true), "still a whole state")
+assert(sonobus.output_of(assert(sonobus.set_outputs(routed, { James = 8 })), "James") == 8, "re-routable")
+assert(sonobus.output_of(assert(sonobus.set_outputs(b64, { Mary = 2 })), "Mary") == 2, "a state with no cache yet gets one")
 print("ok")

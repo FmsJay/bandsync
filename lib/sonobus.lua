@@ -127,7 +127,7 @@ end
 function sonobus.is_set_up(b64, group, user)
   local c = unpack_chunk(b64)
   if not c or sonobus.state_group(b64) ~= group then return false end
-  if user and sonobus.state_user(b64) ~= user then return false end -- a renamed bandmate rejoins under the new name
+  if user and not sonobus.same_user(sonobus.state_user(b64), user) then return false end -- a renamed bandmate rejoins under the new name
   for id, want in pairs(sonobus.BUFFER) do
     if math.abs((param_value(c.tree, id) or -1) - want) > 1e-6 then return false end
   end
@@ -141,6 +141,12 @@ function sonobus.state_group(b64)
   local info = rec and rec.children[1]
   local g = info and prop(info, "groupName")
   return g and g[2]:match("^\5(.*)%z$")
+end
+
+-- Whether SonoBus's name is this bandmate's: the group's server renames a second "Laptop" to "Laptop 5" (another
+-- SonoBus of theirs still in the group), and SonoBus saves that. Rewriting it to "Laptop" only rejoined as "Laptop 6".
+function sonobus.same_user(name, user)
+  return name == user or (name ~= nil and name:sub(1, #user + 1) == user .. " " and name:sub(#user + 2):match("^%d+$") ~= nil)
 end
 
 -- The name SonoBus would rejoin under, or nil.
@@ -178,6 +184,80 @@ function sonobus.join_state(b64, info)
     end
   end
   return pack_chunk(c)
+end
+
+-- Whether SonoBus has joined a group since `ms` (Unix ms): each join puts a new entry, with the join's time, at the
+-- top of its recent connections (seen 2026-10-31: the laptop's state gained "Laptop 5" on top when it joined). A
+-- written but unjoined state keeps BandSync's own entry and time.
+function sonobus.joined_since(b64, ms)
+  local c = unpack_chunk(b64)
+  local rec = c and child(c.tree, "RecentConnections")
+  local ts = rec and rec.children[1] and prop(rec.children[1], "timestamp")
+  return ts ~= nil and ts[2]:sub(1, 1) == "\6" and string.unpack("<i8", ts[2], 2) > ms
+end
+
+-- Each bandmate's own output pair. SonoBus keeps what you set for each person by name (PeerStateCacheMap, saved
+-- when they leave) and puts it back when someone of that name joins; a renamed "Laptop 5" takes "Laptop"'s. So
+-- writing an entry per bandmate sends each one to their own pair, and BandSync's mix on the master (lib/hear.lua)
+-- can turn each person up, down or off. `outs`: { [name] = first output channel (0-based) }. Layout from SonoBus
+-- 1.7.2 (PeerStateCache::getValueTree), read from a real saved state.
+local function channel_group(start)
+  local d0, d1, dm1 = v_double(0), v_double(1), v_double(-1)
+  return { type = "ChannelGroup", children = {}, props = {
+    { "gain", d1 }, { "chanstart", v_int(0) }, { "numchan", v_int(2) }, { "muted", V_FALSE }, { "span1", dm1 }, { "span2", d1 },
+    { "monreverbsend", d0 }, { "inreverbsend", d0 }, { "monitorlev", d1 }, { "mondeststart", v_int(0) }, { "mondestchans", v_int(2) },
+    { "pandeststart", v_int(start) }, { "pandestchans", v_int(2) }, { "sendmainmix", "\2" }, { "invertpolarity", V_FALSE }, { "name", v_str("") },
+  } }
+end
+function sonobus.set_outputs(b64, outs)
+  local c = unpack_chunk(b64)
+  if not c then return nil, "not a SonoBus state BandSync understands" end
+  local map = child(c.tree, "PeerStateCacheMap")
+  if not map then
+    map = { type = "PeerStateCacheMap", props = {}, children = {} }
+    table.insert(c.tree.children, map)
+  end
+  local function set_start(entry, start)
+    local groups = child(entry, "ChannelGroups")
+    if not groups then groups = { type = "ChannelGroups", props = {}, children = {} }; table.insert(entry.children, groups) end
+    if #groups.children == 0 then groups.children[1] = channel_group(start) end
+    for _, g in ipairs(groups.children) do -- (a stereo send is one group; a multi-group sender gets every group on the pair)
+      local p = prop(g, "pandeststart")
+      if p then p[2] = v_int(start) else g.props[#g.props + 1] = { "pandeststart", v_int(start) } end
+    end
+  end
+  for name, start in pairs(outs) do
+    local found = false
+    for _, e in ipairs(map.children) do
+      local n = prop(e, "name")
+      local en = n and n[2]:match("^\5(.*)%z$")
+      if en and sonobus.same_user(en, name) then set_start(e, start); found = found or en == name end -- (and its renamed copies)
+    end
+    if not found then
+      local e = { type = "PeerStateCache", children = {}, props = {
+        { "name", v_str(name) }, { "netbuf", v_double(sonobus.BUFFER.defnetbuf * 1000) }, { "netbufauto", v_int(sonobus.BUFFER.defnetauto) },
+        { "sendformat", v_int(4) }, { "numChanGroups", v_int(1) }, { "level", v_double(1) }, { "orderpriority", v_int(-1) },
+        { "numMultiChanGroups", v_int(0) }, { "modifiedChanGroups", V_FALSE },
+      } }
+      e.children = { { type = "ChannelGroups", props = {}, children = { channel_group(start) } }, { type = "MultiChannelGroups", props = {}, children = {} } }
+      map.children[#map.children + 1] = e
+    end
+  end
+  return pack_chunk(c)
+end
+
+-- Where SonoBus sends `name` (first output channel), or nil when it has no entry for them.
+function sonobus.output_of(b64, name)
+  local c = unpack_chunk(b64)
+  local map = c and child(c.tree, "PeerStateCacheMap")
+  for _, e in ipairs(map and map.children or {}) do
+    local n = prop(e, "name")
+    if n and n[2] == v_str(name) then
+      local g = child(e, "ChannelGroups")
+      local p = g and g.children[1] and prop(g.children[1], "pandeststart")
+      return p and string.unpack("<i4", p[2], 2)
+    end
+  end
 end
 
 return sonobus

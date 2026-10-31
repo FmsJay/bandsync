@@ -703,7 +703,9 @@ function mirror.share_media(chunk, media_dir)
   return (chunk:gsub('(FILE ")([^"]+)(")', function(a, path, z)
     if path:find("^{media") then return a .. path .. z end
     local name = path:gsub("\\", "/"):match("[^/]+$") or "media"
-    local copy = mirror.hash(path:lower()) .. "-" .. name
+    -- (plain characters only: an accented name can reach a Mac decomposed and come back as other bytes than Windows
+    -- wrote, and the item then reads as different on each machine)
+    local copy = mirror.hash(path:lower()) .. "-" .. name:gsub("[^%w%-_.]", "_")
     local dst = media_dir .. "/" .. copy
     if not reaper.file_exists(dst) and reaper.file_exists(path) then pcall(require("band").copy_atomic, path, dst) end
     -- (only once the copy is really there: pointing at a copy that was never made left everyone waiting for it)

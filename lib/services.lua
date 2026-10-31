@@ -77,8 +77,8 @@ function services.syncthing_path()
   local lad = (os.getenv("LOCALAPPDATA") or ""):gsub("\\", "/")
   return first_existing({ set,
     lad .. "/Microsoft/WinGet/Links/syncthing.exe", "C:/Program Files/Syncthing/syncthing.exe", lad .. "/Programs/Syncthing/syncthing.exe",
-    "/opt/homebrew/bin/syncthing", "/usr/local/bin/syncthing", "/usr/bin/syncthing",
-    "/Applications/Syncthing.app/Contents/Resources/syncthing/syncthing" })
+    "/Applications/Syncthing.app/Contents/Resources/syncthing/syncthing", -- (the Mac app before a Homebrew copy: the installer's)
+    "/opt/homebrew/bin/syncthing", "/usr/local/bin/syncthing", "/usr/bin/syncthing" })
 end
 
 -- Make sure Syncthing runs. Returns "running", "started", or nil + why.
@@ -86,6 +86,12 @@ function services.ensure_syncthing()
   if services.running("syncthing", true) then return "running" end
   local path = services.syncthing_path()
   if not path then return nil, "Syncthing isn't running and wasn't found (set its path: ExtState BandSync/syncthing_path)" end
+  -- on a Mac with Syncthing.app: the app starts it (its own copy, started beside the app, found the database and
+  -- ports taken when the app opened later, or at login)
+  if path:find("/Syncthing.app/", 1, true) then
+    os.execute("/usr/bin/open -gja Syncthing")
+    return "started"
+  end
   if not launch(path, { "serve", "--no-browser" }) then return nil, "couldn't start " .. path end
   return "started"
 end

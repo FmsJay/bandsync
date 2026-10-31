@@ -32,9 +32,12 @@ end
 -- Where Google Drive for desktop may put My Drive: a drive letter on Windows (G: unless it's taken; one per
 -- signed-in account), the user folder (Windows mirroring), ~/Library/CloudStorage/GoogleDrive-<account> on macOS.
 local function places()
-  local out = { "G:/My Drive" }
-  for c = ("D"):byte(), ("Z"):byte() do
-    if c ~= ("G"):byte() then out[#out + 1] = string.char(c) .. ":/My Drive" end
+  local out = {}
+  if reaper.GetOS():find("^Win") then -- (drive letters only on Windows: a Mac looked at 23 that can't exist)
+    out[1] = "G:/My Drive"
+    for c = ("D"):byte(), ("Z"):byte() do
+      if c ~= ("G"):byte() then out[#out + 1] = string.char(c) .. ":/My Drive" end
+    end
   end
   local up = os.getenv("USERPROFILE")
   if up then out[#out + 1] = up:gsub("\\", "/") .. "/My Drive" end

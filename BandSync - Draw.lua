@@ -78,19 +78,25 @@ local function layout(proj)
       rows[#rows + 1] = { oid = oid, y = reaper.GetMediaTrackInfo_Value(tr, "I_TCPY"), h = reaper.GetMediaTrackInfo_Value(tr, "I_TCPH") }
     end
   end
-  return { l = l, t = t, r = r, b = btm, a = a, z = z, rows = rows }
+  -- (on macOS native y grows upwards: the top edge is the larger number, and "down the arrange view" is t - y)
+  local flip = t > btm
+  return { l = l, t = t, r = r, b = btm, a = a, z = z, rows = rows, flip = flip, h = math.abs(btm - t) }
 end
+local function down(L, y) return L.flip and (L.t - y) or (y - L.t) end -- (pixels down from the arrange view's top)
+local function inside(L, x, y) local d = down(L, y); return x >= L.l and x <= L.r and d >= 0 and d <= L.h end
 local function to_song(L, x, y)
-  if x < L.l or x > L.r or y < L.t or y > L.b or L.z <= L.a then return nil end
+  if not inside(L, x, y) or L.z <= L.a then return nil end
   local time = L.a + (x - L.l) / (L.r - L.l) * (L.z - L.a)
+  local d = down(L, y)
   for _, row in ipairs(L.rows) do
-    if y - L.t >= row.y and y - L.t < row.y + row.h then return { time, row.oid, (y - L.t - row.y) / math.max(1, row.h) } end
+    if d >= row.y and d < row.y + row.h then return { time, row.oid, (d - row.y) / math.max(1, row.h) } end
   end
 end
 local function to_screen(L, p)
   for _, row in ipairs(L.rows) do
     if row.oid == p[2] then
-      local x, y = L.l + (p[1] - L.a) / (L.z - L.a) * (L.r - L.l), L.t + row.y + p[3] * row.h
+      local d = row.y + p[3] * row.h
+      local x, y = L.l + (p[1] - L.a) / (L.z - L.a) * (L.r - L.l), L.flip and (L.t - d) or (L.t + d)
       return ImGui.PointConvertNative(ctx, x, y, false)
     end
   end
@@ -137,7 +143,7 @@ local function loop()
     if stroke then draw_points(stroke.points, col[cfg.user]) end
     if drawing then
       local mx, my = reaper.GetMousePosition()
-      local inside = mx >= L.l and mx <= L.r and my >= L.t and my <= L.b
+      local inside = inside(L, mx, my)
       local on_bar = ImGui.IsAnyItemHovered(ctx)
       -- the button straight from the OS (the arrange view gets no clicks now, and an overlay can miss its own)
       local down = reaper.JS_Mouse_GetState(1) & 1 == 1

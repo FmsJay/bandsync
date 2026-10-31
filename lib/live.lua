@@ -127,7 +127,9 @@ function live.fx(proj, add, fx)
     local tr = t < 0 and master or reaper.GetTrack(proj, t)
     for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
       local _, name = reaper.TrackFX_GetFXName(tr, i)
-      if name:find(fx, 1, true) and not name:find("Instrument", 1, true) then
+      -- (SonoBus: its VST3 only. BandSync reads and writes its saved state, and an AU (on a Mac) or VST2 keeps that in
+      -- another shape: it was found by name, then the join check could never see it join)
+      if name:find(fx, 1, true) and not name:find("Instrument", 1, true) and (fx ~= live.SONOBUS or name:find("^VST3")) then
         if freed > 0 then reaper.TrackFX_SetOffline(tr, i, true); reaper.TrackFX_SetOffline(tr, i, false) end -- load it now that it may
         return tr, i
       end
@@ -137,7 +139,6 @@ function live.fx(proj, add, fx)
   if fx == live.SONOBUS then -- Real time mode: SonoBus on a track of its own, fed only by what's armed (live.rt_sends)
     local rt = live.rt_track(proj, true)
     local i = reaper.TrackFX_AddByName(rt, "VST3:SonoBus (Sonosaurus)", false, -1)
-    if i < 0 then i = reaper.TrackFX_AddByName(rt, "SonoBus (Sonosaurus)", false, -1) end -- VST2 / AU
     if i < 0 then return nil end
     -- its Dry Level passes what it's fed straight through: the armed tracks already reach the master themselves
     for p = 0, reaper.TrackFX_GetNumParams(rt, i) - 1 do

@@ -34,7 +34,7 @@ local function loop()
       ImGui.TextColored(ctx, GREEN, "Done:")
       for _, l in ipairs(result) do ImGui.Bullet(ctx); ImGui.TextWrapped(ctx, l) end
       ImGui.Spacing(ctx)
-      ImGui.TextWrapped(ctx, "Undo (Ctrl+Z) takes back the project changes; converted files' originals are in 'BandSync originals'.")
+      ImGui.TextWrapped(ctx, "Undo (Ctrl+Z; Cmd+Z on a Mac) takes back the project changes; converted files' originals are in 'BandSync originals'.")
       if ImGui.Button(ctx, "Close") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then close = true end
     elseif #rows == 0 then
       ImGui.TextColored(ctx, GREEN, "Nothing to do: this project is ready for BandSync.")

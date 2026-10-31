@@ -152,7 +152,8 @@ function chat.draw(ctx, ImGui, cfg, b)
           if web or reaper.MB("Open this? It isn't a web link:\n\n" .. l.url, "BandSync", 4) == 6 then
             if reaper.CF_ShellExecute then reaper.CF_ShellExecute(l.url)
             elseif reaper.GetOS():find("^Win") then os.execute('start "" "' .. l.url:gsub('"', "") .. '"')
-            else os.execute('open "' .. l.url:gsub('"', "") .. '"') end
+            -- (single quotes: inside double ones the shell still runs $(...) and `...` from a link someone typed)
+            else os.execute("open '" .. l.url:gsub("'", "'\\''") .. "'") end
           end
         end
         ImGui.SetItemTooltip(ctx, l.url)

@@ -1,4 +1,4 @@
--- @description BandSync: redo the change you undid last, for everyone (bind it to Ctrl+Shift+Z)
+-- @description BandSync: redo the change you undid last, for everyone (bind it to Ctrl+Shift+Z; Cmd+Shift+Z on a Mac)
 -- In a BandSync session: brings back your own last undone change. In any other project: REAPER's normal Redo.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path

@@ -7,15 +7,18 @@
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes/no), BS_HOST_ID, BS_ROOT,
 # BS_LIVE (yes/no), BS_SOLO (yes/no), BS_SCRIPTS (reapack/folder/verify), BS_TAG.
-# Not yet run on a Mac: the Windows twin (install_windows.ps1) is the tested one.
+# First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
 REPO="FmsJay/bandsync"
 TAG="${BS_TAG:-main}"
 REAIMGUI="0.10.0.5"   # shortcut: pinned, like the Windows installer
 REAPACK="v1.2.6"
-ARCH="$(uname -m)"    # arm64 or x86_64, which is also how the extensions name their builds
+# arm64 or x86_64, which is also how the extensions name their builds. (Not uname -m: a Terminal running under
+# Rosetta says x86_64 on an Apple Silicon Mac, and those builds don't load in REAPER there.)
+ARCH="x86_64"; [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && ARCH="arm64"
 RES="$HOME/Library/Application Support/REAPER"
 WORK="$(mktemp -d /tmp/bandsync_setup.XXXXXX)"
+trap 'rm -rf "$WORK"' EXIT # (also when it stops early)
 
 say()  { printf '\033[36m%s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m  OK  %s\033[0m\n' "$*"; }
@@ -30,8 +33,8 @@ echo "come). Nothing already installed is changed."
 echo
 
 # ---------- 0. questions ----------
-USERNAME_BS="$(echo "${BS_USER:-}" | tr -cd '[:alnum:] _-')"
-while [ -z "$USERNAME_BS" ]; do USERNAME_BS="$(ask "Your name, as the band will see it" "$(id -F 2>/dev/null | cut -d' ' -f1)" | tr -cd '[:alnum:] _-')"; done
+USERNAME_BS="$(echo "${BS_USER:-}" | LC_ALL=C tr -cd 'A-Za-z0-9 _-')"
+while [ -z "$USERNAME_BS" ]; do USERNAME_BS="$(ask "Your name, as the band will see it" "$(id -F 2>/dev/null | cut -d' ' -f1)" | LC_ALL=C tr -cd 'A-Za-z0-9 _-')"; done
 HOSTING="${BS_HOSTING:-$(ask "Are you the band's host (the first one to set up, with the machine that stays on)? (y/n)" n)}"
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
 ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
@@ -41,13 +44,20 @@ if ! yes "$HOSTING"; then
     echo "$HOST_ID" | grep -Eq "$ID_RE" || warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)."
   done
 fi
-ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandSync")}"
-ROOT="${ROOT%/}"
+while :; do
+  ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandSync")}"
+  ROOT="$(printf '%s' "$ROOT" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/\\\(.\)/\1/g')" # (dragged in from Finder: "\ " and a trailing space)
+  ROOT="${ROOT/#\~/$HOME}"
+  ROOT="${ROOT%/}"
+  case "$ROOT" in /*) break;; esac
+  warn "That isn't a full folder path (it should start with / or ~). Try again, or drag the folder in from Finder."
+  BS_ROOT=""
+done
 LIVE="${BS_LIVE:-$(ask "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale (y/n)" y)}"
 SOLO="${BS_SOLO:-$(ask "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive (y/n)" y)}"
 PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, about 350 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
 EXTRAS="${BS_EXTRAS:-n}"
-yes "$PLUGINS" && [ -z "$BS_EXTRAS" ] && EXTRAS="$(ask "Also the larger extras (about 880 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, the Salamander Grand piano for sforzando)? (y/n)" n)"
+yes "$PLUGINS" && [ -z "${BS_EXTRAS:-}" ] && EXTRAS="$(ask "Also the larger extras (about 880 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, the Salamander Grand piano for sforzando)? (y/n)" n)"
 echo
 
 # ---------- 1. apps ----------
@@ -56,7 +66,9 @@ from_dmg() { # url name app-name
   local dmg="$WORK/$2.dmg" mnt="$WORK/mnt_$2"
   curl -fsSL "$1" -o "$dmg" || { warn "$2: download failed"; return 1; }
   mkdir -p "$mnt"
-  hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" >/dev/null </dev/tty || { warn "$2: couldn't open the disk image"; return 1; }
+  # (a disk image with a licence shows it here, and waits for you to agree: it used to go to /dev/null and look hung)
+  PAGER=cat hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" </dev/tty | grep -v '^/dev/' || true
+  [ -d "$mnt" ] && [ -n "$(ls -A "$mnt" 2>/dev/null)" ] || { warn "$2: couldn't open the disk image"; return 1; }
   local pkg app
   pkg="$(find "$mnt" -maxdepth 1 -name '*.pkg' | head -1)"
   app="$(find "$mnt" -maxdepth 1 -name "${3:-*}.app" | head -1)"
@@ -84,7 +96,8 @@ plugin_dmg() { # url name pattern
   say "Installing $2 ..."
   curl -fsSL "$1" -o "$dmg" || { warn "$2: download failed"; return 1; }
   mkdir -p "$mnt"
-  hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" >/dev/null </dev/tty || { warn "$2: couldn't open the disk image"; return 1; }
+  PAGER=cat hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" </dev/tty | grep -v '^/dev/' || true
+  [ -d "$mnt" ] && [ -n "$(ls -A "$mnt" 2>/dev/null)" ] || { warn "$2: couldn't open the disk image"; return 1; }
   local pkg; pkg="$(find "$mnt" -maxdepth 2 -name '*.pkg' | head -1)"
   if [ -n "$pkg" ]; then password_note; sudo installer -pkg "$pkg" -target / >/dev/null
   else
@@ -132,7 +145,14 @@ fi
 TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
 TS_TAGGED=""
 if yes "$LIVE" && [ -x "$TS" ]; then
-  open -a Tailscale; sleep 3
+  open -a Tailscale
+  # (a new install runs only once macOS approves its system extension: System Settings > General > Login Items &
+  # Extensions, and "Allow" for its VPN configuration. Until then every command fails, and a reset was done for nothing)
+  for i in $(seq 1 120); do
+    "$TS" status --json 2>/dev/null | grep -q '"BackendState"' && break
+    [ $i -eq 5 ] && say "Waiting for Tailscale: if macOS asks, allow its system extension (System Settings > General > Login Items & Extensions) and its VPN configuration."
+    sleep 1
+  done
   tsst="$("$TS" status --json 2>/dev/null | tr -d '\n ')"
   TS_RUNNING=""; echo "$tsst" | grep -q '"BackendState":"Running"' && TS_RUNNING=1
   if echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { [ -n "$TS_RUNNING" ] && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
@@ -150,6 +170,7 @@ if yes "$LIVE" && [ -x "$TS" ]; then
     for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
     [ -n "$url" ] && open "$url"
     if wait $pid; then ok "Tailscale signed in as a band machine (it stays signed in)"; TS_TAGGED=1
+    elif ! grep -qi 'tag' "$out"; then warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."
     else
       # the refused tag stays in Tailscale's settings and every later sign-in fails on it: clear it, then sign in plainly
       "$TS" up --reset --advertise-tags= --timeout=120s >"$out" 2>&1 &
@@ -170,7 +191,7 @@ if yes "$PLUGINS"; then
   plugin_dmg "$(gh_asset michaelwillis/dragonfly-reverb 'macos-universal\.dmg$')" "Dragonfly Reverb" "Dragonfly*"
   plugin_dmg "$(gh_asset jatinchowdhury18/AnalogTapeModel 'Mac.*\.dmg$')" "Chow Tape Model" "CHOW*"
   plugin_dmg "$(gh_asset Chowdhury-DSP/BYOD 'Mac-.*\.dmg$')" "BYOD" "BYOD*"
-  arch="$( [ "$(uname -m)" = arm64 ] && echo arm64 || echo x86-64 )"
+  arch="$( [ "$ARCH" = arm64 ] && echo arm64 || echo x86-64 )"
   plugin_dmg "$(gh_asset ZL-Audio/ZLEqualizer "macOS-$arch\.dmg$")" "ZL Equalizer 2" "ZL Equalizer*"
   plugin_dmg "$(gh_asset ZL-Audio/ZLCompressor "macOS-$arch\.dmg$")" "ZL Compressor" "ZL Compressor*"
   plugin_dmg "$(gh_asset Chowdhury-DSP/ChowMatrix 'Mac-.*\.dmg$')" "ChowMatrix" "ChowMatrix*"
@@ -201,12 +222,15 @@ PLUG="$RES/UserPlugins"
 need=""
 [ -f "$PLUG/reaper_reapack-$ARCH.dylib" ] || need="$need reaper_reapack-$ARCH.dylib=https://github.com/cfillion/reapack/releases/download/$REAPACK/reaper_reapack-$ARCH.dylib"
 [ -f "$PLUG/reaper_imgui-$ARCH.dylib" ] || need="$need reaper_imgui-$ARCH.dylib=https://github.com/cfillion/reaimgui/releases/download/v$REAIMGUI/reaper_imgui-$ARCH.dylib"
+# js_ReaScriptAPI (drawing on the tracks, window placement, ReaNINJAM's mode) and SWS (links, a few actions), from the
+# files ReaPack's ReaTeam Extensions index points at (both MIT); skipped when any copy of them is there already
+JSF="reaper_js_ReaScriptAPI64.dylib"; [ "$ARCH" = arm64 ] && JSF="reaper_js_ReaScriptAPI64ARM.dylib"
+ls "$PLUG"/reaper_js_ReaScriptAPI* >/dev/null 2>&1 || need="$need $JSF=https://github.com/juliansader/ReaExtensions/raw/master/js_ReaScriptAPI/v1.310/$JSF"
+ls "$PLUG"/reaper_sws* >/dev/null 2>&1 || need="$need reaper_sws-$ARCH.dylib=https://github.com/reaper-oss/sws/releases/download/v2.14.0.7/reaper_sws-$ARCH.dylib"
 if [ -n "$need" ]; then
   if pgrep -x REAPER >/dev/null; then
-    say "REAPER has to restart to load its new extensions. Press Return and REAPER is asked to quit (it asks to save"
-    say "anything unsaved first; it reopens your project afterwards), or quit it yourself."
-    read -r </dev/tty
-    osascript -e 'tell application "REAPER" to quit' >/dev/null 2>&1
+    say "REAPER has to restart to load its new extensions: quit REAPER now (Cmd+Q; save if it asks). It's reopened"
+    say "afterwards, with your project."
     REOPEN=true
     waited=0
     while pgrep -x REAPER >/dev/null; do
@@ -216,7 +240,7 @@ if [ -n "$need" ]; then
   fi
   mkdir -p "$PLUG"
   for n in $need; do curl -fsSL "${n#*=}" -o "$PLUG/${n%%=*}" && ok "${n%%=*} installed" || warn "${n%%=*} didn't download"; done
-else ok "ReaPack and ReaImGui are already installed"; fi
+else ok "ReaPack, ReaImGui, js_ReaScriptAPI and SWS are already installed"; fi
 API="$RES/Scripts/ReaTeam Extensions/API"
 if [ ! -f "$API/imgui.lua" ]; then
   mkdir -p "$API" && curl -fsSL "https://codeberg.org/cfillion/reaimgui/raw/v$REAIMGUI/shims/imgui.lua" -o "$API/imgui.lua" && ok "ReaImGui shim installed"
@@ -260,8 +284,9 @@ HDIR="$(dirname "$HELPER")"
 request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR/bandsync_setup_result.json
   local panel=false; [ "$1" = verify ] && panel=true
   local jsfx=false; yes "$PLUGINS" && jsfx=true
+  local root_json; root_json="$(printf '%s' "$ROOT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" # (a " or \ in the path broke the JSON)
   printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s,"jsfx":%s}' \
-    "$ROOT" "$USERNAME_BS" "$1" "$REPO" "$panel" "$jsfx" > "$HDIR/bandsync_setup.json"
+    "$root_json" "$USERNAME_BS" "$1" "$REPO" "$panel" "$jsfx" > "$HDIR/bandsync_setup.json"
   rm -f "$HDIR/bandsync_setup_result.json"
   if [ -n "${REOPEN:-}" ] && ! pgrep -x REAPER >/dev/null; then
     # we quit REAPER: start it the way you do, so it reopens your project tabs as it always does (started WITH the
@@ -337,4 +362,3 @@ fi
 echo "  - Recording latency: connect a cable from your interface's output 1 to an input, then in the BandSync"
 echo "    panel: More > Calibrate latency."
 echo "  - In the panel, open the band's session (or publish yours, as host); its Set up list shows anything still missing."
-rm -rf "$WORK"

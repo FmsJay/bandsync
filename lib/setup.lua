@@ -34,7 +34,7 @@ function setup.sonobus(cfg, b, proj, open)
   if not m then
     m, i = live.fx(proj, true, live.SONOBUS)
     if not m then
-      return nil, "SonoBus isn't installed here (sonobus.net, free), or REAPER hasn't seen it yet: REAPER finds new plug-ins when it starts, so restart REAPER after installing it."
+      return nil, "SonoBus (its VST3) isn't installed here (sonobus.net, free; on a Mac, keep VST3 ticked in its installer), or REAPER hasn't seen it yet: REAPER finds new plug-ins when it starts, so restart REAPER after installing it."
     end
   end
   if open then -- one SonoBus per machine in the group: another tab's still in it was a second you ("Laptop 4"), and

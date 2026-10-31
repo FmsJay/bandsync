@@ -1,4 +1,4 @@
--- @description BandSync: undo your own last change, for everyone (bind it to Ctrl+Z)
+-- @description BandSync: undo your own last change, for everyone (bind it to Ctrl+Z; Cmd+Z on a Mac)
 -- In a BandSync session: steps back through your own changes only, and asks first when a bandmate changed the same
 -- thing since (REAPER's own undo would roll back their changes too). In any other project: REAPER's normal Undo.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")

@@ -175,6 +175,10 @@ $userPlugins = Join-Path $res "UserPlugins"
 $need = @()
 if (-not (Test-Path (Join-Path $userPlugins "reaper_reapack-x64.dll"))) { $need += @{ file = "reaper_reapack-x64.dll"; url = "https://github.com/cfillion/reapack/releases/download/$ReaPackVer/reaper_reapack-x64.dll" } }
 if (-not (Test-Path (Join-Path $userPlugins "reaper_imgui-x64.dll"))) { $need += @{ file = "reaper_imgui-x64.dll"; url = "https://github.com/cfillion/reaimgui/releases/download/v$ReaImGuiVer/reaper_imgui-x64.dll" } }
+# js_ReaScriptAPI (drawing on the tracks, window placement, ReaNINJAM's mode) and SWS (links, a few actions), from the
+# files ReaPack's ReaTeam Extensions index points at (both MIT); skipped when any copy of them is there already
+if (-not (Get-ChildItem $userPlugins -Filter "reaper_js_ReaScriptAPI*" -ErrorAction SilentlyContinue)) { $need += @{ file = "reaper_js_ReaScriptAPI64.dll"; url = "https://github.com/juliansader/ReaExtensions/raw/master/js_ReaScriptAPI/v1.310/reaper_js_ReaScriptAPI64.dll" } }
+if (-not (Get-ChildItem $userPlugins -Filter "reaper_sws*" -ErrorAction SilentlyContinue)) { $need += @{ file = "reaper_sws-x64.dll"; url = "https://github.com/reaper-oss/sws/releases/download/v2.14.0.7/reaper_sws-x64.dll" } }
 if ($need.Count -gt 0) {
   if (Get-Process reaper -ErrorAction SilentlyContinue) {
     Say "REAPER has to restart to load its new extensions. Press Enter and REAPER is asked to close (it asks to save"
@@ -190,7 +194,7 @@ if ($need.Count -gt 0) {
   }
   New-Item -ItemType Directory -Force $userPlugins | Out-Null
   foreach ($n in $need) { Invoke-WebRequest -UseBasicParsing $n.url -OutFile (Join-Path $userPlugins $n.file); Ok "$($n.file) installed" }
-} else { Ok "ReaPack and ReaImGui are already installed" }
+} else { Ok "ReaPack, ReaImGui, js_ReaScriptAPI and SWS are already installed" }
 $api = Join-Path $res "Scripts\ReaTeam Extensions\API"
 if (-not (Test-Path (Join-Path $api "imgui.lua"))) { # ReaImGui's version shim, which scripts load with require "imgui"
   New-Item -ItemType Directory -Force $api | Out-Null

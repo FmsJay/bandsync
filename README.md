@@ -67,13 +67,21 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
 ## Setup (each person, once)
 
 **Easiest: the installer.** Download the `installer` folder (or just the one file) and double-click
-**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (right-click > Open the first
-time). It asks your name, whether you're the host (if not, the host's Syncthing device ID), and whether you'll use
-Live and the Google Drive copy, then installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, Syncthing,
-and optionally SonoBus + Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with the
-host, installs BandSync through ReaPack and opens the panel. What's left needs you, and it lists it at the end:
-signing in to Tailscale and Google Drive, the host adding your device, and the latency cable. (Windows: tested.
-macOS: written the same way, not yet run on a Mac.)
+**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command**. It asks your name, whether
+you're the host (if not, the host's Syncthing device ID), and whether you'll use Live and the Google Drive copy, then
+installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, js_ReaScriptAPI, SWS, Syncthing, and
+optionally SonoBus + Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with the host,
+installs BandSync through ReaPack and opens the panel. What's left needs you, and it lists it at the end: signing in
+to Tailscale and Google Drive, the host adding your device, and the latency cable.
+
+On a Mac, macOS blocks a downloaded script the first time. Either:
+- in Terminal, paste `curl -fsSL https://github.com/FmsJay/bandsync/raw/main/installer/install_mac.sh | bash` (nothing
+  to unblock), or
+- double-click the .command, then System Settings > Privacy & Security > **Open Anyway** (macOS 15 and later no longer
+  offer right-click > Open for this). A .command that came through a shared folder, Drive or email may also have lost
+  its "can run" bit: run it as `bash "Install BandSync (Mac).command"` instead.
+Tailscale asks macOS to approve its system extension (System Settings > General > Login Items & Extensions): the
+installer waits while you do.
 
 **Or let an AI do it.** In Claude Code, on the computer being set up, point it at
 `installer/SKILL.md` ("set up BandSync using installer/SKILL.md"). It installs and configures everything below,

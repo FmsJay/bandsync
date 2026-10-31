@@ -164,7 +164,9 @@ function mirror.creator(oid) return (oid or ""):match("^%a%-(.-)%-%d+%-%d+$") en
 -- Track settings that travel, as one line (order matters only for hashing). Faders and pan stay out with
 -- Local mixing on. Never: record arm, input, monitoring, height, selection.
 function mirror.track_line(t)
-  local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, t.solo or 0, t.phase or 0, t.color or 0, t.icon or "",
+  -- (colour isn't part of it: it travels with a real change, but auto-colouring (SWS) recolours new tracks on every
+  -- machine, and counting that as a change made machines recolour each other)
+  local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, t.solo or 0, t.phase or 0, t.icon or "",
     t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, t.vol or "", t.pan or "" }
   for i, v in ipairs(f) do f[i] = tostring(v):gsub("|", "/") end
   return table.concat(f, "|")

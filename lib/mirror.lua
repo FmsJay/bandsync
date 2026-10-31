@@ -964,8 +964,14 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   -- both changed it while apart: theirs wins everywhere (the same on every machine); ours stays in History
   local krev, _, kev = mirror.known(proj, ev.oid)
   if me and krev and ev.base and ev.base < krev and kev:sub(1, #me + 1):upper() == (me:gsub(" ", "_") .. "-"):upper() then
-    require("sync").put_back(string.format("%s also changed %s while you were apart: theirs is in. Yours is on the Restore page " ..
-      "(Undo specific change on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing"))
+    -- (within seconds of each other it was a race, not time apart: "while you were apart" read wrong, laptop round 2)
+    local function secs(y, mo, d, h, mi, s) return y and os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s }) end
+    local mine = secs(kev:match("%-(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)(%d%d)Z"))
+    local theirs = secs((ev.time or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)"))
+    local race = mine and theirs and math.abs(mine - theirs) <= 10
+    require("sync").put_back(string.format("%s also changed %s %s: theirs is in. Yours is on the Restore page " ..
+      "(Undo specific change on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing",
+      race and "at the same moment as you" or "while you were apart"))
   end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
@@ -1164,8 +1170,14 @@ function mirror.watch(proj, cfg, song, room, opts)
         sent = sent + 1
       else
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
-        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s isn't yours to change right now: put back (claim it, or take control)",
-          o.kind == "track" and ("track " .. where) or ((o.kind == "item" and "that item" or mirror.PART[o.kind]) .. " on " .. where)) })
+        -- whose it is, and what would let you: "or take control" told the driver to take control (laptop, round 2)
+        local owner_of = sync.owner_of
+        local who = owner_of and owner_of(ok_before and name or (last.name or ""), ok_before and o.pos or last.pos)
+        local how = (who and who ~= me and who ~= sync.driver_name) and ("it's claimed by " .. who .. ": put back (ask them to release it)")
+          or (who and who ~= me) and (who .. " drives: put back (claim it, or take control)")
+          or "it isn't yours to change right now: put back (claim it, or take control)"
+        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s: %s",
+          o.kind == "track" and ("Track " .. where) or ((o.kind == "item" and "That item" or mirror.PART[o.kind]:gsub("^%l", string.upper)) .. " on " .. where), how) })
       end
     end)
     if not ok then say_once("err" .. o.oid, "mirror sync skipped " .. o.oid .. ": " .. tostring(err)) end

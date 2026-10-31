@@ -1572,7 +1572,7 @@ local function home_play()
   local on = same_room_on()
   local ch, v = switch_row("##rt", "Real time mode", on, SAME_ROOM_TIP)
   if ch then set_same_room(v) end
-  ImGui.SameLine(ctx)
+  require("page_hear").fit(ctx, ImGui, "Configure SonoBus") -- (beside, or below in a narrow column: it was cut to "Configure Sono")
   if ImGui.SmallButton(ctx, "Configure SonoBus") then sonobus_open() end
   ImGui.SetItemTooltip(ctx, "Opens SonoBus's own window (volume and mute per bandmate, buffer, quality). You don't need it to play together.")
   if not wide then

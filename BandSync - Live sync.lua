@@ -365,14 +365,24 @@ local function poll()
   -- sound changed are reprinted (rendering needs this tab in front and the transport stopped)
   local print_mode = (s and s.print) or "wet"
   local now = reaper.time_precise()
-  local copies = sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
+  -- mirror sync (docs/mirror-design.md): the whole project travels object by object; the take machinery below is
+  -- the older event sync, still used by sessions published before it
+  local mirrored = s and s.sync == "mirror"
+  sync.local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
+  if mirrored and not hold then
+    local ok, sent, back = pcall(require("mirror").watch, proj, cfg, b.song, b.room,
+      { can = my_can, mode = who.mode, local_mix = sync.local_mix })
+    if not ok then band.log("mirror sync: " .. tostring(sent))
+    elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
+  end
+  local copies = mirrored and 0 or sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
   if copies > 0 then band.log(copies .. " copied or split item(s) will go out as new takes") end
   -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest is put back,
   -- so it can't silently drift from the band's version. Before sending and reprinting: a tempo change that isn't ours
   -- is put back first, not rendered into a new print and then rendered back (2026-10-29, laptop: two needless reprints,
   -- and the put-back came 4.5 s late behind them)
-  if not hold then sync.watch(proj, cfg, b.song, b.room, my_can) end
-  if not hold and reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
+  if not hold and not mirrored then sync.watch(proj, cfg, b.song, b.room, my_can) end
+  if not hold and not mirrored and reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
     local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN, me = cfg.user })
     if #units > 0 then band.log("sent " .. sync.send(proj, cfg, b, units, print_mode) .. " new take(s)") end
     if now - last_reprint > 10 then
@@ -396,7 +406,7 @@ local function poll()
 
   -- the driver's mix layer (buses, sends into them, master plug-ins) goes to the band once it has settled; only
   -- while stopped, since automation moves plug-in settings during playback
-  if driver == cfg.user and not hold and reaper.GetPlayStateEx(proj) == 0 then
+  if driver == cfg.user and not hold and not mirrored and reaper.GetPlayStateEx(proj) == 0 then
     local mixlayer = require("mixlayer")
     local st, sig = mixlayer.capture(proj)
     if sig ~= select(2, reaper.GetProjExtState(proj, band.SECTION, "mix_sig")) then
@@ -439,7 +449,7 @@ local function poll()
     if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end
     drive_more = more
   end
-  sync.apply_locks(proj, my_can, cfg.user)
+  if not mirrored then sync.apply_locks(proj, my_can, cfg.user) end
   sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
@@ -461,7 +471,7 @@ local function poll()
   end
 
   if s then band.check_version(s.bandsync, "'" .. b.song .. "'", true) end
-  if s and not host then
+  if s and not host and not mirrored then
     if band.sync_stems(proj, cfg, b.song, s, true) > 0 then band.log("upgraded stems to full quality") end
     if tostring(s.version) ~= tostring(b.version) and warned_version ~= s.version then
       warned_version = s.version

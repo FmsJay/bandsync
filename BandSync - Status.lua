@@ -31,14 +31,14 @@ local function draw()
   text(14, 12, string.format("%s  ·  room %s  ·  driver %s  ·  print %s", b.song, b.room, tostring(view.driver), view.print), white)
   gfx.setfont(1, "Arial", 15)
   local running = (view.my_age or math.huge) < 30
-  local me_state = not running and "offline" or (view.my_missing == 0 and "in sync" or "catching up")
+  local me_state = not running and "offline" or (view.my_missing == 0 and "synced" or "syncing")
   text(14, 40, string.format("You (%s): %d/%d takes here, %s.   Live sync %s.", cfg.user, view.total - view.my_missing,
     view.total, view.my_missing == 0 and "nothing waiting" or (view.my_missing .. " still arriving"),
     running and "running" or "NOT running (start BandSync - Live sync)"), COLORS[me_state])
   local cols = { 14, 170, 290, 400, 500, 620 }
   local y = 72
   if view.newer then
-    text(14, 62, string.format("BandSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["catching up"])
+    text(14, 62, string.format("BandSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["syncing"])
     y = 92
   end
   for i, h in ipairs({ "Bandmate", "State", "Last seen", "Has", "Missing yours", "Version" }) do text(cols[i], y, h, dim) end
@@ -50,8 +50,8 @@ local function draw()
     text(cols[2], y, r.state, c)
     text(cols[3], y, ago(r.age), c)
     text(cols[4], y, r.has .. "/" .. view.total, c)
-    text(cols[5], y, r.mine == 0 and "none" or tostring(r.mine), r.mine == 0 and COLORS["in sync"] or COLORS["catching up"])
-    text(cols[6], y, r.version, r.version == band.VERSION and dim or COLORS["catching up"])
+    text(cols[5], y, r.mine == 0 and "none" or tostring(r.mine), r.mine == 0 and COLORS["synced"] or COLORS["syncing"])
+    text(cols[6], y, r.version, r.version == band.VERSION and dim or COLORS["syncing"])
     y = y + 22
   end
   gfx.update()

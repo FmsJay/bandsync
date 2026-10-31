@@ -1307,7 +1307,16 @@ end
 -- Apply one event from whoever may make it. False means retry later (its take hasn't arrived, or a
 -- delete needs this tab in front).
 -- `dir`: the room's folder (where "midi" events keep their note files); `root`: the shared folder (drum maps).
+-- May ev.user make this mirror change? The track's name for claims; their own new tracks are theirs unless the room
+-- is Driver only (the same rule mirror.watch uses when sending).
+function sync.obj_allowed(ev, can, driver)
+  if can(ev.user, ev.name or "", ev.pos, nil, driver) then return true end
+  local t = ev.obj == "track" and ev.oid or ev.track
+  return sync.room_mode ~= "driver" and require("mirror").creator(t) == (tostring(ev.user):gsub("[^%w]", "_"))
+end
+
 function sync.apply(proj, ev, dir, root, can, me)
+  if ev.type == "obj" then return require("mirror").receive(proj, ev, dir .. "/media", sync.local_mix) end -- mirror sync
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
   if ev.type == "mix" and type(ev.state) == "table" then -- the driver's buses, sends into them, master plug-ins (lib/mixlayer.lua)
@@ -1725,7 +1734,8 @@ function sync.receive(proj, cfg, song, room, can)
     elseif ev.user == cfg.user then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
       stamp(proj, ev) -- and what we change next comes after it, even one stamped while our clock ran ahead
-    elseif not (sync.ANYONE[ev.type] or ev.alone or can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time))
+    elseif not (sync.ANYONE[ev.type] or ev.alone or (ev.type == "obj" and sync.obj_allowed(ev, can, driver_at(ev.time)))
+        or (ev.type ~= "obj" and can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time)))
         or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user))) then
       -- not theirs to change, as far as this machine knows: their claim (or the handover) may simply not have
       -- synced here yet, so it waits a while before it's dropped
@@ -1748,6 +1758,8 @@ function sync.receive(proj, cfg, song, room, can)
           start = (ev.rec and "record" or "play") .. " together at " .. tostring(ev.pos), stop = "stop together",
           note = "note: " .. tostring(ev.text), like = "liked " .. tostring(ev.take),
           mix = "changed the mix (buses, sends, master plug-ins)",
+          obj = (ev.gone and "deleted " or "changed ") .. (ev.obj == "fx" and "the plug-ins" or (ev.obj == "item" and "an item" or "a track")) ..
+            " on " .. ((ev.name or "") ~= "" and ev.name or "an unnamed track"),
           shift = ((ev.len or 0) > 0 and "inserted " or "removed ") .. string.format("%.2f s at %.2f s", math.abs(ev.len or 0), ev.at or 0) })[ev.type]
         done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))
       end

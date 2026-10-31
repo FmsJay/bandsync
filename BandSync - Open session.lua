@@ -66,8 +66,9 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   band.apply_markers(proj, s.markers)
   -- the band's timeline, not a local edit: Live sync mustn't send it back (lib/sync.lua timeline_sig)
   reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }))
-  local n = band.sync_stems(proj, cfg, song, s)
-  if s.share then -- the host shares its real takes and lanes, so stems are only a mixed reference
+  -- mirror sessions have no stems: the band's own tracks and items arrive through Live sync, object by object
+  local n = s.sync ~= "mirror" and band.sync_stems(proj, cfg, song, s) or 0
+  if s.share and s.sync ~= "mirror" then -- the host shares its real takes and lanes, so stems are only a mixed reference
     for i = 0, reaper.CountTracks(proj) - 1 do
       local tr = reaper.GetTrack(proj, i)
       if band.track_ext(tr, "band_stem") ~= "" then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
@@ -88,6 +89,10 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   local running = beat and reaper.time_precise() - beat < 5
   if not running then band.start_live(dir) end
+  if s.sync == "mirror" then
+    return band.log(string.format("opened '%s' (hosted by %s)%s: the band's tracks and items arrive over the next moments",
+      song, s.host, running and "" or ", Live sync started"))
+  end
   band.log(string.format("opened '%s' v%d by %s, room '%s' (%d stem track(s) updated)%s: record on any of the band's tracks, " ..
     "or a track of your own (the band sees it under its name); each take goes out when you stop",
     song, s.version, s.host, b.room, n, running and "" or ", Live sync started"))
@@ -95,5 +100,6 @@ end
 
 if b then return open_song(b.song) end
 if #band.songs(cfg) == 0 then return band.msg("No published songs found in " .. cfg.root) end
-require("chooser").open(cfg, { title = "Open a band song", action = "Open", rooms = "new" },
+-- straight into the main room: side rooms are made and visited from the panel's Rooms page
+require("chooser").open(cfg, { title = "Open a band song", action = "Open" },
   function(song, room) if song then open_song(song, room) end end)

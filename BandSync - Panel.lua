@@ -400,14 +400,14 @@ local function section_sync()
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
   local running = beat and reaper.time_precise() - beat < 5
   ImGui.TextColored(ctx, running and GREEN or RED, running and "Live sync is running" or "Live sync is not running")
-  ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx, running and "Stop" or "Start") then
-    if running then reaper.SetExtState(band.SECTION, "stop " .. key, "1", false) -- Live sync sees it on its next tick
-    else reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
+  if not running then -- (no Stop: a BandSync project always syncs, or the band's copies drift apart)
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
-  local auto = tools.autostart_on()
-  local ach, av = check("Start Live sync with REAPER (for sessions where it was running)", auto)
-  if ach and not tools.set_autostart(av, dir) then band.msg("Couldn't write Scripts/__startup.lua") end
+  if not tools.autostart_on() and not tools.autostart_tried then -- always on: BandSync projects start Live sync with REAPER
+    tools.autostart_tried = true
+    if not tools.set_autostart(true, dir) then band.log("couldn't add BandSync to Scripts/__startup.lua: Live sync won't start with REAPER") end
+  end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
   if ImGui.SmallButton(ctx, "Undo my last change") then
     local c, why = tools.my_last_change(proj, cfg, b)
@@ -616,42 +616,6 @@ local function tracks_button(point, get_state, what)
     "Goes to the band like any change (new lines in History).")
 end
 
-local function section_recall()
-  ImGui.SeparatorText(ctx, "Recall points")
-  ImGui.SetNextItemWidth(ctx, -90)
-  local _, v = ImGui.InputTextWithHint(ctx, "##label", "name this version (e.g. 'chorus with double guitars')", label, ImGui.InputTextFlags_None)
-  label = v
-  ImGui.SameLine(ctx)
-  if ImGui.Button(ctx, "Save point") then
-    recall.save(proj, cfg, b.song, b.room, label ~= "" and label or "saved by " .. cfg.user)
-    label = ""
-    last = 0
-  end
-  local driving = view.driver == cfg.user
-  -- (docked, the list takes the column's height instead of a short box inside it)
-  if ImGui.BeginChild(ctx, "points", 0, wide and math.max(110, select(2, ImGui.GetContentRegionAvail(ctx)) - 4) or 110, ImGui.ChildFlags_Borders) then
-    if #points == 0 then ImGui.TextDisabled(ctx, "None yet. Every handover saves one by itself.") end
-    for i, p in ipairs(points) do
-      ImGui.PushID(ctx, i)
-      ImGui.BeginDisabled(ctx, not driving)
-      if ImGui.SmallButton(ctx, "Restore") and reaper.MB("Make the session match '" .. p.label .. "'?\n\n" ..
-          "Where things are now is saved as a recall point first, so you can come back.", "BandSync", 4) == 6 then
-        band.log(recall.restore(proj, cfg, b.song, b.room, p.file) or "restore failed")
-        last = 0
-      end
-      ImGui.EndDisabled(ctx)
-      if not driving then ImGui.SetItemTooltip(ctx, "Only the driver restores (take control first).") end
-      ImGui.SameLine(ctx)
-      tracks_button("'" .. p.label .. "'", function() return band.read_json(recall.dir(cfg, b.song, b.room) .. "/" .. p.file) or {} end,
-        "at '" .. p.label .. "'")
-      if ImGui.GetContentRegionAvail(ctx) > 520 then ImGui.SameLine(ctx) end -- narrow (docked): the words go under the buttons
-      ImGui.TextWrapped(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), local_time(p.time), p.takes))
-      ImGui.PopID(ctx)
-    end
-    ImGui.EndChild(ctx)
-  end
-end
-
 -- A change in words, its positions as bars ("to bar 9 beat 3", not "to 20.50 s", which also broke mid-number when wrapped).
 local function describe(e)
   return (recall.describe(e):gsub("( [at][to]?) (%d+%.%d+) s", function(w, n) return w .. " bar " .. bar_of(tonumber(n)) end))
@@ -688,7 +652,53 @@ local function undo_button(i)
     "undo goes to the band like any change and shows up here as a new line.") or "This kind of change can't be undone on its own: use Go back to here.")
 end
 
--- Filtered: the matching changes as one list (newest first), each with its own Restore up to there.
+-- One "go back" button, the kind the History radio picks: the whole project, the selected tracks, or this one change.
+-- i: History index (the state right after entries[i]); what: words for the confirm box; point: a recall point file.
+local function back_button(i, what, point)
+  local mode, e, mirror = hf.mode or "project", entries[i], require("mirror")
+  local mirrored = view.session and view.session.sync == "mirror"
+  local opts = { can = can, mode = who and who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" }
+  if mode == "change" then
+    if not e then return end
+    if not (mirrored and e.kind == "obj") then return undo_button(i) end
+    if ImGui.SmallButton(ctx, "Undo this") then
+      band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo(entries, i), opts)); hist_at = 0
+    end
+    ImGui.SetItemTooltip(ctx, "Undo only this change: " .. describe(e) .. ". Everything else stays; the undo goes to the band as a new change.")
+  elseif mode == "selection" then
+    if not mirrored then
+      return tracks_button(what, point and function() return band.read_json(recall.dir(cfg, b.song, b.room) .. "/" .. point) or {} end
+        or function() return recall.replay(entries, i) end, what)
+    end
+    if ImGui.SmallButton(ctx, "Selected tracks to here") then
+      local scope = mirror.selection_scope(proj)
+      if not scope then band.msg("Select the tracks to put back first (click their names in REAPER).")
+      elseif reaper.MB("Put the selected tracks (their items and plug-ins) back to how they were " .. what .. "?\n\nEverything else stays as it is now.", "BandSync", 4) == 6 then
+        band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_restore(entries, i, scope), opts)); hist_at = 0
+      end
+    end
+    ImGui.SetItemTooltip(ctx, "Only the tracks selected in REAPER go back to how they were " .. what .. "; everything else stays. Goes to the band as new changes.")
+  else
+    local driving = view.driver == cfg.user
+    ImGui.BeginDisabled(ctx, not driving or (e and e.kind == "solo"))
+    if ImGui.SmallButton(ctx, "Go back to here") and reaper.MB("Make the whole project look like it did " .. what .. "?\n\n" ..
+        "Everything since then is undone, for everyone. It's a change like any other, so you can come back the same way.", "BandSync", 4) == 6 then
+      if mirrored then band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_restore(entries, i), opts))
+      elseif point then band.log(recall.restore(proj, cfg, b.song, b.room, point) or "restore failed")
+      else
+        local st = recall.replay(entries, i)
+        local s0 = view.session or {} -- before any tempo change: as published
+        st.timeline = st.timeline or s0.first_timeline or (s0.tempo and { tempo = s0.tempo, markers = s0.markers })
+        band.log(recall.restore_state(proj, cfg, b.song, b.room, st, what) or "restore failed")
+      end
+      last, hist_at = 0, 0
+    end
+    ImGui.EndDisabled(ctx)
+    ImGui.SetItemTooltip(ctx, driving and "The whole project goes back to how it was " .. what .. "." or "Only the driver restores the whole project (take control first).")
+  end
+end
+
+-- Filtered: the matching changes as one list (newest first), each with its own button.
 local function history_filtered(driving)
   local want = KINDS[hf.kind][2]
   local text = hf.text:lower()
@@ -708,24 +718,7 @@ local function history_filtered(driving)
         ImGui.SameLine(ctx)
         ImGui.TextWrapped(ctx, e.user .. ": " .. line)
       end
-      undo_button(i)
-      ImGui.SameLine(ctx)
-      tracks_button(string.format("right after %s's change at %s", e.user, local_time(e.time)), function() return recall.replay(entries, i) end,
-        "right after this change")
-      ImGui.SameLine(ctx)
-      ImGui.BeginDisabled(ctx, not driving or e.kind == "solo")
-      if ImGui.SmallButton(ctx, "Go back to here") and reaper.MB(string.format("Make the whole session look like it did right after this change (%s, %s)?\n\n" ..
-          "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
-          "Where things are now is saved as a recall point first, so you can come back.", e.user, local_time(e.time)), "BandSync", 4) == 6 then
-        local st = recall.replay(entries, i)
-        local s0 = view.session or {}
-        st.timeline = st.timeline or s0.first_timeline or (s0.tempo and { tempo = s0.tempo, markers = s0.markers })
-        band.log(recall.restore_state(proj, cfg, b.song, b.room, st, string.format("right after %s's change at %s", e.user, local_time(e.time))) or "restore failed")
-        last, hist_at = 0, 0
-      end
-      ImGui.EndDisabled(ctx)
-      ImGui.SetItemTooltip(ctx, driving and "The whole session goes back to right after this change: everything after it is undone (where things are now is saved first)."
-        or "Only the driver restores (take control first).")
+      back_button(i, string.format("right after %s's change at %s", e.user, local_time(e.time)))
       if roomy then
         ImGui.SameLine(ctx)
         ImGui.TextDisabled(ctx, local_time(e.time))
@@ -737,9 +730,49 @@ local function history_filtered(driving)
   end
   if n == 0 then ImGui.TextDisabled(ctx, "Nothing matches.") end
 end
+local function section_recall()
+  ImGui.SeparatorText(ctx, "Recall points")
+  ImGui.SetNextItemWidth(ctx, -90)
+  local _, v = ImGui.InputTextWithHint(ctx, "##label", "name this version (e.g. 'chorus with double guitars')", label, ImGui.InputTextFlags_None)
+  label = v
+  ImGui.SameLine(ctx)
+  if ImGui.Button(ctx, "Save point") then
+    recall.save(proj, cfg, b.song, b.room, label ~= "" and label or "saved by " .. cfg.user)
+    label = ""
+    last = 0
+  end
+  local driving = view.driver == cfg.user
+  -- (docked, the list takes the column's height instead of a short box inside it)
+  if ImGui.BeginChild(ctx, "points", 0, wide and math.max(110, select(2, ImGui.GetContentRegionAvail(ctx)) - 4) or 110, ImGui.ChildFlags_Borders) then
+    if #points == 0 then ImGui.TextDisabled(ctx, "None yet. Every handover saves one by itself.") end
+    local before = select(2, reaper.GetProjExtState(proj, band.SECTION, "before_bandsync"))
+    if before ~= "" and reaper.file_exists(before) then
+      if ImGui.SmallButton(ctx, "Open it as it was before BandSync") then reaper.Main_OnCommand(40859, 0); reaper.Main_openProject(before) end
+      ImGui.SetItemTooltip(ctx, "Opens the copy saved when this project was first published, in a new tab (it isn't a band session).")
+    end
+    for i, p in ipairs(points) do
+      ImGui.PushID(ctx, i)
+      local upto = 0 -- (mirror sessions: the point is a moment in History)
+      for k, e in ipairs(entries) do if (e.time or "") <= (p.time or "") then upto = k end end
+      if hf.mode ~= "change" then back_button(upto, "at '" .. p.label .. "'", p.file); ImGui.SameLine(ctx) end
+      if ImGui.GetContentRegionAvail(ctx) > 520 then ImGui.SameLine(ctx) end -- narrow (docked): the words go under the buttons
+      ImGui.TextWrapped(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), local_time(p.time), p.takes))
+      ImGui.PopID(ctx)
+    end
+    ImGui.EndChild(ctx)
+  end
+end
+
 local function section_history()
   if reaper.time_precise() - hist_at > 4 then hist_at = reaper.time_precise(); refresh_history() end
   ImGui.SeparatorText(ctx, "Every change, newest first")
+  for _, m in ipairs({ { "project", "Restore project state", "Each button brings the whole project back to that moment (the driver only)." },
+      { "selection", "Restore selection's state", "Each button brings only the tracks selected in REAPER back to that moment." },
+      { "change", "Undo specific change", "Each button undoes only that one change; everything after it stays." } }) do
+    if m[1] ~= "project" then ImGui.SameLine(ctx) end
+    if ImGui.RadioButton(ctx, m[2], (hf.mode or "project") == m[1]) then hf.mode = m[1] end
+    ImGui.SetItemTooltip(ctx, m[3])
+  end
   local driving = view.driver == cfg.user
   if #groups == 0 then ImGui.TextDisabled(ctx, "Nothing has happened in this room yet.") end
   -- filters: who, what kind, which track, and words
@@ -766,7 +799,7 @@ local function section_history()
   local filtered = hf.who ~= "" or hf.kind ~= 1 or hf.track ~= "" or hf.text ~= ""
   if filtered then
     ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Clear filters") then hf = { who = "", kind = 1, track = "", text = "" } end
+    if ImGui.SmallButton(ctx, "Clear filters") then hf = { who = "", kind = 1, track = "", text = "", mode = hf.mode } end
     ImGui.SetItemTooltip(ctx, "Back to everything, grouped by who made it.")
   end
   -- (docked, no list box of its own: under the filters it had no height left, so the column itself scrolls instead)
@@ -779,20 +812,10 @@ local function section_history()
     for gi = #groups, 1, -1 do
       local g = groups[gi]
       ImGui.PushID(ctx, gi)
-      ImGui.BeginDisabled(ctx, not driving or g.solo)
-      if ImGui.SmallButton(ctx, "Go back to here") and reaper.MB(string.format("Make the whole session look like it did right after %s's changes at %s?\n\n" ..
-          "Takes recorded since then are put away (not destroyed), deleted ones come back, positions and what plays go back. " ..
-          "Where things are now is saved as a recall point first, so you can come back.", g.user, local_time(g.to)), "BandSync", 4) == 6 then
-        local st = recall.replay(entries, g.last)
-        local s0 = view.session or {} -- before any tempo change: as published
-        st.timeline = st.timeline or s0.first_timeline or (s0.tempo and { tempo = s0.tempo, markers = s0.markers })
-        band.log(recall.restore_state(proj, cfg, b.song, b.room, st, string.format("%s's changes at %s", g.user, local_time(g.to))) or "restore failed")
-        last, hist_at = 0, 0
+      if hf.mode ~= "change" then
+        back_button(g.last, string.format("right after %s's changes at %s", g.user, local_time(g.to)))
+        ImGui.SameLine(ctx)
       end
-      ImGui.EndDisabled(ctx)
-      ImGui.SetItemTooltip(ctx, g.solo and "A Solo edit version: restore it from the Solo edit tab (check out first)."
-        or driving and "Go back to right after this group of changes." or "Only the driver restores (take control first).")
-      ImGui.SameLine(ctx)
       local n = g.last - g.first + 1
       local head = string.format("%s%s  ·  %s%s", g.user, g.solo and " (Solo edit)" or g.user == g.driver and " (driving)" or "",
         local_time(g.from), g.from ~= g.to and ("-" .. local_time(g.to):sub(7)) or "")
@@ -805,7 +828,7 @@ local function section_history()
       if open then
         for i = g.first, g.last do
           ImGui.PushID(ctx, i)
-          undo_button(i)
+          back_button(i, string.format("right after %s's change at %s", entries[i].user, local_time(entries[i].time)))
           ImGui.SameLine(ctx)
           ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))
           ImGui.SameLine(ctx)
@@ -826,7 +849,7 @@ end
 local plugins = require("plugins")
 local plug_info
 local function section_plugins()
-  if not ImGui.CollapsingHeader(ctx, "Plug-ins everyone has") then return end
+  heading("Plug-ins everyone has", 17)
   ImGui.PushTextWrapPos(ctx, 0)
   ImGui.TextDisabled(ctx, "Each machine sends the band its list of plug-ins (names only) when Live sync starts. What all of you have " ..
     "goes in the FX browser folder '" .. plugins.FOLDER .. "': use those and the song sounds the same on every machine. " ..
@@ -1864,7 +1887,7 @@ local function home_who()
       ImGui.Text(ctx, p.name)
       ImGui.PopFont(ctx)
       pill(p.state, p.state == "here" and GREEN or rgba(status.COLORS[p.state] or { 0.55, 0.55, 0.55 }))
-      ImGui.SetItemTooltip(ctx, ({ here = "This machine.", ["in sync"] = "Has every take and change.", ["catching up"] = "Still receiving takes or changes.",
+      ImGui.SetItemTooltip(ctx, ({ here = "This machine.", ["synced"] = "Has every change.", ["syncing"] = "Still receiving changes.",
         offline = "Not seen for over a minute.", ["no receipt"] = "Has sent takes, but never ran Live sync here." })[p.state] or p.state)
       if p.recording then ImGui.SameLine(ctx, 0, 4); pill("recording", RED)
       elseif p.playing and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 4); pill("playing", 0x8FB3F8FF) end
@@ -1888,10 +1911,6 @@ local function home_session()
   end
 end
 
-local function page_maintenance()
-  if wide then layout({ { maint_health, 440 }, { section_activity, 420 }, { section_actions, 440 } })
-  else layout({ { maint_health, 460 }, { maint_upkeep, 520 } }) end
-end
 local function home_rules()
   heading("Who changes what", 17)
   section_driver()
@@ -1940,28 +1959,47 @@ end
 local function settings_more()
   if card("more") then
     section_drums()
-    section_plugins()
     card_end()
   end
 end
 
-local function page_settings()
-  layout({ { settings_look, 320 }, { settings_sync, 420 }, { settings_drive, 360 }, { settings_more, 400 } })
+local function page_setup()
+  if not ImGui.BeginTabBar(ctx, "setup") then return end
+  if ImGui.BeginTabItem(ctx, "Health") then layout({ { maint_health, 460 }, { section_actions, 440 } }); ImGui.EndTabItem(ctx) end
+  if ImGui.BeginTabItem(ctx, "Console") then
+    -- BandSync's own log, newest first (REAPER's console only shows it while open)
+    if ImGui.SmallButton(ctx, "Clear") then reaper.DeleteExtState(band.SECTION, band.LOG_KEY, false) end
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Copy") then ImGui.SetClipboardText(ctx, table.concat(band.activity(), "\n")) end
+    ImGui.SetItemTooltip(ctx, "Copy the whole log, to paste it in a message when something went wrong.")
+    if ImGui.BeginChild(ctx, "console", 0, 0, ImGui.ChildFlags_Borders) then
+      for _, l in ipairs(band.activity()) do ImGui.TextWrapped(ctx, l) end
+      ImGui.EndChild(ctx)
+    end
+    ImGui.EndTabItem(ctx)
+  end
+  if ImGui.BeginTabItem(ctx, "Options") then
+    layout({ { settings_look, 320 }, { settings_sync, 420 }, { settings_drive, 360 }, { settings_more, 400 } })
+    ImGui.EndTabItem(ctx)
+  end
+  if ImGui.BeginTabItem(ctx, "Updates") then maint_upkeep(); ImGui.EndTabItem(ctx) end
+  ImGui.EndTabBar(ctx)
 end
 
 local PAGES = {
-  { "Home", "Play together, who's here and what they're doing, and who changes what." },
+  { "Home", "Who's here and what they're doing, real time mode, and who changes what." },
   { "Rooms", "The song's rooms: make a side room to try things, have everyone come and see, and bring work back." },
-  { "Together", "Follow each other's transport, start or record together, notes and likes, live ideas and handy tools." },
-  { "Live", "How you hear each other: Play along (in time with the song), Listen live (SonoBus) or Jam." },
-  { "History", "Every take and change, grouped by who made it, and restore points to go back to." },
-  { "Settings", "Look, sync options, Google Drive, drum maps and plug-ins everyone has." },
-  { "Maintenance", "Set up and health (red: needs fixing, yellow: worth a look), activity, updates and tidy-up." },
+  { "Play", "Play or record together, follow each other, and how you hear each other (real time, play along or jam)." },
+  { "Chat", "Messages, to-dos, notes and links for this room, this song or the whole band." },
+  { "History", "Every change, and three ways back: the whole project, the selected tracks, or one change." },
+  { "Plugins", "Every plug-in in this project, who doesn't have it, and the band's translations for it." },
+  { "Setup", "Health (red: needs fixing, yellow: worth a look), the console, options and updates." },
 }
+local OLD_PAGES = { Together = "Play", Live = "Play", Settings = "Setup", Maintenance = "Setup" } -- (links from older versions)
 local page = "Home"
 local level, level_at = nil, -math.huge
 local function nav_dot(p)
-  if p == "Maintenance" and level then return level == "red" and RED or YELLOW end
+  if p == "Setup" and level then return level == "red" and RED or YELLOW end
 end
 local function frame_app()
   local ww, wh = ImGui.GetWindowSize(ctx)
@@ -1985,9 +2023,9 @@ local function frame_app()
   local y0 = ImGui.GetCursorPosY(ctx) + 8
   ImGui.SetCursorPos(ctx, 16, y0)
   ImGui.PushFont(ctx, nil, 21)
-  local _, th = ImGui.CalcTextSize(ctx, b.song)
+  local _, th = ImGui.CalcTextSize(ctx, "Project: " .. b.song)
   ImGui.SetCursorPosY(ctx, y0 + (fh - th) / 2)
-  ImGui.Text(ctx, b.song)
+  ImGui.Text(ctx, "Project: " .. b.song)
   ImGui.PopFont(ctx)
   local function at_row(label) -- next to the last piece, or on a new line when `label`'s piece doesn't fit
     ImGui.SameLine(ctx, 0, 8)
@@ -2003,7 +2041,7 @@ local function frame_app()
   local running = beat and reaper.time_precise() - beat < 5
   at_row("room: " .. b.room); pill("room: " .. b.room, 0x34415AFF, 0xD6E4FFFF, fh)
   ImGui.SetItemTooltip(ctx, "The room this tab is in (Rooms page: side rooms).")
-  at_row(running and "syncing" or "not syncing"); pill(running and "syncing" or "not syncing", running and GREEN or 0x5A5F66FF, running and DARK or 0xE6E8EBFF, fh)
+  at_row(running and "Live" or "Live off"); pill(running and "Live" or "Live off", running and GREEN or RED, running and DARK or 0xFFFFFFFF, fh)
   ImGui.SetItemTooltip(ctx, running and "Live sync is running in this tab: your takes and changes go out, the band's come in." or "Live sync is off in this tab.")
   if not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
     at_row("Start")
@@ -2062,7 +2100,7 @@ local function frame_app()
   ImGui.SetCursorPos(ctx, 16, y0 + fh + 8)
   section_invites()
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
-  if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = want end
+  if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
   if compact and not wide then
     ImGui.SetCursorPosX(ctx, 16)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
@@ -2090,16 +2128,18 @@ local function frame_app()
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
     ImGui.PushTextWrapPos(ctx, 0) -- text wraps to the page, whatever its width
-    if not compact then heading(page == "Maintenance" and "Maintenance" or page, 20) end
+    if not compact then heading(page, 20) end
     if page == "Home" then page_home()
     elseif page == "Rooms" then layout({ { rooms_squares, 560 }, { rooms_actions, 560 } })
-    elseif page == "Together" then layout({ { section_together, 380 }, { function() section_notes(); section_ideas() end, 400 }, { section_tools, 420 } })
-    elseif page == "Live" then
-      if wide then layout({ { function() section_live("mode") end, 420 }, { function() section_live("rest") end, 520 } })
-      else layout({ { section_live, 480 } }) end
+    elseif page == "Play" then
+      if wide then layout({ { section_together, 380 }, { function() section_live("mode") end, 420 }, { function() section_live("rest") end, 520 }, { section_tools, 420 } })
+      else layout({ { section_together, 380 }, { section_live, 480 }, { section_tools, 420 } }) end
+    elseif page == "Chat" then
+      layout({ { function() require("page_chat").draw(ctx, ImGui, cfg, b) end, 560 }, { function() section_notes(); section_ideas() end, 420 } })
     elseif page == "History" then layout({ { section_recall, 400 }, { section_history, 600 } })
-    elseif page == "Settings" then page_settings()
-    elseif page == "Maintenance" then page_maintenance() end
+    elseif page == "Plugins" then
+      layout({ { function() require("page_plugins").draw(ctx, ImGui, proj, cfg) end, 760 }, { section_plugins, 420 } })
+    elseif page == "Setup" then page_setup() end
     ImGui.PopTextWrapPos(ctx)
     ImGui.EndChild(ctx)
   end

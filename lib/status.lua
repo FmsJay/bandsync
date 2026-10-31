@@ -4,7 +4,7 @@ local band = require("band")
 local sync = require("sync")
 local status = {}
 
-status.COLORS = { ["in sync"] = { 0.35, 0.8, 0.45 }, ["catching up"] = { 0.95, 0.75, 0.25 },
+status.COLORS = { ["synced"] = { 0.35, 0.8, 0.45 }, ["syncing"] = { 0.95, 0.75, 0.25 },
   offline = { 0.55, 0.55, 0.55 }, ["no receipt"] = { 0.55, 0.55, 0.55 } }
 
 function status.ago(sec)
@@ -59,7 +59,7 @@ function status.gather(cfg, b, proj)
           has = total - missing, mine = count(st.takes or {}, cfg.user), pending = st.pending or 0, hold = st.hold,
           armed = st.armed, side = st.side, playing = st.playing, recording = st.recording,
           behind = behind,
-          state = a > 60 and "offline" or ((missing == 0 and not behind) and "in sync" or "catching up") }
+          state = a > 60 and "offline" or ((missing == 0 and not behind) and "synced" or "syncing") }
       end
     end
   end

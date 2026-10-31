@@ -403,17 +403,6 @@ local function section_sync()
     if not tools.set_autostart(true, dir) then band.log("couldn't add BandSync to Scripts/__startup.lua: Live sync won't start with REAPER") end
   end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
-  if ImGui.SmallButton(ctx, "Undo my last change") then
-    local c, why = tools.my_last_change(proj, cfg, b)
-    if not c then band.msg(why)
-    elseif reaper.MB("Put back " .. c.what .. " the way it was before?\n\nOnly your own changes, newest first (press again for the one " ..
-        "before): a bandmate's change in between isn't touched. It goes to the band like any change.", "BandSync", 4) == 6 then
-      local msg, e = tools.undo_mine(proj, cfg, b)
-      if msg then band.log(msg) else band.msg(e) end
-    end
-  end
-  ImGui.SetItemTooltip(ctx, "Unlike Ctrl+Z (which steps back whatever came last, a bandmate's change included), this goes back\n" ..
-    "through only your own changes: moves and trims, fader/pan/mute, deletes.")
   local changed, v = check("Hold my changes (try things; they go out once, when you switch this off)", hold)
   if changed then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
   ImGui.Text(ctx, string.format("Here: %d/%d takes%s", view.total - view.my_missing, view.total,
@@ -1618,6 +1607,10 @@ local function home_who()
       ImGui.SetItemTooltip(ctx, p.state .. (p.armed and #p.armed > 0 and (", armed: " .. table.concat(p.armed, ", ")) or ", nothing armed") ..
         (p.version and p.version ~= band.VERSION and (", BandSync " .. p.version) or ""))
       if p.recording then ImGui.SameLine(ctx, 0, 6); pill("recording", RED) elseif p.driving then ImGui.SameLine(ctx, 0, 6); pill("driving", YELLOW) end
+      if p.mirror and view.my_mirror and p.state == "synced" then -- (as on the cards: the docked list said nothing, match or not)
+        ImGui.SameLine(ctx, 0, 6)
+        if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project") else ImGui.TextColored(ctx, RED, "project differs") end
+      end
     end
     if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
     return home_play()
@@ -1743,6 +1736,20 @@ local function settings_drive()
 end
 local function settings_more()
   if card("more") then
+    ImGui.AlignTextToFramePadding(ctx)
+    ImGui.Text(ctx, "You're " .. cfg.user)
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Change name") then
+      local ok, name = reaper.GetUserInputs("BandSync: your name", 1, "Your name (bandmates see it),extrawidth=120", cfg.user)
+      name = ok and band.clean(name) or ""
+      if name ~= "" and name ~= cfg.user then
+        reaper.SetExtState(band.SECTION, "user", name, true)
+        band.rename(cfg.root, cfg.user, name)
+        cfg.user = name
+      end
+    end
+    ImGui.SetItemTooltip(ctx, "Your name in BandSync, everywhere (Who's here, claims, who drives). Your tracks stay yours, and\n" ..
+      "the band's machines learn the new name. Changes you made before keep the old one in Restore.")
     section_drums()
     card_end()
   end
@@ -1786,6 +1793,37 @@ local level, level_at = nil, -math.huge
 local function nav_dot(p)
   if p == "Setup" and level then return level == "red" and RED or YELLOW end
 end
+-- The Dock button: left-click picks a side; right-click arms drag-to-dock (green) so moving the window around never
+-- docks it by accident (unarmed, dragging docks only with Shift held). On the session's top bar and the start screen.
+tools.dock_menu = function(docked)
+  local armed = reaper.GetExtState(band.SECTION, "dock armed") ~= ""
+  if armed then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
+  if ImGui.Button(ctx, docked and "Undock" or "Dock") then
+    if docked then dock_req = 0 else ImGui.OpenPopup(ctx, "dockside") end
+  end
+  if armed then ImGui.PopStyleColor(ctx) end
+  if not docked and ImGui.IsItemClicked(ctx, 1) then
+    if armed then reaper.DeleteExtState(band.SECTION, "dock armed", false) else reaper.SetExtState(band.SECTION, "dock armed", "1", false) end
+  end
+  ImGui.SetItemTooltip(ctx, docked and "Back to a window of its own." or (armed and "Drag-to-dock is on: drag the window onto a REAPER docker. Right-click to turn it off."
+    or "Click: dock at the bottom, left or right of REAPER. Right-click: turn on drag-to-dock (or hold Shift while dragging)."))
+  if ImGui.BeginPopup(ctx, "dockside") then
+    for _, side in ipairs({ { "Bottom", 0 }, { "Left", 1 }, { "Right", 3 } }) do
+      if ImGui.Selectable(ctx, side[1]) then
+        local found
+        for i = 0, 15 do if reaper.DockGetPosition(i) == side[2] then found = i; break end end
+        if found then dock_req = ~found -- (ReaImGui: dock id -1 is REAPER docker 0, -2 docker 1, ...)
+        else
+          dock_req = side[2] == 0 and -1 or -2
+          band.msg("REAPER has no docker on the " .. side[1]:lower() .. " yet. BandSync is in a docker now: right-click its tab, " ..
+            "Docker position, " .. side[1] .. ". REAPER remembers it.")
+        end
+      end
+    end
+    ImGui.EndPopup(ctx)
+  end
+end
+
 local function frame_app()
   local ww, wh = ImGui.GetWindowSize(ctx)
   local compact = wh < 440 or ww > wh * 2.4 -- a bottom dock: a row of pages instead of a sidebar
@@ -1843,20 +1881,9 @@ local function frame_app()
   at_row("Undo")
   -- your own changes only, for everyone (a bandmate's change since is never touched, unlike Ctrl+Z); each asks first,
   -- naming the change. Read from History's events on click (not every frame).
-  local function undo_redo(redo)
-    local mirror = require("mirror")
-    local all = recall.entries(cfg, b.song, b.room)
-    local i = redo and mirror.last_undo(all, cfg.user) or mirror.last_mine(all, cfg.user)
-    if not i then return band.msg(redo and "Nothing to redo: you haven't undone anything since your last change." or "You haven't changed anything here yet.") end
-    local e = all[i]
-    local what = redo and ("redo: " .. describe(all[i])) or ("undo: " .. describe(e))
-    local others = mirror.later_by_others(all, i)
-    if reaper.MB(what:sub(1, 1):upper() .. what:sub(2) .. "?\n\nIt goes to everyone." .. (#others > 0 and ("\n\n" .. table.concat(others, ", ") ..
-      " changed it after that: their change to it goes back too.") or ""), "BandSync", 4) ~= 6 then return end
-    local opts = { can = can, mode = who and who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" }
-    if redo then opts.redoes = e.id else opts.undoes = e.id end
-    local ok, res = pcall(mirror.revert, proj, cfg, b.song, b.room, mirror.plan_undo(all, i), opts)
-    band.log(ok and res or ("undo failed: " .. tostring(res)))
+  local function undo_redo(redo) -- (lib/undo.lua: the same as the BandSync - Undo / Redo actions, but always asks)
+    local res, why = require("undo").step(proj, cfg, b, redo, { ask = true, describe = describe })
+    if res then band.log(res) elseif why then band.msg(why) end
     hist_at = 0
   end
   if arrow_button("##undo", false, "Undo your own last change, for everyone (it asks first, and says if a bandmate changed the same " ..
@@ -1881,34 +1908,7 @@ local function frame_app()
   local room = ImGui.GetContentRegionAvail(ctx)
   if room > need + 12 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
   else at_row("Undock") end
-  -- Dock: left-click picks a side; right-click arms drag-to-dock (green) so moving the window around never docks it
-  -- by accident (unarmed, dragging docks only with Shift held)
-  local armed = reaper.GetExtState(band.SECTION, "dock armed") ~= ""
-  if armed then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
-  if ImGui.Button(ctx, docked and "Undock" or "Dock") then
-    if docked then dock_req = 0 else ImGui.OpenPopup(ctx, "dockside") end
-  end
-  if armed then ImGui.PopStyleColor(ctx) end
-  if not docked and ImGui.IsItemClicked(ctx, 1) then
-    if armed then reaper.DeleteExtState(band.SECTION, "dock armed", false) else reaper.SetExtState(band.SECTION, "dock armed", "1", false) end
-  end
-  ImGui.SetItemTooltip(ctx, docked and "Back to a window of its own." or (armed and "Drag-to-dock is on: drag the window onto a REAPER docker. Right-click to turn it off."
-    or "Click: dock at the bottom, left or right of REAPER. Right-click: turn on drag-to-dock (or hold Shift while dragging)."))
-  if ImGui.BeginPopup(ctx, "dockside") then
-    for _, side in ipairs({ { "Bottom", 0 }, { "Left", 1 }, { "Right", 3 } }) do
-      if ImGui.Selectable(ctx, side[1]) then
-        local found
-        for i = 0, 15 do if reaper.DockGetPosition(i) == side[2] then found = i; break end end
-        if found then dock_req = ~found -- (ReaImGui: dock id -1 is REAPER docker 0, -2 docker 1, ...)
-        else
-          dock_req = side[2] == 0 and -1 or -2
-          band.msg("REAPER has no docker on the " .. side[1]:lower() .. " yet. BandSync is in a docker now: right-click its tab, " ..
-            "Docker position, " .. side[1] .. ". REAPER remembers it.")
-        end
-      end
-    end
-    ImGui.EndPopup(ctx)
-  end
+  tools.dock_menu(docked)
   if not docked then
     at_row("Exit full screen")
     local full = placed_how == "Fill this screen"
@@ -1926,7 +1926,8 @@ local function frame_app()
   local newest = band.activity()[1]
   if newest ~= tools.toast_line then tools.toast_line, tools.toast_at = newest, tools.toast_seen and reaper.time_precise() or -math.huge end
   tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)
-  if newest and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, 0xBFD3FFFF, newest:sub(7)) end
+  -- (the line keeps its height when it clears: what's under it mustn't jump as you go to click it)
+  if newest and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, 0xBFD3FFFF, newest:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
   section_invites()
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
@@ -2006,6 +2007,13 @@ local function frame()
     if ImGui.Button(ctx, "Open a band session / room") then action("Open session") end
     if ImGui.Button(ctx, "Prepare this project for BandSync") then action("Prepare session") end
     ImGui.SetItemTooltip(ctx, "Before publishing a busy project: takes into lanes, FLAC recording, clear track names, media in the project folder, tidy-up. Shows a checklist first.")
+    ImGui.Spacing(ctx)
+    tools.dock_menu(ImGui.IsWindowDocked(ctx)) -- (place the panel before any session is open)
+    if not ImGui.IsWindowDocked(ctx) then
+      ImGui.SameLine(ctx)
+      if ImGui.Button(ctx, "Window") then local pick = band.pick(WINDOW_MENU); if pick then place_window(pick) end end
+      ImGui.SetItemTooltip(ctx, "Fill the screen the panel is on, or half of it (left, right, top, bottom), and back.")
+    end
     return
   end
   if not app then

@@ -40,7 +40,6 @@ local my_token = string.format("%.6f-%d", reaper.time_precise(), math.random(1, 
 reaper.SetExtState(band.SECTION, "live owner " .. tostring(proj), my_token, false)
 local host = b.role == "host"
 local s0 = band.read_json(band.session_path(cfg, b.song)) or {}
-local mode = b.take_mode or "mirror" -- rebuild each sender's lanes and multi-take items as they are
 local baseline = sync.mark_baseline(proj)
 sync.audio_follow_tempo(proj) -- band audio follows tempo changes piece by piece (REAPER auto-stretch), never drifting
 
@@ -152,108 +151,6 @@ local function remember(id)
   if hit then sync.remember(proj, id, hit[1], hit[2]) end
 end
 
--- someone else's wet print carries `tail` seconds of reverb/delay past its end: our item is that much longer
--- (returns the path for update_take, or a copy of t with the longer length for place_take)
-local function with_tail(t, path)
-  sync.setext(proj, sync.TAILS, t.id, tostring(t.tail or 0))
-  if path then
-    local c = {}
-    for k, v in pairs(t) do c[k] = v end
-    c.len = t.len + (t.tail or 0)
-    return c
-  end
-  t.len, t.tailed = t.len + (t.tail or 0), true
-  return nil
-end
-
-local import_failed = {} -- manifests that couldn't be imported: said once
-local function import(room)
-  local tdir = band.takes_dir(cfg, b.song, room)
-  local idx = band.take_index(proj) -- once per pass (it walks every item and take)
-  for _, f in ipairs(band.files(tdir, ".json")) do
-    -- one bad manifest (truncated, hand-edited, a newer format) mustn't stop every take and event behind it
-    local ok, err = pcall(function()
-    local t = band.read_json(tdir .. "/" .. f)
-    local missing
-    for _, k in ipairs({ "id", "full", "user", "track", "pos", "len" }) do if t and t[k] == nil then missing = k; break end end
-    if t and missing and missing ~= "id" and missing ~= "full" then error("it has no '" .. missing .. "'", 0) end
-    if t and t.id and t.full then
-      band.check_version(t.bandsync, "A take from " .. t.user, true)
-      t.pos = sync.here(proj, t.pos, t.qn) -- by beat: right even if a tempo change crossed paths with it
-      local state = band.take_state(proj, t.id)
-      local full, prev = tdir .. "/" .. t.full, t.preview and (tdir .. "/" .. t.preview)
-      local dry = t.dry and (tdir .. "/" .. t.dry)
-      local rev, held = t.rev or 1, tonumber(sync.ext(proj, sync.REV, t.id)) or 1
-      local midi = t.midi and (tdir .. "/" .. t.midi)
-      local function place_midi() -- the notes, as an editable MIDI copy under the print
-        if not midi or not reaper.file_exists(midi) then return end
-        local notes = t
-        if t.tailed then -- the copy holds the notes only, without the print's reverb tail
-          notes = {}
-          for k, v in pairs(t) do notes[k] = v end
-          notes.len = t.len - (t.tail or 0)
-        end
-        local _, mtk = band.place_midi(proj, notes, midi, cfg.root)
-        if mtk then sync.midi_seen(proj, t.id, mtk) end
-        if mtk and t.no_instrument then
-          band.log(string.format("%s's MIDI on '%s' came without an instrument, so its print is silent: put one on '%s (MIDI)' to hear it (Print my MIDI shares that)",
-            t.user, t.track, t.track))
-        end
-      end
-      local hit = idx[t.id:lower()]
-      local mine = hit and hit[2]
-      if mine and band.take_ext(mine, "band_sent") == "" then mine = nil end
-      if state == "full" and rev > held and mine then -- someone printed our MIDI take with their instrument
-        sync.setext(proj, sync.REV, t.id, tostring(rev))
-        sync.setext(proj, sync.PRINTER, t.id, t.printed_by or "")
-        band.log(string.format("%s printed your take %s with their own sound: the band hears theirs now", tostring(t.printed_by), t.id))
-      elseif state == "full" and rev > held then -- reprinted (FX/volume/note change): update in place
-        if ready(full) and (not dry or ready(dry)) then
-          reaper.Undo_BeginBlock2(proj)
-          local ok = band.update_take(proj, t, (with_tail(t) or full), dry)
-          if ok then place_midi(); remember(t.id) end
-          reaper.Undo_EndBlock2(proj, "BandSync: updated take from " .. t.user, -1)
-          if ok then
-            sync.setext(proj, sync.REV, t.id, tostring(rev))
-            sync.setext(proj, sync.PRINTER, t.id, t.printed_by or "")
-            band.log(string.format("take from %s updated (revision %d%s) -> %s", t.user, rev,
-              (t.printed_by and t.printed_by ~= t.user) and (", printed by " .. t.printed_by) or "", t.track))
-          end
-        end
-      elseif state ~= "full" and state ~= "deleted" then -- "full" also covers takes this project sent itself
-        local want, path
-        if ready(full) and (not dry or ready(dry)) then want, path = "full", full
-        elseif state == "" and prev and ready(prev) then want, path = "preview", prev end
-        if want then
-          reaper.Undo_BeginBlock2(proj)
-          local ok = band.place_take(proj, with_tail(t, path), path, mode, want == "full" and dry or nil)
-          if ok then
-            place_midi(); remember(t.id)
-            if t.based_on then remember(t.based_on) end -- a shared sound grew the original's item: not an edit of it
-          end
-          reaper.Undo_EndBlock2(proj, "BandSync: " .. want .. " take from " .. t.user, -1)
-          if ok then
-            band.set_take_state(proj, t.id, want)
-            sync.setext(proj, sync.REV, t.id, tostring(rev))
-            sync.setext(proj, sync.PRINTER, t.id, t.printed_by or "")
-            local pending = sync.ext(proj, sync.PENDING, t.id) -- brought back by a recall point: put it where that had it
-            if pending ~= "" then
-              local p = band.json_decode(pending)
-              if p then sync.apply(proj, { type = "edit", take = t.id, track = p.track, pos = p.pos, len = p.len, lane = p.lane, mute = p.mute, offs = p.offs }) end
-              sync.setext(proj, sync.PENDING, t.id, "")
-            end
-            band.log(string.format("%s take from %s (%s) -> %s", want, t.user, room, t.track))
-          end
-        end
-      end
-    end
-    end)
-    if not ok and not import_failed[f] then
-      import_failed[f] = true
-      band.log("couldn't bring in " .. f .. ": " .. tostring(err))
-    end
-  end
-end
 
 local last_driver
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
@@ -661,6 +558,6 @@ tick = function()
   if go then reaper.defer(tick) end
 end
 
-band.log(string.format("live sync for '%s' (%s, room %s, takes as %s, driver %s)%s", b.song, b.role, b.room, mode,
+band.log(string.format("live sync for '%s' (%s, room %s, driver %s)%s", b.song, b.role, b.room,
   tostring(sync.driver(cfg, b.song, b.room, s0)), baseline > 0 and (", " .. baseline .. " existing take(s) left as baseline") or ""))
 tick()

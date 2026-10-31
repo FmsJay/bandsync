@@ -34,14 +34,24 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
   - Every track and item has a permanent id (never its name), so unnamed and renamed tracks are fine.
   - What you change goes out a moment after you change it (after the drop, when dragging): items (position,
     fades, mute, lane, MIDI notes, copies, new items), tracks (name, lanes and which lanes play, folders,
-    mute/solo, fader, pan, width and pan mode, channel count, the FX button, the master/parent send, timebase,
+    mute, fader, pan, width and pan mode, channel count, the FX button, the master/parent send, timebase,
     playback offset, group/VCA membership, lock, input FX and MIDI note names), sends between tracks (level, pan, mute, channels and their send envelopes),
-    automation envelopes (volume, pan, width, mute, trim; sent once you stop and leave them for 3 seconds) and
-    plug-in chains with their parameter automation (only while stopped: replacing a chain reloads the plug-ins).
+    automation envelopes and their automation items (volume, pan, width, mute, trim; sent once you stop and leave
+    them for 3 seconds), plug-in chains with their parameter automation (only while stopped: replacing a chain
+    reloads the plug-ins), and the master track's plug-ins and automation (its fader and pan stay yours: that's
+    your listening level; a ReaNINJAM or SonoBus on it stays yours too).
     Which envelopes you show, which is armed and how tall their lanes are stay yours. Plug-ins, automation and
     sends land when that song's tab is in front (REAPER misroutes sends written into a tab behind).
+    Solo stays yours: soloing a part to hear it never solos it for the band. So does item grouping.
+  - A bandmate's recording whose audio is still syncing shows as a grey item where it goes, until the file lands.
+  - Files a plug-in loads by itself (sampler samples, impulse responses, amp models) are copied into the room.
+    A bandmate gets each one at the same place when their machine has that folder; otherwise BandSync says which
+    plug-in wants which file and where the copy is.
+  - Melodyne (and other ARA plug-ins) on a take: whoever edits it gets a print (closing the Melodyne window makes
+    a new one) that travels as audio. They keep the editable take; everyone else plays the print, since
+    Melodyne's edits live outside the item. Freezing a track travels as its result; unfreezing brings it back.
   - The song's own settings travel with the tempo map and markers (the driver's): title, author, project notes,
-    track group names and the timebase.
+    track group names, the timebase, the ruler lanes and which lane each marker or region sits in.
   - What the band changes comes in, the newest version of each object winning on every machine alike.
   - A change you may not make (the driver's, or someone's claim) is put back, Ctrl+drag copies included, with the
     reason in the panel's banner (or a tooltip by the mouse when the panel is closed).
@@ -136,6 +146,17 @@ opens Restore set to that kind of going back), Take control (greyed while you dr
 Chat. Point at a slice to read what it does underneath, and click it to do it. Esc, a click anywhere else, or the key
 again closes the menu. The panel carries the move out, so each choice asks first just as its button there does, and
 the panel opens if it was closed.
+
+**BandSync - Undo** and **BandSync - Redo**: bind them to Ctrl+Z and Ctrl+Shift+Z (Actions list > Add shortcut). In a
+BandSync session they step back through your own changes only, for everyone, and ask first only when a bandmate
+changed the same thing since (REAPER's own undo would roll their changes back too). In any other project they're
+REAPER's normal Undo and Redo.
+
+**Your name**: Setup > Options > Change name. Who drives and your claims move over, and your tracks stay yours on
+every machine (the band keeps a list of old names). Changes you made before keep the old name on the Restore page.
+
+**Open session** shows, for the song you point at, how many tracks it has, how much audio, and which of its
+plug-ins this machine doesn't have.
 
 Who may change what:
 
@@ -273,13 +294,11 @@ tracks twice.
 - Prints render through the item's track (not parent folders or sends) and only on a machine where all of that
   track's plug-ins load; rendering shows REAPER's render window for a moment (REAPER has no background render).
 - Track colours travel with a real change but aren't a change on their own (auto-colouring would make machines
-  recolour each other). Automation items (the boxes on an envelope lane) don't travel yet: their points live
-  in the project, outside the track.
+  recolour each other). Automation items arrive as items of their own (pooled ones aren't pooled on the other side).
 - Sends to and from a track that only exists on your machine (Real time, live views) stay yours; hardware
   outputs, record arm, inputs and monitoring stay yours too.
-- Not synced yet: the master track (its fader, plug-ins and automation), Melodyne/ARA edits, automation items,
-  files a plug-in loads by itself (sampler samples, impulse responses, amp models: copy them to everyone), which
-  ruler lane a marker sits in, item grouping, frozen tracks, and render, metronome and recording settings.
+- Not synced, on purpose: render, metronome and recording settings, and the master fader (each person's own).
+  A Melodyne edit reaches the band as audio (the print), not as an edit they can change.
 - An item's lane travels; a lane's name and which lanes play travel with its track.
 - Both changing one object while apart: the newer change wins everywhere; the other is on the Restore page.
 - Bringing a side room in: an object both rooms changed since the room was made stays as main has it.
@@ -295,3 +314,7 @@ tracks twice.
   state's layout (checked against SonoBus 1.7.2); if a later SonoBus changes it, BandSync says so and you join with
   SonoBus's own Connect button. What you hear from others is a little late (the network): line-up against the grid
   is being worked on.
+
+## Licence
+
+BandSync is free software under the GNU General Public License, version 3 or later (see `LICENSE`).

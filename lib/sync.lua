@@ -125,7 +125,8 @@ end
 -- REAPER moves (and, in its default "beats (position, length, rate)" timebase, stretches) each item exactly as it
 -- would for a local tempo change. Positions also travel in quarter notes, so a take that crosses paths with a
 -- tempo change still lands on its beat.
-local function timeline_sig(proj) return band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj), band.capture_project(proj) }) end
+-- (the 4th part is the format: a signature noted in another format is a first look, never a change to send or put back)
+local function timeline_sig(proj) return band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj), band.capture_project(proj), 2 }) end
 sync.timeline_sig = timeline_sig
 
 -- Whether this project follows the beat (REAPER's default) rather than the clock: then positions travel in beats.
@@ -559,12 +560,12 @@ end
 
 -- Print one take through its track (wet) to <out>/<name>.flac, leaving selection and the playing take as they
 -- were. Returns the .flac path, or nil. Active tab only. (Solo edit keeps wet prints beside dry recordings.)
-function sync.print_item(proj, it, take, out, name, tail)
+function sync.print_item(proj, it, take, out, name, tail, dry) -- (dry: the take's own plug-ins only, not its track's)
   local sel, playing = selection(proj), reaper.GetActiveTake(it)
   reaper.SetActiveTake(take)
   reaper.SelectAllMediaItems(proj, false)
   reaper.SetMediaItemSelected(it, true)
-  local path = render_item(it, take, out, name, true, tail) .. ".flac"
+  local path = render_item(it, take, out, name, not dry, tail) .. ".flac"
   reaper.SetActiveTake(playing)
   reaper.SelectAllMediaItems(proj, false)
   for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaItem*") then reaper.SetMediaItemSelected(s, true) end end
@@ -800,7 +801,7 @@ function sync.obj_allowed(ev, can, driver)
   if can(ev.user, ev.name or "", ev.pos, nil, driver) then return true end
   local t = ev.obj == "track" and ev.oid or ev.track
   local mirror = require("mirror")
-  return sync.room_mode ~= "driver" and mirror.creator(t) == mirror.user_tag(ev.user)
+  return sync.room_mode ~= "driver" and mirror.is_creator(t, ev.user)
 end
 
 function sync.apply(proj, ev, dir, root, can, me)
@@ -816,8 +817,8 @@ function sync.apply(proj, ev, dir, root, can, me)
   if ev.type == "timeline" then -- REAPER moves the items for the new map, as it would for a local change
     sync.audio_follow_tempo(proj)
     band.apply_tempo(proj, ev.tempo or {})
+    band.apply_project(proj, ev.project) -- (title, notes, group names, timebase, ruler lanes: from 0.31.1; before the markers that sit in them)
     band.apply_markers(proj, ev.markers or {})
-    band.apply_project(proj, ev.project) -- (title, notes, group names, timebase: from 0.31.1)
     setext(proj, band.SECTION, "timeline", timeline_sig(proj))
     sync.resnap(proj)
     return true
@@ -918,7 +919,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
   local me = cfg.user
   -- tempo map / markers first: if they changed, REAPER has just moved items for it, and those moves aren't edits
   local sig, seen = timeline_sig(proj), ext(proj, band.SECTION, "timeline")
-  if seen ~= sig and seen ~= "" and (band.json_decode(seen) or {})[3] == nil then seen = "" end -- (noted before project settings travelled: a first look)
+  if seen ~= sig and seen ~= "" and (band.json_decode(seen) or {})[4] ~= 2 then seen = "" end -- (noted in an older format: a first look)
   if seen ~= sig then
     if seen ~= "" then
       if can(me, nil, nil) then -- the song's timeline is the driver's
@@ -948,8 +949,8 @@ function sync.watch_timeline(proj, cfg, song, room, can)
         if type(before) == "table" and type(before[1]) == "table" and #before[1] > 0 then
           reaper.Undo_BeginBlock2(proj)
           band.apply_tempo(proj, before[1])
-          band.apply_markers(proj, before[2] or {})
           band.apply_project(proj, before[3])
+          band.apply_markers(proj, before[2] or {})
           reaper.Undo_EndBlock2(proj, "BandSync: put the band's tempo map and markers back", -1)
           sig = timeline_sig(proj)
           sync.put_back("only the driver changes the tempo map, markers and project settings: put back (take control to change them)")

@@ -107,6 +107,36 @@ end
 -- Opens the chooser. done(song, room) once one is picked, done() if it's closed.
 -- opts: title, action (the button: "Open"), rooms = nil (song only) | "pick" (an existing room) | "new" (or a new
 -- side room), keep(song).
+-- A room's preview, from its newest summary (lib/mirror.lua mirror.summary): { text, missing = { plug-in names } }
+-- or nil when no machine has written one yet. Cached per song/room for this chooser.
+local previews, have = {}, nil
+function chooser.preview(cfg, song, room)
+  local key = song .. "/" .. tostring(room)
+  if previews[key] ~= nil then return previews[key] or nil end
+  local dir = cfg.root .. "/" .. song .. "/rooms/" .. tostring(room) .. "/summary"
+  local best
+  for _, f in ipairs(band.files(dir, ".json")) do
+    local s = band.read_json(dir .. "/" .. f)
+    if type(s) == "table" and (not best or tostring(s.time) > tostring(best.time)) then best = s end
+  end
+  if not best then previews[key] = false; return nil end
+  if not have then
+    have = {}
+    local plugins = require("plugins")
+    for _, p in ipairs(plugins.installed()) do have[plugins.key(p.name)] = true end
+  end
+  local missing = {}
+  for _, n in ipairs(best.plugins or {}) do
+    local js = n:match("^JS: (.+)$")
+    local here = js and reaper.file_exists(reaper.GetResourcePath() .. "/Effects/" .. js) or (not js and have[require("plugins").key(n)])
+    if not here then missing[#missing + 1] = n end
+  end
+  local text = string.format("%d tracks, %d MB of audio. ", tonumber(best.tracks) or 0, tonumber(best.media_mb) or 0) ..
+    (#missing == 0 and "Every plug-in it uses loads here." or string.format("%d plug-in(s) it uses aren't on this machine (hover to see).", #missing))
+  previews[key] = { text = text, missing = missing }
+  return previews[key]
+end
+
 function chooser.open(cfg, opts, done)
   local rows = chooser.songs(cfg, opts.keep)
   if #rows == 0 then return done() end
@@ -155,7 +185,7 @@ function chooser.open(cfg, opts, done)
       local _, sh = ImGui.Checkbox(ctx, nhidden > 0 and ("Show hidden (" .. nhidden .. ")") or "Show hidden", show_hidden)
       show_hidden = sh
       local flags = ImGui.TableFlags_ScrollY | ImGui.TableFlags_RowBg | ImGui.TableFlags_BordersInnerV | ImGui.TableFlags_Resizable
-      if ImGui.BeginTable(ctx, "songs", 4, flags, 0, -64) then
+      if ImGui.BeginTable(ctx, "songs", 4, flags, 0, -64 - ImGui.GetTextLineHeightWithSpacing(ctx)) then
         ImGui.TableSetupScrollFreeze(ctx, 0, 1)
         ImGui.TableSetupColumn(ctx, "Song")
         ImGui.TableSetupColumn(ctx, "Host")
@@ -265,6 +295,11 @@ function chooser.open(cfg, opts, done)
       else
         ImGui.Dummy(ctx, 0, ImGui.GetFrameHeight(ctx))
       end
+      -- before you join: how big it is, and the plug-ins it uses that this machine doesn't have
+      local pv = sel and chooser.preview(cfg, sel.song, room)
+      if pv then ImGui.TextColored(ctx, #pv.missing > 0 and 0xE0B050FF or 0x8D939BFF, pv.text) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
+      if pv and #pv.missing > 0 then ImGui.SetItemTooltip(ctx, "Missing here:\n" .. table.concat(pv.missing, "\n") ..
+        "\n\nTheir tracks open with the plug-in offline (settings kept). The Plugins page can set a translation.") end
       local pick_room = (opts.rooms == "new" and band.clean(new_room) ~= "") and band.clean(new_room) or room
       ImGui.BeginDisabled(ctx, not sel)
       if ImGui.Button(ctx, (opts.action or "Open") .. (sel and (" '" .. sel.song .. "'" .. (opts.rooms and (", room " .. tostring(pick_room)) or "")) or ""))

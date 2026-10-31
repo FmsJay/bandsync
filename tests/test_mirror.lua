@@ -235,6 +235,22 @@ local tfx = "<ITEM\nPOSITION 0\n<TAKEFX\nSHOW 0\nLASTSEL 0\nDOCKED 0\nBYPASS 0 0
 local tfx2 = tfx:gsub("SHOW 0", "SHOW 1"):gsub("FLOATPOS 0 0 0 0", "FLOATPOS 50 60 400 300"):gsub("{A}", "{B}")
 assert(mirror.normalize_item(tfx) == mirror.normalize_item(tfx2), "take FX windows are local: " .. mirror.normalize_item(tfx2))
 assert(mirror.normalize_item(tfx):find("<JS eq\n1\n>", 1, true), "the take plug-in itself travels")
+-- the master's live link (ReaNINJAM/SonoBus) is kept out of what travels, and kept when the band's chain lands
+local mch = "<TRACK\n<FXCHAIN\nSHOW 0\nBYPASS 0 0 0\n<JS limiter\n1\n>\nFXID {LIM}\nWAK 0 0\nBYPASS 0 0 0\n<VST reaninjam\nAAA=\n>\nFXID {NJ}\nWAK 0 0\n>\n>\n"
+local kept = mirror.fx_blocks(mch, { ["{NJ}"] = true })
+assert(table.concat(kept, "|") == "BYPASS 0 0 0|<VST reaninjam|AAA=|>|FXID {NJ}|WAK 0 0", "live plug-in block: " .. table.concat(kept, "|"))
+assert(not mirror.fxchain(mch, { ["{NJ}"] = true }):find("reaninjam", 1, true), "the live link never travels")
+assert(#mirror.fx_blocks(mch, {}) == 0, "nothing kept when there is no live link")
+-- the plug-ins a chain uses, for the song chooser's preview
+local names = mirror.fx_names('<FXCHAIN\nBYPASS 0 0 0\n<VST "VST3: ReaEQ (Cockos)" reaeq.vst3 0 ""\nAAA=\n>\n' ..
+  'BYPASS 0 0 0\n<JS utility/volume ""\n0\n>\nBYPASS 0 0 0\n<CLAP "CLAPi: Surge XT (Surge Synth Team)" org.surge\n>\n>\n')
+assert(table.concat(names, "|") == "VST3: ReaEQ (Cockos)|JS: utility/volume|CLAPi: Surge XT (Surge Synth Team)", "plug-in names: " .. table.concat(names, "|"))
+-- automation items travel as their own lines: never spliced into the chunk
+local withai = "<VOLENV2\nACT 1 -1\nPT 0 1 0\n>\nBANDAI VOLENV2 1 2 0 1 0.5 0 1 0\nBANDAIPT VOLENV2 0 1 0.5 0 0\n"
+local sai = mirror.splice_parts("<TRACK\n<FXCHAIN\n>\n>\n", "env", withai, function() end, oid_at)
+assert(not sai:find("BANDAI", 1, true) and sai:find("PT 0 1 0", 1, true), "automation item lines stay out of the chunk")
+assert(mirror.track_parts("<TRACK\n<VOLENV2\nACT 1 -1\nPOOLEDENVINST 1 1 2 0 1 0 0 0 1 0 0\nPT 0 1 0\n>\n>\n", oid_at) == "<VOLENV2\nACT 1 -1\nPT 0 1 0\n>\n",
+  "an envelope's pool references are this machine's")
 
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
 assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)

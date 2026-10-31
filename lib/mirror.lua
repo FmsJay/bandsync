@@ -3,9 +3,9 @@
 local mirror = {}
 
 -- Lines in an item chunk that are this machine's business only: selection, REAPER's own ids (regenerated on
--- apply), MIDI pooling (a copy is its own item), MIDI editor view state, and which take is active (wet/dry is
--- each person's choice).
-local LOCAL = { "SEL", "IGUID", "IID", "GUID", "POOLEDEVTS", "POOLCOLOR", "CFGEDITVIEW", "CFGEDIT", "EVTFILTER", "KEYSNAP", "TRACKSEL" }
+-- apply), MIDI pooling (a copy is its own item), MIDI editor view state, which take is active (wet/dry is each
+-- person's choice) and item grouping (group numbers are per project: another machine's group 3 is other items).
+local LOCAL = { "SEL", "IGUID", "IID", "GUID", "POOLEDEVTS", "POOLCOLOR", "CFGEDITVIEW", "CFGEDIT", "EVTFILTER", "KEYSNAP", "TRACKSEL", "GROUP" }
 local LOCAL_SET = {}
 for _, k in ipairs(LOCAL) do LOCAL_SET[k] = true end
 -- P_EXT keys that travel: our object id, and mirrored markers (band_m_*). Everything else is this machine's.
@@ -80,10 +80,11 @@ end
 -- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
 -- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
 -- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
+mirror.HV = 2 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
 mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", M = "misc", I = "item" } -- (an oid's first letter)
 mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends", misc = "the groups, lock, input FX or note names" }
 mirror.PARTS = { "F", "E", "R", "M" } -- (what a track oid T-x carries: F-x, E-x, R-x, M-x)
-local ENV_LOCAL = { EGUID = true, ARM = true, VIS = true, LANEHEIGHT = true }
+local ENV_LOCAL = { EGUID = true, ARM = true, VIS = true, LANEHEIGHT = true, POOLEDENVINST = true }
 local function is_env(u) return u.block and u.tag:find("ENV") and u.tag:sub(1, 3) ~= "AUX" end
 local function is_aux(u) return u.block and u.tag:sub(1, 3) == "AUX" and u.tag:find("ENV") end
 local MISC = { GROUP_FLAGS = true, GROUP_FLAGS_HIGH = true, LOCK = true, FXCHAIN_REC = true, MIDINOTENAMES = true }
@@ -179,7 +180,7 @@ function mirror.splice_parts(chunk, what, state, index_of, oid_at)
       local keep = {}
       for k = 2, #u.lines do
         local key = u.lines[k]:match("^%s*(%S+)")
-        if ENV_LOCAL[key] and key ~= "EGUID" then keep[#keep + 1] = u.lines[k] end
+        if ENV_LOCAL[key] and key ~= "EGUID" and key ~= "POOLEDENVINST" then keep[#keep + 1] = u.lines[k] end
       end
       view[u.tag] = keep
     end
@@ -192,6 +193,7 @@ function mirror.splice_parts(chunk, what, state, index_of, oid_at)
       if not idx then return nil end
       cur = { tag = "AUXRECV", lines = { "AUXRECV " .. idx .. rest } }
       new[#new + 1] = cur
+    elseif line:match("^BANDAI") then -- (automation items: rebuilt through the API, mirror.set_ai)
     elseif not (cur and cur.open) and line:sub(1, 1) ~= "<" then -- (a lone line: GROUP_FLAGS, LOCK)
       cur = { tag = line:match("^(%S+)"), lines = { line } }
       new[#new + 1] = cur
@@ -228,6 +230,37 @@ function mirror.splice_parts(chunk, what, state, index_of, oid_at)
   if not at then for _, n in ipairs(new) do for _, l in ipairs(n.lines) do out[#out + 1] = l end end end
   out[#out + 1] = tail
   return table.concat(out, "\n") .. "\n"
+end
+
+-- The plug-ins in a track chunk's <FXCHAIN> whose FXID is in `keep`, as raw lines (each from its BYPASS line to the
+-- line before the next plug-in's): what stays on this machine when the band's chain lands (the master's live link).
+function mirror.fx_blocks(track_chunk, keep)
+  local out, group, depth, on, hit = {}, nil, 0, false, false
+  local function flush() if group and hit then for _, l in ipairs(group) do out[#out + 1] = l end end; group, hit = nil, false end
+  for line in track_chunk:gmatch("[^\r\n]+") do
+    local s = line:match("^%s*(.-)%s*$")
+    if not on and s == "<FXCHAIN" then on, depth = true, 1
+    elseif on then
+      local top = depth == 1
+      if s:sub(1, 1) == "<" then depth = depth + 1 elseif s == ">" then depth = depth - 1 end
+      if depth == 0 then flush(); break end
+      if top and s:match("^BYPASS ") then flush(); group = {} end
+      if group then group[#group + 1] = s end
+      if top and keep[s:match("^FXID (%S+)") or ""] then hit = true end
+    end
+  end
+  return out
+end
+
+-- The plug-ins a chain uses, as REAPER names them ("VST3: ReaEQ (Cockos)", "JS: utility/volume"). Pure.
+function mirror.fx_names(chain)
+  local out = {}
+  for line in chain:gmatch("[^\r\n]+") do
+    local s = line:match("^%s*(.-)%s*$")
+    local name = s:match('^<%u+%d? "([^"]+)"') or (s:match("^<JS (%S+)") and ("JS: " .. s:match("^<JS (%S+)")))
+    if name then out[#out + 1] = name end
+  end
+  return out
 end
 
 -- 32-bit FNV-1a: cheap, stable on every Lua; enough to tell versions apart (not a security hash).
@@ -367,6 +400,14 @@ function mirror.new_oid(kind, user, now)
 end
 -- Who made an object (its oid's second field).
 function mirror.creator(oid) return (oid or ""):match("^%a%-(.-)%-%d+%-%d+$") end
+-- Did `user` make the object with this oid? Under an old name too (band.names: they renamed since).
+function mirror.is_creator(oid, user)
+  local c = mirror.creator(oid)
+  if not c then return false end
+  if c == mirror.user_tag(user) then return true end
+  local now = require("band").names()[c]
+  return now ~= nil and mirror.user_tag(now) == mirror.user_tag(user)
+end
 
 -- Track settings that travel, as one line (order matters only for hashing). Faders and pan always travel, but with
 -- Local mixing on they aren't a change here. Never: record arm, input, monitoring, height, selection.
@@ -381,7 +422,7 @@ mirror.TRACK_MIX = { { "width", "D_WIDTH" }, { "panmode", "I_PANMODE" }, { "dual
 function mirror.track_line(t, local_mix)
   -- (colour isn't part of it: it travels with a real change, but auto-colouring (SWS) recolours new tracks on every
   -- machine, and counting that as a change made machines recolour each other)
-  local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, t.solo or 0, t.phase or 0, t.icon or "",
+  local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, "", t.phase or 0, t.icon or "", -- ("": solo is each person's own)
     t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, local_mix and "" or (t.vol or ""), local_mix and "" or (t.pan or "") }
   for _, kp in ipairs(mirror.TRACK_MORE) do f[#f + 1] = t[kp[1]] or "" end
   for _, kp in ipairs(mirror.TRACK_MIX) do f[#f + 1] = local_mix and "" or (t[kp[1]] or "") end
@@ -475,7 +516,7 @@ end
 
 function mirror.set_track_state(proj, tr, t, local_mix)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", t.name or "", true)
-  for _, kp in ipairs({ { "freemode", "I_FREEMODE" }, { "lanes", "I_NUMFIXEDLANES" }, { "mute", "B_MUTE" }, { "solo", "I_SOLO" },
+  for _, kp in ipairs({ { "freemode", "I_FREEMODE" }, { "lanes", "I_NUMFIXEDLANES" }, { "mute", "B_MUTE" },
       { "phase", "B_PHASE" }, { "color", "I_CUSTOMCOLOR" }, { "collapsed", "C_LANESCOLLAPSED" }, { "depth", "I_FOLDERDEPTH" } }) do
     if t[kp[1]] then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]]) or 0) end
   end
@@ -580,17 +621,29 @@ function mirror.scan(proj, user, media_dir, local_mix)
       local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = mirror.hash(fx) }
       objs[#objs + 1], by_oid[fo.oid] = fo, fo
       local env, recv, misc = mirror.track_parts(chunk, oid_at)
+      env = env .. mirror.ai_lines(tr)
       for _, p in ipairs({ { "E", "env", env }, { "R", "recv", recv }, { "M", "misc", misc } }) do
         local po = { kind = p[2], oid = p[1] .. oid:sub(2), ptr = tr, track = oid, state = p[3], hash = mirror.hash(p[3]) }
         objs[#objs + 1], by_oid[po.oid] = po, po
       end
     end
   end
+  do -- the master (see mirror.MASTER)
+    local master = reaper.GetMasterTrack(proj)
+    local _, mch = reaper.GetTrackStateChunk(master, "", false)
+    local mfx = mirror.fxchain(mch, mirror.live_fx(master)) or ""
+    local menv = mirror.track_parts(mch, oid_at) .. mirror.ai_lines(master)
+    for _, p in ipairs({ { "F-MASTER", "fx", mfx }, { "E-MASTER", "env", menv } }) do
+      local po = { kind = p[2], oid = p[1], ptr = master, track = mirror.MASTER, state = p[3], hash = mirror.hash(p[3]) }
+      objs[#objs + 1], by_oid[po.oid] = po, po
+    end
+    by_oid[mirror.MASTER] = { kind = "master", state = { name = "Master" } } -- (who may change it: as a track called Master)
+  end
   local il = {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     local toid = tracks[reaper.GetMediaItem_Track(it)]
-    if toid then
+    if toid and select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_arriving", "", false)) == "" then -- (a stand-in: never sent)
       il[#il + 1] = { ptr = it, toid = toid, oid = itm_oid(it), guid = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)) }
     end
   end
@@ -622,7 +675,20 @@ function mirror.share_media(chunk, media_dir)
 end
 
 -- Find a track or item by oid.
+-- The master track travels as two parts only, F-MASTER (its plug-ins) and E-MASTER (its automation): its fader and
+-- pan are each person's listening level. ReaNINJAM and SonoBus on it are this machine's live link, never sent.
+mirror.MASTER = "T-MASTER"
+function mirror.live_fx(tr)
+  local set = {}
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+    local _, name = reaper.TrackFX_GetFXName(tr, i, "")
+    if name:find("ReaNINJAM", 1, true) or name:find("SonoBus", 1, true) then set[reaper.TrackFX_GetFXGUID(tr, i)] = true end
+  end
+  return set
+end
+
 function mirror.find(proj, kind, oid)
+  if oid == mirror.MASTER then return reaper.GetMasterTrack(proj) end
   if kind == "item" then
     for i = 0, reaper.CountMediaItems(proj) - 1 do
       local it = reaper.GetMediaItem(proj, i)
@@ -634,6 +700,86 @@ function mirror.find(proj, kind, oid)
       if trk_oid(tr) == oid then return tr end
     end
   end
+end
+
+-- A track's automation items (on its own envelopes, not plug-in or send ones), as lines: "BANDAI <envelope> position
+-- length offset rate baseline amplitude loop mute" and each point "BANDAIPT <envelope> <item> time value shape tension".
+-- Their pools live outside the track, so each arrives as an item of its own (unpooled, like a MIDI copy).
+local AI_KEYS = { "D_POSITION", "D_LENGTH", "D_STARTOFFS", "D_PLAYRATE", "D_BASELINE", "D_AMPLITUDE", "D_LOOPSRC", "D_MUTE" }
+local function env_tag(env)
+  local _, ch = reaper.GetEnvelopeStateChunk(env, "", false)
+  local tag = ch:match("^%s*<(%S+)")
+  return tag and tag ~= "PARMENV" and tag:sub(1, 3) ~= "AUX" and tag or nil
+end
+function mirror.ai_lines(tr)
+  local out = {}
+  for e = 0, reaper.CountTrackEnvelopes(tr) - 1 do
+    local env = reaper.GetTrackEnvelope(tr, e)
+    local n = reaper.CountAutomationItems(env)
+    local tag = n > 0 and env_tag(env)
+    for a = 0, tag and n - 1 or -1 do
+      local v = {}
+      for _, k in ipairs(AI_KEYS) do v[#v + 1] = string.format("%.10g", reaper.GetSetAutomationItemInfo(env, a, k, 0, false)) end
+      out[#out + 1] = "BANDAI " .. tag .. " " .. table.concat(v, " ")
+      for p = 0, reaper.CountEnvelopePointsEx(env, a) - 1 do
+        local _, t, val, shape, ten = reaper.GetEnvelopePointEx(env, a, p)
+        out[#out + 1] = string.format("BANDAIPT %s %d %.10g %.10g %d %.6g", tag, a, t, val, shape, ten)
+      end
+    end
+  end
+  return #out > 0 and (table.concat(out, "\n") .. "\n") or ""
+end
+
+-- Rebuild the automation items a travelling envelope part lists (the chunk splice left the track with none). Each
+-- gets a pool of its own: one past the highest in the project.
+function mirror.set_ai(proj, tr, state)
+  if not state:find("BANDAI ", 1, true) then return end
+  local pool = 0
+  for t = -1, reaper.CountTracks(proj) - 1 do
+    local track = t < 0 and reaper.GetMasterTrack(proj) or reaper.GetTrack(proj, t)
+    for e = 0, reaper.CountTrackEnvelopes(track) - 1 do
+      local env = reaper.GetTrackEnvelope(track, e)
+      for a = 0, reaper.CountAutomationItems(env) - 1 do pool = math.max(pool, reaper.GetSetAutomationItemInfo(env, a, "D_POOL_ID", 0, false) + 1) end
+    end
+  end
+  local made, count = {}, {}
+  for line in state:gmatch("[^\n]+") do
+    local tag, rest = line:match("^BANDAI (%S+) (.*)$")
+    if tag then
+      local v = {}
+      for x in rest:gmatch("%S+") do v[#v + 1] = tonumber(x) end
+      local env = reaper.GetTrackEnvelopeByChunkName(tr, "<" .. tag)
+      local k = count[tag] or 0
+      count[tag] = k + 1
+      if env and v[2] then
+        local a = reaper.InsertAutomationItem(env, pool, v[1], v[2])
+        pool = pool + 1
+        for i = 3, #AI_KEYS do if v[i] then reaper.GetSetAutomationItemInfo(env, a, AI_KEYS[i], v[i], true) end end
+        made[tag .. " " .. k] = { env, a }
+      end
+    else
+      local ptag, k, t, val, shape, ten = line:match("^BANDAIPT (%S+) (%d+) (%S+) (%S+) (%S+) (%S+)$")
+      local m = ptag and made[ptag .. " " .. k]
+      if m then reaper.InsertEnvelopePointEx(m[1], m[2], tonumber(t), tonumber(val), tonumber(shape), tonumber(ten), false, true) end
+    end
+  end
+  for _, m in pairs(made) do reaper.Envelope_SortPointsEx(m[1], m[2]) end
+end
+
+-- A stand-in for a bandmate's item whose audio is still arriving: an empty grey item at its place and length (and
+-- lane), named for what it is, holding the item's oid so the real one replaces it. Never sent (mirror.scan skips it).
+function mirror.placeholder(tr, oid, state, track_name)
+  local it = reaper.AddMediaItemToTrack(tr)
+  reaper.SetMediaItemInfo_Value(it, "D_POSITION", tonumber(state:match("\nPOSITION ([%d%.%-e]+)")) or 0)
+  reaper.SetMediaItemInfo_Value(it, "D_LENGTH", tonumber(state:match("\nLENGTH ([%d%.%-e]+)")) or 1)
+  local lane = tonumber(state:match("BANDLANE (%d+)"))
+  if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane) end
+  reaper.SetMediaItemInfo_Value(it, "I_CUSTOMCOLOR", reaper.ColorToNative(90, 90, 90) | 0x1000000)
+  reaper.GetSetMediaItemInfo_String(it, "P_NOTES", "arriving: " .. ((state:match("\nNAME ([^\n]+)") or ""):gsub('^"(.*)"$', "%1")) ..
+    " (" .. (track_name or "") .. "), still syncing", true)
+  reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_arriving", "1", true)
+  reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
+  reaper.UpdateItemInProject(it)
 end
 
 -- Apply one revision (an "obj" event) here. Returns true when done, false to try again later (its track or its
@@ -676,9 +822,19 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     if not tr then return false end
     if reaper.GetPlayStateEx(proj) ~= 0 then return false end -- replacing a chain reloads plug-ins: only while stopped
     if reaper.EnumProjects(-1) ~= proj then return false end -- (see below: a track chunk waits for its tab to be in front)
+    require("fxfiles").fetch(ev.files, media_dir, (ev.name or "") ~= "" and ev.name or "a track") -- (before the plug-ins load)
     local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
     local sync = require("sync")
     local block = (ev.state or ""):gsub("\n$", "")
+    if ev.track == mirror.MASTER then -- (this machine's ReaNINJAM / SonoBus stay on its master, at the end of the chain)
+      local live = mirror.fx_blocks(chunk, mirror.live_fx(tr))
+      -- (without its id: REAPER gives the incoming plug-ins, which travel without ids, the ids of the old chain by
+      -- position, so the live link's own id would land on the band's first plug-in too; it's found by name anyway)
+      for i = #live, 1, -1 do if live[i]:match("^FXID ") then table.remove(live, i) end end
+      if #live > 0 then
+        block = block ~= "" and block:gsub("\n>$", "\n" .. table.concat(live, "\n") .. "\n>") or ("<FXCHAIN\n" .. table.concat(live, "\n") .. "\n>")
+      end
+    end
     local new = sync.chunk_set_block(chunk, "FXCHAIN", block ~= "" and block or nil)
     if new and new ~= chunk then reaper.SetTrackStateChunk(tr, new, false) end
     -- the band's chain replaced this machine's translations too: put them back (they're never part of the hash)
@@ -688,7 +844,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
       if cfg then pcall(require("page_plugins").apply_here, proj, cfg) end
     end
     local _, after = reaper.GetTrackStateChunk(tr, "", false)
-    local skip = {}
+    local skip = ev.track == mirror.MASTER and mirror.live_fx(tr) or {}
     for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
     return true, mirror.hash(mirror.fxchain(after, skip) or "")
   elseif kind == "env" or kind == "recv" or kind == "misc" then
@@ -718,14 +874,21 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     end
     local _, after = reaper.GetTrackStateChunk(tr, "", false)
     local env, recv, misc = mirror.track_parts(after, oid_at)
+    if kind == "env" then mirror.set_ai(proj, tr, ev.state or ""); env = env .. mirror.ai_lines(tr) end
     return true, mirror.hash(kind == "env" and env or kind == "recv" and recv or misc)
   elseif kind == "item" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
     for _, path in ipairs(mirror.media_needed(ev.state, media_dir)) do
-      if not reaper.file_exists(path) then return false end -- still on its way
+      if not reaper.file_exists(path) then -- still on its way: a grey stand-in shows where it goes until it lands
+        if not mirror.find(proj, "item", oid) then mirror.placeholder(tr, oid, ev.state, ev.name) end
+        return false
+      end
     end
     local it = mirror.find(proj, "item", oid)
+    -- (an item with Melodyne / ARA on a take isn't rebuilt in place from a chunk without take ids: REAPER kept one
+    -- take of two (measured 7.83). A fresh item takes it whole.)
+    if it and require("prints").ara_take(it) then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(it), it); it = nil end
     if not it then it = reaper.AddMediaItemToTrack(tr)
     elseif reaper.GetMediaItem_Track(it) ~= tr then reaper.MoveMediaItemToTrack(it, tr) end
     local sel = reaper.IsMediaItemSelected(it)
@@ -759,7 +922,9 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
-  if ok and ev.hash and h ~= ev.hash and not ev.gone then -- applied, but it isn't what they have: the projects differ
+  -- applied, but it isn't what they have: the projects differ (only when made the same way: a change from an older
+  -- BandSync hashed fewer of a track's settings, so it always reads as different; the laptop saw 4 on its first open)
+  if ok and ev.hash and ev.hv == mirror.HV and h ~= ev.hash and not ev.gone then
     local band = require("band")
     local n = (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) + 1
     reaper.SetExtState(band.SECTION, "mirror drift " .. tostring(proj), tostring(n), false)
@@ -802,12 +967,27 @@ local function keep_track(proj, name)
     local tr = reaper.GetTrack(proj, t)
     if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)) == label and local_track(tr) then return tr end
   end
+  local colours = {} -- (auto-colouring recoloured Keys when this track went in, on the laptop: 2026-10-31)
+  for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); colours[x] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
   local idx = reaper.CountTracks(proj)
   reaper.InsertTrackInProject(proj, idx, 0)
   local tr = reaper.GetTrack(proj, idx)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", label, true)
   reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "yours", true)
+  mirror.keep_colours = { proj = proj, colours = colours, till = reaper.time_precise() + 5 }
+  mirror.hold_colours()
   return tr
+end
+-- The band's track colours as they were before a track of your own went in, put back for a few seconds (auto-colour
+-- rules may run a moment later).
+function mirror.hold_colours()
+  local k = mirror.keep_colours
+  if not k or reaper.time_precise() > k.till then mirror.keep_colours = nil; return end
+  for x, c in pairs(k.colours) do
+    if reaper.ValidatePtr2(k.proj, x, "MediaTrack*") and reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") ~= c then
+      reaper.SetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR", c)
+    end
+  end
 end
 
 -- One pass: what changed here goes out if this person may change it, else the band's version is put back.
@@ -815,6 +995,7 @@ end
 function mirror.watch(proj, cfg, song, room, opts)
   local band, sync = require("band"), require("sync")
   if reaper.JS_Mouse_GetState and reaper.JS_Mouse_GetState(1) & 1 == 1 then return 0, 0 end -- mid-drag: wait for the drop
+  mirror.hold_colours()
   local room_dir = sync.room_dir(cfg, song, room)
   local media = room_dir .. "/media"
   local objs, by_oid = mirror.scan(proj, cfg.user, media, opts.local_mix)
@@ -825,7 +1006,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     if opts.can(me, name, pos) then return true end
     -- your own new tracks (and what's on them) are yours, except in Driver only
     local t = o.kind == "track" and o.oid or o.track
-    return opts.mode ~= "driver" and mirror.creator(t) == mirror.user_tag(me)
+    return opts.mode ~= "driver" and mirror.is_creator(t, me)
   end
   local function say_once(key, text)
     if not mirror.said[key] then mirror.said[key] = true; band.log(text) end
@@ -843,8 +1024,14 @@ function mirror.watch(proj, cfg, song, room, opts)
       end
     elseif not rev then
       -- never the band's: something new this person may not add. Kept here, on a track of their own (never deleted)
-      if o.kind == "item" and o.ptr then reaper.MoveMediaItemToTrack(o.ptr, keep_track(proj, why.name or ""))
-      elseif o.kind == "track" and o.ptr then reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true) end
+      local where = (why.name or "") ~= "" and why.name or "an unnamed track"
+      if o.kind == "item" and o.ptr then
+        reaper.MoveMediaItemToTrack(o.ptr, keep_track(proj, why.name or ""))
+        why.text = "a new item on " .. where .. " isn't yours to add: it's kept here on '" .. where .. " (yours, not sent)', not sent to the band (claim the track, or take control)"
+      elseif o.kind == "track" and o.ptr then
+        reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true)
+        why.text = "a new track isn't yours to add: it stays here as yours, not sent to the band (take control to add tracks)"
+      end
     else
       -- known, but its last change can't be read here (still arriving, or from another room): left as it is
       return say_once("noev" .. o.oid, "couldn't put back a change on " .. ((why.name or "") ~= "" and why.name or "an unnamed track") ..
@@ -862,6 +1049,12 @@ function mirror.watch(proj, cfg, song, room, opts)
       if h == o.hash then mirror.reopened[rk] = nil; return end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
         say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
+        if h == "" then -- the band deleted it since: gone here too (2026-10-31: three deleted tracks came back on a reopen)
+          mirror.reopened[rk] = nil
+          if o.kind == "track" or o.kind == "item" then mirror.apply(proj, { obj = o.kind, oid = o.oid, gone = true }, media, opts.local_mix) end
+          back = back + 1
+          return
+        end
         return put_back(o, rev, evid, { name = perm_name(o, by_oid) })
       end
       if not rev and o.state == "" and o.kind ~= "track" and o.kind ~= "item" then return end -- (an empty part nobody has sent)
@@ -891,13 +1084,15 @@ function mirror.watch(proj, cfg, song, room, opts)
           end
         end
         local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,
-          name = name, pos = o.pos, hash = o.hash } -- (hash: what it is here; every receiver checks it came out the same)
+          name = name, pos = o.pos, hash = o.hash, hv = mirror.HV } -- (hash: what it is here; every receiver checks it came out the same)
+        if o.kind == "fx" then ev.files = require("fxfiles").share(state, media) end -- (samples, IRs, models it loads)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
         sent = sent + 1
       else
-        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s on %s isn't yours to change right now: put back (claim it, or take control)",
-          o.kind == "item" and "that item" or mirror.PART[o.kind] or "that track", (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track") })
+        local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
+        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s isn't yours to change right now: put back (claim it, or take control)",
+          o.kind == "track" and ("track " .. where) or ((o.kind == "item" and "that item" or mirror.PART[o.kind]) .. " on " .. where)) })
       end
     end)
     if not ok then say_once("err" .. o.oid, "mirror sync skipped " .. o.oid .. ": " .. tostring(err)) end
@@ -907,6 +1102,7 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- turns re-printing one item. Rendering needs this tab in front and the transport stopped; two per pass at most.
   if reaper.EnumProjects(-1) == proj and not playing then
     local prints, made = require("prints"), 0
+    prints.watch_ara(proj) -- (a Melodyne window closed: that take gets a new print below)
     for _, o in ipairs(objs) do
       if made < 2 and o.kind == "item" and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") then
         local _, _, kev = mirror.known(proj, o.oid)
@@ -950,7 +1146,39 @@ function mirror.watch(proj, cfg, song, room, opts)
     if not ok then say_once("err" .. g.oid, "mirror sync skipped " .. g.oid .. ": " .. tostring(err)) end
   end
   mirror.save_ids(proj)
+  mirror.summary(proj, cfg, room_dir, objs, media)
   return sent, back
+end
+
+-- What the song chooser shows before someone joins (lib/chooser.lua): the room's tracks, plug-ins and how much audio
+-- it holds. rooms/<room>/summary/<user>.json (each machine its own file), rewritten only when it changed; the media
+-- folder is measured once a minute at most.
+local summary_seen, media_mb = {}, {}
+function mirror.summary(proj, cfg, room_dir, objs, media)
+  local band = require("band")
+  local key = tostring(proj) .. room_dir
+  local m = media_mb[key]
+  if not m or reaper.time_precise() - m.at > 60 then
+    local bytes = 0
+    for _, f in ipairs(band.files(media)) do bytes = bytes + (band.size(media .. "/" .. f) or 0) end
+    m = { at = reaper.time_precise(), mb = math.floor(bytes / 1048576 + 0.5) }
+    media_mb[key] = m
+  end
+  local names, seen, tracks = {}, {}, 0
+  for _, o in ipairs(objs) do
+    if o.kind == "track" then tracks = tracks + 1 end
+    if o.kind == "fx" then
+      for _, n in ipairs(mirror.fx_names(o.state)) do if not seen[n] then seen[n] = true; names[#names + 1] = n end end
+    end
+  end
+  table.sort(names)
+  local s = { tracks = tracks, plugins = names, media_mb = m.mb }
+  local text = band.json_encode(s)
+  if summary_seen[key] == text then return end
+  summary_seen[key] = text
+  s.time = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  reaper.RecursiveCreateDirectory(room_dir .. "/summary", 0)
+  band.write_json(room_dir .. "/summary/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json", s)
 end
 
 -- Our own change that the band's rules refuse (judged when it was made): this object goes back to the newest
@@ -1006,7 +1234,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     local name = p.t and p.t.name or ""
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
-    elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or (opts.mode ~= "driver" and mirror.creator(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid) == mirror.user_tag(cfg.user))) then
+    elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or (opts.mode ~= "driver" and mirror.is_creator(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid, cfg.user))) then
       refused = refused + 1
     elseif p.t then
       local ok, nh = mirror.apply(proj, p.t, media, opts.local_mix)

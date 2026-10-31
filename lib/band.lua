@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.31.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.32.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -193,10 +193,55 @@ function band.settings(force)
       return nil
     end
     f:close(); os.remove(probe)
+    local old = reaper.GetExtState(band.SECTION, "user")
     reaper.SetExtState(band.SECTION, "sync_root", root, true)
     reaper.SetExtState(band.SECTION, "user", user, true)
+    if old ~= "" and old ~= user then band.rename(root, old, user) end
   end
   return { root = root, user = user }
+end
+
+-- Old names, so a renamed bandmate's tracks stay theirs: <root>/_band/names.json, an old name's tag -> the name now.
+-- (Checked by mirror.is_creator; read at most every 10 s.)
+local names_at, names = -math.huge, {}
+function band.names(root)
+  if reaper.time_precise() - names_at > 10 then
+    names_at = reaper.time_precise()
+    names = band.read_json((root or reaper.GetExtState(band.SECTION, "sync_root")) .. "/_band/names.json") or {}
+  end
+  return names
+end
+
+-- Someone took a new name: everywhere the band's files hold the old one (who drives each room, their claims, their
+-- Who's here file) it becomes the new one, and the old name is remembered. Their history keeps the old name.
+function band.rename(root, old, new)
+  local tag = function(u) return ((u or "x"):gsub("[^%w]", "_")):upper() end
+  local file = function(u) return (u:gsub("[^%w%-_ ]", "")) .. ".json" end
+  local map = band.read_json(root .. "/_band/names.json") or {}
+  for k, v in pairs(map) do if v == old then map[k] = new end end -- (renamed before: those names lead here too)
+  map[tag(old)] = new
+  map[tag(new)] = nil
+  reaper.RecursiveCreateDirectory(root .. "/_band", 0)
+  band.write_json(root .. "/_band/names.json", map)
+  names_at = -math.huge
+  local n = 0
+  for _, song in ipairs(band.subdirs(root)) do
+    for _, room in ipairs(band.subdirs(root .. "/" .. song .. "/rooms")) do
+      local rdir = root .. "/" .. song .. "/rooms/" .. room
+      local d = band.read_json(rdir .. "/driver.json")
+      if d and d.driver == old then d.driver = new; band.write_json(rdir .. "/driver.json", d); n = n + 1 end
+      local c = band.read_json(rdir .. "/claims/" .. file(old))
+      if c then
+        c.user = new
+        band.write_json(rdir .. "/claims/" .. file(new), c)
+        os.remove(rdir .. "/claims/" .. file(old))
+        n = n + 1
+      end
+      os.remove(rdir .. "/status/" .. file(old)) -- (Live sync writes the new one)
+    end
+  end
+  band.log(string.format("you're %s now (was %s): who drives and your claims moved over in %d place(s); your tracks stay yours. " ..
+    "Changes you made as %s stay under that name in Restore (Undo only steps back through changes made as %s).", new, old, n, old, new))
 end
 
 -- A project is bound to one song: role (host/guest), song, room, version, take_mode.
@@ -269,7 +314,11 @@ function band.capture_markers(proj)
   while true do
     local n, rgn, pos, rend, name, _, color = reaper.EnumProjectMarkers3(proj, i)
     if n == 0 then break end
-    if not band.is_claim_mark(name) then out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = color } end
+    if not band.is_claim_mark(name) then
+      local m = reaper.GetRegionOrMarker and reaper.GetRegionOrMarker(proj, i, "")
+      local lane = m and reaper.GetRegionOrMarkerInfo_Value(proj, m, "I_LANENUMBER") or -1
+      out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = color, lane = lane >= 0 and math.floor(lane) or nil }
+    end
     i = i + 1
   end
   return out
@@ -284,6 +333,12 @@ function band.capture_project(proj)
   for g = 1, 64 do
     local name = select(2, reaper.GetSetProjectInfo_String(proj, "TRACK_GROUP_NAME:" .. g, "", false))
     if name ~= "" then p.groups[tostring(g)] = name end
+  end
+  p.lanes = {}
+  for l = 0, math.floor(reaper.GetSetProjectInfo(proj, "RULER_LANE_COUNT", 0, false)) - 1 do
+    local lane = { name = select(2, reaper.GetSetProjectInfo_String(proj, "RULER_LANE_NAME:" .. l, "", false)) }
+    for _, k in ipairs(band.LANE_KEYS) do lane[k] = reaper.GetSetProjectInfo(proj, "RULER_LANE_" .. k .. ":" .. l, 0, false) end
+    p.lanes[#p.lanes + 1] = lane
   end
   if reaper.SNM_GetIntConfigVarEx then -- (no setter in REAPER's API: SWS reaches the project's own config)
     p.timebase = reaper.SNM_GetIntConfigVarEx(proj, "itemtimelock", -1) .. " " .. reaper.SNM_GetIntConfigVarEx(proj, "tempoenvtimelock", -1)
@@ -312,7 +367,17 @@ function band.apply_project(proj, p)
     reaper.SNM_SetIntConfigVarEx(proj, "itemtimelock", tonumber(it))
     reaper.SNM_SetIntConfigVarEx(proj, "tempoenvtimelock", tonumber(te))
   end
+  if type(p.lanes) == "table" and #p.lanes > 0 then
+    if reaper.GetSetProjectInfo(proj, "RULER_LANE_COUNT", 0, false) ~= #p.lanes then reaper.GetSetProjectInfo(proj, "RULER_LANE_COUNT", #p.lanes, true) end
+    for l, lane in ipairs(p.lanes) do
+      if type(lane.name) == "string" then reaper.GetSetProjectInfo_String(proj, "RULER_LANE_NAME:" .. (l - 1), lane.name, true) end
+      for _, k in ipairs(band.LANE_KEYS) do
+        if tonumber(lane[k]) then reaper.GetSetProjectInfo(proj, "RULER_LANE_" .. k .. ":" .. (l - 1), tonumber(lane[k]), true) end
+      end
+    end
+  end
 end
+band.LANE_KEYS = { "DEFAULT", "LOCKED", "COLOR", "TIMEBASE" }
 
 function band.apply_markers(proj, list)
   for i = reaper.CountProjectMarkers(proj) - 1, 0, -1 do
@@ -320,6 +385,18 @@ function band.apply_markers(proj, list)
     if not band.is_claim_mark(name) then reaper.DeleteProjectMarkerByIndex(proj, i) end
   end
   for _, m in ipairs(list) do reaper.AddProjectMarker2(proj, m.region, m.pos, m["end"], m.name, -1, m.color) end
+  if not reaper.GetRegionOrMarker then return end
+  -- each one back in its ruler lane (matched by kind, position and name: AddProjectMarker2 gives no handle)
+  for i = 0, reaper.GetNumRegionsOrMarkers(proj) - 1 do
+    local mk = reaper.GetRegionOrMarker(proj, i, "")
+    local _, rgn, pos, _, name = reaper.EnumProjectMarkers3(proj, i)
+    for _, m in ipairs(list) do
+      if m.lane and m.region == rgn and math.abs(m.pos - pos) < 1e-9 and m.name == name then
+        reaper.SetRegionOrMarkerInfo_Value(proj, mk, "I_LANENUMBER", m.lane)
+        break
+      end
+    end
+  end
 end
 
 -- ---- rendering ------------------------------------------------------------------------------

@@ -47,8 +47,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   end
 
   local proj, projfile = reaper.EnumProjects(-1)
-  -- First open: save into a local (not synced) folder first, so stems are copied next to the project
-  -- and recordings stay off the shared folder until sent.
+  -- First open: saved into a local (not synced) folder; recordings are copied to the room's media folder as they go out
   local first_open = projfile == ""
   if first_open then
     local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
@@ -66,14 +65,6 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   band.apply_markers(proj, s.markers)
   -- the band's timeline, not a local edit: Live sync mustn't send it back (lib/sync.lua timeline_sig)
   reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }))
-  -- mirror sessions have no stems: the band's own tracks and items arrive through Live sync, object by object
-  local n = s.sync ~= "mirror" and band.sync_stems(proj, cfg, song, s) or 0
-  if s.share and s.sync ~= "mirror" then -- the host shares its real takes and lanes, so stems are only a mixed reference
-    for i = 0, reaper.CountTracks(proj) - 1 do
-      local tr = reaper.GetTrack(proj, i)
-      if band.track_ext(tr, "band_stem") ~= "" then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
-    end
-  end
   b.version = s.version
   band.bind(proj, b)
   reaper.RecursiveCreateDirectory(band.takes_dir(cfg, song, b.room), 0)
@@ -89,13 +80,8 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   local running = beat and reaper.time_precise() - beat < 5
   if not running then band.start_live(dir) end
-  if s.sync == "mirror" then
-    return band.log(string.format("opened '%s' (hosted by %s)%s: the band's tracks and items arrive over the next moments",
-      song, s.host, running and "" or ", Live sync started"))
-  end
-  band.log(string.format("opened '%s' v%d by %s, room '%s' (%d stem track(s) updated)%s: record on any of the band's tracks, " ..
-    "or a track of your own (the band sees it under its name); each take goes out when you stop",
-    song, s.version, s.host, b.room, n, running and "" or ", Live sync started"))
+  band.log(string.format("opened '%s' (hosted by %s)%s: the band's tracks and items arrive over the next moments",
+    song, s.host, running and "" or ", Live sync started"))
 end
 
 if b then return open_song(b.song) end

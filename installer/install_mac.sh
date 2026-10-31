@@ -45,7 +45,9 @@ ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandS
 ROOT="${ROOT%/}"
 LIVE="${BS_LIVE:-$(ask "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale (y/n)" y)}"
 SOLO="${BS_SOLO:-$(ask "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive (y/n)" y)}"
-PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
+PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, about 350 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
+EXTRAS="${BS_EXTRAS:-n}"
+yes "$PLUGINS" && [ -z "$BS_EXTRAS" ] && EXTRAS="$(ask "Also the larger extras (about 880 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, the Salamander Grand piano for sforzando)? (y/n)" n)"
 echo
 
 # ---------- 1. apps ----------
@@ -167,6 +169,30 @@ if yes "$PLUGINS"; then
   plugin_dmg "$(gh_asset_tag baconpaul/airwin2rack DAWPlugin 'macOS.*\.dmg$')" "Airwindows Consolidated" "Airwindows*"
   plugin_dmg "$(gh_asset michaelwillis/dragonfly-reverb 'macos-universal\.dmg$')" "Dragonfly Reverb" "Dragonfly*"
   plugin_dmg "$(gh_asset jatinchowdhury18/AnalogTapeModel 'Mac.*\.dmg$')" "Chow Tape Model" "CHOW*"
+  plugin_dmg "$(gh_asset Chowdhury-DSP/BYOD 'Mac-.*\.dmg$')" "BYOD" "BYOD*"
+  arch="$( [ "$(uname -m)" = arm64 ] && echo arm64 || echo x86-64 )"
+  plugin_dmg "$(gh_asset ZL-Audio/ZLEqualizer "macOS-$arch\.dmg$")" "ZL Equalizer 2" "ZL Equalizer*"
+  plugin_dmg "$(gh_asset ZL-Audio/ZLCompressor "macOS-$arch\.dmg$")" "ZL Compressor" "ZL Compressor*"
+  plugin_dmg "$(gh_asset Chowdhury-DSP/ChowMatrix 'Mac-.*\.dmg$')" "ChowMatrix" "ChowMatrix*"
+  if yes "$EXTRAS"; then
+    # NAM: v0.7.14 and later have no release files; 0.7.13 is the newest that does
+    plugin_dmg "$(gh_asset_tag sdatkinson/NeuralAmpModelerPlugin v0.7.13 'mac\.dmg$')" "Neural Amp Modeler" "NeuralAmpModeler*"
+    plugin_dmg "$(gh_asset AidaDSP/AIDA-X 'macos-universal.*\.dmg$')" "AIDA-X" "AIDA-X*"
+    odin="$(gh_asset_tag TheWaveWarden/odin2 NightlyDevel 'MacInstaller\.pkg$')"
+    if plugin_found "Odin2*"; then ok "Odin 2 is already installed"
+    elif [ -n "$odin" ] && curl -fsSL "$odin" -o "$WORK/odin2.pkg"; then password_note; sudo installer -pkg "$WORK/odin2.pkg" -target / >/dev/null && ok "Odin 2 installed"
+    else warn "Odin 2 didn't download: install it by hand"; fi
+    piano="$HOME/Documents/BandSync Instruments/Salamander Grand Piano"
+    if [ -d "$piano" ]; then ok "Salamander Grand piano is already there"
+    else
+      say "Downloading the Salamander Grand piano (about 715 MB) ..."
+      mkdir -p "$(dirname "$piano")"
+      if curl -fsSL "https://github.com/sfzinstruments/SalamanderGrandPiano/archive/refs/heads/master.zip" -o "$WORK/salamander.zip" &&
+         ditto -x -k "$WORK/salamander.zip" "$(dirname "$piano")" && mv "$(dirname "$piano")/SalamanderGrandPiano-master" "$piano"; then
+        ok "Salamander Grand piano in $piano: play it with sforzando (free, plogue.com/products/sforzando.html)"
+      else warn "the piano didn't download"; fi
+    fi
+  fi
 fi
 have REAPER || { warn "REAPER isn't installed: get it from reaper.fm and run this again."; exit 1; }
 

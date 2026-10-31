@@ -1,10 +1,8 @@
--- @description BandSync: live sync for this project (runs in the background; the panel's Stop stops it)
--- Keeps this project in step with the band:
---   * your new recordings go out by themselves a moment after you stop (slivers under 0.5 s are skipped);
---     what was already in the project when sync first ran stays put (send it with "Send takes" if wanted)
---   * everyone's takes arrive in the song's comping style (lanes or takes), preview first, then full quality
---   * the session driver's deletes, moves/trims and which take or lane plays are mirrored here
--- Never touches the project while recording.
+-- @description BandSync: live sync for this project (runs in the background whenever a BandSync project is open)
+-- Keeps this project identical to the band's (mirror sync, docs/mirror-design.md): every track, item and plug-in
+-- chain you may change goes out a moment after you change it; the band's changes come in; a change you may not make
+-- (someone else's claim, or the driver's) is put back. Also plays/records together and runs the live modes.
+-- Never touches a track while it records.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
@@ -14,7 +12,6 @@ local together = require("together")
 local transport -- a pending start/stop (lib/together.lua)
 local clip_said -- when we last warned about the master clipping
 local due_in = math.huge -- seconds until a pending start/stop fires
-local files_checked -- when our own prints in the shared folder were last checked
 
 local cfg = band.settings()
 if not cfg then return end
@@ -137,8 +134,8 @@ end)
 local drive = require("drive")
 local drive_at, drive_more, drive_said = -math.huge, false, nil
 
-local sizes, warned_version, last, recording, stopped_at = {}, nil, 0, false, 0
-local last_reprint, last_status, status_json = 0, 0, ""
+local sizes, last, recording, stopped_at = {}, 0, false, 0
+local last_status, status_json = 0, ""
 -- A file is ready once it exists, is non-empty, and its size held still across two polls.
 local function ready(path)
   local n = band.size(path)
@@ -259,7 +256,6 @@ end
 local last_driver
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
 local joined = {} -- machines this Live sync has already let in
-local mix_pending, mix_at -- the driver's mix layer, changed but still settling (a knob being turned)
 -- Are we in the middle of editing? (the project changed in the last 2 s): the band's changes wait for a pause, so
 -- none lands mid-drag. Never more than 10 s, so a long edit can't hold them up for good.
 local change_count, changed_at, held_since = -1, -math.huge, nil
@@ -361,36 +357,13 @@ local function poll()
   -- Hold sync: keep working without sending anything; releasing it sends the net result once
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
 
-  -- our own new recordings go out once the transport has been stopped for a moment, and takes whose
-  -- sound changed are reprinted (rendering needs this tab in front and the transport stopped)
-  local print_mode = (s and s.print) or "wet"
   local now = reaper.time_precise()
-  -- mirror sync (docs/mirror-design.md): the whole project travels object by object; the take machinery below is
-  -- the older event sync, still used by sessions published before it
-  local mirrored = s and s.sync == "mirror"
+  -- mirror sync (docs/mirror-design.md): the whole project travels object by object
   sync.local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
-  if mirrored and not hold then
-    local ok, sent, back = pcall(require("mirror").watch, proj, cfg, b.song, b.room,
-      { can = my_can, mode = who.mode, local_mix = sync.local_mix })
+  if not hold then
+    local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix })
     if not ok then band.log("mirror sync: " .. tostring(sent))
     elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
-  end
-  local copies = mirrored and 0 or sync.split_copies(proj) -- pasted/duplicated/split items: new material, not the original
-  if copies > 0 then band.log(copies .. " copied or split item(s) will go out as new takes") end
-  -- what we may change (owned tracks/regions, or everything unclaimed while driving) goes out; the rest is put back,
-  -- so it can't silently drift from the band's version. Before sending and reprinting: a tempo change that isn't ours
-  -- is put back first, not rendered into a new print and then rendered back (2026-10-29, laptop: two needless reprints,
-  -- and the put-back came 4.5 s late behind them)
-  if not hold and not mirrored then sync.watch(proj, cfg, b.song, b.room, my_can) end
-  if not hold and not mirrored and reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 and now - stopped_at > 1.5 then
-    local units = sync.own_takes(proj, { all = true, unsent = true, min_len = sync.MIN_LEN, me = cfg.user })
-    if #units > 0 then band.log("sent " .. sync.send(proj, cfg, b, units, print_mode) .. " new take(s)") end
-    if now - last_reprint > 10 then
-      last_reprint = now
-      if now - (files_checked or -1e9) > 60 then files_checked = now; sync.check_own_files(proj, cfg, b) end
-      local n = sync.reprint(proj, cfg, b, print_mode)
-      if n > 0 then band.log("reprinted " .. n .. " take(s) after a sound change") end
-    end
   end
 
   -- live (ReaNINJAM synced mode): received clips land as placeholders until the real takes replace them
@@ -404,21 +377,6 @@ local function poll()
     if retired > 0 then band.log(retired .. " placeholder(s) replaced by the real takes") end
   end
 
-  -- the driver's mix layer (buses, sends into them, master plug-ins) goes to the band once it has settled; only
-  -- while stopped, since automation moves plug-in settings during playback
-  if driver == cfg.user and not hold and not mirrored and reaper.GetPlayStateEx(proj) == 0 then
-    local mixlayer = require("mixlayer")
-    local st, sig = mixlayer.capture(proj)
-    if sig ~= select(2, reaper.GetProjExtState(proj, band.SECTION, "mix_sig")) then
-      if mix_pending ~= sig then mix_pending, mix_at = sig, now
-      elseif now - mix_at > 3 then
-        sync.post(cfg, b.song, b.room, { type = "mix", state = st, sig = sig }, proj)
-        reaper.SetProjExtState(proj, band.SECTION, "mix_sig", sig)
-        mix_pending = nil
-        band.log(string.format("your mix went to the band (%d bus/empty track(s), %d send(s)%s)", #st.tracks, #st.sends, st.master and ", master plug-ins" or ""))
-      end
-    end
-  end
   if sync.need_save then -- a delete went out: the project is saved, so a crash can't bring the take back here
     sync.need_save = nil
     for i = 0, 512 do
@@ -449,7 +407,6 @@ local function poll()
     if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end
     drive_more = more
   end
-  if not mirrored then sync.apply_locks(proj, my_can, cfg.user) end
   sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
@@ -471,13 +428,6 @@ local function poll()
   end
 
   if s then band.check_version(s.bandsync, "'" .. b.song .. "'", true) end
-  if s and not host and not mirrored then
-    if band.sync_stems(proj, cfg, b.song, s, true) > 0 then band.log("upgraded stems to full quality") end
-    if tostring(s.version) ~= tostring(b.version) and warned_version ~= s.version then
-      warned_version = s.version
-      band.log(s.host .. " published v" .. s.version .. ": run 'BandSync - Open session' to refresh")
-    end
-  end
   reaper.TrackList_AdjustWindows(false)
   reaper.UpdateArrange()
 end

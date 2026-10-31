@@ -10,6 +10,7 @@ param(
   [string]$User = "", [string]$HostId = "", [string]$Root = "",
   [ValidateSet("", "yes", "no")][string]$Hosting = "", [ValidateSet("", "yes", "no")][string]$Live = "", [ValidateSet("", "yes", "no")][string]$Solo = "",
   [ValidateSet("", "yes", "no")][string]$Plugins = "", # the band plug-in pack (free, open source)
+  [ValidateSet("", "yes", "no")][string]$Extras = "", # the larger extras: amp modelers, Odin 2, sforzando + Salamander piano
   [ValidateSet("reapack", "folder", "verify")][string]$Scripts = "reapack", # folder: band-internal copy in <root>/_tools/bandsync
   [string]$SyncthingHome = "",    # testing: drive a separate Syncthing instance (--home)
   [switch]$NoApps                 # testing: skip installing apps, only configure
@@ -31,7 +32,7 @@ $boxed = Get-ChildItem "$env:LOCALAPPDATA\Packages\*\LocalCache\Local\$probe" -E
 Remove-Item (Join-Path $env:LOCALAPPDATA $probe) -ErrorAction SilentlyContinue
 if ($boxed) {
   $argv = @("-Tag", $Tag, "-Scripts", $Scripts)
-  foreach ($k in "User", "HostId", "Root", "Hosting", "Live", "Solo", "Plugins", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
+  foreach ($k in "User", "HostId", "Root", "Hosting", "Live", "Solo", "Plugins", "Extras", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
   if ($NoApps) { $argv += "-NoApps" }
   $quoted = ($argv | ForEach-Object { if ($_ -match '^-') { $_ } else { '"' + $_ + '"' } }) -join " "
   $cmd = Join-Path $env:TEMP "bandsync_install_outside.cmd"
@@ -67,7 +68,8 @@ if (-not $isHost) {
 $root = if ($Root) { $Root } else { Ask "Where should the shared BandSync folder be" (Join-Path $env:USERPROFILE "BandSync") }
 $wantLive = if ($Live) { $Live -eq "yes" } else { YesNo "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale" "y" }
 $wantSolo = if ($Solo) { $Solo -eq "yes" } else { YesNo "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive" "y" }
-$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, open source: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, and Saike's and Chokehold's JSFX), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
+$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, about 150 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
+$wantExtras = if ($Extras) { $Extras -eq "yes" } else { $wantPlugins -and (YesNo "Also the larger extras (about 820 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, sforzando with the Salamander Grand piano)?" "n") }
 Write-Host ""
 
 # ---------- 1. apps ----------
@@ -120,6 +122,9 @@ function Install-Plugin($name, $repo, $pattern, $tag, $have) {
   if ($file -match '\.exe$') {
     Say "  $name's own installer opens: click through it (the defaults are fine)."
     Start-Process $file -Wait
+  } elseif ($file -match '\.msi$') {
+    Say "  $name's installer runs (it may ask for permission)."
+    Start-Process msiexec -ArgumentList "/i `"$file`" /passive" -Wait
   } else {
     $x = Join-Path $env:TEMP ("bandsync_" + [guid]::NewGuid().ToString("N"))
     Expand-Archive $file $x -Force
@@ -139,6 +144,29 @@ if ($wantPlugins) {
   Install-Plugin "Airwindows Consolidated" "baconpaul/airwin2rack" '^(?!.*windows7).*Windows-64bit-setup\.exe$' "DAWPlugin" (Join-Path $vst3 "Airwindows*")
   Install-Plugin "Dragonfly Reverb" "michaelwillis/dragonfly-reverb" 'win64\.zip$' $null (Join-Path $res "UserPlugins\FX\Dragonfly*")
   Install-Plugin "Chow Tape Model" "jatinchowdhury18/AnalogTapeModel" 'Win-64bit.*\.exe$' $null (Join-Path $vst3 "CHOW*")
+  Install-Plugin "BYOD (guitar and bass amps, tuner)" "Chowdhury-DSP/BYOD" 'Win-64bit.*\.exe$' $null (Join-Path $vst3 "BYOD*")
+  Install-Plugin "ZL Equalizer 2" "ZL-Audio/ZLEqualizer" 'Windows-x86-64\.msi$' $null (Join-Path $vst3 "ZL Equalizer*")
+  Install-Plugin "ZL Compressor" "ZL-Audio/ZLCompressor" 'Windows-x86-64\.msi$' $null (Join-Path $vst3 "ZL Compressor*")
+  Install-Plugin "ChowMatrix (delay)" "Chowdhury-DSP/ChowMatrix" 'Win-.*\.exe$' $null (Join-Path $vst3 "ChowMatrix*")
+  if ($wantExtras) {
+    # NAM: v0.7.14 and later have no release files; 0.7.13 is the newest that does
+    Install-Plugin "Neural Amp Modeler" "sdatkinson/NeuralAmpModelerPlugin" '-win\.zip$' "v0.7.13" (Join-Path $res "UserPlugins\FX\NeuralAmpModeler*")
+    Install-Plugin "AIDA-X" "AidaDSP/AIDA-X" 'win64-installer\.exe$' $null (Join-Path $vst3 "AIDA-X*")
+    Install-Plugin "Odin 2" "TheWaveWarden/odin2" 'WinInstaller\.exe$' "NightlyDevel" (Join-Path $vst3 "Odin2*")
+    Install-App "plogue.sforzando" "sforzando (plays the piano below)"
+    $piano = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "BandSync Instruments\Salamander Grand Piano"
+    if (Test-Path $piano) { Ok "Salamander Grand piano is already there" } elseif (-not $NoApps) {
+      Say "Downloading the Salamander Grand piano (about 715 MB) ..."
+      $zip = Join-Path $env:TEMP "salamander.zip"
+      try {
+        Invoke-WebRequest "https://github.com/sfzinstruments/SalamanderGrandPiano/archive/refs/heads/master.zip" -OutFile $zip -UseBasicParsing
+        Expand-Archive $zip (Split-Path $piano) -Force
+        Rename-Item (Join-Path (Split-Path $piano) "SalamanderGrandPiano-master") $piano -ErrorAction SilentlyContinue
+        Remove-Item $zip -ErrorAction SilentlyContinue
+        Ok "Salamander Grand piano in $piano (load its .sfz file in sforzando)"
+      } catch { Warn "the piano didn't download: $_" }
+    }
+  }
   Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the band's 'everyone has' list only takes them after a restart)"
 }
 

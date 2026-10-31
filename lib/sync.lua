@@ -1006,15 +1006,31 @@ function sync.receive(proj, cfg, song, room, can)
       or (ev.type ~= "obj" and can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time)))
       or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user)))
   end
+  -- Catching up (joining late, back from a week away): only the newest revision of each object is applied; the
+  -- older ones are counted as done (they stay in the folder for Restore). Replaying every revision of every object
+  -- rewrote a plug-in chain changed 50 times 50 times (review, 2026-10-31).
+  local function mirror_newer(a, x)
+    return require("mirror").newer({ rev = a.rev, time = (a.time or "") .. (a.user or "") }, { rev = x.rev, time = (x.time or "") .. (x.user or "") })
+  end
+  local latest = {}
+  for _, ev in ipairs(pending) do
+    if ev.type == "obj" and type(ev.oid) == "string" and type(ev.rev) == "number" then
+      local cur = latest[ev.oid]
+      if not cur or mirror_newer(ev, cur) then latest[ev.oid] = ev end
+    end
+  end
+  local t0, budget_out = reaper.time_precise(), false -- (and a quarter second of applying per pass: the rest next pass)
+  require("mirror").index_for(proj)
   local applied, done, undo_open = 0, {}, false
   local rdir = sync.room_dir(cfg, song, room)
   for _, ev in ipairs(pending) do
+    if budget_out then break end
     local obj = ev.type == "obj"
     if obj and not (type(ev.oid) == "string" and (ev.obj == "item" or ev.obj == "track" or require("mirror").PART[ev.obj]) and type(ev.rev) == "number"
         and (ev.gone or ev.state ~= nil) and (ev.name == nil or type(ev.name) == "string") and (ev.pos == nil or type(ev.pos) == "number")) then
       setext(proj, sync.APPLIED, ev.id, "1") -- malformed (a newer or damaged file): skipped, once, without stopping the rest
       band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync can't read (" .. tostring(ev.id) .. ")")
-    elseif (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) then
+    elseif (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) or (obj and latest[ev.oid] ~= ev) then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
     elseif ev.user == cfg.user and not obj then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
@@ -1043,6 +1059,7 @@ function sync.receive(proj, cfg, song, room, can)
       elseif res then
         setext(proj, sync.APPLIED, ev.id, "1")
         stamp(proj, ev)
+        if reaper.time_precise() - t0 > 0.25 then budget_out = true end
         local theirs = ev.user ~= cfg.user -- (your own changes come back too: they aren't "from the band")
         if theirs then applied = applied + 1 end
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
@@ -1061,6 +1078,7 @@ function sync.receive(proj, cfg, song, room, can)
       end
     end
   end
+  require("mirror").index_for(nil)
   if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the band", -1) end
   for _, d in ipairs(done) do band.log(d) end
   return applied
@@ -1104,9 +1122,12 @@ function sync.driver_history(proj, cfg, song, room)
   if driver_cache[key] then return driver_cache[key] end
   local list, dir = {}, sync.room_dir(cfg, song, room) .. "/events"
   for _, f in ipairs(band.files(dir, ".json")) do
-    if f:find("-", 1, true) then
-      local ev = band.read_json(dir .. "/" .. f)
-      if type(ev) == "table" and ev.type == "driver" and type(ev.time) == "string" then list[ev.id or f] = { time = ev.time, user = ev.driver or ev.user } end
+    -- (only files that can be a handover are decoded: decoding every change of a long song's history, plug-in
+    -- chains of a few MB among them, held REAPER up at every start: review, 2026-10-31)
+    local text = band.read(dir .. "/" .. f)
+    if text and text:find('"driver"', 1, true) then
+      local ok, ev = pcall(require("json").decode, text)
+      if ok and type(ev) == "table" and ev.type == "driver" and type(ev.time) == "string" then list[ev.id or f] = { time = ev.time, user = ev.driver or ev.user } end
     end
   end
   local s = band.read_json(band.session_path(cfg, song))

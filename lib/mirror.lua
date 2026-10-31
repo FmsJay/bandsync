@@ -301,13 +301,31 @@ function mirror.fx_names(chain)
 end
 
 -- 32-bit FNV-1a: cheap, stable on every Lua; enough to tell versions apart (not a security hash).
-function mirror.hash(s)
+-- Results for text seen before (a whole look reads every track and item; most haven't changed since the last one,
+-- and working them out again in Lua was most of a look's time: 0.5 s at 60 tracks and 2,000 items, measured
+-- 2026-10-31). Keyed by the exact text, so any change misses and is worked out afresh. Emptied when its keys reach
+-- 64 MB (a track's text holds all its items, so a busy session makes big ones), or 50,000 of them.
+local memo, memo_n, memo_bytes = {}, 0, 0
+function mirror.memo(key, make)
+  local v = memo[key]
+  if v == nil then
+    if memo_n > 50000 or memo_bytes > 64 * 1048576 then memo, memo_n, memo_bytes = {}, 0, 0 end
+    v = make()
+    memo[key], memo_n, memo_bytes = v, memo_n + 1, memo_bytes + #key
+  end
+  return v
+end
+local function fnv(s)
   local h = 2166136261
   for i = 1, #s do
     h = h ~ s:byte(i)
     h = (h * 16777619) & 0xFFFFFFFF
   end
   return string.format("%08x", h)
+end
+function mirror.hash(s)
+  if #s < 256 then return fnv(s) end
+  return mirror.memo("h\0" .. s, function() return fnv(s) end)
 end
 
 -- Which of two revisions of one object wins: higher rev, then later time, then the larger user name (so every
@@ -592,7 +610,7 @@ end
 -- item's chunk, so it gets a line of its own).
 function mirror.item_state(it, media_dir)
   local _, chunk = reaper.GetItemStateChunk(it, "", false)
-  local st = mirror.tokenize_media(mirror.normalize_item(chunk), media_dir)
+  local st = mirror.memo("i\0" .. media_dir .. "\0" .. chunk, function() return mirror.tokenize_media(mirror.normalize_item(chunk), media_dir) end)
   if reaper.GetMediaTrackInfo_Value(reaper.GetMediaItem_Track(it), "I_FREEMODE") == 2 then
     st = st .. "BANDLANE " .. math.floor(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE")) .. "\n"
   end
@@ -655,6 +673,9 @@ function mirror.scan(proj, user, media_dir, local_mix)
   local at = {} -- 0-based position -> oid, for receives
   for _, x in ipairs(tl) do at[math.floor(reaper.GetMediaTrackInfo_Value(x.ptr, "IP_TRACKNUMBER")) - 1] = x.oid end
   local function oid_at(i) return at[i] end
+  local sig = {} -- (where each mirrored track sits: what the receives' track numbers mean, part of the memo's key)
+  for i = 0, reaper.CountTracks(proj) - 1 do sig[#sig + 1] = at[i] or "-" end
+  local at_sig = table.concat(sig, ",")
   for _, x in ipairs(tl) do
     local tr, oid = x.ptr, x.oid
     do
@@ -662,12 +683,18 @@ function mirror.scan(proj, user, media_dir, local_mix)
       local o = { kind = "track", oid = oid, ptr = tr, state = t, hash = mirror.track_hash(t, local_mix) }
       objs[#objs + 1], by_oid[oid], tracks[tr] = o, o, oid
       local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
-      local skip = {} -- this machine's plug-in translations (lib/page_plugins.lua): never sent
-      for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
-      local fx = mirror.fxchain(chunk, skip) or ""
-      local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = mirror.fx_hash(fx) }
+      local lfx = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false))
+      local parts = mirror.memo("t\0" .. at_sig .. "\0" .. lfx .. "\0" .. chunk, function()
+        local skip = {} -- this machine's plug-in translations (lib/page_plugins.lua): never sent
+        for g in lfx:gmatch("({[^}]+})for=") do skip[g] = true end
+        local fx = mirror.fxchain(chunk, skip) or ""
+        local env, recv, misc = mirror.track_parts(chunk, oid_at)
+        return { fx = fx, fxh = mirror.fx_hash(fx), env = env, recv = recv, misc = misc }
+      end)
+      local fx = parts.fx
+      local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = parts.fxh }
       objs[#objs + 1], by_oid[fo.oid] = fo, fo
-      local env, recv, misc = mirror.track_parts(chunk, oid_at)
+      local env, recv, misc = parts.env, parts.recv, parts.misc
       env = env .. mirror.ai_lines(tr)
       for _, p in ipairs({ { "E", "env", env }, { "R", "recv", recv }, { "M", "misc", misc } }) do
         local po = { kind = p[2], oid = p[1] .. oid:sub(2), ptr = tr, track = oid, state = p[3], hash = mirror.hash(p[3]) }
@@ -742,12 +769,30 @@ function mirror.live_fx(tr)
   return set
 end
 
+-- While a receive pass runs (mirror.index_for), items are found through an index made once for the pass: looking
+-- through every item for every change made catching up on a long song take minutes (review, 2026-10-31).
+local index
+function mirror.index_for(proj) index = proj and { proj = proj } or nil end
 function mirror.find(proj, kind, oid)
   if oid == mirror.MASTER then return reaper.GetMasterTrack(proj) end
   if kind == "item" then
+    if index and index.proj == proj then
+      if not index.map then
+        index.map = {}
+        for i = 0, reaper.CountMediaItems(proj) - 1 do
+          local it = reaper.GetMediaItem(proj, i)
+          index.map[itm_oid(it)] = it
+        end
+      end
+      local it = index.map[oid]
+      if it and reaper.ValidatePtr2(proj, it, "MediaItem*") and itm_oid(it) == oid then return it end
+    end
     for i = 0, reaper.CountMediaItems(proj) - 1 do
       local it = reaper.GetMediaItem(proj, i)
-      if itm_oid(it) == oid then return it end
+      if itm_oid(it) == oid then
+        if index and index.map and index.proj == proj then index.map[oid] = it end
+        return it
+      end
     end
   else
     for i = 0, reaper.CountTracks(proj) - 1 do

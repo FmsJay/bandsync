@@ -25,7 +25,9 @@ local function encode_value(v, indent, level, out)
     if v == json.null or v == nil then out[#out + 1] = "null"
     elseif t == "boolean" then out[#out + 1] = tostring(v)
     elseif t == "number" then
-        if math.floor(v) == v and math.abs(v) < 2^53 then out[#out + 1] = string.format("%d", v)
+        -- (NaN and infinities aren't JSON: written as they were, every reader skipped that file)
+        if v ~= v or v == math.huge or v == -math.huge then out[#out + 1] = "null"
+        elseif math.floor(v) == v and math.abs(v) < 2^53 then out[#out + 1] = string.format("%d", v)
         else out[#out + 1] = string.format("%.14g", v) end
     elseif t == "string" then out[#out + 1] = encode_string(v)
     elseif t == "table" then
@@ -76,24 +78,23 @@ end
 
 local decode_value
 
+local UNESCAPE = { ['"'] = '"', ['\\'] = '\\', ['/'] = '/', b = '\b', f = '\f', n = '\n', r = '\r', t = '\t' }
+-- (a run of plain characters at a time, up to the next quote or backslash: one at a time, a plug-in chain event of a
+-- few MB took seconds, on REAPER's own thread)
 local function decode_string(s, i)
     local out, j = {}, i + 1
     while true do
-        local c = s:sub(j, j)
-        if c == "" then decode_error(s, j, "unterminated string") end
-        if c == '"' then return table.concat(out), j + 1 end
-        if c == "\\" then
-            local e = s:sub(j + 1, j + 1)
-            local map = { ['"'] = '"', ['\\'] = '\\', ['/'] = '/', b = '\b', f = '\f', n = '\n', r = '\r', t = '\t' }
-            if map[e] then out[#out + 1] = map[e]; j = j + 2
-            elseif e == "u" then
-                local hex = s:sub(j + 2, j + 5)
-                local cp = tonumber(hex, 16) or decode_error(s, j, "bad unicode escape")
-                out[#out + 1] = utf8.char(cp); j = j + 6
-            else decode_error(s, j, "bad escape") end
-        else
-            out[#out + 1] = c; j = j + 1
-        end
+        local k = s:find('["\\]', j)
+        if not k then decode_error(s, j, "unterminated string") end
+        if k > j then out[#out + 1] = s:sub(j, k - 1) end
+        if s:sub(k, k) == '"' then return table.concat(out), k + 1 end
+        local e = s:sub(k + 1, k + 1)
+        if UNESCAPE[e] then out[#out + 1] = UNESCAPE[e]; j = k + 2
+        elseif e == "u" then
+            local hex = s:sub(k + 2, k + 5)
+            local cp = tonumber(hex, 16) or decode_error(s, k, "bad unicode escape")
+            out[#out + 1] = utf8.char(cp); j = k + 6
+        else decode_error(s, k, "bad escape") end
     end
 end
 

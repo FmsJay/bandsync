@@ -55,8 +55,11 @@ local function already_installed()
   return n >= 5
 end
 
+-- chmaha's "DSP to JSFX": the effects and instruments REAPER 7.83 bundled and 7.84 removed (drum kits, MDA piano and
+-- e-piano, organ, channel strip, tuner, limiter...), GPL-3.0 with MIT/AGPL parts; new in Oct 2026, still changing
 local JSFX_REPOS = { { "Saike", "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml" },
-                     { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" } }
+                     { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" },
+                     { "DSP to JSFX (chmaha)", "https://github.com/chmaha/DSP-Ports-JSFX/raw/main/index.xml" } }
 if req.mode == "reapack" then
   if not reaper.APIExists("ReaPack_AddSetRepository") then
     step("ReaPack installed", false, "install ReaPack (reapack.com) and restart REAPER first")

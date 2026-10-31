@@ -1667,10 +1667,11 @@ local function local_mix_row()
   local ch, v = switch_row("##localmix", "Local mixing", on, "Your faders and pan stay yours: nobody else's reach you and yours don't go out.")
   if ch and v then reaper.SetProjExtState(proj, band.SECTION, "local_mix", "1"); require("mirror").begin_local_mix(proj)
   elseif ch then
-    local r = reaper.MB("Local mixing off. Take the band's mix (faders and pan)?\n\nYes: use the band's mix.\nNo: send your mix to the band " ..
-      "(the tracks you may change).", "BandSync", 3)
-    if r ~= 2 then
-      require("mirror").end_local_mix(proj, cfg, b.song, b.room, r == 6)
+    -- (named choices: as Yes/No, "No" sent your faders and pan to every bandmate: review, 2026-10-31)
+    local take, send = "Use the band's mix (your faders and pan follow theirs again)", "Send my faders and pan to everyone (the tracks I may change)"
+    local r = band.pick({ "#Local mixing off: whose mix?", take, send, "Cancel (keep Local mixing on)" })
+    if r == take or r == send then
+      require("mirror").end_local_mix(proj, cfg, b.song, b.room, r == take)
       reaper.SetProjExtState(proj, band.SECTION, "local_mix", "")
     end
   end

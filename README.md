@@ -67,8 +67,8 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
 ## Setup (each person, once)
 
 **Easiest: the installer.** Download the `installer` folder (or just the one file) and double-click
-**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command**. It asks your name, whether
-you're the host (if not, the host's Syncthing device ID), and whether you'll use Live and the Google Drive copy, then
+**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command**. It asks your name, and whether
+someone in the band is already set up (if so, their Syncthing device ID: any set-up bandmate's will do), and whether you'll use Live and the Google Drive copy, then
 installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, js_ReaScriptAPI, SWS, Syncthing, and
 optionally SonoBus + Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with the host,
 installs BandSync through ReaPack and opens the panel. What's left needs you, and it lists it at the end: signing in

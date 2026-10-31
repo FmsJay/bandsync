@@ -73,7 +73,7 @@ end
 local function delete_mine(ctx, ImGui, cfg, e)
   if e.user ~= cfg.user then return end
   ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx, "x") then os.remove(e.file); cache = nil end
+  if ImGui.SmallButton(ctx, "x") and reaper.MB("Delete this for everyone?", "BandSync", 4) == 6 then os.remove(e.file); cache = nil end
   ImGui.SetItemTooltip(ctx, "Delete yours (for everyone).")
 end
 

@@ -56,12 +56,15 @@ Write-Host ""
 # ---------- 0. questions ----------
 $user = $User -replace '[^\w\- ]', ''
 while (-not $user) { $user = (Ask "Your name, as the band will see it" $env:USERNAME) -replace '[^\w\- ]', '' }
-$isHost = if ($Hosting) { $Hosting -eq "yes" } else { YesNo "Are you the band's host (the first one to set up, with the machine that stays on)?" "n" }
+# Pairing: with whoever in the band is already set up (any of them: every machine passes the folder on). "Host" is
+# a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
+$isHost = if ($Hosting) { $Hosting -eq "yes" } else { -not (YesNo "Is someone in the band already set up with BandSync?" "y") }
+if ($isHost -and -not $Hosting) { Say "You're the first: at the end you get your Syncthing ID to send to each bandmate who installs." }
 $hostId = $HostId.ToUpper()
 $idPattern = '^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if (-not $isHost) {
   while ($hostId -notmatch $idPattern) {
-    $hostId = (Ask "The host's Syncthing device ID (they find it in Syncthing: Actions > Show ID)" "").ToUpper()
+    $hostId = ((Ask "Paste their Syncthing device ID (in their Syncthing: Actions > Show ID)" "") -replace '\s', '').ToUpper()
     if ($hostId -notmatch $idPattern) { Warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)." }
   }
 }
@@ -239,11 +242,11 @@ STcli config devices $myId name set $user | Out-Null
 if (-not $isHost) {
   $devices = STcli config devices list
   if ($devices -notcontains $hostId) {
-    STcli config devices add --device-id $hostId --name "Band host" --introducer --auto-accept-folders | Out-Null
+    STcli config devices add --device-id $hostId --name "Bandmate" --introducer --auto-accept-folders | Out-Null
   }
   $shared = STcli config folders bandsync devices list
   if ($shared -notcontains $hostId) { STcli config folders bandsync devices add --device-id $hostId | Out-Null }
-  Ok "paired with the host"
+  Ok "paired with your bandmate"
 }
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
@@ -308,10 +311,10 @@ try {
   $peers = @($c.connections.PSObject.Properties | Where-Object { $_.Value.connected } | ForEach-Object { $_.Name })
 } catch { }
 if ($isHost) {
-  $left += "Your Syncthing device ID, for bandmates' installers:  $myId"
-  $left += "When a bandmate sends you their ID: Syncthing (http://127.0.0.1:8384) > Add Remote Device, paste it, and on its Sharing tab tick 'BandSync'."
+  $left += "Your Syncthing device ID, for each bandmate's installer:  $myId"
+  $left += "When a bandmate installs with it, REAPER's BandSync panel shows 'Let them in': press it."
 } elseif ($peers -notcontains $hostId) {
-  $left += "Send the host your Syncthing device ID:  $myId  (they add it in Syncthing; the shared folder then arrives by itself)"
+  $left += "Tell the bandmate whose ID you used: their BandSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
 }
 if ($wantLive) {
   $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"

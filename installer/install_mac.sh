@@ -5,7 +5,7 @@
 # REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), and optionally
 # SonoBus + Tailscale (Live) and Google Drive for desktop (the band's copy; BS_SOLO is its old name). Every app comes from its official source.
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
-# Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes/no), BS_HOST_ID, BS_ROOT,
+# Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
 # BS_LIVE (yes/no), BS_SOLO (yes/no), BS_SCRIPTS (reapack/folder/verify), BS_TAG.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
@@ -23,7 +23,8 @@ trap 'rm -rf "$WORK"' EXIT # (also when it stops early)
 say()  { printf '\033[36m%s\033[0m\n' "$*"; }
 ok()   { printf '\033[32m  OK  %s\033[0m\n' "$*"; }
 warn() { printf '\033[33m  !!  %s\033[0m\n' "$*"; }
-ask()  { local a; read -r -p "$1${2:+ [$2]} " a </dev/tty; echo "${a:-${2:-}}"; }
+ask()  { local a; read -e -r -p "$1${2:+ [$2]} " a </dev/tty; echo "${a:-${2:-}}"; } # (-e: arrow keys edit, not type escape codes)
+plain() { printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null | LC_ALL=C tr -cd 'A-Za-z0-9 _-'; } # "CHILIØ" -> "CHILIO"
 yes()  { case "$1" in [yY]*) return 0;; *) return 1;; esac; }
 
 say "BandSync setup"
@@ -33,16 +34,28 @@ echo "come). Nothing already installed is changed."
 echo
 
 # ---------- 0. questions ----------
-USERNAME_BS="$(echo "${BS_USER:-}" | LC_ALL=C tr -cd 'A-Za-z0-9 _-')"
-while [ -z "$USERNAME_BS" ]; do USERNAME_BS="$(ask "Your name, as the band will see it" "$(id -F 2>/dev/null | cut -d' ' -f1)" | LC_ALL=C tr -cd 'A-Za-z0-9 _-')"; done
-HOSTING="${BS_HOSTING:-$(ask "Are you the band's host (the first one to set up, with the machine that stays on)? (y/n)" n)}"
+# (names are plain letters, digits, spaces, - and _: the default is shown already cleaned, and a typed name that
+# changes when cleaned is said, not changed silently)
+USERNAME_BS="$(plain "${BS_USER:-}")"
+while [ -z "$USERNAME_BS" ]; do
+  typed="$(ask "Your name, as the band will see it (you can change it later)" "$(plain "$(id -F 2>/dev/null | cut -d' ' -f1)")")"
+  USERNAME_BS="$(plain "$typed")"
+  [ -n "$USERNAME_BS" ] && [ "$USERNAME_BS" != "$typed" ] && say "Using the name '$USERNAME_BS' (plain letters only)."
+done
+# Pairing: with whoever in the band is already set up (any of them: every machine passes the folder on). "Host" is
+# a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
+if [ -n "${BS_HOSTING:-}" ]; then HOSTING="$BS_HOSTING" # (the old way of saying "I'm the first")
+elif yes "$(ask "Is someone in the band already set up with BandSync? (y/n)" y)"; then HOSTING=n
+else HOSTING=y; fi
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
 ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if ! yes "$HOSTING"; then
   until echo "$HOST_ID" | grep -Eq "$ID_RE"; do
-    HOST_ID="$(ask "The host's Syncthing device ID (they find it in Syncthing: Actions > Show ID)" | tr '[:lower:]' '[:upper:]')"
+    HOST_ID="$(ask "Paste their Syncthing device ID (in their Syncthing: Actions > Show ID)" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
     echo "$HOST_ID" | grep -Eq "$ID_RE" || warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)."
   done
+else
+  say "You're the first: at the end you get your Syncthing ID to send to each bandmate who installs."
 fi
 while :; do
   ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandSync")}"
@@ -268,12 +281,12 @@ stcli config folders bandsync order set smallestFirst >/dev/null
 stcli config folders bandsync fswatcher-delays set 1 >/dev/null  # the default 10 s delay added 10 s to every take
 stcli config devices "$MY_ID" name set "$USERNAME_BS" >/dev/null
 if ! yes "$HOSTING"; then
-  stcli config devices list | grep -qx "$HOST_ID" || stcli config devices add --device-id "$HOST_ID" --name "Band host" --introducer --auto-accept-folders >/dev/null
+  stcli config devices list | grep -qx "$HOST_ID" || stcli config devices add --device-id "$HOST_ID" --name "Bandmate" --introducer --auto-accept-folders >/dev/null
   stcli config folders bandsync devices list | grep -qx "$HOST_ID" || stcli config folders bandsync devices add --device-id "$HOST_ID" >/dev/null
   CONNECTED=""
   stcli show connections 2>/dev/null | tr -d '\n ' | grep -q "\"$HOST_ID\":{[^}]*\"connected\":true" && CONNECTED=1
-  if [ -n "$CONNECTED" ]; then ok "paired with the host, and connected"
-  else ok "paired with the host (they still have to add you: see the end)"; fi
+  if [ -n "$CONNECTED" ]; then ok "paired with your bandmate, and connected"
+  else ok "paired with your bandmate (they still have to let you in: see the end)"; fi
 fi
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
@@ -335,13 +348,12 @@ count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/bandsync_setup_result.js
 echo
 say "Done. What's left (these need you):"
 if yes "$HOSTING"; then
-  echo "  - Your Syncthing device ID, for bandmates' installers:  $MY_ID"
-  echo "  - When a bandmate sends you their ID: Syncthing (menu bar icon > Open) > Add Remote Device, paste it,"
-  echo "    and on its Sharing tab tick 'BandSync'."
+  echo "  - Your Syncthing device ID, for each bandmate's installer:  $MY_ID"
+  echo "  - When a bandmate installs with it, REAPER's BandSync panel shows 'Let them in': press it."
 else
   if [ -z "${CONNECTED:-}" ]; then
-    echo "  - Send the host your Syncthing device ID:  $MY_ID"
-    echo "    (They add it in Syncthing; the shared folder then arrives by itself.)"
+    echo "  - Tell the bandmate whose ID you used: their BandSync panel shows 'Let $USERNAME_BS in' (or they add your"
+    echo "    Syncthing ID by hand: $MY_ID). The shared folder then arrives by itself."
   fi
 fi
 if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
@@ -349,7 +361,7 @@ if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
   echo "    band's account. To keep this Mac signed in for good: login.tailscale.com/admin/machines > this Mac > ... >"
   echo "    Disable key expiry (one click; otherwise it signs out every few months, maybe right before a session)."
 fi
-if yes "$LIVE" && yes "$HOSTING"; then # the host's job, once: then bandmates' installers sign their machines in for good
+if yes "$LIVE" && yes "$HOSTING"; then # the first one's job, once: then bandmates' installers sign their machines in for good
   echo "  - Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the"
   echo '    policy'"'"'s { }:   "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
   echo "    Then each bandmate's installer signs their machine in as a band machine that never has to sign in again."

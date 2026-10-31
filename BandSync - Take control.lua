@@ -40,10 +40,16 @@ end
 
 local c = status.handover_check(cfg, b, proj)
 if #c.problems == 0 then return handover() end
-local r = reaper.MB("Not everyone is in sync yet:\n" .. describe(c) ..
-  "\n\nYes: wait until they are (up to 2 minutes), then take control.\nNo: take control now anyway.", "BandSync", 3)
-if r == 7 then return handover() end
-if r ~= 6 then return end
+-- (named choices, not Yes/No/Cancel: review, 2026-10-31)
+local items = { "#Not everyone is in sync yet:" }
+for line in (describe(c) .. "\n"):gmatch("(.-)\n") do if line:match("%S") then items[#items + 1] = "#   " .. line:gsub("|", "/") end end
+local wait_, now_ = "Wait for them (up to 2 minutes), then take control", "Take control now anyway"
+items[#items + 1] = wait_
+items[#items + 1] = now_
+items[#items + 1] = "Cancel"
+local r = band.pick(items)
+if r == now_ then return handover() end
+if r ~= wait_ then return end
 
 band.log("waiting for everyone to sync before taking control of '" .. b.song .. "'")
 local started, last = reaper.time_precise(), 0

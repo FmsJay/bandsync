@@ -530,24 +530,42 @@ local function section_claims()
   end
   table.sort(owned, function(x, y) return x[1] < y[1] end)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
-  for i, o in ipairs(owned) do
-    if o[2] then -- mine: let go of just this one
-      if ImGui.SmallButton(ctx, "x##rel" .. i) then
-        local c, why = sync.my_claims(cfg, b.song, b.room)
-        if not c then return band.msg(why) end
-        local keep = {}
-        for _, n in ipairs(c[o[2]] or {}) do
-          local same = o[2] == "times" and math.abs(n.from - o[3].from) < 1e-6 and math.abs(n.to - o[3].to) < 1e-6
-            or o[2] ~= "times" and n:lower() == o[3]:lower()
-          if not same then keep[#keep + 1] = n end
-        end
-        c[o[2]] = keep
-        sync.set_claims(cfg, b.song, b.room, c)
-      end
-      ImGui.SetItemTooltip(ctx, "Release it: it follows the driver again.")
-      ImGui.SameLine(ctx)
+  local function release(o) -- let go of just this one
+    local c, why = sync.my_claims(cfg, b.song, b.room)
+    if not c then return band.msg(why) end
+    local keep = {}
+    for _, n in ipairs(c[o[2]] or {}) do
+      local same = o[2] == "times" and math.abs(n.from - o[3].from) < 1e-6 and math.abs(n.to - o[3].to) < 1e-6
+        or o[2] ~= "times" and n:lower() == o[3]:lower()
+      if not same then keep[#keep + 1] = n end
     end
-    ImGui.BulletText(ctx, o[1])
+    c[o[2]] = keep
+    sync.set_claims(cfg, b.song, b.room, c)
+  end
+  -- chips: yours blue with an x that releases it, others' grey; they wrap like words
+  local avail, used = ImGui.GetContentRegionAvail(ctx), 0
+  local h = ImGui.GetFrameHeight(ctx) - 2
+  for i, o in ipairs(owned) do
+    local w = ImGui.CalcTextSize(ctx, o[1]) + 18 + (o[2] and 16 or 0)
+    if i > 1 and used + w + 6 <= avail then ImGui.SameLine(ctx, 0, 6) else used = 0 end
+    used = used + w + 6
+    local x, y = ImGui.GetCursorScreenPos(ctx)
+    local dl = ImGui.GetWindowDrawList(ctx)
+    ImGui.InvisibleButton(ctx, "##chip" .. i, w, h)
+    local hovered = ImGui.IsItemHovered(ctx)
+    ImGui.DrawList_AddRectFilled(dl, x, y, x + w, y + h, o[2] and 0x2F4A6BFF or 0x3A3F46FF, h / 2)
+    ImGui.DrawList_AddText(dl, x + 9, y + (h - ImGui.GetTextLineHeight(ctx)) / 2, 0xE6E8EBFF, o[1])
+    if o[2] then
+      local over_x = hovered and select(1, ImGui.GetMousePos(ctx)) >= x + w - 22
+      local cx, cy, r = x + w - 12, y + h / 2, 3.5
+      local col = over_x and RED or 0xB8BEC6FF
+      ImGui.DrawList_AddLine(dl, cx - r, cy - r, cx + r, cy + r, col, 1.6)
+      ImGui.DrawList_AddLine(dl, cx - r, cy + r, cx + r, cy - r, col, 1.6)
+      if over_x and ImGui.IsItemClicked(ctx, 0) then release(o) end
+      ImGui.SetItemTooltip(ctx, over_x and "Release it: it follows the driver again." or "Yours: only you change it, whoever drives.")
+    else
+      ImGui.SetItemTooltip(ctx, "Theirs: only they change it, whoever drives.")
+    end
   end
   if ImGui.Button(ctx, "Claim selected tracks") then
     local list = {}

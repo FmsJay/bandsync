@@ -1,7 +1,8 @@
 # BandSync
 
 Record and arrange together in REAPER from different cities, as if you were all working in one project.
-Everyone in a room holds the same project: every track, item, lane, MIDI part and plug-in chain, kept
+Everyone in a room holds the same project: every track, item, lane, MIDI part, plug-in chain, automation
+envelope and send, kept
 identical by mirror sync. One person drives (their changes go to everyone); bandmates claim the tracks or
 song sections they work on, and Restore can take back any change, any track, or the whole song.
 
@@ -15,7 +16,8 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
   <Song>/
     session.json               tempo map, markers, sample rate, host
     rooms/<room>/
-      events/   <person>-<time>.json    every change: a track, an item or a plug-in chain, as REAPER describes it
+      events/   <person>-<time>.json    every change: a track, an item, a plug-in chain, a track's automation or its
+                                        sends, as REAPER describes it
       media/    recordings and MIDI prints the items use (copied in once)
       claims/   <person>.json           the tracks and regions each person owns
       recall/   recall points (every handover, or saved by hand)
@@ -32,7 +34,11 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
   - Every track and item has a permanent id (never its name), so unnamed and renamed tracks are fine.
   - What you change goes out a moment after you change it (after the drop, when dragging): items (position,
     fades, mute, lane, MIDI notes, copies, new items), tracks (name, lanes and which lanes play, folders,
-    mute/solo, fader and pan) and plug-in chains (only while stopped: replacing a chain reloads the plug-ins).
+    mute/solo, fader and pan), sends between tracks (level, pan, mute, channels and their send envelopes),
+    automation envelopes (volume, pan, width, mute, trim; sent once you stop and leave them for 3 seconds) and
+    plug-in chains with their parameter automation (only while stopped: replacing a chain reloads the plug-ins).
+    Which envelopes you show, which is armed and how tall their lanes are stay yours. Plug-ins, automation and
+    sends land when that song's tab is in front (REAPER misroutes sends written into a tab behind).
   - What the band changes comes in, the newest version of each object winning on every machine alike.
   - A change you may not make (the driver's, or someone's claim) is put back, Ctrl+drag copies included, with the
     reason in the panel's banner (or a tooltip by the mouse when the panel is closed).
@@ -264,7 +270,10 @@ tracks twice.
 - Prints render through the item's track (not parent folders or sends) and only on a machine where all of that
   track's plug-ins load; rendering shows REAPER's render window for a moment (REAPER has no background render).
 - Track colours travel with a real change but aren't a change on their own (auto-colouring would make machines
-  recolour each other). Envelopes (automation) don't travel yet.
+  recolour each other). Automation items (the boxes on an envelope lane) don't travel yet: their points live
+  in the project, outside the track.
+- Sends to and from a track that only exists on your machine (Real time, live views) stay yours; hardware
+  outputs and the master track don't travel.
 - An item's lane travels; a lane's name and which lanes play travel with its track.
 - Both changing one object while apart: the newer change wins everywhere; the other is on the Restore page.
 - Bringing a side room in: an object both rooms changed since the room was made stays as main has it.

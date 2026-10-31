@@ -16,7 +16,8 @@ local yes = function() return true end
 local out, fails = {}, 0
 local function check(ok, what) if not ok then fails = fails + 1 end; out[#out + 1] = (ok and "PASS " or "FAIL ") .. what end
 local function pass(p) return mirror.watch(p, A, song, room, { can = yes, mode = "claims" }) end
-local function recv(p) local n = 0; for _ = 1, 3 do n = n + sync.receive(p, A, song, room, yes) end; return n end
+local function recv(p) reaper.SelectProjectInstance(p); local n = 0; -- (in front, as when someone switches to it)
+   for _ = 1, 3 do n = n + sync.receive(p, A, song, room, yes) end; return n end
 local function names(p)
   local t = {}
   for i = 0, reaper.CountTracks(p) - 1 do t[#t + 1] = select(2, reaper.GetTrackName(reaper.GetTrack(p, i))) end

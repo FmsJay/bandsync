@@ -44,6 +44,10 @@ assert(n:find("E 0 90 28 64"), "notes stay")
 local other = item:gsub("SEL 1", "SEL 0"):gsub("{AAAA}", "{ZZZZ}"):gsub("IID 7", "IID 2"):gsub("band_sent James%-20261030%-1", "band_take x")
 assert(mirror.normalize_item(other) == n, "same item elsewhere, same bytes")
 assert(mirror.hash(n) == mirror.hash(mirror.normalize_item(other)) and #mirror.hash(n) == 8, "hash")
+-- a pooled MIDI item (after a Ctrl+drag copy) reads the same as its plain copy on the other side
+local pooled = "<ITEM\nPOSITION 0\nPOOLCOLOR 57375313 R\n<SOURCE MIDIPOOL\nHASDATA 1 960 QN\nPOOLEDEVTS {P1}\nE 0 90 3c 60\n>\n>\n"
+local plain = "<ITEM\nPOSITION 0\nPOOLCOLOR 40598097 R\n<SOURCE MIDI\nHASDATA 1 960 QN\nE 0 90 3c 60\n>\n>\n"
+assert(mirror.normalize_item(pooled) == mirror.normalize_item(plain), "MIDI pooling is local: " .. mirror.normalize_item(pooled))
 assert(mirror.hash("a") ~= mirror.hash("b"), "hash tells apart")
 -- an <EXT> with nothing that travels disappears
 local bare = mirror.normalize_item("<ITEM\nPOSITION 1\n<EXT\nband_sent x\n>\n>")
@@ -158,6 +162,59 @@ local side = { ["I-1"] = { obj = "item", oid = "I-1" }, ["T-9"] = { obj = "track
 local main = { ["I-2"] = { obj = "item", oid = "I-2" } }
 local bring, clash = mirror.plan_bring(side, main)
 assert(#bring == 2 and bring[1].obj == "track" and #clash == 1 and clash[1].oid == "I-2", "bring plan")
+
+-- envelopes and receives: cut out of a track chunk, spliced back, the same again; positions travel as oids
+local trk = [[<TRACK
+  NAME Keys
+  MAINSEND 1 0
+  AUXRECV 0 0 0.5 0 0 0 0 0 0 -1:U 0 -1 ''
+  <AUXVOLENV
+    EGUID {S1}
+    ACT 1 -1
+    VIS 1 1 1
+    ARM 0
+    PT 0 1 0
+  >
+  AUXRECV 2 0 1 0 0 0 0 0 0 -1:U 0 -1 ''
+  <VOLENV2
+    EGUID {E1}
+    ACT 1 -1
+    VIS 0 1 1
+    LANEHEIGHT 40 0
+    ARM 1
+    PT 0 1 0
+    PT 2 0.5 0
+  >
+  <FXCHAIN
+    SHOW 0
+  >
+  <ITEM
+    POSITION 0
+  >
+>
+]]
+local at = { [0] = "T-BASS-1", [1] = "T-KEYS-1" } -- position 2 is the Real time track: not mirrored
+local function oid_at(i) return at[i] end
+local env, recv = mirror.track_parts(trk, oid_at)
+assert(env == "<VOLENV2\nACT 1 -1\nPT 0 1 0\nPT 2 0.5 0\n>\n", "envelope without its view lines: " .. env)
+assert(recv == "AUXRECV T-BASS-1 0 0.5 0 0 0 0 0 0 -1:U 0 -1 ''\n<AUXVOLENV\nACT 1 -1\nPT 0 1 0\n>\n", "mirrored receive, by oid: " .. recv)
+-- a bandmate's version: the envelope moved, the receive now comes from Bass at another position here
+local their_env = "<VOLENV2\nACT 1 -1\nPT 0 1 0\nPT 4 0.25 0\n>\n"
+local spliced = mirror.splice_parts(trk, "env", their_env, function() end, oid_at)
+local e2 = mirror.track_parts(spliced, oid_at)
+assert(e2 == their_env, "envelope spliced in: " .. e2)
+assert(spliced:find("VIS 0 1 1", 1, true) and spliced:find("LANEHEIGHT 40 0", 1, true) and spliced:find("ARM 1", 1, true), "view lines kept")
+assert(spliced:find("<FXCHAIN", 1, true) and spliced:find("<ITEM", 1, true) and select(2, spliced:gsub("AUXRECV", "")) == 2, "the rest untouched")
+local pos = { ["T-BASS-1"] = 0, ["T-DRUMS-1"] = 1 }
+local their_recv = "AUXRECV T-DRUMS-1 0 1 0 0 0 0 0 0 -1:U 0 -1 ''\n"
+local r2 = mirror.splice_parts(trk, "recv", their_recv, function(o) return pos[o] end, oid_at)
+assert(select(2, r2:gsub("\n%s*AUXRECV 1 0 1 0", "")) == 1, "the new receive, at its source's position here")
+assert(select(2, r2:gsub("\n%s*AUXRECV 2 ", "")) == 1, "the receive from the Real time track stays")
+assert(not r2:find("AUXRECV 0 ", 1, true) and not r2:find("<AUXVOLENV", 1, true), "the old receive and its envelope went")
+assert(mirror.splice_parts(trk, "recv", "AUXRECV T-NOT-HERE 0 1 0 0 0 0 0 0 -1:U 0 -1 ''\n", function(o) return pos[o] end, oid_at) == nil,
+  "a source that hasn't arrived: try later")
+local fresh = mirror.splice_parts("<TRACK\n  NAME x\n  <FXCHAIN\n  >\n>\n", "env", their_env, function() end, oid_at)
+assert(fresh:find("<VOLENV2\nVIS 1 1 1\n", 1, true) and fresh:find("VOLENV2") < fresh:find("FXCHAIN"), "a new envelope shows, before the plug-ins: " .. fresh)
 
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
 assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)

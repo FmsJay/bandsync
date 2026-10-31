@@ -21,7 +21,8 @@ reaper.Main_OnCommand(40859, 0); local pb = reaper.EnumProjects(-1)
 local media = sync.room_dir(A, song, room) .. "/media"
 local function pass_a(can) return mirror.watch(pa, A, song, room, { can = can or yes, mode = "claims" }) end
 local function pass_b(can) return mirror.watch(pb, B, song, room, { can = can or yes, mode = "claims" }) end
-local function recv(p, cfg) local n = 0; for _ = 1, 3 do n = n + sync.receive(p, cfg, song, room, yes) end; return n end
+local function recv(p, cfg) reaper.SelectProjectInstance(p); local n = 0; -- (in front, as when someone switches to it)
+   for _ = 1, 3 do n = n + sync.receive(p, cfg, song, room, yes) end; return n end
 local function same(what)
   local oa = select(2, mirror.scan(pa, "x", media)); local ob = select(2, mirror.scan(pb, "x", media))
   local diff = {}

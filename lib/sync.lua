@@ -1006,7 +1006,7 @@ function sync.receive(proj, cfg, song, room, can)
   local rdir = sync.room_dir(cfg, song, room)
   for _, ev in ipairs(pending) do
     local obj = ev.type == "obj"
-    if obj and not (type(ev.oid) == "string" and (ev.obj == "item" or ev.obj == "track" or ev.obj == "fx") and type(ev.rev) == "number"
+    if obj and not (type(ev.oid) == "string" and (ev.obj == "item" or ev.obj == "track" or require("mirror").PART[ev.obj]) and type(ev.rev) == "number"
         and (ev.gone or ev.state ~= nil) and (ev.name == nil or type(ev.name) == "string") and (ev.pos == nil or type(ev.pos) == "number")) then
       setext(proj, sync.APPLIED, ev.id, "1") -- malformed (a newer or damaged file): skipped, once, without stopping the rest
       band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync can't read (" .. tostring(ev.id) .. ")")
@@ -1046,7 +1046,7 @@ function sync.receive(proj, cfg, song, room, can)
           start = (ev.rec and "record" or "play") .. " together at " .. tostring(ev.pos), stop = "stop together",
           note = "note: " .. tostring(ev.text), like = "liked " .. tostring(ev.take),
           mix = "changed the mix (buses, sends, master plug-ins)",
-          obj = (ev.gone and "deleted " or "changed ") .. (ev.obj == "fx" and "the plug-ins" or (ev.obj == "item" and "an item" or "a track")) ..
+          obj = (ev.gone and "deleted " or "changed ") .. (require("mirror").PART[ev.obj] or (ev.obj == "item" and "an item" or "a track")) ..
             " on " .. ((ev.name or "") ~= "" and ev.name or "an unnamed track"),
           shift = ((ev.len or 0) > 0 and "inserted " or "removed ") .. string.format("%.2f s at %.2f s", math.abs(ev.len or 0), ev.at or 0) })[ev.type]
         done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))

@@ -5,7 +5,7 @@ local mirror = {}
 -- Lines in an item chunk that are this machine's business only: selection, REAPER's own ids (regenerated on
 -- apply), MIDI pooling (a copy is its own item), MIDI editor view state, and which take is active (wet/dry is
 -- each person's choice).
-local LOCAL = { "SEL", "IGUID", "IID", "GUID", "POOLEDEVTS", "CFGEDITVIEW", "CFGEDIT", "EVTFILTER", "KEYSNAP", "TRACKSEL" }
+local LOCAL = { "SEL", "IGUID", "IID", "GUID", "POOLEDEVTS", "POOLCOLOR", "CFGEDITVIEW", "CFGEDIT", "EVTFILTER", "KEYSNAP", "TRACKSEL" }
 local LOCAL_SET = {}
 for _, k in ipairs(LOCAL) do LOCAL_SET[k] = true end
 -- P_EXT keys that travel: our object id, and mirrored markers (band_m_*). Everything else is this machine's.
@@ -24,6 +24,8 @@ function mirror.normalize_item(chunk)
       in_ext = true; out[#out + 1] = s
     elseif key == "TAKE" then
       out[#out + 1] = "TAKE" -- ("TAKE SEL" marks the active take: local)
+    elseif s == "<SOURCE MIDIPOOL" then
+      out[#out + 1] = "<SOURCE MIDI" -- (a pooled copy arrives as an item of its own: REAPER writes it as plain MIDI there)
     elseif not (key and LOCAL_SET[key]) then
       out[#out + 1] = s
     end
@@ -63,6 +65,125 @@ function mirror.fxchain(track_chunk, skip)
       if group then group[#group + 1] = r.s else out[#out + 1] = r.s end
     end
   end
+  return table.concat(out, "\n") .. "\n"
+end
+
+-- A track's automation ("E-" + its oid) and its receives ("R-", each with its send envelopes) travel as objects of
+-- their own, cut out of the track chunk and spliced back in. Writing a track chunk back keeps its plug-ins running
+-- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
+-- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
+-- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
+mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", I = "item" } -- (an oid's first letter)
+mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends" } -- (a track's parts, in words)
+local ENV_LOCAL = { EGUID = true, ARM = true, VIS = true, LANEHEIGHT = true }
+local function is_env(u) return u.block and u.tag:find("ENV") and u.tag:sub(1, 3) ~= "AUX" end
+local function is_aux(u) return u.block and u.tag:sub(1, 3) == "AUX" and u.tag:find("ENV") end
+
+-- A track chunk's first line, its top-level parts in order ({ tag, lines, block }) and its closing line.
+local function track_units(chunk)
+  local head, units, tail, depth, cur = nil, {}, ">", 0, nil
+  for line in (chunk:gsub("\r", "") .. "\n"):gmatch("(.-)\n") do
+    local s = line:match("^%s*(.-)%s*$")
+    if s == "" then -- (nothing)
+    elseif depth == 0 then head, depth = line, 1
+    elseif depth == 1 then
+      if s == ">" then tail, depth = line, 0
+      elseif s:sub(1, 1) == "<" then cur = { tag = s:match("^<(%S+)"), lines = { line }, block = true }; units[#units + 1] = cur; depth = 2
+      else units[#units + 1] = { tag = s:match("^(%S+)"), lines = { line } } end
+    else
+      cur.lines[#cur.lines + 1] = line
+      if s:sub(1, 1) == "<" then depth = depth + 1 elseif s == ">" then depth = depth - 1 end
+    end
+  end
+  return head, units, tail
+end
+
+-- An envelope block as it travels: trimmed, without its view lines.
+local function env_norm(lines)
+  local out, depth = {}, 0
+  for _, l in ipairs(lines) do
+    local s = l:match("^%s*(.-)%s*$")
+    if not (depth == 1 and ENV_LOCAL[s:match("^(%S+)")]) then out[#out + 1] = s end
+    if s:sub(1, 1) == "<" then depth = depth + 1 elseif s == ">" then depth = depth - 1 end
+  end
+  return table.concat(out, "\n") .. "\n"
+end
+
+-- A track chunk's envelopes and receives as they travel. `oid_at(index)`: the oid of the track at that 0-based
+-- position, nil when it isn't mirrored (its receive is left out).
+function mirror.track_parts(chunk, oid_at)
+  local _, units = track_units(chunk)
+  local env, recv, cur = {}, {}, nil
+  for _, u in ipairs(units) do
+    if u.tag == "AUXRECV" then
+      local idx, rest = u.lines[1]:match("^%s*AUXRECV%s+(%d+)(.-)%s*$")
+      local src = idx and oid_at(tonumber(idx))
+      cur = src and { "AUXRECV " .. src .. rest .. "\n" } or nil
+      if cur then recv[#recv + 1] = cur end
+    elseif is_aux(u) then
+      if cur then cur[#cur + 1] = env_norm(u.lines) end
+    else
+      cur = nil
+      if is_env(u) then env[#env + 1] = env_norm(u.lines) end
+    end
+  end
+  for i, r in ipairs(recv) do recv[i] = table.concat(r) end
+  return table.concat(env), table.concat(recv)
+end
+
+-- The track chunk with its envelopes (what = "env") or its mirrored receives ("recv") replaced by `state` (as
+-- track_parts gives it). `index_of(oid)`: that track's 0-based position here, nil when it isn't here yet (then nil
+-- is returned: try again later). Envelopes keep this machine's view lines; a new one shows in its lane.
+function mirror.splice_parts(chunk, what, state, index_of, oid_at)
+  local head, units, tail = track_units(chunk)
+  local new, view = {}, {}
+  for _, u in ipairs(units) do
+    if is_env(u) then
+      local keep = {}
+      for k = 2, #u.lines do
+        local key = u.lines[k]:match("^%s*(%S+)")
+        if ENV_LOCAL[key] and key ~= "EGUID" then keep[#keep + 1] = u.lines[k] end
+      end
+      view[u.tag] = keep
+    end
+  end
+  local cur
+  for line in state:gmatch("[^\n]+") do -- the incoming parts, back into chunk lines
+    local src, rest = line:match("^AUXRECV (%S+)(.*)$")
+    if src then
+      local idx = index_of(src)
+      if not idx then return nil end
+      cur = { tag = "AUXRECV", lines = { "AUXRECV " .. idx .. rest } }
+      new[#new + 1] = cur
+    elseif line:sub(1, 1) == "<" and not (cur and cur.open) then
+      cur = { tag = line:match("^<(%S+)"), lines = { line }, block = true, open = 1 }
+      new[#new + 1] = cur
+      if what == "env" then for _, v in ipairs(view[cur.tag] or { "VIS 1 1 1" }) do cur.lines[#cur.lines + 1] = v end end
+    else
+      cur.lines[#cur.lines + 1] = line
+      if line:sub(1, 1) == "<" then cur.open = cur.open + 1 elseif line == ">" then cur.open = cur.open - 1 end
+      if cur.open == 0 then cur.open = nil end
+    end
+  end
+  local out, at, after_recv = { head }, nil, false
+  for _, u in ipairs(units) do
+    local drop
+    if what == "env" then drop = is_env(u)
+    elseif u.tag == "AUXRECV" then
+      local idx = u.lines[1]:match("^%s*AUXRECV%s+(%d+)")
+      drop = idx and oid_at(tonumber(idx)) ~= nil
+      after_recv = drop
+    else drop = is_aux(u) and after_recv end
+    if not is_aux(u) and u.tag ~= "AUXRECV" then after_recv = false end
+    -- the new parts go where the old ones were, else before the plug-ins and items
+    if not at and (drop or u.tag == "FXCHAIN" or u.tag == "ITEM" or (what == "recv" and is_env(u))) then
+      at = true
+      for _, n in ipairs(new) do for _, l in ipairs(n.lines) do out[#out + 1] = l end end
+    end
+    if not drop then for _, l in ipairs(u.lines) do out[#out + 1] = l end end
+  end
+  if not at then for _, n in ipairs(new) do for _, l in ipairs(n.lines) do out[#out + 1] = l end end end
+  out[#out + 1] = tail
   return table.concat(out, "\n") .. "\n"
 end
 
@@ -346,7 +467,8 @@ local function settle_ids(proj, list, kind, user, set_oid)
     if was and not held[was] then
       x.oid, x.restored, held[was] = was, true, true
       set_oid(x.ptr, was)
-      for _, oid in ipairs({ was, kind == "T" and "F" .. was:sub(2) or nil }) do -- what this machine knew of it, too
+      for _, p in ipairs(kind == "T" and { "T", "F", "E", "R" } or { "I" }) do -- what this machine knew of it (and its parts)
+        local oid = p .. was:sub(2)
         if c.rec[oid] and ext(proj, oid) == "" then setext(proj, oid, c.rec[oid]) end
       end
     end
@@ -363,7 +485,7 @@ local function settle_ids(proj, list, kind, user, set_oid)
     if c and c.guid[x.guid] ~= x.oid then c.guid[x.guid], c.dirty = x.oid, true end
     if x.restored then
       mirror.reopened[tostring(proj) .. x.oid] = true
-      if kind == "T" then mirror.reopened[tostring(proj) .. "F" .. x.oid:sub(2)] = true end -- (its plug-ins too)
+      if kind == "T" then for _, p in ipairs({ "F", "E", "R" }) do mirror.reopened[tostring(proj) .. p .. x.oid:sub(2)] = true end end
     end
   end
 end
@@ -381,6 +503,9 @@ function mirror.scan(proj, user, media_dir, local_mix)
     end
   end
   settle_ids(proj, tl, "T", user, function(tr, oid) reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true) end)
+  local at = {} -- 0-based position -> oid, for receives
+  for _, x in ipairs(tl) do at[math.floor(reaper.GetMediaTrackInfo_Value(x.ptr, "IP_TRACKNUMBER")) - 1] = x.oid end
+  local function oid_at(i) return at[i] end
   for _, x in ipairs(tl) do
     local tr, oid = x.ptr, x.oid
     do
@@ -393,6 +518,11 @@ function mirror.scan(proj, user, media_dir, local_mix)
       local fx = mirror.fxchain(chunk, skip) or ""
       local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = mirror.hash(fx) }
       objs[#objs + 1], by_oid[fo.oid] = fo, fo
+      local env, recv = mirror.track_parts(chunk, oid_at)
+      for _, p in ipairs({ { "E", "env", env }, { "R", "recv", recv } }) do
+        local po = { kind = p[2], oid = p[1] .. oid:sub(2), ptr = tr, track = oid, state = p[3], hash = mirror.hash(p[3]) }
+        objs[#objs + 1], by_oid[po.oid] = po, po
+      end
     end
   end
   local il = {}
@@ -484,6 +614,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
     if reaper.GetPlayStateEx(proj) ~= 0 then return false end -- replacing a chain reloads plug-ins: only while stopped
+    if reaper.EnumProjects(-1) ~= proj then return false end -- (see below: a track chunk waits for its tab to be in front)
     local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
     local sync = require("sync")
     local block = (ev.state or ""):gsub("\n$", "")
@@ -499,6 +630,27 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local skip = {}
     for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
     return true, mirror.hash(mirror.fxchain(after, skip) or "")
+  elseif kind == "env" or kind == "recv" then
+    local tr = mirror.find(proj, "track", ev.track)
+    if not tr then return false end
+    if reaper.GetPlayStateEx(proj) & 4 == 4 then return false end -- (a track chunk isn't rewritten mid-recording)
+    -- a track chunk written in a tab that isn't in front breaks that project's sends (REAPER reads the receives'
+    -- track positions against the tab in front; measured 7.83: "source sends 0"): it waits until this tab is in front
+    if reaper.EnumProjects(-1) ~= proj then return false end
+    local at, pos = {}, {}
+    for i = 0, reaper.CountTracks(proj) - 1 do
+      local t = reaper.GetTrack(proj, i)
+      local o = not local_track(t) and trk_oid(t) or ""
+      if o ~= "" then at[i], pos[o] = o, i end
+    end
+    local function oid_at(i) return at[i] end
+    local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
+    local new = mirror.splice_parts(chunk, kind, ev.state or "", function(o) return pos[o] end, oid_at)
+    if not new then return false end -- a receive's source track hasn't arrived yet
+    if new ~= chunk then reaper.SetTrackStateChunk(tr, new, false) end
+    local _, after = reaper.GetTrackStateChunk(tr, "", false)
+    local env, recv = mirror.track_parts(after, oid_at)
+    return true, mirror.hash(kind == "env" and env or recv)
   elseif kind == "item" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
@@ -543,8 +695,10 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
     local band = require("band")
     local n = (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) + 1
     reaper.SetExtState(band.SECTION, "mirror drift " .. tostring(proj), tostring(n), false)
+    reaper.SetExtState(band.SECTION, "mirror drift last", ev.oid .. " here " .. tostring(h) .. " theirs " .. ev.hash, false) -- (for a bug report)
+    local where = (ev.name or "") ~= "" and ev.name or "an unnamed track"
     band.log(string.format("%s's change to %s came out different here than on their machine (the panel's Health shows it)", tostring(ev.user),
-      (ev.name or "") ~= "" and ("something on " .. ev.name) or "an unnamed track"))
+      mirror.PART[ev.obj] and (mirror.PART[ev.obj] .. " on " .. where) or ev.obj == "track" and ("track " .. where) or ("an item on " .. where)))
   end
   if ok and ev.obj == "item" and ev.track then
     local tr = mirror.find(proj, "track", ev.track)
@@ -614,6 +768,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       if o.kind == "fx" and playing then return end -- (reloading plug-ins mid-song: after the stop)
       local ok, h = mirror.apply(proj, ev, media, opts.local_mix)
       if ok then remember(proj, o.oid, ev.rev, h, ev.id, (ev.time or "") .. (ev.user or ""))
+      elseif mirror.PART[o.kind] then return -- (waits for this tab to come to the front)
       else -- it can't land here (its track is gone): the band's state wins, and that has no such item
         if o.kind == "item" and o.ptr and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(o.ptr), o.ptr) end
         remember(proj, o.oid, rev or 0, "", evid, (ev.time or "") .. (ev.user or ""))
@@ -641,8 +796,10 @@ function mirror.watch(proj, cfg, song, room, opts)
         say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
         return put_back(o, rev, evid, { name = perm_name(o, by_oid) })
       end
-      if o.kind == "fx" then -- only while stopped, once it has settled: not a whole chain (or a put-back) per knob turn
-        if not rev and o.state == "" then return end -- (an empty chain nobody has sent: nothing to share)
+      if not rev and o.state == "" and o.kind ~= "track" and o.kind ~= "item" then return end -- (an empty part nobody has sent)
+      -- plug-ins and automation: only while stopped, once settled (not a whole chain per knob turn, or an envelope per
+      -- point drawn)
+      if o.kind == "fx" or o.kind == "env" then
         local key = tostring(proj) .. o.oid -- (per tab: a side room's copy shares the oid)
         local f = mirror.fx_seen[key]
         if playing then return end
@@ -672,7 +829,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         sent = sent + 1
       else
         put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s on %s isn't yours to change right now: put back (claim it, or take control)",
-          o.kind == "item" and "that item" or o.kind == "fx" and "the plug-ins" or "that track", (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track") })
+          o.kind == "item" and "that item" or mirror.PART[o.kind] or "that track", (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track") })
       end
     end)
     if not ok then say_once("err" .. o.oid, "mirror sync skipped " .. o.oid .. ": " .. tostring(err)) end
@@ -710,7 +867,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       end
       local o = { kind = last.obj or (g.oid:sub(1, 1) == "T" and "track" or "item"), oid = g.oid, track = last.track, state = last.state }
       local name = last.name or ""
-      if o.kind == "fx" then -- (its track went: the track's own deletion covers it)
+      if mirror.PART[o.kind] then -- (its track went: the track's own deletion covers it)
         remember(proj, g.oid, (g.rev or 0) + 1, "", g.evid)
       elseif allowed(o, name, last.pos) then
         local ev = { type = "obj", obj = o.kind, oid = g.oid, rev = (g.rev or 0) + 1, base = g.rev or 0, gone = true, track = o.track, name = name, pos = last.pos }
@@ -753,7 +910,7 @@ function mirror.selection_scope(proj)
   local set, any = {}, false
   for i = 0, reaper.CountSelectedTracks(proj) - 1 do
     local oid = trk_oid(reaper.GetSelectedTrack(proj, i))
-    if oid ~= "" then set[oid], set["F" .. oid:sub(2)], any = true, true, true end
+    if oid ~= "" then for _, p in ipairs({ "T", "F", "E", "R" }) do set[p .. oid:sub(2)] = true end; any = true end
   end
   if not any then return nil end
   return function(oid, last, at) return set[oid] or (last and set[last.track or ""]) or (at and set[at.track or ""]) or false end
@@ -793,7 +950,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
         done = done + 1
       end
     else
-      local kind = p.oid:sub(1, 1) == "T" and "track" or p.oid:sub(1, 1) == "F" and "fx" or "item"
+      local kind = mirror.KIND[p.oid:sub(1, 1)] or "item"
       mirror.apply(proj, { obj = kind, oid = p.oid, gone = true }, media, opts.local_mix)
       local gev = { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, base = rev or 0, gone = true, undoes = opts.undoes, redoes = opts.redoes }
       local id = sync.post(cfg, song, room, gev)

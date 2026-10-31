@@ -610,7 +610,8 @@ end
 local KINDS = {
   { "Every kind" }, { "Items (recordings, MIDI, moves, edits)", function(e) return e.obj == "item" and not e.gone end },
   { "Tracks (names, lanes, mute, folders)", function(e) return e.obj == "track" and not e.gone end },
-  { "Plug-ins", function(e) return e.obj == "fx" end }, { "Deletes", function(e) return e.gone end },
+  { "Plug-ins", function(e) return e.obj == "fx" end }, { "Automation and sends", function(e) return e.obj == "env" or e.obj == "recv" end },
+  { "Deletes", function(e) return e.gone end },
   { "Brought back (undo, restore)", function(e) return e.restored ~= nil end },
   { "Notes and likes", { note = true, like = true } }, { "Tempo and arrangement", { timeline = true, shift = true } },
   { "Who drives (handovers)", { driver = true } }, { "Played or recorded together", { start = true, stop = true } },

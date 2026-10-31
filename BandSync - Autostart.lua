@@ -59,12 +59,17 @@ local function loop()
       local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
       -- (30 s, not 5: a dialog left open a few seconds pauses every script, and isn't a Live sync that stopped)
       local alive = beat and reaper.time_precise() - beat < 30
-      if not alive and reaper.time_precise() - (tried[key] or -1e9) > 30 then
-        tried[key] = reaper.time_precise()
+      -- Only the tab in front is (re)started: starting a background tab meant flipping it to the front, and with more
+      -- BandSync tabs open than Live sync has slots (17) the flipping never stopped and REAPER couldn't be clicked
+      -- (PC, 2026-10-30, 38 tabs). A background tab starts when you switch to it. Three tries, then it says so once.
+      local n = tried[key] or { at = -1e9, n = 0 }
+      tried[key] = n
+      if alive then n.n = 0
+      elseif proj == front and n.n < 3 and reaper.time_precise() - n.at > 30 then
+        n.at, n.n = reaper.time_precise(), n.n + 1
         band.log("starting Live sync again for " .. fn)
-        reaper.SelectProjectInstance(proj) -- Live sync takes the project in front: this one, for a moment
-        band.start_live(dir) -- (each tab at once needs an action of its own)
-        if front and reaper.ValidatePtr2(0, front, "ReaProject*") then reaper.SelectProjectInstance(front) end
+        if not band.start_live(dir) then band.log("Live sync has no free slot for " .. fn .. ": close some BandSync tabs (17 at most run at once)") end
+        if n.n == 3 then band.log("Live sync didn't stay running for " .. fn .. " after 3 tries: press Start in the BandSync panel") end
       end
     end
   end

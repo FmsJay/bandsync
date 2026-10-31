@@ -115,6 +115,18 @@ local ok, err = pcall(function()
   pass_a(); recv(pb, B)
   check(reaper.CountTracks(pb) == 1, "Keys deleted on B too")
   same("after track delete")
+  -- 6. both move the same item while apart (both allowed): one version wins on both machines
+  local xa = reaper.GetTrackMediaItem(reaper.GetTrack(pa, 0), 0)
+  local oid = mirror.item_oid(xa)
+  local xb = mirror.find(pb, "item", oid)
+  reaper.SetMediaItemInfo_Value(xa, "D_POSITION", 20)
+  reaper.SetMediaItemInfo_Value(xb, "D_POSITION", 30)
+  pass_a(); pass_b()
+  recv(pb, B); recv(pa, A)
+  local pa_pos = reaper.GetMediaItemInfo_Value(mirror.find(pa, "item", oid), "D_POSITION")
+  local pb_pos = reaper.GetMediaItemInfo_Value(mirror.find(pb, "item", oid), "D_POSITION")
+  check(pa_pos == pb_pos, string.format("both changed it: they agree (A %.0f, B %.0f)", pa_pos, pb_pos))
+  same("after both changed one item")
 end)
 if not ok then say("ERROR " .. tostring(err)) ; fails = fails + 1 end
 -- tidy: both scratch tabs saved into the scratch folder (so closing never asks) and closed

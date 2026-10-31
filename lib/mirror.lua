@@ -398,9 +398,15 @@ function mirror.wins(proj, oid, rev, order)
 end
 
 -- An incoming "obj" event (from sync.apply). Returns true when handled (applied or older than what we hold).
-function mirror.receive(proj, ev, media_dir, local_mix)
+function mirror.receive(proj, ev, media_dir, local_mix, me)
   local order = (ev.time or "") .. (ev.user or "")
   if not mirror.wins(proj, ev.oid, ev.rev or 0, order) then return true end
+  -- both changed it while apart: theirs wins everywhere (the same on every machine); ours stays in History
+  local krev, _, kev = mirror.known(proj, ev.oid)
+  if me and krev and ev.base and ev.base < krev and kev:sub(1, #me + 1):upper() == (me:gsub(" ", "_") .. "-"):upper() then
+    require("sync").put_back(string.format("%s also changed %s while you were apart: theirs is in. Yours is in History " ..
+      "(Undo specific change on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing"))
+  end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
   if ok and ev.obj == "item" and ev.track then
@@ -470,7 +476,7 @@ function mirror.watch(proj, cfg, song, room, opts)
             o.hash = mirror.hash(o.track .. "\n" .. state)
           end
         end
-        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, state = state, track = o.track, name = name, pos = o.pos }
+        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track, name = name, pos = o.pos }
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
         sent = sent + 1

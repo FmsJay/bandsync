@@ -1317,7 +1317,7 @@ function sync.obj_allowed(ev, can, driver)
 end
 
 function sync.apply(proj, ev, dir, root, can, me)
-  if ev.type == "obj" then return require("mirror").receive(proj, ev, dir .. "/media", sync.local_mix) end -- mirror sync
+  if ev.type == "obj" then return require("mirror").receive(proj, ev, dir .. "/media", sync.local_mix, me) end -- mirror sync
   if ev.type == "plays" then return apply_plays(proj, ev.track, ev.takes or {}) end
   if ev.type == "track" then return apply_track(proj, ev) end
   if ev.type == "mix" and type(ev.state) == "table" then -- the driver's buses, sends into them, master plug-ins (lib/mixlayer.lua)

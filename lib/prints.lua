@@ -29,12 +29,10 @@ function prints.track_plays(tr)
   return true
 end
 
--- What a print is made from: the notes and the track's plug-in chain (mirror's normalized chain).
-function prints.source(it, mtk)
-  local tr = reaper.GetMediaItem_Track(it)
-  local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
-  local mirror = require("mirror")
-  return mirror.hash(select(2, reaper.MIDI_GetHash(mtk, false, "")) .. (mirror.fxchain(chunk) or "") ..
+-- What a print is made from: the notes, the item's length and the band's plug-in chain on its track (`fx_hash`:
+-- mirror's hash of it, which leaves this machine's translations out, so it's the same on every machine).
+function prints.source(it, mtk, fx_hash)
+  return require("mirror").hash(select(2, reaper.MIDI_GetHash(mtk, false, "")) .. (fx_hash or "") ..
     string.format("%.6f", reaper.GetMediaItemInfo_Value(it, "D_LENGTH")))
 end
 
@@ -53,12 +51,12 @@ end
 
 -- Make or refresh the print of a MIDI item (rendered through its track: this tab in front, transport stopped).
 -- Only when the track's plug-ins all load here (else the print would be silent). Returns true when the item changed.
-function prints.refresh(proj, it, media_dir)
+function prints.refresh(proj, it, media_dir, fx_hash)
   local midi, print = prints.takes(it)
   if not midi then return false end
   local tr = reaper.GetMediaItem_Track(it)
   if reaper.TrackFX_GetCount(tr) == 0 or not prints.track_plays(tr) then return false end
-  local h = prints.source(it, midi)
+  local h = prints.source(it, midi, fx_hash)
   if print and take_ext(print, prints.KEY) == h then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
   local name = "print-" .. (oid ~= "" and oid or "item") .. "-" .. h

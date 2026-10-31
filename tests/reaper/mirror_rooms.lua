@@ -31,6 +31,13 @@ local ok, err = pcall(function()
   reaper.Main_openProject("noprompt:" .. D .. "/m_rooms_main.rpp")
   ps = reaper.EnumProjects(-1)
   reaper.Main_SaveProjectEx(ps, D .. "/m_rooms_side.rpp", 8)
+  do
+    local objs = mirror.scan(ps, "x", sync.room_dir(A, song, "side") .. "/media")
+    for _, o in ipairs(objs) do
+      local _, h = mirror.known(ps, o.oid)
+      if h ~= o.hash then out[#out + 1] = "  side sees a change on " .. o.kind .. " " .. o.oid:sub(-10) .. " known " .. tostring(h) .. " now " .. o.hash end
+    end
+  end
   check(mirror.watch(ps, A, song, "side", { can = yes, mode = "claims" }) == 0, "the side copy starts in step (nothing to send)")
   local sx = mirror.find(ps, "item", xo)
   reaper.SetMediaItemInfo_Value(sx, "D_POSITION", 8)

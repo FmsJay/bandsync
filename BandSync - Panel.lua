@@ -635,7 +635,11 @@ local function back_button(i, what)
     if not e then return end
     ImGui.BeginDisabled(ctx, e.kind ~= "obj")
     if ImGui.SmallButton(ctx, "Undo this") then
-      band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo(entries, i), opts)); hist_at = 0
+      local others = mirror.later_by_others(entries, i)
+      if #others == 0 or reaper.MB(table.concat(others, ", ") .. " changed it after this: undoing it takes their change back too. Undo anyway?",
+          "BandSync", 4) == 6 then
+        band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo(entries, i), opts)); hist_at = 0
+      end
     end
     ImGui.EndDisabled(ctx)
     ImGui.SetItemTooltip(ctx, e.kind == "obj" and ("Undo only this change: " .. describe(e) .. ". Everything else stays; the undo goes to the band as a new change.")
@@ -1650,7 +1654,7 @@ end
 local function local_mix_row()
   local on = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
   local ch, v = switch_row("##localmix", "Local mixing", on, "Your faders and pan stay yours: nobody else's reach you and yours don't go out.")
-  if ch and v then reaper.SetProjExtState(proj, band.SECTION, "local_mix", "1")
+  if ch and v then reaper.SetProjExtState(proj, band.SECTION, "local_mix", "1"); require("mirror").begin_local_mix(proj)
   elseif ch then
     local r = reaper.MB("Local mixing off. Take the band's mix (faders and pan)?\n\nYes: use the band's mix.\nNo: send your mix to the band " ..
       "(the tracks you may change).", "BandSync", 3)
@@ -1845,15 +1849,17 @@ local function frame_app()
     if not i then return band.msg(redo and "Nothing to redo: you haven't undone anything since your last change." or "You haven't changed anything here yet.") end
     local e = all[i]
     local what = redo and ("redo: " .. describe(all[i])) or ("undo: " .. describe(e))
-    if reaper.MB(what:sub(1, 1):upper() .. what:sub(2) .. "?\n\nIt goes to everyone; nothing anyone else changed is touched.", "BandSync", 4) ~= 6 then return end
+    local others = mirror.later_by_others(all, i)
+    if reaper.MB(what:sub(1, 1):upper() .. what:sub(2) .. "?\n\nIt goes to everyone." .. (#others > 0 and ("\n\n" .. table.concat(others, ", ") ..
+      " changed it after that: their change to it goes back too.") or ""), "BandSync", 4) ~= 6 then return end
     local opts = { can = can, mode = who and who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" }
     if redo then opts.redoes = e.id else opts.undoes = e.id end
     local ok, res = pcall(mirror.revert, proj, cfg, b.song, b.room, mirror.plan_undo(all, i), opts)
     band.log(ok and res or ("undo failed: " .. tostring(res)))
     hist_at = 0
   end
-  if arrow_button("##undo", false, "Undo your own last change, for everyone (it asks first). Unlike Ctrl+Z, a bandmate's change " ..
-      "that came in since is never touched. Press again to go further back.") then undo_redo(false) end
+  if arrow_button("##undo", false, "Undo your own last change, for everyone (it asks first, and says if a bandmate changed the same " ..
+      "thing since). Press again to go further back.") then undo_redo(false) end
   ImGui.SameLine(ctx, 0, 4); ImGui.SetCursorPosY(ctx, y0)
   if arrow_button("##redo", true, "Redo: bring back the change you undid last (for everyone).") then undo_redo(true) end
   if wide then -- the pages, in the bar

@@ -104,11 +104,16 @@ assert(mirror.merge3("a", "b", "b") == "same")
 
 -- media tokens: Windows path in, Mac path out
 local tok = mirror.tokenize_media(item, "J:/Portable Workstation/BandSync/Lantern/rooms/main/media")
-assert(tok:find('FILE "{media}/bass1.flac"'), "tokenized: " .. tok:match('FILE "[^"]*"'))
+assert(tok:find('FILE "{media:main}/bass1.flac"'), "tokenized: " .. tok:match('FILE "[^"]*"'))
 local mac = mirror.resolve_media(tok, "/Volumes/X/BandSync/Lantern/rooms/main/media/")
 assert(mac:find('FILE "/Volumes/X/BandSync/Lantern/rooms/main/media/bass1.flac"'), "resolved")
-assert(mirror.media_needed(tok)[1] == "bass1.flac", "needed list")
-assert(mirror.tokenize_media('FILE "C:/elsewhere/x.wav"', "J:/m"):find("C:/elsewhere"), "outside the room stays")
+assert(mirror.media_needed(tok, "/V/BandSync/Lantern/rooms/main/media")[1] == "/V/BandSync/Lantern/rooms/main/media/bass1.flac", "needed list")
+assert(mirror.tokenize_media('FILE "C:/elsewhere/x.wav"', "J:/m/rooms/main/media"):find("C:/elsewhere"), "outside the song stays")
+-- a side room's copy of main's item keeps pointing at main's media: the same token from either room (not a change)
+local side_tok = mirror.tokenize_media(item, "J:/Portable Workstation/BandSync/Lantern/rooms/try this/media")
+assert(side_tok == tok, "same token from a side room")
+assert(mirror.resolve_media(side_tok, "J:/B/Lantern/rooms/try this/media"):find('FILE "J:/B/Lantern/rooms/main/media/bass1.flac"'), "resolves to main's media")
+assert(mirror.resolve_media('FILE "{media}/old.flac"', "J:/B/S/rooms/main/media"):find('J:/B/S/rooms/main/media/old.flac'), "older token: this room")
 
 -- History plans
 local E = {

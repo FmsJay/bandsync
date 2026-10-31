@@ -25,7 +25,6 @@ if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.r
     (away and " They can take it back when they return." or ""), "BandSync", 4) ~= 6 then return end
 
 local function handover()
-  sync.watch(proj, cfg, b.song, b.room, function() return false end) -- start from what's here now: old local edits aren't replayed
   -- every handover leaves a recall point, so the band can always go back to how it was before
   require("recall").save(proj, cfg, b.song, b.room, "before " .. cfg.user .. " took over from " .. tostring(now))
   sync.set_driver(cfg, b.song, b.room, cfg.user)

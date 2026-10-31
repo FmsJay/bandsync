@@ -97,7 +97,13 @@ local ok, err = pcall(function()
   local _, bch = reaper.GetItemStateChunk(reaper.GetTrackMediaItem(reaper.GetTrack(pb, 1), 0), "", false)
   local bcp = reaper.AddMediaItemToTrack(reaper.GetTrack(pb, 1)); reaper.SetItemStateChunk(bcp, bch, false)
   pass_b(function() return false end)
-  check(reaper.CountTrackMediaItems(reaper.GetTrack(pb, 1)) == 1, "B's unallowed copy was removed")
+  check(reaper.CountTrackMediaItems(reaper.GetTrack(pb, 1)) == 1, "B's unallowed copy left the band's track")
+  local kept = false
+  for t = 0, reaper.CountTracks(pb) - 1 do
+    local nm = select(2, reaper.GetSetMediaTrackInfo_String(reaper.GetTrack(pb, t), "P_NAME", "", false))
+    if nm:find("yours, not sent", 1, true) and reaper.CountTrackMediaItems(reaper.GetTrack(pb, t)) == 1 then kept = true end
+  end
+  check(kept, "...and is kept on a track of B's own (not sent)")
   same("after B's put-backs")
   -- 4. History: undo A's mute (one change), from the shared History; B follows
   local entries = recall.entries(A, song, room)
@@ -111,9 +117,10 @@ local ok, err = pcall(function()
     same("after Undo this")
   end
   -- 5. A deletes the Keys track: it goes on B too
+  local blank_oid = mirror.track_oid(blank)
   reaper.DeleteTrack(blank)
   pass_a(); recv(pb, B)
-  check(reaper.CountTracks(pb) == 1, "Keys deleted on B too")
+  check(mirror.find(pb, "track", blank_oid) == nil, "Keys deleted on B too")
   same("after track delete")
   -- 6. both move the same item while apart (both allowed): one version wins on both machines
   local xa = reaper.GetTrackMediaItem(reaper.GetTrack(pa, 0), 0)
@@ -127,6 +134,22 @@ local ok, err = pcall(function()
   local pb_pos = reaper.GetMediaItemInfo_Value(mirror.find(pb, "item", oid), "D_POSITION")
   check(pa_pos == pb_pos, string.format("both changed it: they agree (A %.0f, B %.0f)", pa_pos, pb_pos))
   same("after both changed one item")
+  -- 6b. a copy placed BEFORE its original (Ctrl+drag left): the original keeps its id and its place everywhere
+  local _, xch = reaper.GetItemStateChunk(xa, "", false)
+  local cp2 = reaper.AddMediaItemToTrack(reaper.GetTrack(pa, 0))
+  reaper.SetItemStateChunk(cp2, (xch:gsub("\nIGUID [^\n]*", "")), false) -- (a real copy gets a GUID of its own)
+  reaper.SetMediaItemInfo_Value(cp2, "D_POSITION", 0)
+  pass_a(); recv(pb, B)
+  check(mirror.item_oid(xa) == oid and mirror.item_oid(cp2) ~= oid, "the original kept its id, the copy got a new one")
+  check(reaper.GetMediaItemInfo_Value(mirror.find(pb, "item", oid), "D_POSITION") == pa_pos, "B's original stayed where it was")
+  check(mirror.find(pb, "item", mirror.item_oid(cp2)) ~= nil, "B got the copy as a new item")
+  -- 6c. a put-back whose band version can't be read here: left alone, never deleted
+  local rv, hv = mirror.known(pb, oid)
+  mirror.remember(pb, oid, rv, hv, "NO-SUCH-EVENT", "x")
+  local bx = mirror.find(pb, "item", oid)
+  reaper.SetMediaItemInfo_Value(bx, "D_POSITION", 40)
+  pass_b(function() return false end)
+  check(mirror.find(pb, "item", oid) ~= nil, "unreadable band version: B's item is left, not deleted")
   -- 7. the tempo map (not a track or an item): the driver's change reaches B
   sync.watch_timeline(pa, A, song, room, yes); sync.watch_timeline(pb, B, song, room, yes) -- (first look: just noted)
   reaper.SetCurrentBPM(pa, 133, false)

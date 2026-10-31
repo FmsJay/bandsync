@@ -155,7 +155,7 @@ function drive.mirror(here, there, budget, user, wait)
     n = n + 1
   end
   -- written once: whatever's missing goes across
-  for _, sub in ipairs({ "events", "recall", "midi" }) do
+  for _, sub in ipairs({ "events", "recall", "midi", "media" }) do -- (media: recordings and prints the items use)
     local A, B = band.files(here .. "/" .. sub), band.files(there .. "/" .. sub)
     local inA, inB = {}, {}
     for _, f in ipairs(A) do inA[f] = true end

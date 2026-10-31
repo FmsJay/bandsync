@@ -139,6 +139,15 @@ function mirror.last_mine(entries, user)
     end
   end
 end
+-- Who else changed entries[i]'s object after it (undoing it takes their later change back too). Pure.
+function mirror.later_by_others(entries, i)
+  local e, who, seen = entries[i], {}, {}
+  for j = i + 1, #entries do
+    local x = entries[j]
+    if x.kind == "obj" and x.oid == e.oid and x.user ~= e.user and not seen[x.user] then seen[x.user] = true; who[#who + 1] = x.user end
+  end
+  return who
+end
 -- last_undo: your newest undo that hasn't been redone.
 function mirror.last_undo(entries, user)
   local redone = {}
@@ -152,48 +161,57 @@ function mirror.last_undo(entries, user)
   end
 end
 
--- Media paths in chunks: under the room's media folder they travel as a token, so every machine resolves them to
--- its own shared folder (J:/... here, /Volumes/... on a Mac).
+-- Media paths in chunks: anything in one of the song's rooms' media folders travels as {media:<room>}/<file>, so
+-- every machine resolves it to its own shared folder (J:/... here, /Volumes/... on a Mac), and a side room's copy of
+-- main's items still points at main's media (it isn't a change). `media_dir`: this room's, <song>/rooms/<room>/media.
 local function norm_path(p) return (p:gsub("\\", "/")) end
+local function rooms_dir(media_dir) return (norm_path(media_dir):gsub("/$", ""):gsub("/[^/]+/media$", "")) end
 function mirror.tokenize_media(chunk, media_dir)
-  local base = norm_path(media_dir):lower()
-  if base:sub(-1) ~= "/" then base = base .. "/" end
+  local base = rooms_dir(media_dir):lower() .. "/"
   return (chunk:gsub('(FILE ")([^"]+)(")', function(a, path, z)
     local p = norm_path(path)
-    if p:lower():sub(1, #base) == base then return a .. "{media}/" .. p:sub(#base + 1) .. z end
+    if p:lower():sub(1, #base) == base then
+      local room, rel = p:sub(#base + 1):match("^([^/]+)/media/(.+)$")
+      if room then return a .. "{media:" .. room .. "}/" .. rel .. z end
+    end
     return a .. path .. z
   end))
 end
-function mirror.resolve_media(chunk, media_dir)
-  local base = norm_path(media_dir)
-  if base:sub(-1) == "/" then base = base:sub(1, -2) end
-  return (chunk:gsub('FILE "{media}/([^"]+)"', function(rel) return 'FILE "' .. base .. "/" .. rel .. '"' end))
+local function media_path(media_dir, room, rel)
+  return room and (rooms_dir(media_dir) .. "/" .. room .. "/media/" .. rel) or (norm_path(media_dir):gsub("/$", "") .. "/" .. rel)
 end
--- Media files a (tokenized) chunk needs from the room's media folder.
-function mirror.media_needed(chunk)
+function mirror.resolve_media(chunk, media_dir)
+  chunk = chunk:gsub('FILE "{media:([^}]+)}/([^"]+)"', function(room, rel) return 'FILE "' .. media_path(media_dir, room, rel) .. '"' end)
+  return (chunk:gsub('FILE "{media}/([^"]+)"', function(rel) return 'FILE "' .. media_path(media_dir, nil, rel) .. '"' end))
+end
+-- The media files (full paths here) a tokenized chunk needs.
+function mirror.media_needed(chunk, media_dir)
   local t = {}
-  for rel in chunk:gmatch('FILE "{media}/([^"]+)"') do t[#t + 1] = rel end
+  for room, rel in chunk:gmatch('FILE "{media:([^}]+)}/([^"]+)"') do t[#t + 1] = media_path(media_dir, room, rel) end
+  for rel in chunk:gmatch('FILE "{media}/([^"]+)"') do t[#t + 1] = media_path(media_dir, nil, rel) end
   return t
 end
 
--- A fresh object id: kind letter, user, time, counter (unique without coordination). Upper case throughout:
--- REAPER hands project ExtState keys back upper-cased (EnumProjExtState), and every object is looked up by them.
+-- A fresh object id: kind letter, user, time, counter (unique without coordination: the counter carries 4 random
+-- digits, since two machines under one name can start the same second). Upper case throughout: REAPER hands
+-- project ExtState keys back upper-cased (EnumProjExtState), and every object is looked up by them.
 local seq = 0
 function mirror.user_tag(user) return ((user or "x"):gsub("[^%w]", "_")):upper() end
 function mirror.new_oid(kind, user, now)
   seq = seq + 1
-  return string.format("%s-%s-%s-%d", kind:upper(), mirror.user_tag(user), now or os.date("!%Y%m%d%H%M%S"), seq)
+  return string.format("%s-%s-%s-%d%04d", kind:upper(), mirror.user_tag(user), now or os.date("!%Y%m%d%H%M%S"), seq, math.random(0, 9999))
 end
 -- Who made an object (its oid's second field).
 function mirror.creator(oid) return (oid or ""):match("^%a%-(.-)%-%d+%-%d+$") end
 
--- Track settings that travel, as one line (order matters only for hashing). Faders and pan stay out with
--- Local mixing on. Never: record arm, input, monitoring, height, selection.
-function mirror.track_line(t)
+-- Track settings that travel, as one line (order matters only for hashing). Faders and pan always travel, but with
+-- Local mixing on they aren't a change here. Never: record arm, input, monitoring, height, selection.
+function mirror.track_hash(t, local_mix) return mirror.hash(mirror.track_line(t, local_mix) .. "|" .. (t.after or "")) end
+function mirror.track_line(t, local_mix)
   -- (colour isn't part of it: it travels with a real change, but auto-colouring (SWS) recolours new tracks on every
   -- machine, and counting that as a change made machines recolour each other)
   local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, t.solo or 0, t.phase or 0, t.icon or "",
-    t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, t.vol or "", t.pan or "" }
+    t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, local_mix and "" or (t.vol or ""), local_mix and "" or (t.pan or "") }
   for i, v in ipairs(f) do f[i] = tostring(v):gsub("|", "/") end
   return table.concat(f, "|")
 end
@@ -219,7 +237,10 @@ local function trk_oid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(t
 local function itm_oid(it) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false)):upper() end
 mirror.track_oid, mirror.item_oid = trk_oid, itm_oid
 -- BandSync's own helper tracks (the SonoBus return, stems) never mirror
-local function local_track(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) ~= "" end
+local function local_track(tr) -- (also live placeholders and live MIDI views: each machine draws its own)
+  return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) ~= ""
+    or select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_live_track", "", false)) ~= ""
+end
 
 -- A track's travelling settings (see track_line).
 function mirror.track_state(proj, tr, local_mix)
@@ -236,13 +257,14 @@ function mirror.track_state(proj, tr, local_mix)
     names[#names + 1] = (select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "", false)):gsub(",", ";"))
   end
   t.plays, t.lanenames = table.concat(plays, ","), table.concat(names, ",")
-  if not local_mix then
-    t.vol = string.format("%.6f", reaper.GetMediaTrackInfo_Value(tr, "D_VOL"))
-    t.pan = string.format("%.4f", reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
-  end
+  t.vol = string.format("%.6f", reaper.GetMediaTrackInfo_Value(tr, "D_VOL"))
+  t.pan = string.format("%.4f", reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
   -- (the track above, so new tracks land in the same order)
-  local idx = math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 1
-  t.after = idx > 0 and trk_oid(reaper.GetTrack(proj, idx - 1)) or ""
+  t.after = ""
+  for i = math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 2, 0, -1 do -- (the nearest mirrored one above)
+    local above = reaper.GetTrack(proj, i)
+    if not local_track(above) then t.after = trk_oid(above); break end
+  end
   return t
 end
 
@@ -282,18 +304,39 @@ end
 
 -- Every mirrored object in the project, with its normalized state and hash. Objects with no oid, or a copy that
 -- carries another object's oid, get a fresh oid here (they are new). `media_dir`: the room's media folder.
+-- Copies (Ctrl+drag, paste, duplicate track) carry their source's oid. Whichever of them REAPER's own GUID shows to
+-- be the one this machine already knew keeps the oid, wherever it sits (a copy placed before its source must not take
+-- it: the source would then look new and be put back); the others become new objects. Returns the oid per entry.
+mirror.GSEC = "BandSync.mirrorg" -- oid -> REAPER GUID of the object holding it here (this machine's own)
+local function settle_ids(proj, list, kind, user, set_oid)
+  local keeper, matched = {}, {}
+  for k, x in ipairs(list) do
+    if x.oid ~= "" and not matched[x.oid] then
+      local known = x.guid == select(2, reaper.GetProjExtState(proj, mirror.GSEC, x.oid))
+      if not keeper[x.oid] or known then keeper[x.oid], matched[x.oid] = k, known end -- (the first that REAPER knows wins)
+    end
+  end
+  for k, x in ipairs(list) do
+    if x.oid == "" or keeper[x.oid] ~= k then x.oid = mirror.new_oid(kind, user); set_oid(x.ptr, x.oid) end
+    if select(2, reaper.GetProjExtState(proj, mirror.GSEC, x.oid)) ~= x.guid then reaper.SetProjExtState(proj, mirror.GSEC, x.oid, x.guid) end
+  end
+end
+
 function mirror.scan(proj, user, media_dir, local_mix)
   local objs, by_oid, tracks = {}, {}, {}
+  local tl = {}
   for i = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, i)
     if not local_track(tr) then
-      local oid = trk_oid(tr)
-      if oid == "" or by_oid[oid] then
-        oid = mirror.new_oid("T", user)
-        reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true)
-      end
+      tl[#tl + 1] = { ptr = tr, oid = trk_oid(tr), guid = select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)) }
+    end
+  end
+  settle_ids(proj, tl, "T", user, function(tr, oid) reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true) end)
+  for _, x in ipairs(tl) do
+    local tr, oid = x.ptr, x.oid
+    do
       local t = mirror.track_state(proj, tr, local_mix)
-      local o = { kind = "track", oid = oid, ptr = tr, state = t, hash = mirror.hash(mirror.track_line(t) .. "|" .. t.after) }
+      local o = { kind = "track", oid = oid, ptr = tr, state = t, hash = mirror.track_hash(t, local_mix) }
       objs[#objs + 1], by_oid[oid], tracks[tr] = o, o, oid
       local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
       local skip = {} -- this machine's plug-in translations (lib/page_plugins.lua): never sent
@@ -303,20 +346,20 @@ function mirror.scan(proj, user, media_dir, local_mix)
       objs[#objs + 1], by_oid[fo.oid] = fo, fo
     end
   end
+  local il = {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
     local toid = tracks[reaper.GetMediaItem_Track(it)]
     if toid then
-      local oid = itm_oid(it)
-      if oid == "" or by_oid[oid] then
-        oid = mirror.new_oid("I", user)
-        reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
-      end
-      local norm = mirror.item_state(it, media_dir)
-      local o = { kind = "item", oid = oid, ptr = it, track = toid, state = norm, hash = mirror.hash(toid .. "\n" .. norm),
-        pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION") }
-      objs[#objs + 1], by_oid[oid] = o, o
+      il[#il + 1] = { ptr = it, toid = toid, oid = itm_oid(it), guid = select(2, reaper.GetSetMediaItemInfo_String(it, "GUID", "", false)) }
     end
+  end
+  settle_ids(proj, il, "I", user, function(it, oid) reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true) end)
+  for _, x in ipairs(il) do
+    local norm = mirror.item_state(x.ptr, media_dir)
+    local o = { kind = "item", oid = x.oid, ptr = x.ptr, track = x.toid, state = norm, hash = mirror.hash(x.toid .. "\n" .. norm),
+      pos = reaper.GetMediaItemInfo_Value(x.ptr, "D_POSITION") }
+    objs[#objs + 1], by_oid[x.oid] = o, o
   end
   return objs, by_oid
 end
@@ -325,16 +368,16 @@ end
 -- chunk with paths rewritten to the copies.
 function mirror.share_media(chunk, media_dir)
   reaper.RecursiveCreateDirectory(media_dir, 0)
+  local room = norm_path(media_dir):match("([^/]+)/media/?$") or "main"
   return (chunk:gsub('(FILE ")([^"]+)(")', function(a, path, z)
-    if path:find("^{media}/") then return a .. path .. z end
+    if path:find("^{media") then return a .. path .. z end
     local name = path:gsub("\\", "/"):match("[^/]+$") or "media"
     local copy = mirror.hash(path:lower()) .. "-" .. name
     local dst = media_dir .. "/" .. copy
-    if not reaper.file_exists(dst) and reaper.file_exists(path) then
-      local ok = pcall(require("band").copy_atomic, path, dst)
-      if not ok then return a .. path .. z end
-    end
-    return a .. "{media}/" .. copy .. z
+    if not reaper.file_exists(dst) and reaper.file_exists(path) then pcall(require("band").copy_atomic, path, dst) end
+    -- (only once the copy is really there: pointing at a copy that was never made left everyone waiting for it)
+    if reaper.file_exists(dst) then return a .. "{media:" .. room .. "}/" .. copy .. z end
+    return a .. path .. z
   end))
 end
 
@@ -374,8 +417,20 @@ function mirror.apply(proj, ev, media_dir, local_mix)
       reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true)
     end
     mirror.set_track_state(proj, tr, ev.state, local_mix)
+    -- moved in the band's project: here too (REAPER reorders only in the tab in front; a tab behind keeps its order)
+    if mirror.track_state(proj, tr, local_mix).after ~= ev.state.after and reaper.EnumProjects(-1) == proj then
+      local above = ev.state.after ~= "" and mirror.find(proj, "track", ev.state.after)
+      if above or ev.state.after == "" then
+        local sel = {}
+        for i = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, i) end
+        reaper.SetOnlyTrackSelected(tr)
+        reaper.ReorderSelectedTracks(above and math.floor(reaper.GetMediaTrackInfo_Value(above, "IP_TRACKNUMBER")) or 0, 0)
+        reaper.SetOnlyTrackSelected(tr); reaper.SetTrackSelected(tr, false)
+        for _, x in ipairs(sel) do if reaper.ValidatePtr2(proj, x, "MediaTrack*") then reaper.SetTrackSelected(x, true) end end
+      end
+    end
     local t = mirror.track_state(proj, tr, local_mix)
-    return true, mirror.hash(mirror.track_line(t) .. "|" .. t.after)
+    return true, mirror.track_hash(t, local_mix)
   elseif kind == "fx" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
@@ -398,8 +453,8 @@ function mirror.apply(proj, ev, media_dir, local_mix)
   elseif kind == "item" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
-    for _, rel in ipairs(mirror.media_needed(ev.state)) do
-      if not reaper.file_exists(media_dir .. "/" .. rel) then return false end -- still on its way
+    for _, path in ipairs(mirror.media_needed(ev.state, media_dir)) do
+      if not reaper.file_exists(path) then return false end -- still on its way
     end
     local it = mirror.find(proj, "item", oid)
     if not it then it = reaper.AddMediaItemToTrack(tr)
@@ -450,13 +505,14 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
       local tev = kev ~= "" and require("band").read_json(media_dir:gsub("/media$", "") .. "/events/" .. kev .. ".json")
       if type(tev) == "table" and type(tev.state) == "table" then mirror.set_track_state(proj, tr, tev.state, local_mix) end
       local t = mirror.track_state(proj, tr, local_mix)
-      remember(proj, ev.track, krev, mirror.hash(mirror.track_line(t) .. "|" .. t.after), kev, kord)
+      remember(proj, ev.track, krev, mirror.track_hash(t, local_mix), kev, kord)
     end
   end
   return ok
 end
 
-local function event_file(room_dir, evid) return evid ~= "" and require("band").read_json(room_dir .. "/events/" .. evid .. ".json") or nil end
+local function event_file(room_dir, evid) return evid and evid ~= "" and require("band").read_json(room_dir .. "/events/" .. evid .. ".json") or nil end
+mirror.event_file = event_file
 
 -- The name permissions use for an object (claims are by track name): its track's name.
 local function perm_name(o, by_oid)
@@ -465,8 +521,26 @@ local function perm_name(o, by_oid)
   return t and t.state.name or ""
 end
 
+mirror.said = mirror.said or {} -- (things said once per session, not every pass)
+mirror.fx_seen = mirror.fx_seen or {} -- oid -> { hash, since }: a plug-in chain goes out once it has settled
+
+-- Where a recording this person wasn't allowed to add goes (kept, never deleted): a track of their own, not sent.
+local function keep_track(proj, name)
+  local label = (name ~= "" and name or "Track") .. " (yours, not sent)"
+  for t = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, t)
+    if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)) == label and local_track(tr) then return tr end
+  end
+  local idx = reaper.CountTracks(proj)
+  reaper.InsertTrackInProject(proj, idx, 0)
+  local tr = reaper.GetTrack(proj, idx)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", label, true)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "yours", true)
+  return tr
+end
+
 -- One pass: what changed here goes out if this person may change it, else the band's version is put back.
--- opts: local_mix, can (sync.authority's), mode (room mode), someone_drives. Returns sent, put back.
+-- opts: local_mix, can (sync.authority's), mode (room mode). Returns sent, put back.
 function mirror.watch(proj, cfg, song, room, opts)
   local band, sync = require("band"), require("sync")
   if reaper.JS_Mouse_GetState and reaper.JS_Mouse_GetState(1) & 1 == 1 then return 0, 0 end -- mid-drag: wait for the drop
@@ -474,32 +548,60 @@ function mirror.watch(proj, cfg, song, room, opts)
   local media = room_dir .. "/media"
   local objs, by_oid = mirror.scan(proj, cfg.user, media, opts.local_mix)
   local me, sent, back = cfg.user, 0, 0
+  local playing = reaper.GetPlayStateEx(proj) & 1 == 1
+  local mine_prefix = (me:gsub(" ", "_") .. "-"):upper() -- (event ids start with their author's name)
   local function allowed(o, name, pos)
     if opts.can(me, name, pos) then return true end
     -- your own new tracks (and what's on them) are yours, except in Driver only
     local t = o.kind == "track" and o.oid or o.track
     return opts.mode ~= "driver" and mirror.creator(t) == mirror.user_tag(me)
   end
-  local function put_back(o, evid, why)
+  local function say_once(key, text)
+    if not mirror.said[key] then mirror.said[key] = true; band.log(text) end
+  end
+  local function put_back(o, rev, evid, why)
     local ev = event_file(room_dir, evid)
-    if ev then
+    if ev and not ev.gone then
+      if o.kind == "fx" and playing then return end -- (reloading plug-ins mid-song: after the stop)
       local ok, h = mirror.apply(proj, ev, media, opts.local_mix)
-      if ok then remember(proj, o.oid, ev.rev, h, ev.id, (ev.time or "") .. (ev.user or "")) end
-    elseif o.ptr and o.kind == "item" then
-      reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(o.ptr), o.ptr)
-    elseif o.ptr and o.kind == "track" then
-      reaper.DeleteTrack(o.ptr)
+      if ok then remember(proj, o.oid, ev.rev, h, ev.id, (ev.time or "") .. (ev.user or ""))
+      else -- it can't land here (its track is gone): the band's state wins, and that has no such item
+        if o.kind == "item" and o.ptr and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(o.ptr), o.ptr) end
+        remember(proj, o.oid, rev or 0, "", evid, (ev.time or "") .. (ev.user or ""))
+      end
+    elseif not rev then
+      -- never the band's: something new this person may not add. Kept here, on a track of their own (never deleted)
+      if o.kind == "item" and o.ptr then reaper.MoveMediaItemToTrack(o.ptr, keep_track(proj, why.name or ""))
+      elseif o.kind == "track" and o.ptr then reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true) end
+    else
+      -- known, but its last change can't be read here (still arriving, or from another room): left as it is
+      return say_once("noev" .. o.oid, "couldn't put back a change on " .. ((why.name or "") ~= "" and why.name or "an unnamed track") ..
+        " (the band's version hasn't arrived here yet): it stays as it is for now")
     end
     back = back + 1
-    sync.put_back(why)
+    sync.put_back(why.text)
   end
   local seen = {}
   for _, o in ipairs(objs) do
     seen[o.oid] = true
-    local rev, h, evid = mirror.known(proj, o.oid)
-    if h ~= o.hash then
+    local ok, err = pcall(function()
+      local rev, h, evid = mirror.known(proj, o.oid)
+      if h == o.hash then return end
+      if o.kind == "fx" then -- only while stopped, once it has settled: not a whole chain (or a put-back) per knob turn
+        if not rev and o.state == "" then return end -- (an empty chain nobody has sent: nothing to share)
+        local key = tostring(proj) .. o.oid -- (per tab: a side room's copy shares the oid)
+        local f = mirror.fx_seen[key]
+        if playing then return end
+        if not f or f.hash ~= o.hash then mirror.fx_seen[key] = { hash = o.hash, since = reaper.time_precise() }; return end
+        if reaper.time_precise() - f.since < 3 then return end
+      end
       local name = perm_name(o, by_oid)
-      if allowed(o, name, o.pos) then
+      local last = rev and event_file(room_dir, evid) or nil
+      -- allowed where it is now, and where it was (moving an item off a claimed track, or renaming a claimed track,
+      -- mustn't slip past the claim)
+      local ok_now = allowed(o, name, o.pos)
+      local ok_before = not last or last.gone or allowed(o, last.name or "", last.pos)
+      if ok_now and ok_before then
         local state = o.state
         if o.kind == "item" then
           local shared = mirror.share_media(state, media)
@@ -509,24 +611,31 @@ function mirror.watch(proj, cfg, song, room, opts)
             o.hash = mirror.hash(o.track .. "\n" .. state)
           end
         end
-        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track, name = name, pos = o.pos,
-          hash = o.hash } -- (what it is here: every receiver checks it came out the same)
+        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,
+          name = name, pos = o.pos, hash = o.hash } -- (hash: what it is here; every receiver checks it came out the same)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
         sent = sent + 1
       else
-        put_back(o, evid or "", string.format("%s on %s isn't yours to change right now: put back (claim it, or take control)",
-          o.kind == "item" and "that item" or o.kind == "fx" and "the plug-ins" or "that track", name ~= "" and name or "an unnamed track"))
+        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s on %s isn't yours to change right now: put back (claim it, or take control)",
+          o.kind == "item" and "that item" or o.kind == "fx" and "the plug-ins" or "that track", (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track") })
       end
-    end
+    end)
+    if not ok then say_once("err" .. o.oid, "mirror sync skipped " .. o.oid .. ": " .. tostring(err)) end
   end
-  -- MIDI prints: what this person may change gets a fresh print once its notes, length or instrument changed (it
-  -- goes out on the next pass). Rendering needs this tab in front and the transport stopped; two per pass at most.
-  if reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 then
+  -- MIDI prints: an item whose newest change is this person's gets a fresh print once its notes, length or the
+  -- band's plug-in chain on its track changed (it goes out on the next pass). Only theirs, so two machines never take
+  -- turns re-printing one item. Rendering needs this tab in front and the transport stopped; two per pass at most.
+  if reaper.EnumProjects(-1) == proj and not playing then
     local prints, made = require("prints"), 0
     for _, o in ipairs(objs) do
-      if made < 2 and o.kind == "item" and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") and allowed(o, perm_name(o, by_oid), o.pos) then
-        if prints.refresh(proj, o.ptr, media) then made = made + 1 end
+      if made < 2 and o.kind == "item" and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") then
+        local _, _, kev = mirror.known(proj, o.oid)
+        local fx = by_oid["F" .. o.track:sub(2)]
+        if kev and kev:upper():sub(1, #mine_prefix) == mine_prefix and fx then
+          local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash)
+          if ok and did then made = made + 1 end
+        end
       end
     end
   end
@@ -540,20 +649,47 @@ function mirror.watch(proj, cfg, song, room, opts)
     if not seen[oid] and h ~= "" then gone[#gone + 1] = { oid = oid, rev = rev, evid = evid } end
   end
   for _, g in ipairs(gone) do
-    local last = event_file(room_dir, g.evid) or {}
-    local o = { kind = last.obj or (g.oid:sub(1, 1) == "T" and "track" or "item"), oid = g.oid, track = last.track, state = last.state }
-    local name = last.name or ""
-    if o.kind == "fx" then -- (its track went: the track's own deletion covers it)
-      remember(proj, g.oid, (g.rev or 0) + 1, "", g.evid)
-    elseif allowed(o, name, last.pos) then
-      local id = sync.post(cfg, song, room, { type = "obj", obj = o.kind, oid = g.oid, rev = (g.rev or 0) + 1, gone = true, track = o.track, name = name, pos = last.pos })
-      remember(proj, g.oid, (g.rev or 0) + 1, "", id)
-      sent = sent + 1
-    else
-      put_back(o, g.evid, string.format("%s on %s isn't yours to delete: it's back", o.kind == "track" and "that track" or "that item", name ~= "" and name or "an unnamed track"))
-    end
+    local ok, err = pcall(function()
+      local last = event_file(room_dir, g.evid)
+      if not last then -- nothing to go on (its last change isn't here): forgotten, not resurrected or repeated
+        return remember(proj, g.oid, g.rev or 0, "", g.evid)
+      end
+      local o = { kind = last.obj or (g.oid:sub(1, 1) == "T" and "track" or "item"), oid = g.oid, track = last.track, state = last.state }
+      local name = last.name or ""
+      if o.kind == "fx" then -- (its track went: the track's own deletion covers it)
+        remember(proj, g.oid, (g.rev or 0) + 1, "", g.evid)
+      elseif allowed(o, name, last.pos) then
+        local ev = { type = "obj", obj = o.kind, oid = g.oid, rev = (g.rev or 0) + 1, base = g.rev or 0, gone = true, track = o.track, name = name, pos = last.pos }
+        local id = sync.post(cfg, song, room, ev)
+        remember(proj, g.oid, ev.rev, "", id, (ev.time or "") .. me) -- (with its order: a racing edit is settled alike everywhere)
+        sent = sent + 1
+      else
+        put_back(o, g.rev, g.evid, { name = name, text = string.format("%s on %s isn't yours to delete: it's back",
+          o.kind == "track" and "that track" or "that item", name ~= "" and name or "an unnamed track") })
+      end
+    end)
+    if not ok then say_once("err" .. g.oid, "mirror sync skipped " .. g.oid .. ": " .. tostring(err)) end
   end
   return sent, back
+end
+
+-- Our own change that the band's rules refuse (judged when it was made): this object goes back to the newest
+-- revision before it, as the band has it.
+function mirror.repair(proj, ev, room_dir, local_mix)
+  local band = require("band")
+  local best
+  for _, f in ipairs(band.files(room_dir .. "/events", ".json")) do
+    local e = f ~= ev.id .. ".json" and f:find(".json", 1, true) and band.read_json(room_dir .. "/events/" .. f)
+    if type(e) == "table" and e.type == "obj" and e.oid == ev.oid and (e.rev or 0) < (ev.rev or 0) and
+        mirror.newer({ rev = e.rev, time = (e.time or "") .. (e.user or "") }, best and { rev = best.rev, time = (best.time or "") .. (best.user or "") }) then
+      best = e
+    end
+  end
+  if best and not best.gone then
+    local ok, h = mirror.apply(proj, best, room_dir .. "/media", local_mix)
+    if ok then remember(proj, ev.oid, ev.rev, h, best.id, (ev.time or "") .. (ev.user or "")) end
+  end
+  require("sync").put_back("a change you made just as control changed hands wasn't yours to make: it's back as the band has it")
 end
 
 -- History's "selected tracks" scope: the tracks selected in REAPER, their plug-ins and everything on them (then or
@@ -604,14 +740,25 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     else
       local kind = p.oid:sub(1, 1) == "T" and "track" or p.oid:sub(1, 1) == "F" and "fx" or "item"
       mirror.apply(proj, { obj = kind, oid = p.oid, gone = true }, media, opts.local_mix)
-      local id = sync.post(cfg, song, room, { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, gone = true, undoes = opts.undoes, redoes = opts.redoes })
-      remember(proj, p.oid, (rev or 0) + 1, "", id)
+      local gev = { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, base = rev or 0, gone = true, undoes = opts.undoes, redoes = opts.redoes }
+      local id = sync.post(cfg, song, room, gev)
+      remember(proj, p.oid, gev.rev, "", id, (gev.time or "") .. cfg.user)
       done = done + 1
     end
   end
   reaper.Undo_EndBlock2(proj, "BandSync: go back", -1)
   reaper.UpdateArrange()
   return string.format("%d change(s) brought back and sent to the band%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "")
+end
+
+-- Local mixing on: each track's record here is redone without its fader and pan.
+function mirror.begin_local_mix(proj)
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    local oid = trk_oid(tr)
+    local rev, h, evid, order = mirror.known(proj, oid)
+    if rev and h ~= "" then remember(proj, oid, rev, mirror.track_hash(mirror.track_state(proj, tr), true), evid, order) end
+  end
 end
 
 -- Local mixing off again: either adopt the band's faders and pan (each track as its newest revision has them), or
@@ -631,7 +778,7 @@ function mirror.end_local_mix(proj, cfg, song, room, adopt)
           if ev.state.pan and ev.state.pan ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", tonumber(ev.state.pan)) end
         end
         local t = mirror.track_state(proj, tr, false)
-        remember(proj, oid, rev, mirror.hash(mirror.track_line(t) .. "|" .. t.after), evid, order)
+        remember(proj, oid, rev, mirror.track_hash(t, false), evid, order)
       else
         remember(proj, oid, rev, "-", evid, order) -- (no hash matches "-": the next look sends it)
       end
@@ -685,7 +832,7 @@ function mirror.plan_bring(side, main)
   return bring, clash
 end
 
--- Send revisions into room `to` (as its newest revisions there), with the media they need copied across. `here`:
+-- Send revisions into room `to` (as its newest revisions there). `here`:
 -- that room's tab on this machine, if open (your own changes never come back to you through Live sync).
 function mirror.post_into(cfg, song, from, to, list, here)
   local band, sync = require("band"), require("sync")
@@ -694,10 +841,7 @@ function mirror.post_into(cfg, song, from, to, list, here)
   reaper.RecursiveCreateDirectory(tdir .. "/media", 0)
   local n = 0
   for _, ev in ipairs(list) do
-    for _, rel in ipairs(type(ev.state) == "string" and mirror.media_needed(ev.state) or {}) do
-      local dst = tdir .. "/media/" .. rel
-      if not reaper.file_exists(dst) and reaper.file_exists(fdir .. "/media/" .. rel) then band.copy_atomic(fdir .. "/media/" .. rel, dst) end
-    end
+    -- (its media stays where it is: tokens name their room's folder, which every machine has)
     local cur = newest[ev.oid]
     local new = { type = "obj", obj = ev.obj, oid = ev.oid, rev = (cur and cur.rev or 0) + 1, base = cur and cur.rev or 0,
       state = ev.state, track = ev.track, name = ev.name, pos = ev.pos, gone = ev.gone, from_room = from }

@@ -1309,6 +1309,7 @@ end
 -- `dir`: the room's folder (where "midi" events keep their note files); `root`: the shared folder (drum maps).
 -- May ev.user make this mirror change? The track's name for claims; their own new tracks are theirs unless the room
 -- is Driver only (the same rule mirror.watch uses when sending).
+sync.failed = {} -- event id -> how many times applying it threw
 function sync.obj_allowed(ev, can, driver)
   if can(ev.user, ev.name or "", ev.pos, nil, driver) then return true end
   local t = ev.obj == "track" and ev.oid or ev.track
@@ -1778,10 +1779,20 @@ function sync.receive(proj, cfg, song, room, can)
     end
   end
   local applied, done, undo_open = 0, {}, false
+  local rdir = sync.room_dir(cfg, song, room)
   for _, ev in ipairs(pending) do
-    if (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) then
+    local obj = ev.type == "obj"
+    if obj and not (type(ev.oid) == "string" and (ev.obj == "item" or ev.obj == "track" or ev.obj == "fx") and type(ev.rev) == "number"
+        and (ev.gone or ev.state ~= nil) and (ev.name == nil or type(ev.name) == "string") and (ev.pos == nil or type(ev.pos) == "number")) then
+      setext(proj, sync.APPLIED, ev.id, "1") -- malformed (a newer or damaged file): skipped, once, without stopping the rest
+      band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync can't read (" .. tostring(ev.id) .. ")")
+    elseif (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
-    elseif ev.user == cfg.user then
+    elseif obj and ev.user == cfg.user and not sync.obj_allowed(ev, can, driver_at(ev.time)) then
+      -- ours, but not ours to make after all (a handover we hadn't seen yet): put back here too, so we don't keep it alone
+      setext(proj, sync.APPLIED, ev.id, "1")
+      pcall(require("mirror").repair, proj, ev, rdir, sync.local_mix)
+    elseif ev.user == cfg.user and not obj then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
       stamp(proj, ev) -- and what we change next comes after it, even one stamped while our clock ran ahead
     elseif not (sync.ANYONE[ev.type] or ev.alone or (ev.type == "obj" and sync.obj_allowed(ev, can, driver_at(ev.time)))
@@ -1796,8 +1807,11 @@ function sync.receive(proj, cfg, song, room, can)
       -- pass, so the handover's edits and tempo change never applied): log it and move on
       local ok, res = pcall(sync.apply, proj, ev, sync.room_dir(cfg, song, room), cfg.root, can, cfg.user)
       if not ok then
-        band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
-        setext(proj, sync.APPLIED, ev.id, "1")
+        sync.failed[ev.id] = (sync.failed[ev.id] or 0) + 1
+        if not obj or sync.failed[ev.id] >= 5 then
+          band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
+          setext(proj, sync.APPLIED, ev.id, "1")
+        end
       elseif res then
         setext(proj, sync.APPLIED, ev.id, "1")
         stamp(proj, ev)

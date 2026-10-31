@@ -1902,6 +1902,19 @@ end
 local function settings_sync()
   if card("sync") then
     section_sync()
+    -- MIDI wet/dry, this machine's choice (lib/prints.lua): never changes what anyone else hears
+    ImGui.SeparatorText(ctx, "MIDI plays as")
+    local prints = require("prints")
+    for _, m in ipairs({ { "auto", "Auto", "Your instruments when the track's plug-ins all load here, else the sound the band printed." },
+        { "notes", "Notes", "Always your own instruments (dry): you can change the sound." },
+        { "sound", "Sound", "Always the printed sound (wet): exactly what whoever played it heard." } }) do
+      if m[1] ~= "auto" then ImGui.SameLine(ctx) end
+      if ImGui.RadioButton(ctx, m[2] .. "##midiplays", prints.mode() == m[1]) then
+        reaper.SetExtState(band.SECTION, "midi_plays", m[1], true)
+        for i = 0, reaper.CountMediaItems(proj) - 1 do prints.choose(reaper.GetMediaItem(proj, i)) end
+      end
+      ImGui.SetItemTooltip(ctx, m[3])
+    end
     card_end()
   end
 end

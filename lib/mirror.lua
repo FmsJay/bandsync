@@ -383,6 +383,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     reaper.SetItemStateChunk(it, mirror.resolve_media((ev.state:gsub("BANDLANE %d+\n?", "")), media_dir), false)
     reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
     if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane) end
+    require("prints").choose(it) -- notes or the print, as this machine chose (never part of what travels)
     reaper.SetMediaItemSelected(it, sel)
     reaper.UpdateItemInProject(it)
     return true, mirror.hash(ev.track .. "\n" .. mirror.item_state(it, media_dir))
@@ -476,6 +477,16 @@ function mirror.watch(proj, cfg, song, room, opts)
       else
         put_back(o, evid or "", string.format("%s on %s isn't yours to change right now: put back (claim it, or take control)",
           o.kind == "item" and "that item" or o.kind == "fx" and "the plug-ins" or "that track", name ~= "" and name or "an unnamed track"))
+      end
+    end
+  end
+  -- MIDI prints: what this person may change gets a fresh print once its notes, length or instrument changed (it
+  -- goes out on the next pass). Rendering needs this tab in front and the transport stopped; two per pass at most.
+  if reaper.EnumProjects(-1) == proj and reaper.GetPlayStateEx(proj) == 0 then
+    local prints, made = require("prints"), 0
+    for _, o in ipairs(objs) do
+      if made < 2 and o.kind == "item" and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") and allowed(o, perm_name(o, by_oid), o.pos) then
+        if prints.refresh(proj, o.ptr, media) then made = made + 1 end
       end
     end
   end

@@ -133,6 +133,21 @@ assert(mirror.plan_undo(E, 3) == nil, "not a mirror change")
 assert(mirror.creator("I-BIG_AL-20261030-4") == "BIG_AL" and mirror.creator("T-A-1-1") == "A", "creator")
 assert(mirror.user_tag("Big Al") == "BIG_AL", "user tag")
 
+-- top bar Undo / Redo: your own changes only
+local U = {
+  { kind = "obj", user = "J", id = "c1" }, { kind = "obj", user = "B", id = "b1" }, { kind = "obj", user = "J", id = "c2" },
+}
+assert(mirror.last_mine(U, "J") == 3, "undo: my newest")
+assert(mirror.last_undo(U, "J") == nil, "nothing to redo yet")
+U[4] = { kind = "obj", user = "J", id = "u1", undoes = "c2", restored = "c1" }
+assert(mirror.last_mine(U, "J") == 1, "undo again: the one before")
+assert(mirror.last_undo(U, "J") == 4, "redo: my newest undo")
+U[5] = { kind = "obj", user = "J", id = "r1", redoes = "u1", restored = "x" }
+assert(mirror.last_mine(U, "J") == 3, "after redo, c2 counts again")
+assert(mirror.last_undo(U, "J") == nil, "redone: nothing left to redo")
+U[6] = { kind = "obj", user = "J", id = "c3" }
+assert(mirror.last_undo(U, "J") == nil and mirror.last_mine(U, "J") == 6, "a new change ends redo")
+
 -- side room into its parent: only-side changes come in (tracks first), both-changed are clashes
 local side = { ["I-1"] = { obj = "item", oid = "I-1" }, ["T-9"] = { obj = "track", oid = "T-9" }, ["I-2"] = { obj = "item", oid = "I-2" } }
 local main = { ["I-2"] = { obj = "item", oid = "I-2" } }

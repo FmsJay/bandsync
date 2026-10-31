@@ -72,7 +72,7 @@ function pp.apply_here(proj, cfg)
   return n
 end
 
-local picking, filter, found, used_at, used, open_now = nil, "", nil, -math.huge, {}, false
+local picking, filter, found, used_at, used, open_now, found_all = nil, "", nil, -math.huge, {}, false, 0
 
 function pp.draw(ctx, ImGui, proj, cfg)
   if reaper.time_precise() - used_at > 3 then used_at, used = reaper.time_precise(), pp.used(proj) end
@@ -96,7 +96,7 @@ function pp.draw(ctx, ImGui, proj, cfg)
   if ImGui.BeginTable(ctx, "plugs", 4, ImGui.TableFlags_RowBg | ImGui.TableFlags_SizingStretchProp | ImGui.TableFlags_ScrollY) then
     ImGui.TableSetupScrollFreeze(ctx, 0, 1)
     ImGui.TableSetupColumn(ctx, "Plug-in")
-    ImGui.TableSetupColumn(ctx, "On")
+    ImGui.TableSetupColumn(ctx, "Tracks")
     ImGui.TableSetupColumn(ctx, "Missing for")
     ImGui.TableSetupColumn(ctx, "Translation")
     ImGui.TableHeadersRow(ctx)
@@ -117,7 +117,10 @@ function pp.draw(ctx, ImGui, proj, cfg)
       if ImGui.SmallButton(ctx, t and "Change" or "Set") then picking, filter, found, open_now = u, "", nil, true end
       if t then
         ImGui.SameLine(ctx)
-        if ImGui.SmallButton(ctx, "x") then os.remove(tfile(cfg, u.key)) end
+        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the band's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "BandSync", 4) == 6 then
+          os.remove(tfile(cfg, u.key))
+          require("band").log("removed the translation for " .. (u.name:gsub("^%w+:%s*", "")))
+        end
         ImGui.SetItemTooltip(ctx, "Remove this translation (set by " .. tostring(t.by) .. ")")
       end
       ImGui.PopID(ctx)
@@ -132,12 +135,16 @@ function pp.draw(ctx, ImGui, proj, cfg)
     local ch
     ch, filter = ImGui.InputTextWithHint(ctx, "##f", "type to search", filter)
     if ch or not found then
-      found = {}
+      found, found_all = {}, 0
       local f = filter:lower()
       for _, p in ipairs(plugins.installed()) do
-        if #found < 200 and (f == "" or p.name:lower():find(f, 1, true)) then found[#found + 1] = p.name end
+        if f == "" or p.name:lower():find(f, 1, true) then
+          found_all = found_all + 1
+          if #found < 200 then found[#found + 1] = p.name end
+        end
       end
     end
+    if found_all > #found then ImGui.TextDisabled(ctx, string.format("showing %d of %d: type to narrow it down", #found, found_all)) end
     if ImGui.BeginListBox(ctx, "##list", 360, 220) then
       for _, name in ipairs(found) do
         if ImGui.Selectable(ctx, name, false) then

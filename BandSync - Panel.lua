@@ -90,7 +90,7 @@ local function switch(id, on)
   local clicked = ImGui.InvisibleButton(ctx, id, w, h)
   local now = on
   if clicked then now = not on end
-  ImGui.DrawList_AddRectFilled(dl, x, y + 2, x + w, y + 2 + h, now and ACCENT or 0x4A4F57FF, h / 2)
+  ImGui.DrawList_AddRectFilled(dl, x, y + 2, x + w, y + 2 + h, now and ACCENT or 0x6A707AFF, h / 2) -- (off: light enough to see against a card)
   ImGui.DrawList_AddCircleFilled(dl, now and (x + w - h / 2) or (x + h / 2), y + 2 + h / 2, h / 2 - 3, 0xFFFFFFFF)
   return clicked, now
 end
@@ -240,7 +240,6 @@ end
 -- Tooltips for controls that don't set their own, by label (a control's own tooltip, set after it, wins).
 local TIPS = {
   ["Start"] = "Start Live sync in this tab: your takes and changes go out, the band's come in.",
-  ["Stop"] = "Stop Live sync in this tab: nothing goes out or comes in until you start it again.",
   ["Update"] = "Get the newest BandSync through ReaPack.",
   ["Let in"] = "Add this machine to the band folder.",
   ["Take control"] = "Become the driver: your deletes, moves and lane choices reach everyone (except where someone has claimed).",
@@ -249,13 +248,12 @@ local TIPS = {
   ["Release mine"] = "Let go of all your claims: everything follows the driver again.",
   ["##label"] = "A name for this version, then Save point.",
   ["Save point"] = "Save how the session is now (takes, where they sit, what plays) as a restore point anyone can go back to.",
-  ["Restore"] = "Make the session match this saved point. Where things are now is saved first, so you can come back.",
   ["Update the folder now"] = "Send your plug-in list and rebuild the FX browser folder 'BandSync (everyone has)' now.",
   ["##drummap"] = "The drum map this drum track uses: notes arriving in another kit's map are translated to it.",
   ["Play along (synced to the song)"] = "Hear each other in time with the song, at any distance (a bar or two late). Needs the band's NINJAM server.",
   ["Listen live (SonoBus, lowest delay)"] = "Hear each other right away, peer to peer (best on wired internet, not too far apart).",
   ["Jam (NINJAM intervals)"] = "Classic NINJAM: everyone hears everyone one interval late.",
-  ["Leave"] = "Leave the SonoBus group (it stays on your master track, sending nothing).",
+  ["Leave"] = "Leave: SonoBus stops (it stays on its track, sending nothing) or ReaNINJAM disconnects.",
   ["##server"] = "The host's Tailscale address and NINJAM port, e.g. 100.64.0.1:2049.",
   ["Save for the band"] = "Everyone's Connect uses this address.",
   ["##ninjamdir"] = "The folder holding ninjamsrv and bandsync.cfg (host only).",
@@ -268,7 +266,6 @@ local TIPS = {
   ["##soloroot"] = "Where Solo edit keeps its versions (usually the shared Google Drive folder).",
   ["Clear"] = "Empty this activity list.",
   ["Open the full console"] = "REAPER's script console, with everything BandSync has said.",
-  ["Empty old trash"] = "Remove deleted takes and old revisions older than 30 days (never what a kept restore point needs).",
   ["start from"] = "Where everyone starts: the edit cursor or a region.",
   ["count-in bars"] = "Bars of count-in before the start point.",
   ["Play together"] = "Everyone running Live sync starts playing from the same point at the same moment (5 s after you click).",
@@ -616,7 +613,7 @@ local KINDS = {
   { "Plug-ins", function(e) return e.obj == "fx" end }, { "Deletes", function(e) return e.gone end },
   { "Brought back (undo, restore)", function(e) return e.restored ~= nil end },
   { "Notes and likes", { note = true, like = true } }, { "Tempo and arrangement", { timeline = true, shift = true } },
-  { "Driver changes", { driver = true } }, { "Played or recorded together", { start = true, stop = true } },
+  { "Who drives (handovers)", { driver = true } }, { "Played or recorded together", { start = true, stop = true } },
 }
 local hf = { who = "", kind = 1, track = "", text = "" }
 local function combo(label, cur, list, tip)
@@ -722,8 +719,8 @@ local function section_recall()
       ImGui.PushID(ctx, i)
       local upto = 0 -- (mirror sessions: the point is a moment in History)
       for k, e in ipairs(entries) do if (e.time or "") <= (p.time or "") then upto = k end end
-      if hf.mode ~= "change" then back_button(upto, "at '" .. p.label .. "'"); ImGui.SameLine(ctx) end
-      if ImGui.GetContentRegionAvail(ctx) > 520 then ImGui.SameLine(ctx) end -- narrow (docked): the words go under the buttons
+      if hf.mode ~= "change" then back_button(upto, "at '" .. p.label .. "'") end
+      if hf.mode ~= "change" and ImGui.GetContentRegionAvail(ctx) > 520 then ImGui.SameLine(ctx) end -- narrow (docked): the words go under the buttons
       ImGui.TextWrapped(ctx, string.format("%s%s  ·  %s  ·  %s  ·  %d takes", p.label, p.keep and " (kept)" or "", tostring(p.by), local_time(p.time), p.takes))
       ImGui.PopID(ctx)
     end
@@ -734,11 +731,14 @@ end
 local function section_history()
   if reaper.time_precise() - hist_at > 4 then hist_at = reaper.time_precise(); refresh_history() end
   ImGui.SeparatorText(ctx, "Every change, newest first")
-  for _, m in ipairs({ { "project", "Restore project state", "Each button brings the whole project back to that moment (the driver only)." },
+  hf.mode = hf.mode or (view.driver == cfg.user and "project" or "selection") -- (only the driver restores the whole song)
+  ImGui.AlignTextToFramePadding(ctx)
+  ImGui.TextDisabled(ctx, "Buttons go back for:")
+  for _, m in ipairs({ { "project", "Restore project state", "Each button brings the whole song back to that moment (the driver only)." },
       { "selection", "Restore selection's state", "Each button brings only the tracks selected in REAPER back to that moment." },
       { "change", "Undo specific change", "Each button undoes only that one change; everything after it stays." } }) do
-    if m[1] ~= "project" then ImGui.SameLine(ctx) end
-    if ImGui.RadioButton(ctx, m[2], (hf.mode or "project") == m[1]) then hf.mode = m[1] end
+    next_to(m[2])
+    if ImGui.RadioButton(ctx, m[2], hf.mode == m[1]) then hf.mode = m[1] end
     ImGui.SetItemTooltip(ctx, m[3])
   end
   local driving = view.driver == cfg.user
@@ -885,7 +885,7 @@ local function sonobus_open()
   reaper.TrackFX_Show(m, i, 3)
 end
 
--- Same room: the one switch for playing together. Listen live (SonoBus, set up for the band's group) plus side by side
+-- Real time mode: the one switch for playing together. Listen live (SonoBus, set up for the band's group) plus side by side
 -- with no lag: whoever presses play, stop or record, everyone follows at the same spot and hears it at once; what
 -- they record shows on your timeline as they play (MIDI notes) and lands as a take when they stop.
 local function same_room_on()
@@ -912,7 +912,7 @@ local SAME_ROOM_TIP = "Real time mode. On: SonoBus joins the band's group (you h
   "as they play (MIDI notes appear a few seconds behind) and lands as a take when they stop. Off: both off; edits keep syncing."
 local function section_room()
   local on = same_room_on()
-  local ch, v = ImGui.Checkbox(ctx, "Same room: hear everyone and follow the session together", on)
+  local ch, v = ImGui.Checkbox(ctx, "Real time mode: hear everyone and follow the session together", on)
   if ch then set_same_room(v) end
   ImGui.SetItemTooltip(ctx, SAME_ROOM_TIP)
   if on then ImGui.SameLine(ctx); ImGui.TextColored(ctx, GREEN, "on") end
@@ -924,12 +924,16 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   -- the host may fill the address in after this panel opened (it arrives through the shared folder): re-read it
   -- every few seconds while it's still empty here
   if not live_server or (live_server == "" and reaper.time_precise() - server_at > 3) then
+    if not live_server then -- first look: the mode this project was last in (it used to reset to Play along)
+      local saved = select(2, reaper.GetProjExtState(proj, band.SECTION, "live_mode"))
+      if saved ~= "" then live_mode = saved end
+    end
     server_at, live_server = reaper.time_precise(), (band.read_json(lfile) or {}).server or ""
   end
   if part ~= "rest" then
     ImGui.SeparatorText(ctx, "Mode")
     for _, m in ipairs(LIVE_MODES) do
-      if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1] end
+      if ImGui.RadioButton(ctx, m[2], live_mode == m[1]) then live_mode = m[1]; reaper.SetProjExtState(proj, band.SECTION, "live_mode", m[1]) end
     end
     ImGui.TextWrapped(ctx, ({
       synced = "Play to the song; the others hear you in time with it, a bar or two behind you. What you play also shows up on their timeline as an idea until your real take arrives.",
@@ -1056,7 +1060,7 @@ local function section_setup()
       st.peers and "Syncthing is running but connected to nobody: is anyone else online? (If they are, this machine's Syncthing identity may have changed: check its device ID.)" or "Can't tell whether Syncthing is connected" },
     { st.sync, "Live sync is running", "Live sync is off" },
     { st.sonobus, "SonoBus is ready on the master track (Listen live)", "SonoBus isn't on the master track" },
-    { st.server, "Live server address is set", b.role == "host" and "Live server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Live server address" },
+    { st.server, "Play along server address is set", b.role == "host" and "Play along server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Play along server address" },
     { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency)" },
   }
   if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder on Live)" }) end
@@ -1073,7 +1077,7 @@ local function section_setup()
         setup_at, live_server = 0, nil -- re-check, and re-read the server address it may have filled in
         if #notes > 0 then band.log("Set up: " .. table.concat(notes, "; ")) end
       end
-      ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Live server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
+      ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Play along server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
     end
   end
 end
@@ -1089,13 +1093,6 @@ local function section_actions()
   next_to("Prepare this project")
   if ImGui.Button(ctx, "Prepare this project") then action("Prepare session") end
   ImGui.SetItemTooltip(ctx, "Takes into lanes, FLAC (recording and existing WAVs), clear track names, media in the project folder, tidy-up: a checklist first.")
-  next_to("Empty old trash")
-  if ImGui.Button(ctx, "Empty old trash") then
-    local n = band.empty_trash(sync.room_dir(cfg, b.song, b.room) .. "/_trash", 30, recall.protector(cfg, b.song, b.room))
-    band.log(string.format("emptied %s file(s) from this room's trash (in it for over 30 days)", tostring(n)))
-  end
-  ImGui.SetItemTooltip(ctx, "Deleted takes and replaced revisions wait in the room's _trash; this removes the ones older than 30 days, on everyone's machine.\n" ..
-    "Audio a kept restore point (end of session) needs is never removed; nor is anything on the band's Google Drive copy.")
 end
 
 -- ---- Together: start/stop at once, notes and likes, live ideas, and the tools (lib/tools.lua) ----------------
@@ -1334,9 +1331,9 @@ local function rooms_squares()
   ImGui.TextDisabled(ctx, "Try ideas in a side room, then bring back what works. (?)")
   ImGui.SetItemTooltip(ctx, "Each room is its own project tab: Go there opens it once, then it's a tab switch, and it's still there next " ..
     "session.\n\nCreate side room: a copy of the room you're in, as it is now; you drive it. Try your own edits there, or work on " ..
-    "something else.\n\nCome see: everyone with the song open is asked to join you.\n\nSend selected to main: the takes you pick " ..
+    "something else.\n\nCome see: everyone with the song open is asked to join you.\n\nSend selected to main: the items you pick " ..
     "come over as new takes. Bring into main: everything changed in the side room comes over, except where main changed the same " ..
-    "thing too (you pick); main's driver does this, and it can be undone from History.")
+    "thing too (those stay as main has them); main's driver does this, and History can undo it.")
   local avail = ImGui.GetContentRegionAvail(ctx)
   local w, gap = 178, 8
   local per = math.max(1, math.floor((avail + gap) / (w + gap)))
@@ -1345,7 +1342,7 @@ local function rooms_squares()
     local here = r.name == b.room
     ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, 0x26292EFF) -- a card in either look
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 10)
-    local open = ImGui.BeginChild(ctx, "room " .. r.name, w, 142, ImGui.ChildFlags_Borders | ImGui.ChildFlags_AlwaysUseWindowPadding,
+    local open = ImGui.BeginChild(ctx, "room " .. r.name, w, 0, ImGui.ChildFlags_Borders | ImGui.ChildFlags_AlwaysUseWindowPadding | ImGui.ChildFlags_AutoResizeY,
       ImGui.WindowFlags_NoScrollbar)
     ImGui.PopStyleVar(ctx)
     ImGui.PopStyleColor(ctx)
@@ -1401,7 +1398,7 @@ local function rooms_actions()
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, merge and "Look again" or ("Bring into " .. parent .. "...")) then look_merge(parent) end
   ImGui.SetItemTooltip(ctx, "Compares this room, '" .. parent .. "' and how this room started: everything changed here comes over, " ..
-    "except where '" .. parent .. "' changed the same thing too (you pick). New recordings come too.")
+    "except what '" .. parent .. "' changed too since (it keeps its own; use Send selected for those). New recordings come too.")
   if merge then section_merge() end
 end
 
@@ -1484,13 +1481,13 @@ local function maint_rows()
     { "connected", s.connected, #(view and view.rows or {}) > 0 and "red" or "yellow", s.peers and string.format("Connected to %d of %d bandmate machine(s)", s.peers, s.devices) or "Shared folder is a cloud drive",
       s.peers and "Syncthing is connected to nobody. Fine if you're alone; if bandmates are online, check this machine's Syncthing device ID."
       or "Can't tell whether Syncthing is connected." },
-    { "sonobus", s.sonobus, "yellow", "SonoBus is ready (Same room)", "SonoBus isn't on the master track yet: Same room adds it." },
-    { "server", s.server, "yellow", "Live server address is set", b.role == "host" and "Live server address not set (needs Tailscale signed in)."
-      or "Waiting for the host to set the Live server address." },
+    { "sonobus", s.sonobus, "yellow", "SonoBus is ready (Real time mode)", "SonoBus isn't set up yet: Real time mode (Home) adds it." },
+    { "server", s.server, "yellow", "Play along server address is set", b.role == "host" and "Play along server address not set (needs Tailscale signed in)."
+      or "Waiting for the host to set the Play along server address." },
     { "latency", s.latency, "yellow", "Recording latency checked", s.latency_ms and
       string.format("Recordings land %.1f ms off: fix the input offset and calibrate again.", s.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency below)." },
   }
-  if b.role == "host" then table.insert(rows, 6, { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running (set its folder on the Live page)." }) end
+  if b.role == "host" then table.insert(rows, 6, { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running (set its folder on the Play page)." }) end
   if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "BandSync " .. view.newer .. " is in use in the band; you have " .. band.VERSION .. ": press Update below." } end
   local dmiss = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").missing
   if dmiss then rows[#rows + 1] = { "drive", false, "yellow", "", "Google Drive: no shared BandSync folder in " .. dmiss .. " (Settings shows how to add it)." } end
@@ -1549,7 +1546,7 @@ local function maint_health()
       maint_at, live_server = -math.huge, nil
       if #notes > 0 then band.log("Set up: " .. table.concat(notes, "; ")) end
     end
-    ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Live server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
+    ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Play along server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
     card_end()
   end
 end
@@ -1621,7 +1618,7 @@ local function home_who()
   local per = math.max(1, math.floor((avail + gap) / (w + gap)))
   for i, p in ipairs(people) do
     if (i - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, gap) end
-    if card("who " .. p.name, w, 126) then
+    if card("who " .. p.name, w) then -- (grows with what they have armed)
       ImGui.PushFont(ctx, nil, 16)
       ImGui.Text(ctx, p.name)
       ImGui.PopFont(ctx)
@@ -1824,7 +1821,7 @@ local function frame_app()
   local running = beat and reaper.time_precise() - beat < 5
   at_row("room: " .. b.room); pill("room: " .. b.room, 0x34415AFF, 0xD6E4FFFF, fh)
   ImGui.SetItemTooltip(ctx, "The room this tab is in (Rooms page: side rooms).")
-  at_row(running and "Live" or "Live off"); pill(running and "Live" or "Live off", running and GREEN or RED, running and DARK or 0xFFFFFFFF, fh)
+  at_row(running and "Sync on" or "Sync off"); pill(running and "Sync on" or "Sync off", running and GREEN or RED, DARK, fh)
   ImGui.SetItemTooltip(ctx, running and "Live sync is running in this tab: your takes and changes go out, the band's come in." or "Live sync is off in this tab.")
   if not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
     at_row("Start")
@@ -1835,19 +1832,26 @@ local function frame_app()
   ImGui.TextDisabled(ctx, drives)
   ImGui.SetItemTooltip(ctx, "The driver's changes go to everyone, except on what someone has claimed.")
   at_row("Undo")
-  if arrow_button("##undo", false, "Undo your own last change (move, trim, fader/pan/mute, delete), for everyone. Unlike Ctrl+Z, a " ..
-      "bandmate's change that came in since is never touched. Press again to go further back.") then
-    local c, why = tools.my_last_change(proj, cfg, b)
-    if not c then band.msg(why) else
-      local msg, e = tools.undo_mine(proj, cfg, b)
-      if msg then band.log(msg) else band.msg(e) end
-    end
+  -- your own changes only, for everyone (a bandmate's change since is never touched, unlike Ctrl+Z); each asks first,
+  -- naming the change. Read from History's events on click (not every frame).
+  local function undo_redo(redo)
+    local mirror = require("mirror")
+    local all = recall.entries(cfg, b.song, b.room)
+    local i = redo and mirror.last_undo(all, cfg.user) or mirror.last_mine(all, cfg.user)
+    if not i then return band.msg(redo and "Nothing to redo: you haven't undone anything since your last change." or "You haven't changed anything here yet.") end
+    local e = all[i]
+    local what = redo and ("redo: " .. describe(all[i])) or ("undo: " .. describe(e))
+    if reaper.MB(what:sub(1, 1):upper() .. what:sub(2) .. "?\n\nIt goes to everyone; nothing anyone else changed is touched.", "BandSync", 4) ~= 6 then return end
+    local opts = { can = can, mode = who and who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" }
+    if redo then opts.redoes = e.id else opts.undoes = e.id end
+    local ok, res = pcall(mirror.revert, proj, cfg, b.song, b.room, mirror.plan_undo(all, i), opts)
+    band.log(ok and res or ("undo failed: " .. tostring(res)))
+    hist_at = 0
   end
+  if arrow_button("##undo", false, "Undo your own last change, for everyone (it asks first). Unlike Ctrl+Z, a bandmate's change " ..
+      "that came in since is never touched. Press again to go further back.") then undo_redo(false) end
   ImGui.SameLine(ctx, 0, 4); ImGui.SetCursorPosY(ctx, y0)
-  if arrow_button("##redo", true, "Redo: make the change you undid last again (for everyone).") then
-    local msg, e = tools.redo_mine(proj, cfg, b)
-    if msg then band.log(msg) else band.msg(e) end
-  end
+  if arrow_button("##redo", true, "Redo: bring back the change you undid last (for everyone).") then undo_redo(true) end
   if wide then -- the pages, in the bar
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
     for i, p in ipairs(PAGES) do
@@ -1907,6 +1911,11 @@ local function frame_app()
     ImGui.SetItemTooltip(ctx, "Fill the screen the panel is on, or half of it (left, right, top, bottom), and back.")
   end
   ImGui.SetCursorPos(ctx, 16, y0 + fh + 8)
+  -- what BandSync just did, under the bar for a few seconds (actions used to report only to the Console)
+  local newest = band.activity()[1]
+  if newest ~= tools.toast_line then tools.toast_line, tools.toast_at = newest, tools.toast_seen and reaper.time_precise() or -math.huge end
+  tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)
+  if newest and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, 0xBFD3FFFF, newest:sub(7)) end
   section_invites()
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
@@ -1963,7 +1972,14 @@ local function frame()
   end
   local app = not classic()
   if app then ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 10); ImGui.Indent(ctx, 16) end -- (the app window has no padding of its own)
-  if err then return ImGui.TextColored(ctx, RED, "Error: " .. err) end
+  if err then
+    ImGui.TextColored(ctx, RED, "Something went wrong in the panel: " .. err)
+    if ImGui.SmallButton(ctx, "Copy it") then ImGui.SetClipboardText(ctx, "BandSync " .. band.VERSION .. ": " .. err) end
+    ImGui.SetItemTooltip(ctx, "Copy the message, to send it to whoever looks after BandSync.")
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Try again") then err, last = nil, 0 end
+    return
+  end
   if not b then
     ImGui.TextWrapped(ctx, "This project isn't a BandSync session yet.")
     if ImGui.Button(ctx, "Publish this project (I'm the host)") then action("Publish session") end
@@ -2091,8 +2107,8 @@ local function pill_window()
     end
     dot(live_on and GREEN or RED)
     ImGui.SameLine(ctx, 0, 6)
-    local label = "BandSync  ·  " .. (live_on and "Live" or "Live off") .. (view and view.driver and ("  ·  " .. (view.driver == cfg.user and "you drive" or (view.driver .. " drives"))) or "") ..
-      (unread > 0 and string.format("  ·  %d new", unread) or "")
+    local label = "BandSync  ·  " .. (live_on and "Sync on" or "Sync off") .. (view and view.driver and ("  ·  " .. (view.driver == cfg.user and "you drive" or (view.driver .. " drives"))) or "") ..
+      (unread > 0 and string.format("  ·  %d new message%s", unread, unread == 1 and "" or "s") or "")
     if ImGui.SmallButton(ctx, label .. "##pill") then reaper.DeleteExtState(band.SECTION, "panel minimized", false) end
     ImGui.SetItemTooltip(ctx, "Open the BandSync panel (right-click for more). Drag the pill's edge to move it.")
     if ImGui.BeginPopupContextItem(ctx, "pillmenu") then

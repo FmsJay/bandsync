@@ -126,6 +126,32 @@ function mirror.plan_undo(entries, i)
   return { [e.oid] = false }
 end
 
+-- The top bar's Undo / Redo (your own changes only, for everyone). Pure, over History's entries:
+-- last_mine: your newest change not undone yet (undo events carry `undoes`, redo events `redoes`).
+function mirror.last_mine(entries, user)
+  local undone = {}
+  for i = #entries, 1, -1 do
+    local e = entries[i]
+    if e.kind == "obj" and e.user == user then
+      if e.undoes and not undone[e.id] then undone[e.undoes] = true
+      elseif e.redoes then undone[e.redoes] = true -- (a redo undoes an undo: the change it undid counts again)
+      elseif not e.restored and not undone[e.id] then return i end
+    end
+  end
+end
+-- last_undo: your newest undo that hasn't been redone.
+function mirror.last_undo(entries, user)
+  local redone = {}
+  for i = #entries, 1, -1 do
+    local e = entries[i]
+    if e.kind == "obj" and e.user == user then
+      if e.redoes then redone[e.redoes] = true
+      elseif e.undoes and not redone[e.id] then return i
+      elseif not e.restored then return nil end -- a new change since: nothing to redo
+    end
+  end
+end
+
 -- Media paths in chunks: under the room's media folder they travel as a token, so every machine resolves them to
 -- its own shared folder (J:/... here, /Volumes/... on a Mac).
 local function norm_path(p) return (p:gsub("\\", "/")) end
@@ -569,7 +595,8 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     elseif p.t then
       local ok, nh = mirror.apply(proj, p.t, media, opts.local_mix)
       if ok then
-        local ev = { type = "obj", obj = p.t.obj, oid = p.oid, rev = (rev or 0) + 1, state = p.t.state, track = p.t.track, name = name, pos = p.t.pos, restored = p.t.id }
+        local ev = { type = "obj", obj = p.t.obj, oid = p.oid, rev = (rev or 0) + 1, state = p.t.state, track = p.t.track, name = name, pos = p.t.pos, restored = p.t.id,
+          undoes = opts.undoes, redoes = opts.redoes }
         local id = sync.post(cfg, song, room, ev)
         remember(proj, p.oid, ev.rev, nh, id, (ev.time or "") .. cfg.user)
         done = done + 1
@@ -577,7 +604,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     else
       local kind = p.oid:sub(1, 1) == "T" and "track" or p.oid:sub(1, 1) == "F" and "fx" or "item"
       mirror.apply(proj, { obj = kind, oid = p.oid, gone = true }, media, opts.local_mix)
-      local id = sync.post(cfg, song, room, { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, gone = true })
+      local id = sync.post(cfg, song, room, { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, gone = true, undoes = opts.undoes, redoes = opts.redoes })
       remember(proj, p.oid, (rev or 0) + 1, "", id)
       done = done + 1
     end

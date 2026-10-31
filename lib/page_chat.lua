@@ -48,15 +48,33 @@ function chat.unread(cfg, b)
   unread_n = chat.count_unread(cfg, b)
   return unread_n
 end
+local function seen_key(b, sc) return "chat seen " .. sc .. " " .. (sc == "band" and "" or b.song) .. (sc == "room" and (" " .. (b.room or "main")) or "") end
 function chat.count_unread(cfg, b)
-  local seen = reaper.GetExtState(band.SECTION, "chat seen " .. b.song)
   local n = 0
   for _, sc in ipairs(SCOPES) do
+    local seen = reaper.GetExtState(band.SECTION, seen_key(b, sc[1])) -- (each scope has its own: reading one doesn't clear the others)
     for _, f in ipairs(band.files(chat.dir(cfg, b, sc[1]) .. "/msgs", ".json")) do
       if f:sub(1, 15) > seen and not f:find("-" .. (cfg.user:gsub("[^%w]", "_")) .. "-", 1, true) then n = n + 1 end
     end
   end
   return n
+end
+
+-- "2026-10-30T21:05:00Z" -> "Thu 21:05" (this machine's time)
+local function when(iso)
+  local y, mo, d, h, mi, sec = (iso or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+  if not y then return "" end
+  local utc = os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = sec, isdst = false })
+  local now = os.time()
+  local offset = os.difftime(now, os.time(os.date("!*t", now)))
+  local t = utc + offset
+  return os.date(os.date("%Y%m%d", t) == os.date("%Y%m%d") and "%H:%M" or "%a %d %b %H:%M", t)
+end
+local function delete_mine(ctx, ImGui, cfg, e)
+  if e.user ~= cfg.user then return end
+  ImGui.SameLine(ctx)
+  if ImGui.SmallButton(ctx, "x") then os.remove(e.file); cache = nil end
+  ImGui.SetItemTooltip(ctx, "Delete yours (for everyone).")
 end
 
 function chat.draw(ctx, ImGui, cfg, b)
@@ -69,14 +87,18 @@ function chat.draw(ctx, ImGui, cfg, b)
   local t = load(cfg, b)
   if ImGui.BeginTabBar(ctx, "chat") then
     if ImGui.BeginTabItem(ctx, "Messages") then
-      reaper.SetExtState(band.SECTION, "chat seen " .. b.song, os.date("!%Y%m%d-%H%M%S"), true)
+      local newest = t.msgs[#t.msgs] and t.msgs[#t.msgs].file:match("[/\\]([^/\\]+)$"):sub(1, 15) or ""
+      if reaper.GetExtState(band.SECTION, seen_key(b, scope)) < newest then reaper.SetExtState(band.SECTION, seen_key(b, scope), newest, true) end
       local _, h = ImGui.GetContentRegionAvail(ctx)
       if ImGui.BeginChild(ctx, "msgs", 0, math.max(60, h - 34), ImGui.ChildFlags_Borders) then
         if #t.msgs == 0 then ImGui.TextDisabled(ctx, "No messages yet.") end
         for _, m in ipairs(t.msgs) do
-          ImGui.TextDisabled(ctx, (m.time or ""):sub(6, 16):gsub("T", " "))
+          ImGui.PushID(ctx, m.file)
+          ImGui.TextDisabled(ctx, when(m.time))
           ImGui.SameLine(ctx)
           ImGui.TextWrapped(ctx, tostring(m.user) .. ": " .. tostring(m.text))
+          delete_mine(ctx, ImGui, cfg, m)
+          ImGui.PopID(ctx)
         end
         if ImGui.GetScrollY(ctx) >= ImGui.GetScrollMaxY(ctx) - 20 then ImGui.SetScrollHereY(ctx, 1) end -- follow new ones
         ImGui.EndChild(ctx)
@@ -94,6 +116,7 @@ function chat.draw(ctx, ImGui, cfg, b)
         local ch, v = ImGui.Checkbox(ctx, tostring(d.text), d.done == true)
         if ch then d.done, d.done_by = v, cfg.user; local f = d.file; d.file = nil; band.write_json(f, d); cache = nil end
         if d.done and d.done_by then ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, "(" .. d.done_by .. ")") end
+        delete_mine(ctx, ImGui, cfg, d)
         ImGui.PopID(ctx)
       end
       ImGui.SetNextItemWidth(ctx, -60)
@@ -106,9 +129,19 @@ function chat.draw(ctx, ImGui, cfg, b)
     if ImGui.BeginTabItem(ctx, "Links") then
       for _, l in ipairs(t.links) do
         ImGui.PushID(ctx, l.file)
-        if ImGui.SmallButton(ctx, "Open") then reaper.CF_ShellExecute(l.url) end
+        if ImGui.SmallButton(ctx, "Open") then
+          -- a bandmate typed this: web links open in the browser; anything else (a file, a program) is shown first
+          local web = l.url:match("^https?://") ~= nil
+          if web or reaper.MB("Open this? It isn't a web link:\n\n" .. l.url, "BandSync", 4) == 6 then
+            if reaper.CF_ShellExecute then reaper.CF_ShellExecute(l.url)
+            elseif reaper.GetOS():find("^Win") then os.execute('start "" "' .. l.url:gsub('"', "") .. '"')
+            else os.execute('open "' .. l.url:gsub('"', "") .. '"') end
+          end
+        end
+        ImGui.SetItemTooltip(ctx, l.url)
         ImGui.SameLine(ctx)
         ImGui.TextWrapped(ctx, (l.title ~= "" and l.title or l.url) .. "  (" .. tostring(l.user) .. ")")
+        delete_mine(ctx, ImGui, cfg, l)
         ImGui.PopID(ctx)
       end
       ImGui.SetNextItemWidth(ctx, 160)

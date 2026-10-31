@@ -119,6 +119,7 @@ end
 -- Entries are { time, id, user, kind = "take" | event type, ... }: a take's arrival (from its manifest's
 -- first placement) or an event as posted. Sorted by time, then id.
 
+recall.ev_cache = {} -- event file path -> its event (files never change once written: read once per session)
 function recall.entries(cfg, song, room)
   local out = {}
   local rdir = sync.room_dir(cfg, song, room)
@@ -133,8 +134,13 @@ function recall.entries(cfg, song, room)
     end
   end
   for _, f in ipairs(band.files(rdir .. "/events", ".json")) do
-    local ev = band.read_json(rdir .. "/events/" .. f)
-    if ev and ev.id and ev.time then ev.kind = ev.type; out[#out + 1] = ev end
+    local path = rdir .. "/events/" .. f
+    local ev = recall.ev_cache[path]
+    if not ev then
+      ev = band.read_json(path)
+      if ev and ev.id and ev.time then ev.kind = ev.type; recall.ev_cache[path] = ev end
+    end
+    if ev and ev.id and ev.time then out[#out + 1] = ev end
   end
   table.sort(out, function(a, x) return (a.time .. a.id) < (x.time .. x.id) end)
   return out

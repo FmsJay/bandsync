@@ -1929,6 +1929,14 @@ local function frame_app()
   section_invites()
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
+  want = reaper.GetExtState(band.SECTION, "panel do") -- a choice from the radial menu
+  if want ~= "" then
+    reaper.DeleteExtState(band.SECTION, "panel do", false)
+    if want == "undo" or want == "redo" then undo_redo(want == "redo")
+    elseif want == "realtime" then set_same_room(not same_room_on())
+    elseif want == "chat" then page = "Chat"
+    elseif want:match("^history ") then page, hf.mode = "History", want:match("^history (%a+)") end
+  end
   if compact and not wide then
     ImGui.SetCursorPosX(ctx, 16)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)

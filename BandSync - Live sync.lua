@@ -137,6 +137,7 @@ local drive_at, drive_more, drive_said = -math.huge, false, nil
 local sizes, last, recording, stopped_at = {}, 0, false, 0
 local last_status, status_json = 0, ""
 local rt_at = 0 -- when Real time mode's sends were last matched to what's armed
+local mirror_cc, mirror_at, mirror_due = -1, -math.huge, false -- the project's change count at the last full look, and when
 -- A file is ready once it exists, is non-empty, and its size held still across two polls.
 local function ready(path)
   local n = band.size(path)
@@ -333,9 +334,15 @@ local function poll()
   elseif not hold then
     local tok, terr = pcall(sync.watch_timeline, proj, cfg, b.song, b.room, my_can) -- (before the items: a tempo change moves them)
     if not tok then band.log("tempo/markers: " .. tostring(terr)) end
-    local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix })
-    if not ok then band.log("mirror sync: " .. tostring(sent))
-    elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
+    -- a full look reads every track and item: only when REAPER says the project changed, or the band's changes just
+    -- came in, and at least every 10 s anyway (anything REAPER doesn't count as a change still gets seen)
+    local cc = reaper.GetProjectStateChangeCount(proj)
+    if cc ~= mirror_cc or mirror_due or now - mirror_at > 10 then
+      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix })
+      if not ok then band.log("mirror sync: " .. tostring(sent))
+      elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
+      mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
+    end
   end
 
   -- the host's project gathers the rooms bandmates record into (BandSync before side rooms), never a side room:
@@ -349,7 +356,7 @@ local function poll()
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
     local n = 0
     if not editing() then n = sync.receive(proj, cfg, b.song, room, room_can) end
-    if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")") end
+    if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")"); mirror_due = true end
   end
 
   -- the host lets new band machines in: a bandmate's installer pairs with the host's Syncthing, which then asks

@@ -104,10 +104,10 @@ By hand:
 
 **BandSync - Panel** puts everything in one window. It opens by itself whenever a BandSync project opens.
 
-- **Top bar**: `Project: <song>`, the room, **Live** (green: Live sync is running; red **Live off**: press Start),
-  who drives, **Undo** / **Redo** (your own changes only, for everyone; a bandmate's change since is never
-  touched, unlike Ctrl+Z), **Dock** and, floating, **Full screen** and **Window** (half the screen, the next
-  screen, back).
+- **Top bar**: `Project: <song>`, the room, **Sync on** (green: Live sync is running; red **Sync off**: press Start),
+  who drives, **Undo** / **Redo** (your own changes, for everyone; each asks first, and says if a bandmate changed the
+  same thing since), **Dock** and, floating, **Full screen** and **Window** (half the screen, the next screen, back).
+  Under the bar, what BandSync just did shows for a few seconds.
 - **Pages**: **Home** (Who's here with *Take control*, Real time mode, who changes what, Local mixing, claims),
   **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **History**,
   **Plugins** and **Setup** (Health, Console, Options, Updates). A red or yellow dot on Setup means Health has
@@ -120,6 +120,13 @@ By hand:
   bring the panel back where it was; right-click to close BandSync's panel or remove the button (Setup > Options
   brings it back).
 - The floating window resizes from every edge and corner. Every control explains itself on hover.
+
+**BandSync - Radial menu** pops a ring of everyday moves around the mouse. Give it a key or mouse button in the
+Actions list. The slices are Undo, Redo, Restore project…, Restore selection…, Undo one change… (each of these three
+opens History set to that kind of going back), Take control (greyed while you drive), Real time mode on/off, and
+Chat. Point at a slice to read what it does underneath, and click it to do it. Esc, a click anywhere else, or the key
+again closes the menu. The panel carries the move out, so each choice asks first just as its button there does, and
+the panel opens if it was closed.
 
 Who may change what:
 

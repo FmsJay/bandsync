@@ -579,6 +579,31 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   return string.format("%d change(s) brought back and sent to the band%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "")
 end
 
+-- Local mixing off again: either adopt the band's faders and pan (each track as its newest revision has them), or
+-- send yours (each track's next look counts as a change; it goes out if you may change that track).
+function mirror.end_local_mix(proj, cfg, song, room, adopt)
+  local band, sync = require("band"), require("sync")
+  local rdir = sync.room_dir(cfg, song, room)
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    local oid = trk_oid(tr)
+    local rev, h, evid, order = mirror.known(proj, oid)
+    if rev then
+      if adopt then
+        local ev = evid ~= "" and band.read_json(rdir .. "/events/" .. evid .. ".json")
+        if type(ev) == "table" and type(ev.state) == "table" then
+          if ev.state.vol and ev.state.vol ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", tonumber(ev.state.vol)) end
+          if ev.state.pan and ev.state.pan ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", tonumber(ev.state.pan)) end
+        end
+        local t = mirror.track_state(proj, tr, false)
+        remember(proj, oid, rev, mirror.hash(mirror.track_line(t) .. "|" .. t.after), evid, order)
+      else
+        remember(proj, oid, rev, "-", evid, order) -- (no hash matches "-": the next look sends it)
+      end
+    end
+  end
+end
+
 -- ---- side rooms ------------------------------------------------------------------------------------------
 -- A side room starts as a copy of its parent tab (ids and all), so both share every object's history up to then.
 

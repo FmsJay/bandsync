@@ -1636,7 +1636,7 @@ local function maint_rows()
     { "audio", s.audio, "red", "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device." },
     { "folder", s.folder, "red", "Shared folder is syncing", "Syncthing isn't running: nothing reaches the band or comes in." },
     { "sync", s.sync, "red", "Live sync is running", "Live sync is off in this tab: press Start at the top." },
-    { "connected", s.connected, "yellow", s.peers and string.format("Connected to %d of %d bandmate machine(s)", s.peers, s.devices) or "Shared folder is a cloud drive",
+    { "connected", s.connected, #(view and view.rows or {}) > 0 and "red" or "yellow", s.peers and string.format("Connected to %d of %d bandmate machine(s)", s.peers, s.devices) or "Shared folder is a cloud drive",
       s.peers and "Syncthing is connected to nobody. Fine if you're alone; if bandmates are online, check this machine's Syncthing device ID."
       or "Can't tell whether Syncthing is connected." },
     { "sonobus", s.sonobus, "yellow", "SonoBus is ready (Same room)", "SonoBus isn't on the master track yet: Same room adds it." },
@@ -1794,6 +1794,21 @@ local function home_who()
   if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
   home_play()
 end
+-- Local mixing: your faders and pan stay yours (not sent, not overwritten). Off again: adopt the band's mix, or
+-- send yours.
+local function local_mix_row()
+  local on = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
+  local ch, v = switch_row("##localmix", "Local mixing", on, "Your faders and pan stay yours: nobody else's reach you and yours don't go out.")
+  if ch and v then reaper.SetProjExtState(proj, band.SECTION, "local_mix", "1")
+  elseif ch then
+    local r = reaper.MB("Local mixing off. Take the band's mix (faders and pan)?\n\nYes: use the band's mix.\nNo: send your mix to the band " ..
+      "(the tracks you may change).", "BandSync", 3)
+    if r ~= 2 then
+      require("mirror").end_local_mix(proj, cfg, b.song, b.room, r == 6)
+      reaper.SetProjExtState(proj, band.SECTION, "local_mix", "")
+    end
+  end
+end
 local function home_session()
   if card("session") then
     heading("Who changes what", 17)
@@ -1801,6 +1816,7 @@ local function home_session()
     local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
     local ch, v = switch_row("##hold", "Hold my changes", hold, "Try things: your changes go out once, when you switch this off.")
     if ch then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
+    local_mix_row()
     section_claims()
     card_end()
   end
@@ -1812,6 +1828,7 @@ local function home_rules()
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
   local ch, v = switch_row("##hold", "Hold my changes", hold, "Try things: your changes go out once, when you switch this off.")
   if ch then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
+  local_mix_row()
 end
 local function home_claims()
   heading("Claims", 17)

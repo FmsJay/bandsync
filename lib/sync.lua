@@ -1033,7 +1033,10 @@ function sync.receive(proj, cfg, song, room, can)
           obj = (ev.gone and "deleted " or "changed ") .. (require("mirror").PART[ev.obj] or (ev.obj == "item" and "an item" or "a track")) ..
             " on " .. ((ev.name or "") ~= "" and ev.name or "an unnamed track"),
           shift = ((ev.len or 0) > 0 and "inserted " or "removed ") .. string.format("%.2f s at %.2f s", math.abs(ev.len or 0), ev.at or 0) })[ev.type]
-        if theirs then done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take))) end
+        -- (only an old-style edit is a move or trim; anything else unnamed here, a handover say, has its own message
+        -- elsewhere: it was logged as "moved/trimmed nil", laptop 2026-10-31)
+        if ev.type == "edit" then what = "moved/trimmed " .. tostring(ev.take) end
+        if theirs and what then done[#done + 1] = ev.user .. ": " .. what end
       end
     end
   end

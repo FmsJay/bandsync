@@ -162,6 +162,14 @@ local eq1 = '<FXCHAIN\nBYPASS 0 0 0\n<VST "VST: ReaEQ (Cockos)" reaeq.dll 0 ""\n
 local eq2 = eq1:gsub("AAAQAAAA", "AFByb2dyYW0gMQAQAAAA")
 assert(mirror.fx_hash(eq1) == mirror.fx_hash(eq2), "ReaEQ's 'Program 1' isn't a change")
 assert(mirror.fx_hash(eq1) ~= mirror.fx_hash((eq1:gsub("ZXFlcu5e7f4CAAAA", "ZXFlcu5e7f4DAAAA"))), "a real state change still is")
+-- the same as an item's take FX (block K: the projects differed for good); items without one hash as they always did
+local item1 = "POSITION 13.8\nLENGTH 2\n<TAKEFX\nWNDRECT 0 0 0 0\n<VST \"VST: ReaEQ (Cockos)\" reaeq.dll 0 \"\"\nZXFlcu5e7f4CAAAA\nAAAQAAAA\n>\nWAK 0 0\n>\n<SOURCE MIDI\n>"
+local item2 = item1:gsub("AAAQAAAA", "AFByb2dyYW0gMQAQAAAA")
+assert(mirror.item_hash("T-1", item1) == mirror.item_hash("T-1", item2), "a take FX's 'Program 1' isn't a change")
+assert(mirror.item_hash("T-1", item1) ~= mirror.item_hash("T-1", (item1:gsub("ZXFlcu5e7f4CAAAA", "ZXFlcu5e7f4DAAAA"))), "its real state is")
+assert(mirror.item_hash("T-1", item1) ~= mirror.item_hash("T-2", item1), "the track still counts")
+local plain = "POSITION 1\nLENGTH 2\n<SOURCE WAVE\nFILE \"a.flac\"\n>"
+assert(mirror.item_hash("T-1", plain) == mirror.hash("T-1\n" .. plain), "no VST: the hash it always had (no resend after updating)")
 -- a print BandSync refreshed by itself isn't the person's change: Undo reaches past it to the copy they made
 local P = { { kind = "obj", user = "J", id = "copy" }, { kind = "obj", user = "J", id = "reprint", auto = true } }
 assert(mirror.last_mine(P, "J") == 1, "Undo skips an automatic print refresh")

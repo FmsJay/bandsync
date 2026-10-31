@@ -168,6 +168,14 @@ local function editing()
   if busy then held_since = held_since or t else held_since = nil end
   return busy and t - held_since < 10
 end
+-- Something to redo (you just pressed undo): the band's changes wait up to 30 s, as any undo point of theirs would
+-- take your redo away (laptop, block K: Ctrl+Z, then Ctrl+Shift+Z did nothing). A new action of yours ends the wait.
+local redo_seen, redo_at = nil, 0
+local function redo_pending()
+  local r = reaper.Undo_CanRedo2(proj)
+  if r ~= redo_seen then redo_seen, redo_at = r, reaper.time_precise() end
+  return r ~= nil and reaper.time_precise() - redo_at < 30
+end
 
 local function poll()
   if st_started and reaper.time_precise() - st_started > 20 then
@@ -259,7 +267,7 @@ local function poll()
   for _, room in ipairs(rooms) do
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
     local n = 0
-    if not editing() then n = sync.receive(proj, cfg, b.song, room, room_can) end
+    if not editing() and not redo_pending() then n = sync.receive(proj, cfg, b.song, room, room_can) end
     if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")"); mirror_due = true end
   end
 

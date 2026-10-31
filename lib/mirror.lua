@@ -92,6 +92,25 @@ function mirror.fx_hash(chain)
   end
   return mirror.hash(table.concat(lines, "\n") .. "\n")
 end
+-- An item's hash: the same, with take plug-ins' program lines left out as above (laptop, block K: an item with ReaEQ
+-- as a take FX read "Program 1" on the machine that applied it, and the two projects differed for good). Only items
+-- with a VST take FX hash differently from before, so an update doesn't make everyone send every item again.
+function mirror.item_hash(track, state)
+  if not state:find("<VST", 1, true) then return mirror.hash(track .. "\n" .. state) end
+  local lines = {}
+  for l in (state .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = l end
+  lines[#lines] = nil -- (the one the extra "\n" made)
+  local i = 1
+  while i <= #lines do
+    if lines[i]:match("^%s*<VST") then
+      local j = i + 1
+      while j <= #lines and not lines[j]:match("^%s*>$") and not lines[j]:match("^%s*<") do j = j + 1 end
+      if j <= #lines and lines[j]:match("^%s*>$") and j - i - 1 >= 2 and lines[j - 1]:match("^%s*[A-Za-z0-9+/]+=*$") then table.remove(lines, j - 1) end
+    end
+    i = i + 1
+  end
+  return mirror.hash(track .. "\n" .. table.concat(lines, "\n"))
+end
 
 -- A track's automation ("E-" + its oid) and its receives ("R-", each with its send envelopes) travel as objects of
 -- their own, cut out of the track chunk and spliced back in. Writing a track chunk back keeps its plug-ins running
@@ -669,7 +688,7 @@ function mirror.scan(proj, user, media_dir, local_mix)
   settle_ids(proj, il, "I", user, function(it, oid) reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true) end)
   for _, x in ipairs(il) do
     local norm = mirror.item_state(x.ptr, media_dir)
-    local o = { kind = "item", oid = x.oid, ptr = x.ptr, track = x.toid, state = norm, hash = mirror.hash(x.toid .. "\n" .. norm),
+    local o = { kind = "item", oid = x.oid, ptr = x.ptr, track = x.toid, state = norm, hash = mirror.item_hash(x.toid, norm),
       pos = reaper.GetMediaItemInfo_Value(x.ptr, "D_POSITION") }
     objs[#objs + 1], by_oid[x.oid] = o, o
   end
@@ -927,7 +946,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     require("prints").choose(it) -- notes or the print, as this machine chose (never part of what travels)
     reaper.SetMediaItemSelected(it, sel)
     reaper.UpdateItemInProject(it)
-    return true, mirror.hash(ev.track .. "\n" .. mirror.item_state(it, media_dir))
+    return true, mirror.item_hash(ev.track, mirror.item_state(it, media_dir))
   end
   return true, ""
 end
@@ -1132,7 +1151,7 @@ function mirror.watch(proj, cfg, song, room, opts)
           if shared ~= state then -- it now plays the shared copy here too, so the next look sees the same thing
             reaper.SetItemStateChunk(o.ptr, mirror.resolve_media((shared:gsub("BANDLANE %d+\n?", "")), media), false)
             state = mirror.item_state(o.ptr, media)
-            o.hash = mirror.hash(o.track .. "\n" .. state)
+            o.hash = mirror.item_hash(o.track, state)
           end
         end
         local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,

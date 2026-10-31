@@ -33,6 +33,8 @@ end
 -- A ping from here: the spot and when (ExtState, so the radial menu can set it; Live sync puts it in the status).
 function presence.ping_here(proj, pos)
   reaper.SetExtState(band.SECTION, "ping " .. tostring(proj), string.format("%.3f %s", pos, os.date("!%Y-%m-%dT%H:%M:%SZ")), false)
+  -- (the marker is for the others, so this is the pinger's only sign it went: laptop, 2026-10-31)
+  band.log(string.format("pinged %.2f s: everyone in the room sees a marker with your name there for %d seconds", pos, presence.PING_SHOWN))
 end
 function presence.my_ping(proj)
   local pos, at = reaper.GetExtState(band.SECTION, "ping " .. tostring(proj)):match("^(%S+) (%S+)$")

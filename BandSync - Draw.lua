@@ -38,7 +38,6 @@ end)
 
 local ctx = ImGui.CreateContext("BandSync drawings")
 local PALETTE = { 0xFF5A5AFF, 0x4CC2FFFF, 0x7BE07BFF, 0xFFC24CFF, 0xC88BFFFF, 0xFF8BD0FF }
-local function colour_of(user) return PALETTE[(tonumber(mirror.hash(user):sub(1, 6), 16) % #PALETTE) + 1] end
 local main = reaper.GetMainHwnd()
 local arrange = reaper.JS_Window_FindChildByID(main, 1000) -- (REAPER's arrange view, "trackview")
 
@@ -54,6 +53,17 @@ local function load(b) -- every stroke in the room, re-read once a second
     if type(s) == "table" and type(s.points) == "table" then s.file = d .. "/" .. f; cache[#cache + 1] = s end
   end
   return cache
+end
+-- One colour each: the room's people (here now, or who drew) in name order, so every machine agrees. (A colour from
+-- a hash of the name gave James and Laptop the same one: laptop, 2026-10-31.)
+local function colours(b)
+  local set, names, out = { [cfg.user] = true }, {}, {}
+  for _, s in ipairs(load(b)) do if type(s.user) == "string" then set[s.user] = true end end
+  for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do set[st.user] = true end
+  for n in pairs(set) do names[#names + 1] = n end
+  table.sort(names)
+  for i, n in ipairs(names) do out[n] = PALETTE[(i - 1) % #PALETTE + 1] end
+  return out
 end
 
 -- screen (native pixels) <-> song: time across the arrange view, track and height within it down it
@@ -119,8 +129,9 @@ local function loop()
         last = sx and { sx, sy } or nil
       end
     end
-    for _, s in ipairs(load(b)) do draw_points(s.points, colour_of(s.user or "")) end
-    if stroke then draw_points(stroke.points, colour_of(cfg.user)) end
+    local col = colours(b)
+    for _, s in ipairs(load(b)) do draw_points(s.points, col[s.user] or PALETTE[1]) end
+    if stroke then draw_points(stroke.points, col[cfg.user]) end
     if drawing then
       local mx, my = reaper.GetMousePosition()
       local inside = mx >= L.l and mx <= L.r and my >= L.t and my <= L.b
@@ -132,7 +143,8 @@ local function loop()
       if down and (inside or stroke) and not (on_bar and not stroke) then
         local p = to_song(L, mx, my)
         stroke = stroke or { points = {} }
-        if p then stroke.points[#stroke.points + 1] = p end
+        local q = stroke.points[#stroke.points]
+        if p and not (q and q[1] == p[1] and q[2] == p[2] and q[3] == p[3]) then stroke.points[#stroke.points + 1] = p end -- (the mouse held still)
       elseif stroke then -- the stroke is done: it goes to the band
         if #stroke.points > 1 then
           n_made = n_made + 1
@@ -148,7 +160,7 @@ local function loop()
       if ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) or keys:byte(28) == 1 then reaper.DeleteExtState(band.SECTION, "draw on", false) end -- (Esc)
       -- the bar: what drawing mode is, and the way out (in this window: a window of its own could sit under it)
       ImGui.SetCursorPos(ctx, 8, 8)
-      ImGui.TextColored(ctx, colour_of(cfg.user), "Drawing for the band: drag on the tracks.")
+      ImGui.TextColored(ctx, col[cfg.user],"Drawing for the band: drag on the tracks.")
       ImGui.SameLine(ctx)
       local function button(label) return ImGui.SmallButton(ctx, label) or (pressed and ImGui.IsItemHovered(ctx)) end
       if button("Done") then reaper.DeleteExtState(band.SECTION, "draw on", false); stroke = nil end

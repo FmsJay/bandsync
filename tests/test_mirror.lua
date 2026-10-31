@@ -133,6 +133,12 @@ assert(mirror.plan_undo(E, 3) == nil, "not a mirror change")
 assert(mirror.creator("I-BIG_AL-20261030-4") == "BIG_AL" and mirror.creator("T-A-1-1") == "A", "creator")
 assert(mirror.user_tag("Big Al") == "BIG_AL", "user tag")
 
+-- side room into its parent: only-side changes come in (tracks first), both-changed are clashes
+local side = { ["I-1"] = { obj = "item", oid = "I-1" }, ["T-9"] = { obj = "track", oid = "T-9" }, ["I-2"] = { obj = "item", oid = "I-2" } }
+local main = { ["I-2"] = { obj = "item", oid = "I-2" } }
+local bring, clash = mirror.plan_bring(side, main)
+assert(#bring == 2 and bring[1].obj == "track" and #clash == 1 and clash[1].oid == "I-2", "bring plan")
+
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
 assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)
 print("ok")

@@ -579,4 +579,81 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   return string.format("%d change(s) brought back and sent to the band%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "")
 end
 
+-- ---- side rooms ------------------------------------------------------------------------------------------
+-- A side room starts as a copy of its parent tab (ids and all), so both share every object's history up to then.
+
+-- The newest revision of each object among a room's events, optionally only those after `since` (ISO time).
+function mirror.room_newest(room_dir, since)
+  local band = require("band")
+  local out = {}
+  for _, f in ipairs(band.files(room_dir .. "/events", ".json")) do
+    local ev = band.read_json(room_dir .. "/events/" .. f)
+    if type(ev) == "table" and ev.type == "obj" and ev.oid and (not since or (ev.time or "") > since) then
+      local cur = out[ev.oid]
+      if not cur or mirror.newer({ rev = ev.rev, time = (ev.time or "") .. (ev.user or "") }, { rev = cur.rev, time = (cur.time or "") .. (cur.user or "") }) then
+        out[ev.oid] = ev
+      end
+    end
+  end
+  return out
+end
+
+-- What bringing a side room into its parent does, from both rooms' changes since the room was made: what only the
+-- side room changed comes in; what both changed is a clash, and the parent's stays. Pure.
+function mirror.plan_bring(side, main)
+  local bring, clash = {}, {}
+  for oid, ev in pairs(side) do
+    if main[oid] then clash[#clash + 1] = ev else bring[#bring + 1] = ev end
+  end
+  local o = { track = 1, fx = 2, item = 3 } -- a new track before what sits on it
+  table.sort(bring, function(a, x) return (o[a.obj] or 3) < (o[x.obj] or 3) end)
+  return bring, clash
+end
+
+-- Send revisions into room `to` (as its newest revisions there), with the media they need copied across. `here`:
+-- that room's tab on this machine, if open (your own changes never come back to you through Live sync).
+function mirror.post_into(cfg, song, from, to, list, here)
+  local band, sync = require("band"), require("sync")
+  local fdir, tdir = sync.room_dir(cfg, song, from), sync.room_dir(cfg, song, to)
+  local newest = mirror.room_newest(tdir)
+  reaper.RecursiveCreateDirectory(tdir .. "/media", 0)
+  local n = 0
+  for _, ev in ipairs(list) do
+    for _, rel in ipairs(type(ev.state) == "string" and mirror.media_needed(ev.state) or {}) do
+      local dst = tdir .. "/media/" .. rel
+      if not reaper.file_exists(dst) and reaper.file_exists(fdir .. "/media/" .. rel) then band.copy_atomic(fdir .. "/media/" .. rel, dst) end
+    end
+    local cur = newest[ev.oid]
+    local new = { type = "obj", obj = ev.obj, oid = ev.oid, rev = (cur and cur.rev or 0) + 1, base = cur and cur.rev or 0,
+      state = ev.state, track = ev.track, name = ev.name, pos = ev.pos, gone = ev.gone, from_room = from }
+    sync.post(cfg, song, to, new)
+    if here and reaper.ValidatePtr2(0, here, "ReaProject*") then mirror.receive(here, new, tdir .. "/media", false) end
+    n = n + 1
+  end
+  return n
+end
+
+-- The selected items here (and any track of theirs the other room hasn't got), as revisions to send to `to`.
+function mirror.selected(proj, cfg, song, from, to)
+  local sync = require("sync")
+  local media = sync.room_dir(cfg, song, from) .. "/media"
+  local there = mirror.room_newest(sync.room_dir(cfg, song, to))
+  local list, tracks = {}, {}
+  for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do
+    local it = reaper.GetSelectedMediaItem(proj, i)
+    local tr = reaper.GetMediaItem_Track(it)
+    local toid, ioid = trk_oid(tr), itm_oid(it)
+    if toid ~= "" and ioid ~= "" then
+      local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
+      if not tracks[toid] and not there[toid] then
+        tracks[toid] = true
+        list[#list + 1] = { obj = "track", oid = toid, state = mirror.track_state(proj, tr), name = name }
+      end
+      list[#list + 1] = { obj = "item", oid = ioid, track = toid, state = mirror.item_state(it, media), name = name,
+        pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION") }
+    end
+  end
+  return list
+end
+
 return mirror

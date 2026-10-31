@@ -1448,94 +1448,36 @@ local function refresh_rooms()
 end
 
 -- Bring this side room into the room it came from: what changed here and there since it was made, compared.
+-- Bringing this side room into its parent (mirror sync): what only this room changed since it was made comes in,
+-- what both changed stays as the parent has it (listed).
 local function look_merge(parent)
-  local mproj = rooms.tab(b.song, parent)
   local m = room_view.meta or {}
-  local base = m.base and band.read_json(recall.dir(cfg, b.song, b.room) .. "/" .. m.base)
-  if not mproj or not base then
-    merge = { why = not mproj and ("Open '" .. parent .. "' here first (Go there), then look again.") or ("This room's starting point (" ..
-      tostring(m.base) .. ") isn't here yet (still syncing?).") }
-    return
-  end
-  local side, main = recall.capture(proj), recall.capture(mproj)
-  local plan = rooms.plan(base, main, side, base.by == cfg.user) -- (notes only when the room was made on this machine)
-  local mcan, mwho = sync.authority(cfg, b.song, parent, view.session)
-  rooms.mark_blocked(plan, mcan, mwho.owner, cfg.user)
-  local tracks, order = {}, {}
-  local function track(n) if n and not tracks[n] then tracks[n] = true; order[#order + 1] = n end end
-  for _, it in ipairs(plan.items) do track(it.track) end
-  for _, id in ipairs(plan.new) do track((side.takes[id] or {}).track) end
-  table.sort(order)
-  merge = { plan = plan, side = side, mproj = mproj, parent = parent, tracks = tracks, order = order, timeline = false }
+  local mirror = require("mirror")
+  local since = m.time
+  if not since then merge = { why = "This room has no start time (made with an older BandSync)." }; return end
+  local bring, clash = mirror.plan_bring(mirror.room_newest(sync.room_dir(cfg, b.song, b.room), since),
+    mirror.room_newest(sync.room_dir(cfg, b.song, parent), since))
+  merge = { bring = bring, clash = clash, parent = parent }
 end
 
 local function section_merge()
   if merge.why then ImGui.TextColored(ctx, YELLOW, merge.why); return end
-  local plan = merge.plan
-  if #plan.items == 0 and #plan.new == 0 then ImGui.TextDisabled(ctx, "Nothing here that '" .. merge.parent .. "' doesn't have."); return end
-  if plan.timeline then
-    ImGui.PushTextWrapPos(ctx, 0)
-    if plan.timeline == "main" then
-      ImGui.TextColored(ctx, YELLOW, "'" .. merge.parent .. "' changed its tempo or markers since this room was made: only new recordings " ..
-        "can go (they land on the same bar and beat). Changes to existing takes stay here.")
-    else
-      local _, v = ImGui.Checkbox(ctx, "Use this room's tempo and markers in '" .. merge.parent .. "' too", merge.timeline)
-      merge.timeline = v
-      if not v then ImGui.TextDisabled(ctx, "Unticked: only new recordings go (on the same bar and beat); changes to existing takes stay here.") end
-    end
-    ImGui.PopTextWrapPos(ctx)
-  end
-  local moves = not plan.timeline or merge.timeline
-  local clashes = 0
-  for _, it in ipairs(plan.items) do if it.clash then clashes = clashes + 1 end end
-  ImGui.Text(ctx, string.format("%d new take(s), %d change(s)%s", #plan.new, #plan.items - clashes,
-    clashes > 0 and string.format(", %d clash(es): pick each one", clashes) or ""))
-  -- as tall as its list: the page scrolls it (a fixed-height box inside the page didn't take the mouse wheel)
-  if ImGui.BeginChild(ctx, "merge", 0, 0, ImGui.ChildFlags_Borders | ImGui.ChildFlags_AutoResizeY) then
-    for _, name in ipairs(merge.order) do
-      ImGui.PushID(ctx, name)
-      local _, on = ImGui.Checkbox(ctx, name, merge.tracks[name])
-      merge.tracks[name] = on
-      ImGui.Indent(ctx)
-      ImGui.BeginDisabled(ctx, not on)
-      local n = 0
-      for _, id in ipairs(plan.new) do if (merge.side.takes[id] or {}).track == name then n = n + 1 end end
-      if n > 0 then ImGui.TextColored(ctx, GREEN, string.format("%d new recording(s)", n)) end
-      for i, it in ipairs(plan.items) do
-        if it.track == name then
-          ImGui.PushID(ctx, i)
-          local who = (it.kind == "take" or it.kind == "notes") and ((it.key:match("^(.-)%-%d+%-%d+Z") or it.key) .. "'s take: ") or ""
-          ImGui.BeginDisabled(ctx, not moves or it.blocked ~= nil)
-          if it.blocked then
-            ImGui.TextDisabled(ctx, who .. it.label .. ": can't bring, " .. it.blocked .. " has claimed it in " .. merge.parent)
-          elseif it.clash then
-            ImGui.TextColored(ctx, YELLOW, who .. it.label .. " (changed in both)")
-            if ImGui.RadioButton(ctx, "keep " .. merge.parent .. "'s", (it.use or "main") == "main") then it.use = "main" end
-            ImGui.SameLine(ctx)
-            if ImGui.RadioButton(ctx, "use this room's", it.use == "side") then it.use = "side" end
-          else
-            ImGui.Text(ctx, who .. it.label)
-          end
-          ImGui.EndDisabled(ctx)
-          ImGui.PopID(ctx)
-        end
-      end
-      ImGui.EndDisabled(ctx)
-      ImGui.Unindent(ctx)
-      ImGui.PopID(ctx)
-    end
-    ImGui.EndChild(ctx)
-  end
-  local driver = sync.driver(cfg, b.song, merge.parent, view.session)
-  local alone = reaper.GetExtState(band.SECTION, "alone " .. tostring(merge.mproj)) ~= ""
-  local may = driver == cfg.user or alone
   local parent = merge.parent
-  ImGui.BeginDisabled(ctx, not may)
-  if ImGui.Button(ctx, "Bring into " .. parent) and reaper.MB("Bring the ticked changes and recordings into '" .. parent .. "'?\n\n" ..
-      "Where '" .. parent .. "' is now is kept as a restore point first, so you can go back.", "BandSync", 4) == 6 then
-    local ok, res = pcall(rooms.merge, cfg, b.song, b.room, proj, merge.mproj, merge.plan, merge.side, merge.tracks, merge.timeline)
-    band.log(ok and ("brought '" .. b.room .. "' into '" .. parent .. "': " .. res) or ("bringing in failed: " .. tostring(res)))
-    if ok and not live_running(merge.mproj) then band.log("Live sync isn't running in '" .. parent .. "': start it there so the band gets this") end
+  if #merge.bring == 0 and #merge.clash == 0 then ImGui.TextDisabled(ctx, "Nothing here that '" .. parent .. "' doesn't have."); return end
+  ImGui.Text(ctx, string.format("%d change(s) to bring into '%s'", #merge.bring, parent))
+  local describe = require("recall").describe
+  for _, ev in ipairs(merge.bring) do ImGui.BulletText(ctx, describe({ kind = "obj", obj = ev.obj, name = ev.name, rev = ev.rev, gone = ev.gone, pos = ev.pos })) end
+  if #merge.clash > 0 then
+    ImGui.TextColored(ctx, YELLOW, string.format("%d also changed in '%s' since this room was made: '%s' keeps its own", #merge.clash, parent, parent))
+    for _, ev in ipairs(merge.clash) do ImGui.BulletText(ctx, describe({ kind = "obj", obj = ev.obj, name = ev.name, rev = 2, pos = ev.pos })) end
+  end
+  local driver = sync.driver(cfg, b.song, parent, view.session)
+  local may = driver == cfg.user
+  ImGui.BeginDisabled(ctx, not may or #merge.bring == 0)
+  if ImGui.Button(ctx, "Bring into " .. parent) and reaper.MB("Bring these changes into '" .. parent .. "'?\n\n" ..
+      "They go to everyone there as new changes, so History there can undo them.", "BandSync", 4) == 6 then
+    local ok, res = pcall(require("mirror").post_into, cfg, b.song, b.room, parent, merge.bring, rooms.tab(b.song, parent))
+    band.log(ok and string.format("brought %d change(s) from '%s' into '%s'", res, b.room, parent) or ("bringing in failed: " .. tostring(res)))
     merge = nil
   end
   ImGui.EndDisabled(ctx)
@@ -1606,16 +1548,14 @@ local function rooms_actions()
   if not parent then return end
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Send selected to " .. parent) then
-    local list, had, unsent = rooms.selected_takes(proj, cfg, b.song, b.room, parent)
-    if #list == 0 then
-      band.msg(unsent > 0 and "Those haven't gone out yet: let Live sync send them (stop recording, or release Hold sync), then try again."
-        or ("Nothing to send: select takes recorded in this room (takes that came from '" .. parent .. "' are there already)."))
-    elseif reaper.MB(string.format("Copy %d take(s) recorded here into '%s'? They land where they sit here, for everyone there; move them " ..
-        "to fit.%s", #list, parent, had > 0 and string.format("\n\n(%d selected take(s) are in '%s' already.)", had, parent) or ""), "BandSync", 4) == 6 then
-      band.log(string.format("sent %d take(s) from '%s' to '%s'", rooms.copy_takes(cfg, b.song, b.room, parent, list), b.room, parent))
+    local list = require("mirror").selected(proj, cfg, b.song, b.room, parent)
+    if #list == 0 then band.msg("Select the items to send first (they go to '" .. parent .. "' as they are here).")
+    elseif reaper.MB(string.format("Send the %d selected item(s) to '%s', as they are here? (Any of their tracks '%s' doesn't have yet go too.)",
+        #list, parent, parent), "BandSync", 4) == 6 then
+      band.log(string.format("sent %d change(s) from '%s' to '%s'", require("mirror").post_into(cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent)), b.room, parent))
     end
   end
-  ImGui.SetItemTooltip(ctx, "The easy way back: the selected takes recorded here are copied into '" .. parent .. "' as new takes.")
+  ImGui.SetItemTooltip(ctx, "The easy way back: the selected items go to '" .. parent .. "' as they are here (new changes there, so History there can undo them).")
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, merge and "Look again" or ("Bring into " .. parent .. "...")) then look_merge(parent) end
   ImGui.SetItemTooltip(ctx, "Compares this room, '" .. parent .. "' and how this room started: everything changed here comes over, " ..

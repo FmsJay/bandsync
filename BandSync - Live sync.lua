@@ -328,7 +328,6 @@ local function poll()
     for _, r in ipairs(require("rooms").list(cfg, b.song)) do if not r.parent then rooms[#rooms + 1] = r.name end end
   end
   for _, room in ipairs(rooms) do
-    import(room)
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
     local n = 0
     if not editing() then n = sync.receive(proj, cfg, b.song, room, room_can) end
@@ -360,7 +359,9 @@ local function poll()
   local now = reaper.time_precise()
   -- mirror sync (docs/mirror-design.md): the whole project travels object by object
   sync.local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
-  if not hold then
+  if not (s and s.sync == "mirror") then -- made with the older take sync: left alone until it's published again
+    if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older BandSync: publish it again (BandSync - Publish session) to sync it") end
+  elseif not hold then
     local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix })
     if not ok then band.log("mirror sync: " .. tostring(sent))
     elseif sent > 0 then band.log(sent .. " change(s) went to the band") end

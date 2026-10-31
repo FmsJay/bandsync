@@ -1429,6 +1429,55 @@ end
 -- change (track owner, region owner or driver). Changes they may not make stay local (and are locked in
 -- the first place, see apply_locks). Hold sync doesn't call this at all: the snapshots keep the last
 -- synced state, so releasing the hold sends the net result once.
+-- The song's tempo map and markers: the driver's changes go out, anyone else's are put back (mirror sync carries
+-- everything else; the timeline isn't a track or an item).
+function sync.watch_timeline(proj, cfg, song, room, can)
+  local me = cfg.user
+  -- tempo map / markers first: if they changed, REAPER has just moved items for it, and those moves aren't edits
+  local sig, seen = timeline_sig(proj), ext(proj, band.SECTION, "timeline")
+  if seen ~= sig then
+    if seen ~= "" then
+      if can(me, nil, nil) then -- the song's timeline is the driver's
+        local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
+        sync.post(cfg, song, room, { type = "timeline", tempo = tempo, markers = markers })
+        sync.session_timeline(cfg, song, tempo, markers)
+        band.log("sent the new tempo map and markers to the band")
+        local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
+        local before = band.json_decode(seen) or {}
+        for i, m in ipairs(tempo) do
+          local o = (before[1] or {})[i]
+          if not o or o.time ~= m.time or o.bpm ~= m.bpm or o.num ~= m.num or o.denom ~= m.denom then from = math.min(from, m.time) end
+        end
+        if #(before[1] or {}) > #tempo then from = math.min(from, (before[1][#tempo + 1] or {}).time or from) end
+        local n = 0
+        for _, hit in pairs(band.take_index(proj)) do
+          local p = reaper.GetMediaItemInfo_Value(hit[1], "D_POSITION")
+          if not reaper.TakeIsMIDI(hit[2]) and p + reaper.GetMediaItemInfo_Value(hit[1], "D_LENGTH") > from then n = n + 1 end
+        end
+        if n > 0 then
+          band.log(string.format("%d audio take(s) play past the tempo change at %.2f s: REAPER stretches them there (MIDI parts are reprinted at the new tempo instead); re-record those bars for the best sound", n, from))
+        end
+      else
+        -- not ours to change: the band's map and markers go back, as any change we may not make does (what you see is
+        -- what the band has). REAPER moves the items back with the map; those moves aren't edits (resnap below).
+        local before = band.json_decode(seen)
+        if type(before) == "table" and type(before[1]) == "table" and #before[1] > 0 then
+          reaper.Undo_BeginBlock2(proj)
+          band.apply_tempo(proj, before[1])
+          band.apply_markers(proj, before[2] or {})
+          reaper.Undo_EndBlock2(proj, "BandSync: put the band's tempo map and markers back", -1)
+          sig = timeline_sig(proj)
+          sync.put_back("only the driver changes the tempo map and markers: put back (take control to change them)")
+        else
+          band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")
+        end
+      end
+    end
+    setext(proj, band.SECTION, "timeline", sig)
+    sync.resnap(proj, true)
+  end
+end
+
 function sync.watch(proj, cfg, song, room, can)
   local me = cfg.user
   -- tempo map / markers first: if they changed, REAPER has just moved items for it, and those moves aren't edits

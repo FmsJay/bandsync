@@ -127,6 +127,12 @@ local ok, err = pcall(function()
   local pb_pos = reaper.GetMediaItemInfo_Value(mirror.find(pb, "item", oid), "D_POSITION")
   check(pa_pos == pb_pos, string.format("both changed it: they agree (A %.0f, B %.0f)", pa_pos, pb_pos))
   same("after both changed one item")
+  -- 7. the tempo map (not a track or an item): the driver's change reaches B
+  sync.watch_timeline(pa, A, song, room, yes); sync.watch_timeline(pb, B, song, room, yes) -- (first look: just noted)
+  reaper.SetCurrentBPM(pa, 133, false)
+  sync.watch_timeline(pa, A, song, room, yes)
+  recv(pb, B)
+  check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pb, 0) - 133) < 0.01, "B has the new tempo (" .. reaper.TimeMap2_GetDividedBpmAtTime(pb, 0) .. ")")
 end)
 if not ok then say("ERROR " .. tostring(err)) ; fails = fails + 1 end
 -- tidy: both scratch tabs saved into the scratch folder (so closing never asks) and closed

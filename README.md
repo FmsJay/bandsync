@@ -1,61 +1,49 @@
 # BandSync
 
-Record together in REAPER from different cities, as if you were working in one project. One person
-hosts a song; everyone records locally against the same tempo map with no latency, and every take,
-alternate and lane shows up in everyone's project, in the same places. Edits made by whoever is
-driving the session (deletes, moves, trims, which take or lane plays) follow everywhere; bandmates can own
-their own tracks or song sections, and every handover leaves a recall point you can go back to.
+Record and arrange together in REAPER from different cities, as if you were all working in one project.
+Everyone in a room holds the same project: every track, item, lane, MIDI part and plug-in chain, kept
+identical by mirror sync. One person drives (their changes go to everyone); bandmates claim the tracks or
+song sections they work on, and History can take back any change, any track, or the whole song.
 
-Plain-Lua ReaScripts, no extensions required (SWS helps; see Limits; the control panel needs ReaImGui). REAPER 7.18 or newer; 7.83 is
-tested. Machines talk only through a shared folder (Syncthing recommended, or a cloud drive).
+Plain-Lua ReaScripts (the control panel needs ReaImGui; SWS helps). REAPER 7.18 or newer; 7.83 is tested.
+Machines talk only through a shared folder (Syncthing recommended), with an optional Google Drive copy.
 
 ## How it works
 
 ```
 <shared folder>/
   <Song>/
-    session.json               tempo map, markers, sample rate, stems, host, print mode, version
-    stems/vN/NN.flac + .opus   one folder per publish (open files are never overwritten)
+    session.json               tempo map, markers, sample rate, host
     rooms/<room>/
-      takes/    <id>.json + .flac (+ .opus preview, + -dry.flac twin, + .midibuf notes)   every take, as printed
-      events/   <person>-<time>.json    deletes, edits, lane/take choices, note edits, track mute/colour
-      midi/     note edits that travel with "midi" events
+      events/   <person>-<time>.json    every change: a track, an item or a plug-in chain, as REAPER describes it
+      media/    recordings and MIDI prints the items use (copied in once)
       claims/   <person>.json           the tracks and regions each person owns
-      recall/   <time>-<person>-<label>.json   recall points (every handover, or saved by hand)
-      status/   <person>.json           what each person's project holds (the Status window)
-      _trash/   deleted takes, kept, never destroyed
-      driver.json                       who's driving (the host until someone takes control)
+      recall/   recall points (every handover, or saved by hand)
+      status/   <person>.json           who's here, what they're doing (the panel's Who's here)
+      chat/     messages, to-dos, links for the room (the song's and the band's sit beside it)
+      driver.json, mode.json            who drives; Driver only / Claims / Open
 ```
 
-- **Publish** (host) writes `session.json`: tempo map, markers, stems, and the song's **print mode**.
-  The host's existing takes, lanes and alternates are shared too.
-- **Open** (bandmate) builds a local project with the same timeline. Stems are copied locally, so the
-  project never depends on the shared folder being mounted.
-- **Live sync** (everyone, in the background) does the rest:
-  - **Starts Syncthing** if the shared folder is a Syncthing folder and Syncthing isn't running (nothing starts
-    at login: BandSync starts what a session needs when the session starts).
-  - **Sends** every new recording a moment after you stop, every pass of it, active or not, printed at the
-    item's exact position and length. Slivers under 0.5 s are skipped, and the same audio is never sent
-    twice.
-  - **Receives** everyone's takes and rebuilds them exactly: same track, same lane, passes of one item as
-    takes of one item. Preview first, then full quality.
-  - **Reprints** your takes when their sound changes (an FX added or tweaked, volume, pan, fades), and
-    everyone's copy updates in place.
-  - **Mirrors whoever may change each take**: deletes, moves, trims, mutes, lane moves, which take or lane
-    plays, and track name/mute/solo/colour/icon. What you may not change is locked (view-only) so it can't
-    silently drift from the band's version.
-  - **MIDI**: a MIDI take's notes travel with its print and land as an editable MIDI copy on a muted
-    "<track> (MIDI)" track. Edit those notes and everyone follows (the player's own Live sync reprints it).
-  - Never touches the project while you're recording.
-
-Print modes (the host picks per song): **wet** (default) prints each item through its track's FX,
-volume and pan; **dry** prints the item alone (take FX, fades, item volume); **both** sends wet with a dry
-twin take to switch to. Wet prints land on a BandSync **mirror track** with no FX of yours ("Vox", or
-"Vox (band)" next to your own Vox), so nothing is processed twice. Dry prints land on your real track.
-When the host shares its takes, the stems arrive muted as a mixed reference.
-
-Rooms: everyone joins `main` by default; type a new room name when opening to try ideas on the same
-timeline without cluttering main.
+- **Publish** (host) makes the song a band session. The project must be prepared first (a checklist); an
+  untitled project is saved under the song's name, and a copy as it was before BandSync is kept (History offers
+  it back). A song name another bandmate already uses is refused.
+- **Open session** (bandmate) opens the song straight into its main room, in a new tab; Live sync fills it.
+- **Live sync** (everyone, always, whenever a BandSync project is open) does the rest. See `docs/mirror-design.md`.
+  - Every track and item has a permanent id (never its name), so unnamed and renamed tracks are fine.
+  - What you change goes out a moment after you change it (after the drop, when dragging): items (position,
+    fades, mute, lane, MIDI notes, copies, new items), tracks (name, lanes and which lanes play, folders,
+    mute/solo, fader and pan) and plug-in chains (only while stopped: replacing a chain reloads the plug-ins).
+  - What the band changes comes in, the newest version of each object winning on every machine alike.
+  - A change you may not make (the driver's, or someone's claim) is put back, Ctrl+drag copies included, with the
+    reason in the panel's banner (or a tooltip by the mouse when the panel is closed).
+  - Never touches a track while you record on it.
+- **MIDI** travels as notes. Whoever changes a MIDI part also renders a print (its sound, through their
+  instrument), kept as the item's second take. Each person picks how MIDI plays on their machine (Setup >
+  Options): **Auto** (your instruments when the track's plug-ins all load, else the print), **Notes** or
+  **Sound**. That choice never changes what anyone else hears.
+- **Local mixing** (Home): your faders and pan stay yours. Switching it off asks whether to take the band's
+  mix or send yours.
+- Songs published with BandSync before 0.30 are left alone: publish them again to sync them.
 
 ## Setup (each person, once)
 

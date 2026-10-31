@@ -4,7 +4,6 @@
 local band = require("band")
 local live = require("live")
 local services = require("services")
-local solo = require("solo")
 local sonobus = require("sonobus")
 local setup = {}
 
@@ -71,9 +70,6 @@ function setup.check(cfg, b, proj)
   st.sonobus = live.fx(proj, false, live.SONOBUS) ~= nil
   st.server = (data.server or "") ~= ""
   st.ninjam = b.role ~= "host" or services.running("ninjamsrv")
-  st.solo_root = solo.root(cfg)
-  local parent, leaf = st.solo_root:match("^(.*)[/\\]([^/\\]+)$")
-  st.solo = parent ~= nil and has_subdir(parent, leaf)
   return st
 end
 

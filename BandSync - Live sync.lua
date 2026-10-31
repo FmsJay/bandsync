@@ -363,6 +363,8 @@ local function poll()
   if not (s and s.sync == "mirror") then -- made with the older take sync: left alone until it's published again
     if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older BandSync: publish it again (BandSync - Publish session) to sync it") end
   elseif not hold then
+    local tok, terr = pcall(sync.watch_timeline, proj, cfg, b.song, b.room, my_can) -- (before the items: a tempo change moves them)
+    if not tok then band.log("tempo/markers: " .. tostring(terr)) end
     local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix })
     if not ok then band.log("mirror sync: " .. tostring(sent))
     elseif sent > 0 then band.log(sent .. " change(s) went to the band") end

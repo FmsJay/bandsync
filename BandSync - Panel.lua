@@ -1779,6 +1779,10 @@ local function frame_app()
   -- top bar: one row, every piece the height of a button
   local fh = ImGui.GetFrameHeight(ctx)
   wide = compact and ww > wh * 2
+  -- docked at REAPER's left or right (narrow and tall): pages as a row of tabs, one column, never the sidebar
+  local dock_id = ImGui.GetWindowDockID(ctx)
+  local side = dock_id < 0 and reaper.DockGetPosition(~dock_id) -- (ReaImGui dock id -1 is REAPER's docker 0)
+  if side == 1 or side == 3 or ww < 520 then compact, wide = true, false end
   local function nav_item(p, w, h)
     local x, y = ImGui.GetCursorScreenPos(ctx)
     if ImGui.Selectable(ctx, (compact and "" or "  ") .. p[1] .. "##nav", p[1] == page, ImGui.SelectableFlags_None, w, h) then page = p[1] end

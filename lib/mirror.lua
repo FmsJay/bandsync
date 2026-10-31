@@ -534,7 +534,7 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   -- both changed it while apart: theirs wins everywhere (the same on every machine); ours stays in History
   local krev, _, kev = mirror.known(proj, ev.oid)
   if me and krev and ev.base and ev.base < krev and kev:sub(1, #me + 1):upper() == (me:gsub(" ", "_") .. "-"):upper() then
-    require("sync").put_back(string.format("%s also changed %s while you were apart: theirs is in. Yours is in History " ..
+    require("sync").put_back(string.format("%s also changed %s while you were apart: theirs is in. Yours is on the Restore page " ..
       "(Undo specific change on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing"))
   end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)

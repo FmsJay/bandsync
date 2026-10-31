@@ -3,7 +3,7 @@
 Record and arrange together in REAPER from different cities, as if you were all working in one project.
 Everyone in a room holds the same project: every track, item, lane, MIDI part and plug-in chain, kept
 identical by mirror sync. One person drives (their changes go to everyone); bandmates claim the tracks or
-song sections they work on, and History can take back any change, any track, or the whole song.
+song sections they work on, and Restore can take back any change, any track, or the whole song.
 
 Plain-Lua ReaScripts (the control panel needs ReaImGui; SWS helps). REAPER 7.18 or newer; 7.83 is tested.
 Machines talk only through a shared folder (Syncthing recommended), with an optional Google Drive copy.
@@ -25,7 +25,7 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
 ```
 
 - **Publish** (host) makes the song a band session. The project must be prepared first (a checklist); an
-  untitled project is saved under the song's name, and a copy as it was before BandSync is kept (History offers
+  untitled project is saved under the song's name, and a copy as it was before BandSync is kept (Restore offers
   it back). A song name another bandmate already uses is refused.
 - **Open session** (bandmate) opens the song straight into its main room, in a new tab; Live sync fills it.
 - **Live sync** (everyone, always, whenever a BandSync project is open) does the rest. See `docs/mirror-design.md`.
@@ -87,7 +87,7 @@ By hand:
    project, and tells you how many samples early or late your recordings land. Under 1 ms is fine. If it says
    LATE N, add +N to *Preferences > Audio > Recording > Input manual offset* (EARLY: subtract) and run it again.
 5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
-   History pages, needs it.
+   Restore pages, needs it.
 6. Optional extras:
    - **Live** needs **Tailscale**. Bandmates don't join the host's tailnet: the host shares the server machine with
      each of them (admin console > the machine's **...** > *Share*), and they accept the link with their own account.
@@ -109,7 +109,7 @@ By hand:
   same thing since), **Dock** and, floating, **Full screen** and **Window** (half the screen, the next screen, back).
   Under the bar, what BandSync just did shows for a few seconds.
 - **Pages**: **Home** (Who's here with *Take control*, Real time mode, who changes what, Local mixing, claims),
-  **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **History**,
+  **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **Restore**,
   **Plugins** and **Setup** (Health, Console, Options, Updates). A red or yellow dot on Setup means Health has
   something (red: the band can't sync until it's fixed).
 - **Docking**: click *Dock* for Bottom / Left / Right (REAPER's docker on that side; if there isn't one, BandSync
@@ -123,7 +123,7 @@ By hand:
 
 **BandSync - Radial menu** pops a ring of everyday moves around the mouse. Give it a key or mouse button in the
 Actions list. The slices are Undo, Redo, Restore project…, Restore selection…, Undo one change… (each of these three
-opens History set to that kind of going back), Take control (greyed while you drive), Real time mode on/off, and
+opens Restore set to that kind of going back), Take control (greyed while you drive), Real time mode on/off, and
 Chat. Point at a slice to read what it does underneath, and click it to do it. Esc, a click anywhere else, or the key
 again closes the menu. The panel carries the move out, so each choice asks first just as its button there does, and
 the panel opens if it was closed.
@@ -141,7 +141,7 @@ Who may change what:
   with the reason. Recording on a track you may change always goes out. **Hold my changes** keeps your changes
   here until you switch it off; then they go out together.
 
-History (its own page):
+Restore (its own page):
 
 - Every change in the room, newest first, grouped by who made it; filters by person, kind (items, tracks,
   plug-ins, deletes, things brought back, tempo, handovers...), track or words.
@@ -175,7 +175,7 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
 - **Alone = full control.** While nobody else is in the room, everything you change goes out (the band gets it when
   they're back), whatever the claims.
 - **Both changed something while apart**: the newer change wins on every machine alike. If yours was replaced, BandSync
-  says so: yours is still in History (*Undo specific change* on theirs brings it back).
+  says so: yours is still on the Restore page (*Undo specific change* on theirs brings it back).
 - **The Google Drive copy** (Setup > Options): Syncthing only moves files while two machines are on at the same time.
   Live sync also keeps a copy of the room on Google Drive (store and forward), so what someone does alone reaches the
   others even if you're never online together.
@@ -196,7 +196,7 @@ together.
   here.
 - **Bring into main**: everything this room changed since it was made goes to main, except what main has also
   changed since (listed as clashes; main keeps its own). Only main's driver brings a room in. Brought changes are
-  ordinary changes in main, so History there can undo them.
+  ordinary changes in main, so Restore there can undo them.
 
 ### Plug-ins everyone has
 
@@ -266,7 +266,7 @@ tracks twice.
 - Track colours travel with a real change but aren't a change on their own (auto-colouring would make machines
   recolour each other). Envelopes (automation) don't travel yet.
 - An item's lane travels; a lane's name and which lanes play travel with its track.
-- Both changing one object while apart: the newer change wins everywhere; the other is in History.
+- Both changing one object while apart: the newer change wins everywhere; the other is on the Restore page.
 - Bringing a side room in: an object both rooms changed since the room was made stays as main has it.
 - The FX browser folder is written to `reaper-fxfolders.ini` while REAPER runs; REAPER may only show a changed
   folder after a restart.

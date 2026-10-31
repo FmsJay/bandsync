@@ -292,7 +292,7 @@ end
 -- the change's index, `can(user, track, pos, take)` the room's authority. Returns what it did, or nil + why.
 function tools.undo_change(proj, cfg, b, entries, i, can)
   local e = entries[i]
-  if not e then return nil, "that change isn't in History any more" end
+  if not e then return nil, "that change isn't on the Restore page any more" end
   local id = e.take
   local mine = id and sync.author(id) == sync.author_of(cfg.user)
   local function refused(track, pos)

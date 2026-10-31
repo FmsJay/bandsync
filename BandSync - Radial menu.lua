@@ -41,11 +41,11 @@ local SLICES = {
   { "Undo", "Undo your own last change, for everyone. It asks first, and says if a bandmate changed the same thing since.",
     function() ask("undo") end },
   { "Redo", "Bring back the change you undid last, for everyone. It asks first.", function() ask("redo") end },
-  { "Restore\nproject…", "Opens History set to restore the whole project: each button there puts the whole song back to " ..
+  { "Restore\nproject…", "Opens Restore set to restore the whole project: each button there puts the whole song back to " ..
     "that moment, for everyone (the driver does this).", function() ask("history project") end },
-  { "Restore\nselection…", "Opens History set to restore the selection: each button there puts only the tracks selected " ..
+  { "Restore\nselection…", "Opens Restore set to restore the selection: each button there puts only the tracks selected " ..
     "in REAPER back to that moment.", function() ask("history selection") end },
-  { "Undo one\nchange…", "Opens History set to undo one change: each button there undoes just that change, and everything " ..
+  { "Undo one\nchange…", "Opens Restore set to undo one change: each button there undoes just that change, and everything " ..
     "after it stays.", function() ask("history change") end },
   driving and { "You\ndrive", "You're driving: your deletes, moves and lane choices already go to everyone." } or
     { "Take\ncontrol", "Take control: from now on your deletes, moves and lane choices go to everyone. It asks first.",

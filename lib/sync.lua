@@ -998,7 +998,7 @@ function sync.receive(proj, cfg, song, room, can)
       require("recall").save(proj, cfg, song, room, "yours before " .. ev.user .. "'s work done alone", true)
       setext(proj, band.SECTION, "alone_last", "") -- once per meeting
       band.log(ev.user .. " also worked on this while you were both alone: where you were is kept as a restore point " ..
-        "(History & restore) before their changes land")
+        "(Restore) before their changes land")
       break
     end
   end

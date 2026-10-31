@@ -270,7 +270,7 @@ local TIPS = {
   ["count-in bars"] = "Bars of count-in before the start point.",
   ["Play together"] = "Everyone running Live sync starts playing from the same point at the same moment (5 s after you click).",
   ["Stop together"] = "Everyone stops.",
-  ["##note"] = "A note for the band: on the selected take, or at the cursor. Everyone sees it on the timeline and in History.",
+  ["##note"] = "A note for the band: on the selected take, or at the cursor. Everyone sees it on the timeline and on the Restore page.",
   ["Note on selected take"] = "Post the note on the selected take (a take marker everyone sees).",
   ["Note at cursor"] = "Post the note at the edit cursor.",
   ["Like selected take"] = "Tell the band you like the selected take.",
@@ -1322,7 +1322,7 @@ local function section_merge()
   local may = driver == cfg.user
   ImGui.BeginDisabled(ctx, not may or #merge.bring == 0)
   if ImGui.Button(ctx, "Bring into " .. parent) and reaper.MB("Bring these changes into '" .. parent .. "'?\n\n" ..
-      "They go to everyone there as new changes, so History there can undo them.", "BandSync", 4) == 6 then
+      "They go to everyone there as new changes, so Restore there can undo them.", "BandSync", 4) == 6 then
     local ok, res = pcall(require("mirror").post_into, cfg, b.song, b.room, parent, merge.bring, rooms.tab(b.song, parent))
     band.log(ok and string.format("brought %d change(s) from '%s' into '%s'", res, b.room, parent) or ("bringing in failed: " .. tostring(res)))
     merge = nil
@@ -1341,7 +1341,7 @@ local function rooms_squares()
     "session.\n\nCreate side room: a copy of the room you're in, as it is now; you drive it. Try your own edits there, or work on " ..
     "something else.\n\nCome see: everyone with the song open is asked to join you.\n\nSend selected to main: the items you pick " ..
     "come over as new takes. Bring into main: everything changed in the side room comes over, except where main changed the same " ..
-    "thing too (those stay as main has them); main's driver does this, and History can undo it.")
+    "thing too (those stay as main has them); main's driver does this, and Restore can undo it.")
   local avail = ImGui.GetContentRegionAvail(ctx)
   local w, gap = 178, 8
   local per = math.max(1, math.floor((avail + gap) / (w + gap)))
@@ -1402,7 +1402,7 @@ local function rooms_actions()
       band.log(string.format("sent %d change(s) from '%s' to '%s'", require("mirror").post_into(cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent)), b.room, parent))
     end
   end
-  ImGui.SetItemTooltip(ctx, "The easy way back: the selected items go to '" .. parent .. "' as they are here (new changes there, so History there can undo them).")
+  ImGui.SetItemTooltip(ctx, "The easy way back: the selected items go to '" .. parent .. "' as they are here (new changes there, so Restore there can undo them).")
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, merge and "Look again" or ("Bring into " .. parent .. "...")) then look_merge(parent) end
   ImGui.SetItemTooltip(ctx, "Compares this room, '" .. parent .. "' and how this room started: everything changed here comes over, " ..
@@ -1485,7 +1485,7 @@ local function maint_rows()
     { "sync", s.sync, "red", "Live sync is running", "Live sync is off in this tab: press Start at the top." },
     { "same", (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) == 0, "red", "Changes from the band come out the same here",
       "Some changes from the band came out different here than on their machine (the Console names them). Ask the driver to " ..
-      "use History > Restore project state, or close and reopen this project." },
+      "use Restore > Restore project state, or close and reopen this project." },
     { "connected", s.connected, #(view and view.rows or {}) > 0 and "red" or "yellow", s.peers and string.format("Connected to %d of %d bandmate machine(s)", s.peers, s.devices) or "Shared folder is a cloud drive",
       s.peers and "Syncthing is connected to nobody. Fine if you're alone; if bandmates are online, check this machine's Syncthing device ID."
       or "Can't tell whether Syncthing is connected." },
@@ -1775,11 +1775,11 @@ local PAGES = {
   { "Rooms", "The song's rooms: make a side room to try things, have everyone come and see, and bring work back." },
   { "Play", "Play or record together, follow each other, and how you hear each other (real time, play along or jam)." },
   { "Chat", "Messages, to-dos, notes and links for this room, this song or the whole band." },
-  { "History", "Every change, and three ways back: the whole project, the selected tracks, or one change." },
+  { "Restore", "Every change, and three ways back: the whole project, the selected tracks, or one change." },
   { "Plugins", "Every plug-in in this project, who doesn't have it, and the band's translations for it." },
   { "Setup", "Health (red: needs fixing, yellow: worth a look), the console, options and updates." },
 }
-local OLD_PAGES = { Together = "Play", Live = "Play", Settings = "Setup", Maintenance = "Setup" } -- (links from older versions)
+local OLD_PAGES = { History = "Restore", Together = "Play", Live = "Play", Settings = "Setup", Maintenance = "Setup" } -- (links from older versions)
 local page = "Home"
 local level, level_at = nil, -math.huge
 local function nav_dot(p)
@@ -1935,7 +1935,7 @@ local function frame_app()
     if want == "undo" or want == "redo" then undo_redo(want == "redo")
     elseif want == "realtime" then set_same_room(not same_room_on())
     elseif want == "chat" then page = "Chat"
-    elseif want:match("^history ") then page, hf.mode = "History", want:match("^history (%a+)") end
+    elseif want:match("^history ") then page, hf.mode = "Restore", want:match("^history (%a+)") end
   end
   if compact and not wide then
     ImGui.SetCursorPosX(ctx, 16)
@@ -1972,7 +1972,7 @@ local function frame_app()
       else layout({ { section_together, 380 }, { section_live, 480 } }) end
     elseif page == "Chat" then
       layout({ { function() require("page_chat").draw(ctx, ImGui, cfg, b) end, 560 }, { function() section_notes(); section_ideas() end, 420 } })
-    elseif page == "History" then layout({ { section_recall, 400 }, { section_history, 600 } })
+    elseif page == "Restore" then layout({ { section_recall, 400 }, { section_history, 600 } })
     elseif page == "Plugins" then
       layout({ { function() require("page_plugins").draw(ctx, ImGui, proj, cfg) end, 760 }, { section_plugins, 420 } })
     elseif page == "Setup" then page_setup() end
@@ -2043,7 +2043,7 @@ local function frame()
       section_live()
       ImGui.EndTabItem(ctx)
     end
-    if ImGui.BeginTabItem(ctx, "History & restore") then
+    if ImGui.BeginTabItem(ctx, "Restore") then
       section_recall()
       section_history()
       ImGui.EndTabItem(ctx)

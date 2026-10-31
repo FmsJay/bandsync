@@ -1312,7 +1312,8 @@ end
 function sync.obj_allowed(ev, can, driver)
   if can(ev.user, ev.name or "", ev.pos, nil, driver) then return true end
   local t = ev.obj == "track" and ev.oid or ev.track
-  return sync.room_mode ~= "driver" and require("mirror").creator(t) == (tostring(ev.user):gsub("[^%w]", "_"))
+  local mirror = require("mirror")
+  return sync.room_mode ~= "driver" and mirror.creator(t) == mirror.user_tag(ev.user)
 end
 
 function sync.apply(proj, ev, dir, root, can, me)

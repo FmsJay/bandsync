@@ -114,17 +114,21 @@ local function arrow_button(id, redo, tip)
   local clicked = ImGui.InvisibleButton(ctx, id, s, s)
   local bg = ImGui.IsItemActive(ctx) and ACCENT or ImGui.IsItemHovered(ctx) and 0x40454CFF or 0x33373DFF
   ImGui.DrawList_AddRectFilled(dl, x, y, x + s, y + s, bg, 6)
-  -- one arrow, drawn as points and mirrored for redo, so the two are the same size exactly (the arc call drew them
-  -- unequal); centred on whole pixels so neither side blurs differently
-  local cx, cy, r, col = math.floor(x + s / 2 + 0.5), math.floor(y + s / 2 + 1.5), math.floor(s * 0.24 + 0.5), 0xE6E8EBFF
-  local function px(dx) return redo and (cx - dx) or (cx + dx) end -- undo as drawn; redo flipped left to right
-  for i = 0, 12 do -- an arc over the top from the left end round to just past the right
-    local a = math.pi * (1.0 + 1.1 * i / 12)
-    ImGui.DrawList_PathLineTo(dl, px(math.cos(a) * r), cy + math.sin(a) * r)
+  -- drawn as points and mirrored for redo, so the two are exactly the same size; on whole pixels so neither blurs
+  -- the usual undo icon: an arrowhead pointing left, a stem, and a half-circle hooking back underneath (redo: mirrored)
+  local cx, cy, col = math.floor(x + s / 2 + 0.5), math.floor(y + s / 2 + 0.5), 0xE6E8EBFF
+  local r, h = math.floor(s * 0.2 + 0.5), math.max(3, math.floor(s * 0.16 + 0.5))
+  local function px(dx) return redo and (cx - dx) or (cx + dx) end
+  local tip, hook = -math.floor(s * 0.3 + 0.5), math.floor(s * 0.06 + 0.5)
+  ImGui.DrawList_PathLineTo(dl, px(tip + h - 1), cy - r)
+  ImGui.DrawList_PathLineTo(dl, px(hook), cy - r)
+  for i = 1, 11 do -- round the right side, top to bottom
+    local a = -math.pi / 2 + math.pi * i / 11
+    ImGui.DrawList_PathLineTo(dl, px(hook + math.cos(a) * r), cy + math.sin(a) * r)
   end
+  ImGui.DrawList_PathLineTo(dl, px(tip + h), cy + r)
   ImGui.DrawList_PathStroke(dl, col, ImGui.DrawFlags_None, 2)
-  local h = math.max(3, math.floor(r * 0.7 + 0.5)) -- the arrowhead at the left end (redo: right), pointing down
-  ImGui.DrawList_AddTriangleFilled(dl, px(-r - h), cy - 1, px(-r + h), cy - 1, px(-r), cy + h + 1, col)
+  ImGui.DrawList_AddTriangleFilled(dl, px(tip), cy - r, px(tip + h), cy - r - h, px(tip + h), cy - r + h, col)
   if tip then ImGui.SetItemTooltip(ctx, tip) end
   return clicked
 end

@@ -20,7 +20,7 @@ function mirror.normalize_item(chunk)
     if in_ext then
       if s == ">" then in_ext = false; out[#out + 1] = s
       elseif key and ext_travels(key) then out[#out + 1] = s end
-    elseif s == "<EXT" then
+    elseif s == "<EXT" or s == "<EXTI" then -- (REAPER writes an item's P_EXT as <EXTI, a track's or take's as <EXT)
       in_ext = true; out[#out + 1] = s
     elseif key == "TAKE" then
       out[#out + 1] = "TAKE" -- ("TAKE SEL" marks the active take: local)
@@ -29,7 +29,7 @@ function mirror.normalize_item(chunk)
     end
   end
   -- an <EXT> block left empty by the filter is dropped
-  return (table.concat(out, "\n"):gsub("<EXT\n>\n?", "")) .. "\n"
+  return (table.concat(out, "\n"):gsub("<EXTI?\n>\n?", "")) .. "\n"
 end
 
 -- The <FXCHAIN> block of a track chunk, normalized: no FX ids, window positions or open/closed state.
@@ -150,11 +150,13 @@ function mirror.media_needed(chunk)
   return t
 end
 
--- A fresh object id: kind letter, user, time, counter (unique without coordination).
+-- A fresh object id: kind letter, user, time, counter (unique without coordination). Upper case throughout:
+-- REAPER hands project ExtState keys back upper-cased (EnumProjExtState), and every object is looked up by them.
 local seq = 0
+function mirror.user_tag(user) return ((user or "x"):gsub("[^%w]", "_")):upper() end
 function mirror.new_oid(kind, user, now)
   seq = seq + 1
-  return string.format("%s-%s-%s-%d", kind, ((user or "x"):gsub("[^%w]", "_")), now or os.date("!%Y%m%d%H%M%S"), seq)
+  return string.format("%s-%s-%s-%d", kind:upper(), mirror.user_tag(user), now or os.date("!%Y%m%d%H%M%S"), seq)
 end
 -- Who made an object (its oid's second field).
 function mirror.creator(oid) return (oid or ""):match("^%a%-(.-)%-%d+%-%d+$") end
@@ -185,8 +187,8 @@ local function remember(proj, oid, rev, h, evid, order)
 end
 mirror.remember = remember
 
-local function trk_oid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", "", false)) end
-local function itm_oid(it) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false)) end
+local function trk_oid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", "", false)):upper() end
+local function itm_oid(it) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false)):upper() end
 mirror.track_oid, mirror.item_oid = trk_oid, itm_oid
 -- BandSync's own helper tracks (the SonoBus return, stems) never mirror
 local function local_track(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) ~= "" end
@@ -218,9 +220,9 @@ end
 
 function mirror.set_track_state(proj, tr, t, local_mix)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", t.name or "", true)
-  for k, parm in pairs({ mute = "B_MUTE", solo = "I_SOLO", phase = "B_PHASE", color = "I_CUSTOMCOLOR", freemode = "I_FREEMODE",
-      lanes = "I_NUMFIXEDLANES", collapsed = "C_LANESCOLLAPSED", depth = "I_FOLDERDEPTH" }) do
-    if t[k] then reaper.SetMediaTrackInfo_Value(tr, parm, tonumber(t[k]) or 0) end
+  for _, kp in ipairs({ { "freemode", "I_FREEMODE" }, { "lanes", "I_NUMFIXEDLANES" }, { "mute", "B_MUTE" }, { "solo", "I_SOLO" },
+      { "phase", "B_PHASE" }, { "color", "I_CUSTOMCOLOR" }, { "collapsed", "C_LANESCOLLAPSED" }, { "depth", "I_FOLDERDEPTH" } }) do
+    if t[kp[1]] then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]]) or 0) end
   end
   reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", t.icon or "", true)
   local l = 0
@@ -237,6 +239,17 @@ function mirror.set_track_state(proj, tr, t, local_mix)
     if t.vol and t.vol ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", tonumber(t.vol)) end
     if t.pan and t.pan ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", tonumber(t.pan)) end
   end
+end
+
+-- An item's travelling state: its normalized chunk, plus its lane (REAPER keeps an item's fixed lane out of the
+-- item's chunk, so it gets a line of its own).
+function mirror.item_state(it, media_dir)
+  local _, chunk = reaper.GetItemStateChunk(it, "", false)
+  local st = mirror.tokenize_media(mirror.normalize_item(chunk), media_dir)
+  if reaper.GetMediaTrackInfo_Value(reaper.GetMediaItem_Track(it), "I_FREEMODE") == 2 then
+    st = st .. "BANDLANE " .. math.floor(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE")) .. "\n"
+  end
+  return st
 end
 
 -- Every mirrored object in the project, with its normalized state and hash. Objects with no oid, or a copy that
@@ -271,8 +284,7 @@ function mirror.scan(proj, user, media_dir, local_mix)
         oid = mirror.new_oid("I", user)
         reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
       end
-      local _, chunk = reaper.GetItemStateChunk(it, "", false)
-      local norm = mirror.tokenize_media(mirror.normalize_item(chunk), media_dir)
+      local norm = mirror.item_state(it, media_dir)
       local o = { kind = "item", oid = oid, ptr = it, track = toid, state = norm, hash = mirror.hash(toid .. "\n" .. norm),
         pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION") }
       objs[#objs + 1], by_oid[oid] = o, o
@@ -329,7 +341,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
       local idx = 0 -- under the track it sat under there (or first)
       local above = ev.state.after ~= "" and mirror.find(proj, "track", ev.state.after)
       if above then idx = math.floor(reaper.GetMediaTrackInfo_Value(above, "IP_TRACKNUMBER")) end
-      reaper.InsertTrackAtIndex(idx, true)
+      reaper.InsertTrackInProject(proj, idx, 0) -- (InsertTrackAtIndex only knows the tab in front; REAPER 7.18+)
       tr = reaper.GetTrack(proj, idx)
       reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true)
     end
@@ -365,12 +377,13 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     if not it then it = reaper.AddMediaItemToTrack(tr)
     elseif reaper.GetMediaItem_Track(it) ~= tr then reaper.MoveMediaItemToTrack(it, tr) end
     local sel = reaper.IsMediaItemSelected(it)
-    reaper.SetItemStateChunk(it, mirror.resolve_media(ev.state, media_dir), false)
+    local lane = tonumber(ev.state:match("BANDLANE (%d+)"))
+    reaper.SetItemStateChunk(it, mirror.resolve_media((ev.state:gsub("BANDLANE %d+\n?", "")), media_dir), false)
     reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
+    if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane) end
     reaper.SetMediaItemSelected(it, sel)
     reaper.UpdateItemInProject(it)
-    local _, chunk = reaper.GetItemStateChunk(it, "", false)
-    return true, mirror.hash(ev.track .. "\n" .. mirror.tokenize_media(mirror.normalize_item(chunk), media_dir))
+    return true, mirror.hash(ev.track .. "\n" .. mirror.item_state(it, media_dir))
   end
   return true, ""
 end
@@ -387,6 +400,17 @@ function mirror.receive(proj, ev, media_dir, local_mix)
   if not mirror.wins(proj, ev.oid, ev.rev or 0, order) then return true end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
+  if ok and ev.obj == "item" and ev.track then
+    local tr = mirror.find(proj, "track", ev.track)
+    local krev, _, kev, kord = mirror.known(proj, ev.track)
+    if tr and krev then
+      -- an item landing in a lane resets which lanes play: the track's own settings go back on top
+      local tev = kev ~= "" and require("band").read_json(media_dir:gsub("/media$", "") .. "/events/" .. kev .. ".json")
+      if type(tev) == "table" and type(tev.state) == "table" then mirror.set_track_state(proj, tr, tev.state, local_mix) end
+      local t = mirror.track_state(proj, tr, local_mix)
+      remember(proj, ev.track, krev, mirror.hash(mirror.track_line(t) .. "|" .. t.after), kev, kord)
+    end
+  end
   return ok
 end
 
@@ -412,7 +436,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     if opts.can(me, name, pos) then return true end
     -- your own new tracks (and what's on them) are yours, except in Driver only
     local t = o.kind == "track" and o.oid or o.track
-    return opts.mode ~= "driver" and mirror.creator(t) == (me:gsub("[^%w]", "_"))
+    return opts.mode ~= "driver" and mirror.creator(t) == mirror.user_tag(me)
   end
   local function put_back(o, evid, why)
     local ev = event_file(room_dir, evid)
@@ -438,9 +462,8 @@ function mirror.watch(proj, cfg, song, room, opts)
         if o.kind == "item" then
           local shared = mirror.share_media(state, media)
           if shared ~= state then -- it now plays the shared copy here too, so the next look sees the same thing
-            reaper.SetItemStateChunk(o.ptr, mirror.resolve_media(shared, media), false)
-            local _, c = reaper.GetItemStateChunk(o.ptr, "", false)
-            state = mirror.tokenize_media(mirror.normalize_item(c), media)
+            reaper.SetItemStateChunk(o.ptr, mirror.resolve_media((shared:gsub("BANDLANE %d+\n?", "")), media), false)
+            state = mirror.item_state(o.ptr, media)
             o.hash = mirror.hash(o.track .. "\n" .. state)
           end
         end
@@ -514,7 +537,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     local name = p.t and p.t.name or ""
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
-    elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or (opts.mode ~= "driver" and mirror.creator(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid) == (cfg.user:gsub("[^%w]", "_")))) then
+    elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or (opts.mode ~= "driver" and mirror.creator(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid) == mirror.user_tag(cfg.user))) then
       refused = refused + 1
     elseif p.t then
       local ok, nh = mirror.apply(proj, p.t, media, opts.local_mix)

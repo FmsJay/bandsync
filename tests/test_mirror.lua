@@ -48,6 +48,10 @@ assert(mirror.hash("a") ~= mirror.hash("b"), "hash tells apart")
 -- an <EXT> with nothing that travels disappears
 local bare = mirror.normalize_item("<ITEM\nPOSITION 1\n<EXT\nband_sent x\n>\n>")
 assert(not bare:find("EXT"), "empty EXT dropped: " .. bare)
+-- REAPER writes an item's own P_EXT as <EXTI (seen in REAPER 7.83)
+local exti = mirror.normalize_item("<ITEM\nPOSITION 1\n<EXTI\nband_oid I-x\nband_sent y\n>\n>")
+assert(exti:find("<EXTI\nband_oid I%-x\n>") and not exti:find("band_sent"), "EXTI filtered: " .. exti)
+assert(not mirror.normalize_item("<ITEM\n<EXTI\nband_sent y\n>\n>"):find("EXTI"), "empty EXTI dropped")
 
 -- FX chain: window state and ids go; a local translation (by FXID) can be left out
 local tr = [[<TRACK {T1}
@@ -126,8 +130,9 @@ assert(mirror.plan_undo(E, 4)["I-A-1-2"].id == "e2", "undo a move: the revision 
 assert(mirror.plan_undo(E, 5)["I-B-1-3"] == false, "undo an add: it goes")
 assert(mirror.plan_undo(E, 6)["I-A-1-2"].id == "e3", "undo a delete: it comes back")
 assert(mirror.plan_undo(E, 3) == nil, "not a mirror change")
-assert(mirror.creator("I-Big_Al-20261030-4") == "Big_Al" and mirror.creator("T-A-1-1") == "A", "creator")
+assert(mirror.creator("I-BIG_AL-20261030-4") == "BIG_AL" and mirror.creator("T-A-1-1") == "A", "creator")
+assert(mirror.user_tag("Big Al") == "BIG_AL", "user tag")
 
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
-assert(a ~= b and a:find("^I%-Big_Al%-20261030%-"), "oids unique")
+assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)
 print("ok")

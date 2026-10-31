@@ -281,4 +281,13 @@ assert(mirror.plan_undo(C, 3)["I-X-1"].id == "c2", "undo James's rev 3: back to 
 
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
 assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)
+-- one chain or item as a Mac and as Windows writes it (from the Mac's first join, 0.34.3): the same once portable
+local win = '<VST "VSTi: ReaSynth (Cockos)" reasynth.dll 0 "" 1919251321<5653547265737972656173796E746800> ""\n' ..
+  '<VST "VST3: Surge XT (Surge Synth Team)" "Surge XT.vst3" 0 "" 1<0> ""\nCOLOR 26973901 R\nTAKECOLOR 16777471 R\n'
+local mac = '<VST "VSTi: ReaSynth (Cockos)" reasynth.vst.dylib 0 "" 1919251321<5653547265737972656173796E746800> ""\n' ..
+  '<VST "VST3: Surge XT (Surge Synth Team)" "Surge XT.vst3" 0 "" 1<0> ""\nCOLOR 30250651 B\nTAKECOLOR 33488896 B\n'
+assert(mirror.portable(mac) == win, "a Mac's plug-in files and colours read as Windows'")
+assert(mirror.portable(win) == win, "Windows' text is left exactly as it was (no hash moves)")
+assert(mirror.portable('<VST "VST: Dexed" Dexed.vst 0 ""\n') == '<VST "VST: Dexed" Dexed.dll 0 ""\n', "a macOS VST2 bundle")
+assert(mirror.fx_hash(mac) == mirror.fx_hash(win) and mirror.item_hash("T", mac) == mirror.item_hash("T", win), "hashes agree")
 print("ok")

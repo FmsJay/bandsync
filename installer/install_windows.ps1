@@ -1,7 +1,8 @@
 # BandSync setup for Windows: installs and sets up everything BandSync needs, skipping whatever is already there.
 # Run it with "Install BandSync (Windows).cmd" (double-click). Windows PowerShell 5.1 compatible.
 #   REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), and optionally
-#   SonoBus + Tailscale (Live) and Google Drive for desktop (the band's copy; -Solo is its old name).
+#   SonoBus + Tailscale (hearing each other) and Google Drive for desktop (the band's copy): -Live no / -Solo no leave them out.
+# A bandmate's panel (Invite a bandmate) hands out a one-line command that runs this with -HostId already in it.
 # Each app comes from its official source (winget, or the extension's own release); each installer may show a
 # Windows permission prompt. Sign-ins (Tailscale, Google Drive) stay the musician's own clicks.
 # Every question can be answered up front (for an AI installer or a test run); anything not given is asked.
@@ -63,14 +64,21 @@ if ($isHost -and -not $Hosting) { Say "You're the first: at the end you get your
 $hostId = $HostId.ToUpper()
 $idPattern = '^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if (-not $isHost) {
+  if ($hostId -notmatch $idPattern) {
+    Say "Their Syncthing device ID is 8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567 (63 characters)."
+    Say "Easiest: they press 'Invite a bandmate' in their BandSync panel and send you the line it copies (it has the ID"
+    Say "in it). Or they find it in Syncthing: Actions > Show ID. Copy all of it and paste it here."
+  }
   while ($hostId -notmatch $idPattern) {
     $hostId = ((Ask "Paste their Syncthing device ID (in their Syncthing: Actions > Show ID)" "") -replace '\s', '').ToUpper()
     if ($hostId -notmatch $idPattern) { Warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)." }
   }
 }
 $root = if ($Root) { $Root } else { Ask "Where should the shared BandSync folder be" (Join-Path $env:USERPROFILE "BandSync") }
-$wantLive = if ($Live) { $Live -eq "yes" } else { YesNo "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale" "y" }
-$wantSolo = if ($Solo) { $Solo -eq "yes" } else { YesNo "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive" "y" }
+# SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
+# (James, 2026-10-31: "it feels like a core feature"); -Live no / -Solo no still leave them out.
+$wantLive = $Live -ne "no"
+$wantSolo = $Solo -ne "no"
 $wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, about 150 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
 $wantExtras = if ($Extras) { $Extras -eq "yes" } else { $wantPlugins -and (YesNo "Also the larger extras (about 820 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, sforzando with the Salamander Grand piano)?" "n") }
 Write-Host ""
@@ -300,7 +308,7 @@ if (-not $r) {
 }
 foreach ($s in $r.steps) { if ($s.ok) { Ok "$($s.name): $($s.detail)" } else { Warn "$($s.name): $($s.detail)" } }
 $count = [int]$r.registered_actions
-if ($count -ge 5) { Ok "BandSync installed: $count actions (the BandSync panel opens in REAPER)" } else { Warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages" }
+if ($count -ge 5) { Ok "BandSync $($r.version) installed: $count actions (the BandSync panel opens in REAPER)" } else { Warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages" }
 
 # ---------- 5. what's left for a human (only what isn't done yet) ----------
 $left = @()
@@ -310,9 +318,20 @@ try {
   $c = Invoke-RestMethod -TimeoutSec 5 -Uri ("http://" + $x.configuration.gui.address + "/rest/system/connections") -Headers @{ "X-API-Key" = $x.configuration.gui.apikey }
   $peers = @($c.connections.PSObject.Properties | Where-Object { $_.Value.connected } | ForEach-Object { $_.Name })
 } catch { }
+# Waits for what needs a person (James, 2026-10-31: "the installer should wait for you to sign in"), instead of
+# listing it at the end: true once $test passes, false if they pressed a key to skip.
+function Wait-Until($test) {
+  while (-not (& $test)) {
+    for ($i = 0; $i -lt 30; $i++) {
+      if ([Console]::KeyAvailable) { $null = [Console]::ReadKey($true); return [bool](& $test) }
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  return $true
+}
 if ($isHost) {
-  $left += "Your Syncthing device ID, for each bandmate's installer:  $myId"
-  $left += "When a bandmate installs with it, REAPER's BandSync panel shows 'Let them in': press it."
+  $left += "To bring in a bandmate: BandSync panel > Invite a bandmate, and send them what it copies (their installer is then already paired with you). When they've run it, the panel shows 'Let them in': press it."
+  $left += "(Your Syncthing device ID, if they ask for it:  $myId)"
 } elseif ($peers -notcontains $hostId) {
   $left += "Tell the bandmate whose ID you used: their BandSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
 }
@@ -354,8 +373,21 @@ if ($wantLive) {
       else { Warn "Tailscale sign-in didn't finish: open Tailscale from the Start menu (or its taskbar icon) and sign in." }
     }
   }
+  if (Test-Path $ts) {
+    $tsNow = { try { $ErrorActionPreference = "Continue"; & $ts status --json 2>$null | ConvertFrom-Json } catch { $null } finally { $ErrorActionPreference = "Stop" } }
+    if (-not $tagged -and -not ((& $tsNow).BackendState -eq "Running")) {
+      Say "Sign in to Tailscale now (its taskbar icon > Log in). Waiting for it; press any key to skip and do it later."
+      if (Wait-Until { (& $tsNow).BackendState -eq "Running" }) { Ok "Tailscale signed in" }
+    }
+    if (-not $tagged -and (& $tsNow).BackendState -eq "Running" -and (& $tsNow).Self.KeyExpiry) {
+      Say "One click keeps this PC signed in to Tailscale for good. In the page that opens: this PC's ... menu >"
+      Say "Disable key expiry. Waiting for it; press any key to skip (it then signs out by itself every few months)."
+      Start-Process "https://login.tailscale.com/admin/machines"
+      if (Wait-Until { -not (& $tsNow).Self.KeyExpiry }) { Ok "Tailscale stays signed in"; $tagged = $true }
+    }
+  }
   if (-not $tagged) {
-    $left += "Tailscale: to keep this PC signed in for good: login.tailscale.com/admin/machines > this PC > ... > Disable key expiry (one click; otherwise it signs out every few months, maybe right before a session)."
+    $left += "Tailscale (skipped above): sign in from its taskbar icon, then at login.tailscale.com/admin/machines > this PC > ... > Disable key expiry (otherwise it signs out every few months, maybe right before a session)."
   }
   if ($isHost) { # the host's job, once: then bandmates' installers sign their machines in for good
     $left += "Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the policy's { }:"
@@ -363,18 +395,29 @@ if ($wantLive) {
     $left += "  Then each bandmate's installer signs their machine in as a band machine that never has to sign in again."
   }
 }
-if ($wantSolo -and -not (Test-Path "G:\My Drive\BandSync")) {
-  $left += "Google Drive: sign in when it opens."
-  if ($isHost) { $left += "Google Drive: make a 'BandSync' folder in My Drive and share it with each bandmate (Editor)." }
-  else { $left += "Google Drive: at drive.google.com, Shared with me > right-click BandSync > Organize > Add shortcut > My Drive (or set the folder in the panel's Solo edit tab if your Drive isn't G:)." }
+# Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds the
+# shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). A key skips.
+if ($wantSolo) {
+  $myDrive = { foreach ($l in [char[]](67..90)) { $d = [string]$l + ":\My Drive"; if (Test-Path $d) { return $d } }; $null }
+  $driveOk = $false
+  if (-not (& $myDrive)) {
+    Say "Sign in to Google Drive (its window, or its taskbar icon), with your own Google account. Waiting for it; press any key to skip."
+    $null = Wait-Until { & $myDrive }
+  }
+  $md = & $myDrive
+  if ($md -and (Test-Path "$md\BandSync")) { Ok "Google Drive: the band's BandSync folder is there"; $driveOk = $true }
+  elseif ($md -and $isHost) { New-Item -ItemType Directory "$md\BandSync" | Out-Null; Ok "Google Drive: made BandSync in your My Drive"; $driveOk = $true }
+  elseif ($md) {
+    Say "Add the band's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
+    Say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press any key to skip."
+    Start-Process "https://drive.google.com/drive/shared-with-me"
+    if (Wait-Until { Test-Path "$md\BandSync" }) { Ok "Google Drive: the band's BandSync folder is there"; $driveOk = $true }
+  }
+  if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each bandmate (Editor), at drive.google.com." }
+  elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }
 }
-$ext = Join-Path $res "reaper-extstate.ini"
-$offset = ""
-if (Test-Path $ext) { $m = Select-String -Path $ext -Pattern '^rec_offset_ms=(.*)$' | Select-Object -First 1; if ($m) { $offset = $m.Matches[0].Groups[1].Value } }
-if (-not $offset -or [math]::Abs([double]$offset) -ge 1) {
-  $left += "Recording latency: connect a cable from your interface's output 1 to an input, then in the BandSync panel: More > Calibrate latency."
-}
-$left += "In the panel, open the band's session (or publish yours, as host); its Set up list shows anything still missing."
+if ($isHost) { $left += "In REAPER, open your song's project: the BandSync panel offers 'Start a band song from this project'." }
+else { $left += "In REAPER, the BandSync panel offers 'Join the band's song' once your bandmate has let you in: the band's songs arrive by themselves, and the panel lists them." }
 Write-Host ""
 Say "Done. What's left (these need you):"
 foreach ($l in $left) { Write-Host "  - $l" }

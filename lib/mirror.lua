@@ -75,12 +75,29 @@ function mirror.fxchain(track_chunk, skip)
   return table.concat(out, "\n") .. "\n"
 end
 
+-- What a chunk says differently on each platform, said one way for hashing (Mac, 0.34.3: every chain with a Cockos
+-- plug-in and every coloured item read "project differs" against Windows, for good). Windows' text is left as it
+-- is, so nothing a Windows machine already sent hashes differently:
+--   the plug-in's file: reasynth.vst.dylib (macOS), reasynth.vst.so (Linux), Foo.vst (a macOS VST2 bundle) -> .dll
+--   "COLOR n B" / "TAKECOLOR n B": the colour in macOS byte order -> Windows' "n R" (REAPER converts either on load)
+-- shortcut: a third-party VST2 named differently per platform (Foo_x64.dll vs Foo.vst) still reads as different.
+local function portable(s)
+  s = s:gsub('(<VST "[^"\n]*" "?[^"\n]-)%.vst%.dylib("? )', "%1.dll%2"):gsub('(<VST "[^"\n]*" "?[^"\n]-)%.vst%.so("? )', "%1.dll%2")
+    :gsub('(<VST "[^"\n]*" "?[^"\n]-)%.vst("? )', "%1.dll%2")
+  return (s:gsub("(COLOR )(%d+) B", function(p, n)
+    n = math.tointeger(tonumber(n)) or 0
+    local c = n & 0xFFFFFF
+    return p .. ((n & ~0xFFFFFF) | ((c & 0xFF) << 16) | (c & 0xFF00) | ((c >> 16) & 0xFF)) .. " R"
+  end))
+end
+mirror.portable = portable
+
 -- A plug-in chain's hash: its normalized text without each VST's last state line. That line is REAPER's program block
 -- for the instance, and a plug-in loaded from a chunk writes its program name there ("Program 1"), so the same chain
 -- read differently on every machine that received it (laptop, 2026-10-31). It still travels; only the hash skips it.
 function mirror.fx_hash(chain)
   local lines = {}
-  for l in chain:gmatch("[^\n]+") do lines[#lines + 1] = l end
+  for l in portable(chain):gmatch("[^\n]+") do lines[#lines + 1] = l end
   local i = 1
   while i <= #lines do
     if lines[i]:match("^<VST") then
@@ -96,6 +113,7 @@ end
 -- as a take FX read "Program 1" on the machine that applied it, and the two projects differed for good). Only items
 -- with a VST take FX hash differently from before, so an update doesn't make everyone send every item again.
 function mirror.item_hash(track, state)
+  state = portable(state)
   if not state:find("<VST", 1, true) then return mirror.hash(track .. "\n" .. state) end
   local lines = {}
   for l in (state .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = l end
@@ -547,6 +565,7 @@ local function local_track(tr) -- (also live placeholders and live MIDI views: e
   return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) ~= ""
     or select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_live_track", "", false)) ~= ""
 end
+mirror.local_track = local_track
 
 -- A track's travelling settings (see track_line).
 function mirror.track_state(proj, tr, local_mix)
@@ -554,7 +573,7 @@ function mirror.track_state(proj, tr, local_mix)
   local t = { name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)), parent = parent and trk_oid(parent) or "",
     depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH"), mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
     solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), phase = reaper.GetMediaTrackInfo_Value(tr, "B_PHASE"),
-    color = reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false)),
+    color = require("band").color_out(reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR")), icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false)),
     freemode = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE"), lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES"),
     collapsed = reaper.GetMediaTrackInfo_Value(tr, "C_LANESCOLLAPSED") }
   local plays, names = {}, {}
@@ -580,9 +599,10 @@ end
 function mirror.set_track_state(proj, tr, t, local_mix)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", t.name or "", true)
   for _, kp in ipairs({ { "freemode", "I_FREEMODE" }, { "lanes", "I_NUMFIXEDLANES" }, { "mute", "B_MUTE" },
-      { "phase", "B_PHASE" }, { "color", "I_CUSTOMCOLOR" }, { "collapsed", "C_LANESCOLLAPSED" }, { "depth", "I_FOLDERDEPTH" } }) do
+      { "phase", "B_PHASE" }, { "collapsed", "C_LANESCOLLAPSED" }, { "depth", "I_FOLDERDEPTH" } }) do
     if t[kp[1]] then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]]) or 0) end
   end
+  if t.color then reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", require("band").color_in(t.color)) end
   reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", t.icon or "", true)
   local l = 0
   for v in ((t.plays or "") .. ","):gmatch("([^,]*),") do
@@ -659,6 +679,7 @@ end
 mirror.reopened = {}
 mirror.auto = {} -- proj .. oid -> its next send is a print BandSync refreshed (Undo skips those)
 mirror.unsent = {} -- proj .. oid -> changed here, not sent yet (settling, playing, Hold my changes): mirror.receive waits
+mirror.anchor_seen = {} -- proj .. oid .. known hash -> its event was checked against what's here (see watch)
 
 function mirror.scan(proj, user, media_dir, local_mix)
   local objs, by_oid, tracks = {}, {}, {}
@@ -1045,7 +1066,7 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
     local theirs = secs((ev.time or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)"))
     local race = mine and theirs and math.abs(mine - theirs) <= 10
     require("sync").put_back(string.format("%s also changed %s %s: theirs is in. Yours is on the Restore page " ..
-      "(Undo specific change on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing",
+      "(Undo on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing",
       race and "at the same moment as you" or "while you were apart"))
   end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
@@ -1192,9 +1213,16 @@ function mirror.watch(proj, cfg, song, room, opts)
   for _, o in ipairs(objs) do
     seen[o.oid] = true
     local ok, err = pcall(function()
-      local rev, h, evid = mirror.known(proj, o.oid)
+      local rev, h, evid, kord = mirror.known(proj, o.oid)
       local rk = tostring(proj) .. o.oid
       if h == o.hash then mirror.reopened[rk], mirror.unsent[rk] = nil, nil; return end
+      -- recorded under a hash this machine no longer makes (before 0.34.4 a Mac hashed plug-in files and colours its
+      -- own way): what's here IS the band's version, so it's re-anchored, not sent as a change of ours. Once per record.
+      if rev and h ~= "" and not mirror.anchor_seen[rk .. "\0" .. h] then
+        mirror.anchor_seen[rk .. "\0" .. h] = true
+        local ev = event_file(room_dir, evid)
+        if ev and ev.hash == o.hash then remember(proj, o.oid, rev, o.hash, evid, kord); return end
+      end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
         say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
         if h == "" then -- the band deleted it since: gone here too (2026-10-31: three deleted tracks came back on a reopen)

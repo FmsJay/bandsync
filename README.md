@@ -9,6 +9,22 @@ song sections they work on, and Restore can take back any change, any track, or 
 Plain-Lua ReaScripts (the control panel needs ReaImGui; SWS helps). REAPER 7.18 or newer; 7.83 is tested.
 Machines talk only through a shared folder (Syncthing recommended), with an optional Google Drive copy.
 
+## Bandmates: start here
+
+1. Ask whoever in the band is already set up for their **Syncthing device ID** (in Syncthing: Actions > Show ID).
+2. Run the installer: **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (see
+   [Setup](#setup-each-person-once) if macOS blocks it). Answer *y* to "Is someone in the band already set up?" and
+   paste their ID.
+3. Tell them you've installed: their BandSync panel shows **Let *you* in**. Once they press it, the band's songs
+   arrive in your shared folder by themselves.
+4. In REAPER's BandSync panel: **Join the band's song**. Its tracks arrive over the next moments.
+5. Play and record as usual. What you change reaches everyone; anything that isn't yours to change is put back,
+   with the reason.
+6. To hear each other live: **Real time mode** on the Home page. Undo anything: the **Restore** page.
+7. Once: **Calibrate latency** (Setup > Health says when it's still missing).
+
+Everything below is the detail.
+
 ## How it works
 
 ```
@@ -23,7 +39,7 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
       recall/   recall points (every handover, or saved by hand)
       status/   <person>.json           who's here, what they're doing (the panel's Who's here)
       chat/     messages, to-dos, links for the room (the song's and the band's sit beside it)
-      driver.json, mode.json            who drives; Driver only / Claims / Open
+      driver.json, mode.json            who drives; Only the driver / Driver + claims / Anyone
 ```
 
 - **Publish** (host) makes the song a band session. The project must be prepared first (a checklist); an
@@ -67,27 +83,30 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
 ## Setup (each person, once)
 
 **Easiest: the installer.** Download the `installer` folder (or just the one file) and double-click
-**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command**. It asks your name, and whether
-someone in the band is already set up (if so, their Syncthing device ID: any set-up bandmate's will do), and whether you'll use Live and the Google Drive copy, then
-installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, js_ReaScriptAPI, SWS, Syncthing, and
-optionally SonoBus + Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with the host,
-installs BandSync through ReaPack and opens the panel. What's left needs you, and it lists it at the end: signing in
-to Tailscale and Google Drive, the host adding your device, and the latency cable.
+**Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command**. It asks your name, whether
+someone in the band is already set up (if so, their Syncthing device ID: any set-up bandmate's will do; with the line
+from their panel's **Invite a bandmate**, it's already filled in) and whether you want the plug-in pack, then
+installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, js_ReaScriptAPI, SWS, Syncthing,
+SonoBus, Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with your bandmate,
+waits while you sign in to Tailscale (and switch off its key expiry) and Google Drive (and add the band's folder),
+installs BandSync through ReaPack and opens the panel. At the end it lists only what's still left, such as your
+bandmate pressing *Let you in*.
 
 On a Mac, macOS blocks a downloaded script the first time. Either:
-- in Terminal, paste `curl -fsSL https://github.com/FmsJay/bandsync/raw/main/installer/install_mac.sh | bash` (nothing
-  to unblock), or
+- in Terminal, paste `curl -fsSL "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/install_mac.sh?$(date +%s)" | bash`
+  (nothing to unblock; a bandmate's **Invite a bandmate** gives you this line with their ID already in it), or
 - double-click the .command, then System Settings > Privacy & Security > **Open Anyway** (macOS 15 and later no longer
   offer right-click > Open for this). A .command that came through a shared folder, Drive or email may also have lost
   its "can run" bit: run it as `bash "Install BandSync (Mac).command"` instead.
-Tailscale asks macOS to approve its system extension (System Settings > General > Login Items & Extensions): the
+A newly installed REAPER opens with its evaluation reminder: wait for its countdown, then *Still evaluating* (REAPER's
+own licence: reaper.fm). Tailscale asks macOS to approve its system extension (System Settings > General > Login Items & Extensions): the
 installer waits while you do.
 
 **Or let an AI do it.** In Claude Code, on the computer being set up, point it at
 `installer/SKILL.md` ("set up BandSync using installer/SKILL.md"). It installs and configures everything below,
 explains each prompt before it appears, and asks before every download.
 
-**In the project:** the panel's first screen offers *Publish this project* (host) or *Open a band session*, and the
+**In the project:** the panel's first screen offers *Join the band's song* or *Start a band song from this project*, and the
 Setup page's **Health** list shows what's in place for this project and machine (shared folder syncing,
 Live sync, SonoBus, the Live server, latency). **Set up everything I can** does every fix that needs no
 human: starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in its Tailscale address as the
@@ -116,8 +135,11 @@ By hand:
 5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
    Restore pages, needs it.
 6. Optional extras:
-   - **Live** needs **Tailscale**. Bandmates don't join the host's tailnet: the host shares the server machine with
-     each of them (admin console > the machine's **...** > *Share*), and they accept the link with their own account.
+   - **Tailscale** is only for *Play along* and *Jam* (they reach the NINJAM server on the host's machine).
+     Syncthing, Real time mode (SonoBus) and everything else work without it. Simplest: everyone signs in to
+     the band's one Tailscale account (what the installers do; the host adds the `tag:bandsync` line they print, so
+     band machines stay signed in). Someone who keeps their own Tailscale account instead gets the server machine
+     shared with them (admin console > the machine's **...** > *Share*) and accepts the link.
    - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**, each person signed in
      with their **own** Google account (two computers on one account lose files: "Lost and Found"). The host makes a
      `BandSync` folder in My Drive and shares it with everyone as Editor; each bandmate adds it to their own Drive
@@ -184,10 +206,10 @@ plug-ins this machine doesn't have.
 Who may change what:
 
 - **Driver**: their changes reach everyone, except on what someone has claimed. *Take control* (next to Who's
-  here) makes you the driver; it checks everyone has caught up first, and every handover saves a recall point.
-- **Editing modes** (Home; the driver picks): **Driver only**, **Claims** (default: the driver, and everyone on
-  what they've claimed, plus the new tracks they make themselves) or **Open** (anyone changes anything unclaimed;
-  the newest change wins; the tempo map, markers and project settings too).
+  here) makes you the driver; it checks everyone has caught up first, and every handover saves a version.
+- **Editing modes** (Home; the driver picks): **Only the driver**, **Driver + claims** (default: the driver, and
+  everyone on what they've claimed, plus the new tracks they make themselves) or **Anyone** (anything unclaimed;
+  the tempo map, markers and project settings too; a clash goes to whoever changed it more: docs/clashes.md).
 - **Claims**: *Claim selected tracks*, *Claim region at cursor* or *Claim time selection* (shown to everyone as a
   `[claimed: you]` region). A track claim beats a time claim, which beats a region claim, which beats the driver.
 - **What you see is what the band has**: anything you change that isn't yours to change is put back at once,
@@ -198,12 +220,11 @@ Restore (its own page):
 
 - Every change in the room, newest first, grouped by who made it; filters by person, kind (items, tracks,
   plug-ins, deletes, things brought back, tempo, handovers...), track or words.
-- Pick what the buttons do: **Restore project state** (the whole song back to that moment; driver only),
-  **Restore selection's state** (only the tracks selected in REAPER, their items and plug-ins) or **Undo specific
-  change** (only that one change). Every restore goes to the band as new changes, so it can be undone the same
-  way.
-- **Recall points** (every handover, or *Save point*), and *Open it as it was before BandSync* (the copy Publish
-  kept).
+- Each change has **Undo** (only that change; everything after it stays) and **Back to here...**: the tracks
+  selected in REAPER (their items and plug-ins), or the whole song (the driver), back to that moment. Every
+  restore goes to the band as new changes, so it can be undone the same way.
+- **Saved versions** (every handover, or *Save this version*), and *Open it as it was before BandSync* (the copy Publish
+  kept). **Render the final mix** puts the whole song's mix in the shared folder's `<Song>/mixes/` for everyone.
 
 Chat (its own page): **This room**, **This song** or **Band**, each with **Messages**, **To-do** (anyone ticks
 them off) and **Links** (lyrics, charts, documents). Each message is its own small file, so nothing ever clashes.
@@ -227,8 +248,9 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
 
 - **Alone = full control.** While nobody else is in the room, everything you change goes out (the band gets it when
   they're back), whatever the claims.
-- **Both changed something while apart**: the newer change wins on every machine alike. If yours was replaced, BandSync
-  says so: yours is still on the Restore page (*Undo specific change* on theirs brings it back).
+- **Both changed something while apart**: whoever changed it more times since you split wins (a tie: the later
+  one), on every machine alike ([docs/clashes.md](docs/clashes.md) explains, and how other tools decide). If yours was replaced, BandSync
+  says so: yours is still on the Restore page (*Undo* on theirs brings it back).
 - **The Google Drive copy** (Setup > Options): Syncthing only moves files while two machines are on at the same time.
   Live sync also keeps a copy of the room on Google Drive (store and forward), so what someone does alone reaches the
   others even if you're never online together.
@@ -297,7 +319,7 @@ The **Play** page has three ways to hear each other:
   a bar or two after you and hear you in time with the song, at any distance. What you play also lands on their
   timeline as a placeholder on a "<name> (live)" track, replaced automatically when your real take arrives.
   Uses REAPER's own ReaNINJAM and a NINJAM server the host runs (`tools/ninjam-server/README.md`), over Tailscale.
-- **Listen live** (Home's **Real time mode**): hear each other as it happens, through **SonoBus** (free, GPLv3,
+- **Real time** (Home's **Real time mode**): hear each other as it happens, through **SonoBus** (free, GPLv3,
   sonobus.net): peer to peer, far lower delay than NINJAM, nobody runs a server. It sits on the **BandSync Real time**
   track, fed only by your armed tracks, already in the band's group under your BandSync name (BandSync writes the group
   into SonoBus's saved state; `lib/sonobus.lua`). The band's group and password are in `<shared folder>/sonobus.json`;

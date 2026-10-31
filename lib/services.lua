@@ -165,6 +165,28 @@ function services.pending_devices()
   return list
 end
 
+-- This machine's Syncthing device ID, or nil (Syncthing not running, or no answer yet: a background check).
+function services.my_device_id()
+  local st = services.syncthing_path()
+  local data = st and band.json_decode(background("st-system", q(st) .. " cli show system", 300) or "")
+  local id = type(data) == "table" and data.myID
+  return services.is_device_id(id) and id or nil
+end
+
+-- What a set-up bandmate sends someone new: one line to paste on a Mac and one on Windows, each running the
+-- installer with this machine's ID already in it, so nobody types an ID (Mac, 2026-10-31: "2MOGZMD" + Return was
+-- the first try). The ?<time> keeps GitHub's cache from handing out an installer from before the last release.
+function services.invite_text(id)
+  local base = "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/"
+  return "Join the band on BandSync. Paste ONE of these:\n\n" ..
+    "Mac (in Terminal):\n" ..
+    'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " bash\n\n" ..
+    "Windows (in PowerShell):\n" ..
+    '$f="$env:TEMP\\bandsync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
+    "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. "\n\n" ..
+    "When it's done, tell me: I let you in from my BandSync panel."
+end
+
 -- A Syncthing device ID: 8 groups of 7 letters/digits.
 local ID_PATTERN = "^" .. ("[%u%d]"):rep(7) .. ("%-" .. ("[%u%d]"):rep(7)):rep(7) .. "$"
 function services.is_device_id(id)

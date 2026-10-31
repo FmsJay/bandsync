@@ -181,7 +181,7 @@ function prep.scan(proj, cfg, b)
   -- BandSync's own setup
   local live = require("live")
   if b and b.role ~= "solo" and not live.fx(proj, false, live.SONOBUS) then
-    add("sonobus", "Put SonoBus on the master (off until you Connect)", "For Listen live: it joins the band's group by itself when you Connect.", 1, true)
+    add("sonobus", "Put SonoBus on the master (off until you Connect)", "For Real time: it joins the band's group by itself when you Connect.", 1, true)
   end
   if not require("tools").autostart_on() then
     add("autostart", "Start Live sync with REAPER", "A REAPER restart brings Live sync back for sessions where it was running (otherwise changes quietly stay here).", 1, true)

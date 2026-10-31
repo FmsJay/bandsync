@@ -12,4 +12,9 @@ assert(not services.on_tailnet("100.63.0.1:22000") and not services.on_tailnet("
 assert(not services.on_tailnet("162.157.58.171:22000") and not services.on_tailnet("192.168.1.5:22000"), "internet and LAN")
 assert(services.on_tailnet("[fd7a:115c:a1e0::7e48:8e48]:22000"), "Tailscale's IPv6 range")
 assert(not services.on_tailnet("[fd7a:115c:a1e1::1]:22000") and not services.on_tailnet(""), "other IPv6, nothing")
+-- the invitation: both lines carry the ID as the installers read it (BS_HOST_ID on a Mac, -HostId on Windows)
+local inv_id = "2MOGZMD-MVLUUSO-D6GXQIG-HMDVUBG-AOW6LHR-LMQQT6P-V4V5P73-6ZR5NQZ"
+local inv = services.invite_text(inv_id)
+assert(inv:find('install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. inv_id .. " bash", 1, true), "Mac line")
+assert(inv:find("-File $f -HostId " .. inv_id, 1, true) and inv:find('"$env:TEMP\\bandsync_install.ps1"', 1, true), "Windows line")
 print("ok")

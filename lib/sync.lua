@@ -787,7 +787,7 @@ sync.lane_of, sync.track_name = lane_of, track_name
 local function track_props(tr)
   local icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false))
   return string.format("%s|%d|%d|%d|%s|%.2f|%.2f", base_name(select(2, reaper.GetTrackName(tr))), reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
-    reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"), icon:match("[^/\\]+$") or icon,
+    reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), band.color_out(reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR")), icon:match("[^/\\]+$") or icon,
     20 * math.log(math.max(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), 1e-9), 10), reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
 end
 local function track_guid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)) end
@@ -802,7 +802,7 @@ local function apply_track(proj, ev)
       reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", ev.track .. suffix, true)
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", ev.mute or 0)
       reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", ev.solo or 0)
-      reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", ev.color or 0)
+      reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", band.color_in(ev.color))
       reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", ev.icon or "", true)
       if ev.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", ev.vol) end -- the shared mix (0.8+)
       if ev.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", ev.pan) end
@@ -1049,7 +1049,7 @@ function sync.receive(proj, cfg, song, room, can)
     if ev.alone and ev.user ~= cfg.user and mine_alone ~= "" and not superseded(proj, ev) then
       require("recall").save(proj, cfg, song, room, "yours before " .. ev.user .. "'s work done alone", true)
       setext(proj, band.SECTION, "alone_last", "") -- once per meeting
-      band.log(ev.user .. " also worked on this while you were both alone: where you were is kept as a restore point " ..
+      band.log(ev.user .. " also worked on this while you were both alone: where you were is kept as a saved version " ..
         "(Restore) before their changes land")
       break
     end
@@ -1227,6 +1227,7 @@ function sync.write_status(proj, cfg, song, room, info)
   end
   info.machine = sync.machine()
   info.user, info.time, info.version, info.room = cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ"), band.VERSION, room
+  info.reaper = (reaper.GetAppVersion():match("^[%d%.]+")) -- (Setup > Health compares the band's: "7.79/win64" -> "7.79")
   info.takes = sync.holdings(proj)
   band.write_json(dir .. "/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json", info)
 end

@@ -56,7 +56,7 @@ local function capture(proj)
       for id in ids:gmatch("[^,]+") do list[#list + 1] = id end
       st.plays[name] = list
       st.tracks[name] = { mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"), solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"),
-        color = reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"),
+        color = band.color_out(reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR")),
         icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false)) }
     end
   end
@@ -358,7 +358,7 @@ function recall.restore_state(proj, cfg, song, room, st, label, saved)
     if tr then
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", p.mute or 0)
       reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", p.solo or 0)
-      reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", p.color or 0)
+      reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", band.color_in(p.color))
       reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", p.icon or "", true)
     end
   end

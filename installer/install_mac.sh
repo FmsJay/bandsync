@@ -1,12 +1,14 @@
 #!/bin/bash
 # BandSync setup for macOS: installs and sets up everything BandSync needs, skipping whatever is already there.
 # Run it with "Install BandSync (Mac).command" (right-click > Open the first time), or in Terminal:
-#   curl -fsSL https://github.com/FmsJay/bandsync/raw/main/installer/install_mac.sh | bash
-# REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), and optionally
-# SonoBus + Tailscale (Live) and Google Drive for desktop (the band's copy; BS_SOLO is its old name). Every app comes from its official source.
+#   curl -fsSL "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/install_mac.sh?$(date +%s)" | bash
+# (the ?<time>: GitHub's cache handed out the previous installer for minutes after a release, 2026-10-31)
+# REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), SonoBus + Tailscale
+# (hearing each other) and Google Drive for desktop (the band's copy). Every app comes from its official source.
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
-# BS_LIVE (yes/no), BS_SOLO (yes/no), BS_SCRIPTS (reapack/folder/verify), BS_TAG.
+# BS_LIVE / BS_SOLO (no: leave out SonoBus + Tailscale / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG.
+# A bandmate's panel (Invite a bandmate) hands out the curl line above with BS_HOST_ID already in it.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
 REPO="FmsJay/bandsync"
@@ -50,6 +52,11 @@ else HOSTING=y; fi
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
 ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if ! yes "$HOSTING"; then
+  echo "$HOST_ID" | grep -Eq "$ID_RE" || {
+    say "Their Syncthing device ID is 8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567 (63 characters)."
+    say "Easiest: they press 'Invite a bandmate' in their BandSync panel and send you the line it copies (it has the ID"
+    say "in it). Or they find it in Syncthing: Actions > Show ID. Copy all of it and paste it here."
+  }
   until echo "$HOST_ID" | grep -Eq "$ID_RE"; do
     HOST_ID="$(ask "Paste their Syncthing device ID (in their Syncthing: Actions > Show ID)" | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')"
     echo "$HOST_ID" | grep -Eq "$ID_RE" || warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)."
@@ -66,8 +73,10 @@ while :; do
   warn "That isn't a full folder path (it should start with / or ~). Try again, or drag the folder in from Finder."
   BS_ROOT=""
 done
-LIVE="${BS_LIVE:-$(ask "Will you use Live (hearing each other while playing)? Installs SonoBus and Tailscale (y/n)" y)}"
-SOLO="${BS_SOLO:-$(ask "Keep the band's copy on Google Drive (what someone does alone reaches the others even if you're never online together)? Installs Google Drive (y/n)" y)}"
+# SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
+# (James, 2026-10-31: "it feels like a core feature"); BS_LIVE=no / BS_SOLO=no still leave them out.
+LIVE="${BS_LIVE:-y}"
+SOLO="${BS_SOLO:-y}"
 PLUGINS="${BS_PLUGINS:-$(ask "Install the band plug-in pack (free, about 350 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages. (y/n)" y)}"
 EXTRAS="${BS_EXTRAS:-n}"
 yes "$PLUGINS" && [ -z "${BS_EXTRAS:-}" ] && EXTRAS="$(ask "Also the larger extras (about 880 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, the Salamander Grand piano for sforzando)? (y/n)" n)"
@@ -80,7 +89,7 @@ from_dmg() { # url name app-name
   curl -fsSL "$1" -o "$dmg" || { warn "$2: download failed"; return 1; }
   mkdir -p "$mnt"
   # (a disk image with a licence shows it here, and waits for you to agree: it used to go to /dev/null and look hung)
-  PAGER=cat hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" </dev/tty | grep -v '^/dev/' || true
+  PAGER=cat hdiutil attach -noverify -nobrowse -mountpoint "$mnt" "$dmg" </dev/tty | grep -v '^/dev/' || true
   [ -d "$mnt" ] && [ -n "$(ls -A "$mnt" 2>/dev/null)" ] || { warn "$2: couldn't open the disk image"; return 1; }
   local pkg app
   pkg="$(find "$mnt" -maxdepth 1 -name '*.pkg' | head -1)"
@@ -109,7 +118,7 @@ plugin_dmg() { # url name pattern
   say "Installing $2 ..."
   curl -fsSL "$1" -o "$dmg" || { warn "$2: download failed"; return 1; }
   mkdir -p "$mnt"
-  PAGER=cat hdiutil attach -nobrowse -mountpoint "$mnt" "$dmg" </dev/tty | grep -v '^/dev/' || true
+  PAGER=cat hdiutil attach -noverify -nobrowse -mountpoint "$mnt" "$dmg" </dev/tty | grep -v '^/dev/' || true
   [ -d "$mnt" ] && [ -n "$(ls -A "$mnt" 2>/dev/null)" ] || { warn "$2: couldn't open the disk image"; return 1; }
   local pkg; pkg="$(find "$mnt" -maxdepth 2 -name '*.pkg' | head -1)"
   if [ -n "$pkg" ]; then password_note; sudo installer -pkg "$pkg" -target / >/dev/null
@@ -190,9 +199,48 @@ if yes "$LIVE" && [ -x "$TS" ]; then
       pid=$!; url=""
       for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
       [ -n "$url" ] && open "$url"
-      if wait $pid; then ok "Tailscale signed in (without the band tag: it signs out by itself every few months; see the end)"
+      if wait $pid; then ok "Tailscale signed in (without the band tag)"
       else warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."; fi
     fi
+  fi
+  # what still needs a person, waited for here (James, 2026-10-31: "the installer should wait for you to sign in"):
+  # signed in at all, then key expiry off, so it doesn't sign out by itself every few months. Return skips either.
+  # (plutil reads the JSON: this Mac's own KeyExpiry, not a bandmate's; a grep can't tell them apart)
+  ts_running() { [ "$("$TS" status --json 2>/dev/null | plutil -extract BackendState raw -o - - 2>/dev/null)" = Running ]; }
+  ts_expires() { "$TS" status --json 2>/dev/null | plutil -extract Self.KeyExpiry raw -o - - >/dev/null 2>&1; }
+  if [ -z "$TS_TAGGED" ] && ! ts_running; then
+    say "Sign in to Tailscale now (its menu-bar icon > Log in). Waiting for it; press Return to skip and do it later."
+    while ! ts_running; do read -t 3 -r </dev/tty && break; done
+    ts_running && ok "Tailscale signed in"
+  fi
+  if [ -z "$TS_TAGGED" ] && ts_running && ts_expires; then
+    say "One click keeps this Mac signed in to Tailscale for good. In the page that opens: this Mac's ... menu >"
+    say "Disable key expiry. Waiting for it; press Return to skip (it then signs out by itself every few months)."
+    open "https://login.tailscale.com/admin/machines"
+    while ts_expires; do read -t 3 -r </dev/tty && break; done
+    ts_expires || { ok "Tailscale stays signed in"; TS_TAGGED=1; }
+  fi
+fi
+# Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds
+# the shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). Return skips.
+if yes "$SOLO" && have "Google Drive"; then
+  mydrive() { ls -d "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive" 2>/dev/null | head -1; }
+  if [ -z "$(mydrive)" ]; then
+    open -a "Google Drive"
+    say "Sign in to Google Drive in its window (your own Google account; allow its extension if macOS asks)."
+    say "Waiting for it; press Return to skip and do it later."
+    while [ -z "$(mydrive)" ]; do read -t 3 -r </dev/tty && break; done
+  fi
+  MD="$(mydrive)"
+  if [ -n "$MD" ] && [ -d "$MD/BandSync" ]; then ok "Google Drive: the band's BandSync folder is there"; DRIVE_OK=1
+  elif [ -n "$MD" ] && yes "$HOSTING"; then
+    mkdir -p "$MD/BandSync" && ok "Google Drive: made BandSync in your My Drive (share it at the end)"; DRIVE_OK=1
+  elif [ -n "$MD" ]; then
+    say "Add the band's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
+    say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press Return to skip."
+    open "https://drive.google.com/drive/shared-with-me"
+    while [ ! -d "$MD/BandSync" ]; do read -t 3 -r </dev/tty && break; done
+    [ -d "$MD/BandSync" ] && { ok "Google Drive: the band's BandSync folder is there"; DRIVE_OK=1; }
   fi
 fi
 # the band plug-in pack (optional): free, open-source plug-ins every bandmate can have, each from its official release
@@ -342,14 +390,16 @@ if request "${BS_SCRIPTS:-reapack}"; then
 elif [ -n "$GONE" ]; then warn "REAPER closed unexpectedly during setup. Open REAPER (and your project: File > Recent projects), then run this again."; exit 1
 else warn "REAPER didn't run the setup step. Open REAPER, then run this again."; exit 1; fi
 count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/bandsync_setup_result.json" | grep -o '[0-9]*$')"
-[ "${count:-0}" -ge 5 ] && ok "BandSync installed: $count actions (the BandSync panel opens in REAPER)" || warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages"
+bver="$(grep -o '"version": *"[^"]*"' "$HDIR/bandsync_setup_result.json" | sed 's/.*"\([^"]*\)"$/\1/')"
+[ "${count:-0}" -ge 5 ] && ok "BandSync ${bver:-} installed: $count actions (the BandSync panel opens in REAPER)" || warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages"
 
 # ---------- 5. what's left for a human ----------
 echo
 say "Done. What's left (these need you):"
 if yes "$HOSTING"; then
-  echo "  - Your Syncthing device ID, for each bandmate's installer:  $MY_ID"
-  echo "  - When a bandmate installs with it, REAPER's BandSync panel shows 'Let them in': press it."
+  echo "  - To bring in a bandmate: BandSync panel > Invite a bandmate, and send them what it copies (their installer is"
+  echo "    then already paired with you). When they've run it, the panel shows 'Let them in': press it."
+  echo "    (Your Syncthing device ID, if they ask for it:  $MY_ID)"
 else
   if [ -z "${CONNECTED:-}" ]; then
     echo "  - Tell the bandmate whose ID you used: their BandSync panel shows 'Let $USERNAME_BS in' (or they add your"
@@ -357,20 +407,23 @@ else
   fi
 fi
 if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
-  echo "  - Tailscale: if it isn't signed in, open it (Applications > Tailscale, or its menu-bar icon) and sign in with the"
-  echo "    band's account. To keep this Mac signed in for good: login.tailscale.com/admin/machines > this Mac > ... >"
-  echo "    Disable key expiry (one click; otherwise it signs out every few months, maybe right before a session)."
+  echo "  - Tailscale (skipped above): sign in from its menu-bar icon, then at login.tailscale.com/admin/machines > this"
+  echo "    Mac > ... > Disable key expiry (otherwise it signs out every few months, maybe right before a session)."
 fi
 if yes "$LIVE" && yes "$HOSTING"; then # the first one's job, once: then bandmates' installers sign their machines in for good
   echo "  - Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the"
   echo '    policy'"'"'s { }:   "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
   echo "    Then each bandmate's installer signs their machine in as a band machine that never has to sign in again."
 fi
-if yes "$SOLO"; then
-  echo "  - Google Drive: open it and sign in; allow its extension when macOS asks."
-  if yes "$HOSTING"; then echo "    Make a 'BandSync' folder in My Drive and share it with each bandmate (Editor)."
-  else echo "    At drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive."; fi
+if yes "$SOLO" && yes "$HOSTING" && [ -n "${DRIVE_OK:-}" ]; then
+  echo "  - Google Drive: share the BandSync folder in your My Drive with each bandmate (Editor), at drive.google.com."
+elif yes "$SOLO" && [ -z "${DRIVE_OK:-}" ]; then
+  echo "  - Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync >"
+  echo "    Organize > Add shortcut > My Drive."
 fi
-echo "  - Recording latency: connect a cable from your interface's output 1 to an input, then in the BandSync"
-echo "    panel: More > Calibrate latency."
-echo "  - In the panel, open the band's session (or publish yours, as host); its Set up list shows anything still missing."
+if yes "$HOSTING"; then
+  echo "  - In REAPER, open your song's project: the BandSync panel offers 'Start a band song from this project'."
+else
+  echo "  - In REAPER, the BandSync panel offers 'Join the band's song' once your bandmate has let you in: the band's"
+  echo "    songs arrive by themselves, and the panel lists them."
+fi

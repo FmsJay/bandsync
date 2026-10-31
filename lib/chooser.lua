@@ -81,6 +81,22 @@ function chooser.match(row, text)
   return true
 end
 
+-- The row to select for what's typed: the song named exactly that, else one whose name starts with it, else one
+-- that has it in its name, else the first shown. `groups` as chooser.groups gives them (the order they're shown).
+-- (Mac, 2026-10-31: "Mirror Test" typed selected MirrorTest4, the newest of several matches, and Enter opens it.)
+function chooser.best(groups, text)
+  local t = (text or ""):lower():match("^%s*(.-)%s*$")
+  local best, score
+  for _, g in ipairs(groups) do
+    for _, r in ipairs(g.rows) do
+      local n = r.song:lower()
+      local s = t == "" and 0 or n == t and 3 or n:sub(1, #t) == t and 2 or n:find(t, 1, true) and 1 or 0
+      if not best or s > score then best, score = r, s end
+    end
+  end
+  return best
+end
+
 -- "5 min ago", "3 h ago", "2 days ago" for an ISO UTC time.
 function chooser.ago(iso, now)
   local secs = band.age(iso, now)
@@ -154,6 +170,7 @@ function chooser.open(cfg, opts, done)
   local ImGui = require "imgui" "0.10"
   local ctx = ImGui.CreateContext("BandSync: choose")
   local text, sel, room, new_room, show_hidden, hide = "", nil, nil, "", false, hidden()
+  local picked_for -- the text the selection was last picked for: new text picks the best match again
   local new_folder = "" -- typed in a song's right-click menu
   local now = os.date("!*t") -- (band.age's "now")
   local function visible_rows()
@@ -170,10 +187,10 @@ function chooser.open(cfg, opts, done)
     local result -- { song, room } when chosen, false when cancelled
     if shown then
       local list = visible_rows()
-      if not sel or not chooser.match(sel, text) then -- typing keeps a match selected: the first one shown
-        local g = chooser.groups(list)[1]
-        sel = g and g.rows[1]
+      if not sel or not chooser.match(sel, text) or picked_for ~= text then -- what's typed changed: its best match
+        sel = chooser.best(chooser.groups(list), text)
         room = sel and sel.rooms[1]
+        picked_for = text
       end
       if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
       ImGui.SetNextItemWidth(ctx, -150)

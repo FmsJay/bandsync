@@ -6,6 +6,11 @@
 --   reapack: add the BandSync repository and start a ReaPack sync (installs + registers actions)
 --   folder:  register every "BandSync - *.lua" in <sync_root>/_tools/bandsync (re-run after updates)
 local here = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
+-- chmaha's "DSP to JSFX": the effects and instruments REAPER 7.83 bundled and 7.84 removed (drum kits, MDA piano and
+-- e-piano, organ, channel strip, tuner, limiter...), GPL-3.0 with MIT/AGPL parts; new in Oct 2026, still changing
+local JSFX_REPOS = { { "Saike", "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml" },
+                     { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" },
+                     { "DSP to JSFX (chmaha)", "https://github.com/chmaha/DSP-Ports-JSFX/raw/main/index.xml" } }
 package.path = here .. "/../lib/?.lua;" .. package.path
 local json = require("json")
 
@@ -40,32 +45,48 @@ if probe and user ~= "" then
   reaper.SetExtState("BandSync", "user", user, true)
 end
 
--- BandSync already arrived through ReaPack (the repository set, its actions registered)? Then ReaPack is left alone:
--- starting a ReaPack sync while its Transaction report window is open crashes REAPER on macOS (2026-10-28), and a
--- re-run or an update is exactly when that window may still be up. Updates come with "BandSync - Update".
+-- The VERSION in a BandSync lib/band.lua, or nil.
+local function version_in(path)
+  local vf = path and io.open(path, "r")
+  local v = vf and vf:read("a"):match('VERSION%s*=%s*"([^"]+)"')
+  if vf then vf:close() end
+  return v
+end
+-- This installer's BandSync (the copy it came in), and the one REAPER runs now (where its Live sync action points).
+local WANT = version_in(here .. "/../lib/band.lua")
+local function installed_version()
+  local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
+  local text = kb and kb:read("a") or ""
+  if kb then kb:close() end
+  local live = text:match('"[^"]*BandSync %- Live sync%.lua" "([^"]+)"')
+  if not live then return nil end
+  live = live:gsub("\\", "/")
+  if not live:match("^/") and not live:match("^%a:") then live = reaper.GetResourcePath() .. "/Scripts/" .. live end
+  return version_in(live:match("^(.*)/") .. "/lib/band.lua")
+end
+
+-- BandSync already up to date through ReaPack (the repository set, this installer's version installed, and every
+-- requested JSFX repository there)? Then ReaPack is left alone: starting a ReaPack sync while its Transaction report
+-- window is open crashes REAPER on macOS (2026-10-28), and a re-run is exactly when that window may still be up.
+-- (Until 0.34.4 any registered BandSync counted: a Mac on 0.13.4 re-ran the installer, was told OK, and stayed on
+-- 0.13.4 without the plug-in pack's JSFX.)
 local function already_installed()
   if not reaper.APIExists("ReaPack_GetRepositoryInfo") then return false end
   local ok, url = reaper.ReaPack_GetRepositoryInfo("BandSync")
   if not ok or url ~= req.repo_url then return false end
-  local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
-  local text = kb and kb:read("a") or ""
-  if kb then kb:close() end
-  local n = 0
-  for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do n = n + 1 end
-  return n >= 5
+  if not WANT or installed_version() ~= WANT then return false end
+  if req.jsfx then
+    for _, r in ipairs(JSFX_REPOS) do if not reaper.ReaPack_GetRepositoryInfo(r[1]) then return false end end
+  end
+  return true
 end
 
--- chmaha's "DSP to JSFX": the effects and instruments REAPER 7.83 bundled and 7.84 removed (drum kits, MDA piano and
--- e-piano, organ, channel strip, tuner, limiter...), GPL-3.0 with MIT/AGPL parts; new in Oct 2026, still changing
-local JSFX_REPOS = { { "Saike", "https://raw.githubusercontent.com/JoepVanlier/JSFX/master/index.xml" },
-                     { "Chokehold", "https://github.com/chkhld/jsfx/raw/main/index.xml" },
-                     { "DSP to JSFX (chmaha)", "https://github.com/chmaha/DSP-Ports-JSFX/raw/main/index.xml" } }
 if req.mode == "reapack" then
   if not reaper.APIExists("ReaPack_AddSetRepository") then
     step("ReaPack installed", false, "install ReaPack (reapack.com) and restart REAPER first")
   elseif already_installed() then
-    step("BandSync already installed through ReaPack", true, "left as it is (updates: BandSync - Update)")
-    req.mode = "verify" -- nothing to wait for
+    step("BandSync " .. WANT .. " already installed through ReaPack", true, "left as it is")
+    req.mode, req.open_panel = "verify", true -- nothing to wait for; land in the panel (it stayed shut, Mac 0.34.3)
   else
     local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
     step("add BandSync repository", added, err ~= "" and err or req.repo_url)
@@ -126,6 +147,7 @@ local function conclude()
   if kb then kb:close() end
   for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do count = count + 1 end
   out.registered_actions = count
+  out.version = installed_version()
   step("BandSync actions registered", count >= 5, count)
 
   -- Live sync starts again with REAPER for a session where it was running (Scripts/__startup.lua runs BandSync -
@@ -178,7 +200,9 @@ if req.mode == "reapack" and out.ok then
     if reaper.time_precise() - at < 2 then return reaper.defer(wait) end
     at = reaper.time_precise()
     local n = registered()
-    if n >= 5 and n == last then same = same + 1 else same = 0 end -- arrived, and nothing more for a moment
+    -- arrived (this installer's version, when an older one was there: its actions were registered all along), and
+    -- nothing more for a moment
+    if n >= 5 and n == last and (not WANT or installed_version() == WANT) then same = same + 1 else same = 0 end
     last = n
     if same >= 2 or reaper.time_precise() - started > 240 then return conclude() end
     reaper.defer(wait)

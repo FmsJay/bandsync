@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.34.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.34.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -299,6 +299,21 @@ function band.synced_elsewhere(proj)
   end
 end
 
+-- Colours travel in one byte order, Windows' (0x01BBGGRR: REAPER's native colour there, so nothing a Windows machine
+-- already sent changes). A Mac's native one is 0x01RRGGBB: sent raw, a red track showed blue on the other platform.
+-- out: this machine's native -> travelling; in: travelling -> native. The 0x1000000 "colour set" flag is kept.
+function band.color_out(c)
+  c = math.floor(tonumber(c) or 0)
+  if c == 0 or not reaper.ColorFromNative then return c end
+  local r, g, b = reaper.ColorFromNative(c & 0xFFFFFF)
+  return (c & ~0xFFFFFF) | (b << 16) | (g << 8) | r
+end
+function band.color_in(c)
+  c = math.floor(tonumber(c) or 0)
+  if c == 0 or not reaper.ColorToNative then return c end
+  return (c & ~0xFFFFFF) | reaper.ColorToNative(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF)
+end
+
 function band.bind(proj, b)
   for k, v in pairs(b) do reaper.SetProjExtState(proj, band.SECTION, k, tostring(v)) end
 end
@@ -364,7 +379,7 @@ function band.capture_markers(proj)
     if not band.is_local_mark(name) then
       local m = reaper.GetRegionOrMarker and reaper.GetRegionOrMarker(proj, i, "")
       local lane = m and reaper.GetRegionOrMarkerInfo_Value(proj, m, "I_LANENUMBER") or -1
-      out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = color, lane = lane >= 0 and math.floor(lane) or nil }
+      out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = band.color_out(color), lane = lane >= 0 and math.floor(lane) or nil }
     end
     i = i + 1
   end
@@ -431,7 +446,7 @@ function band.apply_markers(proj, list)
     local _, _, _, _, name = reaper.EnumProjectMarkers3(proj, i)
     if not band.is_local_mark(name) then reaper.DeleteProjectMarkerByIndex(proj, i) end
   end
-  for _, m in ipairs(list) do reaper.AddProjectMarker2(proj, m.region, m.pos, m["end"], m.name, -1, m.color) end
+  for _, m in ipairs(list) do reaper.AddProjectMarker2(proj, m.region, m.pos, m["end"], m.name, -1, band.color_in(m.color)) end
   if not reaper.GetRegionOrMarker then return end
   -- each one back in its ruler lane (matched by kind, position and name: AddProjectMarker2 gives no handle)
   for i = 0, reaper.GetNumRegionsOrMarkers(proj) - 1 do

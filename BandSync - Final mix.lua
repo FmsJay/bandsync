@@ -1,0 +1,52 @@
+-- @description BandSync: render the band's final mix into the song's shared folder (mixes/), for everyone
+-- Renders the whole project's master mix with this project's own render format (File > Render sets it) to
+-- <shared folder>/<Song>/mixes/<Song> <date> <you>, which reaches every bandmate like any file in the folder.
+-- Only the band's mix: BandSync's own tracks (the Real time return, live placeholders) and tracks kept as yours are
+-- muted for the render and put back after, and the render isn't added to the project (it would go to the band as
+-- a new item). Your render settings are put back as they were.
+local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
+package.path = dir .. "/lib/?.lua;" .. package.path
+local band, mirror = require("band"), require("mirror")
+local proj = reaper.EnumProjects(-1)
+local b = band.binding(proj)
+if not b then return band.msg("This project isn't a band song: open the band's song first (BandSync panel).") end
+local cfg = band.settings()
+if not cfg then return end
+if reaper.GetPlayStateEx(proj) & 4 == 4 then return band.msg("Stop recording first.") end
+
+local out = band.song_dir(cfg, b.song) .. "/mixes"
+reaper.RecursiveCreateDirectory(out, 0)
+local name = band.clean(string.format("%s %s %s", b.song, os.date("%Y-%m-%d %H%M"), cfg.user))
+
+local saved = {}
+for _, k in ipairs({ "RENDER_FILE", "RENDER_PATTERN" }) do saved[k] = select(2, reaper.GetSetProjectInfo_String(proj, k, "", false)) end
+for _, k in ipairs({ "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_ADDTOPROJ" }) do saved[k] = reaper.GetSetProjectInfo(proj, k, 0, false) end
+local muted = {}
+for i = 0, reaper.CountTracks(proj) - 1 do
+  local tr = reaper.GetTrack(proj, i)
+  if mirror.local_track(tr) and reaper.GetMediaTrackInfo_Value(tr, "B_MUTE") == 0 then
+    reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1); muted[#muted + 1] = tr
+  end
+end
+
+reaper.GetSetProjectInfo_String(proj, "RENDER_FILE", out, true)
+reaper.GetSetProjectInfo_String(proj, "RENDER_PATTERN", name, true)
+reaper.GetSetProjectInfo(proj, "RENDER_SETTINGS", 0, true) -- the master mix
+reaper.GetSetProjectInfo(proj, "RENDER_BOUNDSFLAG", 1, true) -- the entire project
+reaper.GetSetProjectInfo(proj, "RENDER_ADDTOPROJ", 0, true)
+reaper.Main_OnCommand(42230, 0) -- File: Render project, using the most recent render settings, auto-close render dialog
+
+-- (the render blocks: Live sync's loop hasn't run since the mutes, so they never reach the band)
+for _, tr in ipairs(muted) do reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 0) end
+for k, v in pairs(saved) do
+  if type(v) == "string" then reaper.GetSetProjectInfo_String(proj, k, v, true) else reaper.GetSetProjectInfo(proj, k, v, true) end
+end
+
+local made
+for i = 0, math.huge do
+  local f = reaper.EnumerateFiles(out, i)
+  if not f then break end
+  if f:sub(1, #name) == name then made = f end
+end
+if made then band.log("final mix rendered for the band: " .. out .. "/" .. made)
+else band.msg("The render didn't make a file (cancelled, or File > Render's format couldn't write). Nothing was changed.") end

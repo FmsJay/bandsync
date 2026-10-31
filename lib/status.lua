@@ -51,14 +51,14 @@ function status.gather(cfg, b, proj)
     if st and st.user then
       seen[st.user] = true
       if st.user ~= cfg.user then note_version(st.version) end
-      if st.user == cfg.user then view.my_age, view.my_mirror = band.age(st.time), st.mirror else
+      if st.user == cfg.user then view.my_age, view.my_mirror, view.my_pending = band.age(st.time), st.mirror, st.pending or 0 else
         local a, missing = band.age(st.time), count(st.takes or {})
         -- a receipt older than the newest change can't vouch for it yet
         local behind = (st.pending or 0) > 0 or (st.time or "") < newest_event
         rows[#rows + 1] = { name = st.user, age = a, version = st.version or "?", missing = missing,
           has = total - missing, mine = count(st.takes or {}, cfg.user), pending = st.pending or 0, hold = st.hold,
           armed = st.armed, side = st.side, playing = st.playing, recording = st.recording, mirror = st.mirror,
-          behind = behind,
+          behind = behind, reaper = st.reaper,
           state = a > 60 and "offline" or ((missing == 0 and not behind) and "synced" or "syncing") }
       end
     end

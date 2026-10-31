@@ -34,4 +34,12 @@ assert(chooser.match(rows[1], "mac") and chooser.match(rows[1], "james drums") a
 assert(chooser.match(rows[2], ""), "empty search matches")
 assert(chooser.ago("x", { secs = 30 }) == "just now" and chooser.ago("x", { secs = 600 }) == "10 min ago"
   and chooser.ago("x", { secs = 7200 }) == "2 h ago" and chooser.ago("x", { secs = 3 * 86400 }) == "3 days ago", "ago")
+-- the best match for what's typed: exact name, then a prefix, then anywhere in the name, else the first shown
+local function g(...) local rs = {}; for _, n in ipairs({ ... }) do rs[#rs + 1] = { song = n } end; return { name = "", rows = rs } end
+local gs = { g("MirrorTest4", "MirrorTest3", "MirrorTest"), g("Mirror Test") }
+assert(chooser.best(gs, "Mirror Test").song == "Mirror Test", "the exact name wins over newer near-matches")
+assert(chooser.best(gs, " mirror test ").song == "Mirror Test", "case and spaces around don't matter")
+assert(chooser.best(gs, "mirrortest").song == "MirrorTest", "exact, though shown last in its group")
+assert(chooser.best(gs, "Mirror").song == "MirrorTest4", "a prefix of all: the first shown")
+assert(chooser.best(gs, "").song == "MirrorTest4" and chooser.best({}, "x") == nil, "nothing typed; nothing shown")
 print("ok")

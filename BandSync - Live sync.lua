@@ -116,7 +116,7 @@ local function end_of_session(why)
   if n == ended_at_n or not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end
   ended_at_n = n
   recall.save(proj, cfg, b.song, b.room, "end of session", true)
-  band.log("saved an end-of-session restore point (" .. why .. "): it's kept for good")
+  band.log("saved an end-of-session version (" .. why .. "): it's kept for good (Restore > Saved versions)")
   local droot = require("drive").root(cfg) -- and the project itself, for anyone to open from Drive (lib/sessionfile.lua)
   if droot then
     local ok, out, err = pcall(require("sessionfile").export, proj, cfg, b, droot, sync.room_dir(cfg, b.song, b.room))
@@ -196,7 +196,7 @@ local function poll()
       tune_left = 0
       band.log(#set > 0 and ("Syncthing's band folder tuned for live use: " .. table.concat(set, ", ")) or "Syncthing is answering")
     elseif tune_left == 0 then
-      band.log("Syncthing: " .. tostring(err) .. " (Maintenance shows whether the shared folder syncs)")
+      band.log("Syncthing: " .. tostring(err) .. " (Setup > Health shows whether the shared folder syncs)")
     end
   end
   local s = band.read_json(band.session_path(cfg, b.song)) or last_session
@@ -262,6 +262,11 @@ local function poll()
       if not ok then band.log("mirror sync: " .. tostring(sent))
       elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
+      if hold then -- (how many are waiting, for the panel's "Holding N changes")
+        local n, key = 0, tostring(proj)
+        for k in pairs(require("mirror").unsent) do if k:sub(1, #key) == key then n = n + 1 end end
+        reaper.SetExtState(band.SECTION, "held " .. key, tostring(n), false)
+      end
     end
   end
 
@@ -442,7 +447,7 @@ local function tick_body() -- returns true to keep going
   if sync.tip_at and reaper.time_precise() - sync.tip_at > 6 then sync.tip_at = nil; reaper.TrackCtl_SetToolTip("", 0, 0, true) end
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then -- project closed: stop, and say so
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
-    return band.log("live sync stopped: '" .. b.song .. "' was closed (reopened, it starts again by itself if 'Start Live sync with REAPER' is on; otherwise press Start)")
+    return band.log("live sync stopped: '" .. b.song .. "' was closed (it starts again by itself when you reopen it)")
   end
   local now_b = band.binding(proj)
   if not now_b or now_b.role ~= b.role or now_b.song ~= b.song then -- became a solo working copy (or unbound): not ours any more

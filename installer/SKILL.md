@@ -7,9 +7,9 @@ description: Set up BandSync (remote band recording in REAPER) on this computer 
 
 **There is now a scripted installer that does steps 1-3 and most of 4-5:** `install_windows.ps1` (via
 `Install BandSync (Windows).cmd`) and `install_mac.sh` (via `Install BandSync (Mac).command`). Prefer running it,
-answering its questions as parameters (`-User -Hosting yes|no -HostId -Root -Live yes|no -Solo yes|no`; on macOS the
+answering its questions as parameters (`-User -Hosting yes|no -HostId -Root`, and `-Live no` / `-Solo no` only to leave out SonoBus + Tailscale / Google Drive, which otherwise always go in; on macOS the
 `BS_*` environment variables in its header), and use the steps below to explain prompts, repair, or finish what it
-lists as left for a human. The Windows one is tested; the macOS one hasn't been run on a Mac yet, so watch it.
+lists as left for a human. Both have been run for real (Windows, and a Mac on 2026-10-31). They wait while the person signs in to Tailscale and Google Drive; any key (Return on a Mac) skips a wait.
 
 You are installing BandSync for a musician who is probably not technical. They are at the keyboard.
 Your job is to get them from nothing to "my take landed in the host's project", explaining each
@@ -124,7 +124,7 @@ restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui"
 
 ## 4. SonoBus and Tailscale (only for Live)
 
-**Listen live** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
+**Real time** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
 from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to
 join the band's group under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.

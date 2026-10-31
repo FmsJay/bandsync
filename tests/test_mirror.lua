@@ -157,6 +157,9 @@ assert(mirror.last_undo(U, "J") == nil, "redone: nothing left to redo")
 U[6] = { kind = "obj", user = "J", id = "c3" }
 assert(mirror.last_undo(U, "J") == nil and mirror.last_mine(U, "J") == 6, "a new change ends redo")
 
+-- a print BandSync refreshed by itself isn't the person's change: Undo reaches past it to the copy they made
+local P = { { kind = "obj", user = "J", id = "copy" }, { kind = "obj", user = "J", id = "reprint", auto = true } }
+assert(mirror.last_mine(P, "J") == 1, "Undo skips an automatic print refresh")
 -- side room into its parent: only-side changes come in (tracks first), both-changed are clashes
 local side = { ["I-1"] = { obj = "item", oid = "I-1" }, ["T-9"] = { obj = "track", oid = "T-9" }, ["I-2"] = { obj = "item", oid = "I-2" } }
 local main = { ["I-2"] = { obj = "item", oid = "I-2" } }

@@ -189,7 +189,7 @@ function recall.describe(e)
   if e.kind == "obj" then -- mirror sync: an item, a track or a track's plug-ins
     local where = (e.name or "") ~= "" and e.name or "an unnamed track"
     local part = require("mirror").PART[e.obj]
-    local what = part and (part .. " on " .. where) or e.obj == "track" and ("track " .. where) or ("an item on " .. where)
+    local what = part and (part .. " on " .. where) or e.obj == "track" and ((e.name or "") ~= "" and ("track " .. where) or where) or ("an item on " .. where)
     if e.gone then return "deleted " .. what end
     if e.restored then return "brought back " .. what end
     return ((e.rev or 1) == 1 and "added " or "changed ") .. what .. ((e.obj == "item" and e.pos) and string.format(" at %.2f s", e.pos) or "")

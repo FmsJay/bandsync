@@ -1043,7 +1043,8 @@ function sync.receive(proj, cfg, song, room, can)
       elseif res then
         setext(proj, sync.APPLIED, ev.id, "1")
         stamp(proj, ev)
-        applied = applied + 1
+        local theirs = ev.user ~= cfg.user -- (your own changes come back too: they aren't "from the band")
+        if theirs then applied = applied + 1 end
         local what = ({ plays = "now playing on " .. tostring(ev.track), track = "changed track " .. tostring(ev.track),
           delete = "deleted " .. tostring(ev.take), undelete = "brought back " .. tostring(ev.take),
           midi = "edited the notes of " .. tostring(ev.take), timeline = "changed the tempo map / markers",
@@ -1053,7 +1054,7 @@ function sync.receive(proj, cfg, song, room, can)
           obj = (ev.gone and "deleted " or "changed ") .. (require("mirror").PART[ev.obj] or (ev.obj == "item" and "an item" or "a track")) ..
             " on " .. ((ev.name or "") ~= "" and ev.name or "an unnamed track"),
           shift = ((ev.len or 0) > 0 and "inserted " or "removed ") .. string.format("%.2f s at %.2f s", math.abs(ev.len or 0), ev.at or 0) })[ev.type]
-        done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take)))
+        if theirs then done[#done + 1] = ev.user .. ": " .. (what or ("moved/trimmed " .. tostring(ev.take))) end
       end
     end
   end

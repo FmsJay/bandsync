@@ -235,7 +235,9 @@ local function poll()
     -- came in, and at least every 10 s anyway (anything REAPER doesn't count as a change still gets seen)
     local cc = reaper.GetProjectStateChangeCount(proj)
     if cc ~= mirror_cc or mirror_due or now - mirror_at > 10 then
-      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix })
+      local presence = require("presence")
+      local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
+      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix, held = held })
       if not ok then band.log("mirror sync: " .. tostring(sent))
       elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
@@ -317,6 +319,13 @@ local function poll()
     drive_more = more
   end
   sync.draw_claims(proj, who.times) -- who claimed which stretch of time, as regions (this machine only)
+  do -- bandmates' pings show here; following someone keeps the view on theirs (lib/presence.lua)
+    local presence = require("presence")
+    local peers = presence.peers(cfg, b.song, b.room)
+    presence.pings(proj, peers)
+    local follow = reaper.GetExtState(band.SECTION, "follow " .. tostring(proj))
+    if follow ~= "" then presence.follow(proj, peers, follow) end
+  end
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat
   -- pending + hold let "Take control" wait until everyone has caught up before switching
@@ -328,9 +337,11 @@ local function poll()
   local info = { driver = driver, role = b.role, song = b.song, hold = hold or nil,
     pending = sync.pending_events(proj, cfg, b.song, b.room), armed = armed, side = side_bars(),
     playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil, recording = reaper.GetPlayStateEx(proj) & 4 == 4 or nil,
-    front = reaper.EnumProjects(-1) == proj, mirror = s and s.sync == "mirror" and require("mirror").root(proj) or nil }
+    front = reaper.EnumProjects(-1) == proj, mirror = s and s.sync == "mirror" and require("mirror").root(proj) or nil,
+    editing = require("presence").editing(proj), view = require("presence").view(proj), ping = require("presence").my_ping(proj) }
   local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
-    tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror)
+    tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror) ..
+    band.json_encode({ info.editing, info.view, info.ping or false })
   if fingerprint ~= status_json or now - last_status > 15 then
     status_json, last_status = fingerprint, now
     sync.write_status(proj, cfg, b.song, b.room, info)

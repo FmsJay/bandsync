@@ -24,6 +24,9 @@ local live = require("live")
 local driving = require("sync").driver(cfg, b.song, b.room, band.read_json(band.session_path(cfg, b.song))) == cfg.user
 local sm, si = live.fx(proj, false, live.SONOBUS)
 local rt = sm and not reaper.TrackFX_GetOffline(sm, si) and select(2, reaper.GetProjExtState(proj, band.SECTION, "side")) == "0"
+-- where a ping goes: the timeline under the mouse as the menu opens (SWS), else the edit cursor
+local ping_pos = reaper.BR_PositionAtMouseCursor and reaper.BR_PositionAtMouseCursor(true) or -1
+if ping_pos < 0 then ping_pos = reaper.GetCursorPositionEx(proj) end
 
 -- The panel carries the request out ("panel do"); opened first when it isn't running (running it again would close it).
 local function ask(what)
@@ -55,6 +58,8 @@ local SLICES = {
     "each other right away, and play, stop and record follow whoever presses them.", function() ask("realtime") end },
   { "Chat", "Open the Chat page: messages, to-dos and links for the band, this song or this room.",
     function() ask("chat") end },
+  { "Ping\nhere", string.format("Put a marker at %.2f s on everyone's timeline for %d seconds, with your name: \"look here\".",
+    ping_pos, require("presence").PING_SHOWN), function() require("presence").ping_here(proj, ping_pos) end },
 }
 
 local R, r, PAD, DESC_H = 165, 70, 12, 76 -- ring outside and inside radius; the description box goes under the ring

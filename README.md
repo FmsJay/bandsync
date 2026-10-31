@@ -155,6 +155,16 @@ REAPER's normal Undo and Redo.
 **Your name**: Setup > Options > Change name. Who drives and your claims move over, and your tracks stay yours on
 every machine (the band keeps a list of old names). Changes you made before keep the old name on the Restore page.
 
+**Working at the same time** (each machine's status file carries it, a few seconds behind):
+
+- **Edit holds**: what a bandmate changed in the last 15 seconds is theirs for that long. If you change it too, yours
+  is put back with "Bee is editing that item on Keys right now", instead of the two of you overwriting each other.
+- **Follow**: the Follow button next to a bandmate in Who's here keeps your arrange view where theirs is.
+- **Ping**: the radial menu's "Ping here" puts a marker with your name on everyone's timeline for 30 seconds.
+
+**FX browser**: the plug-ins everyone in the band has show in a "BandSync" category (and the "BandSync (everyone
+has)" folder) after REAPER's next start.
+
 **Open session** shows, for the song you point at, how many tracks it has, how much audio, and which of its
 plug-ins this machine doesn't have.
 

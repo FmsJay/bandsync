@@ -129,6 +129,44 @@ function plugins.folders_ini(text, name, items)
   return table.concat(out, "\n") .. "\n"
 end
 
+-- REAPER's FX browser lists categories from reaper-fxtags.ini ([category] <plug-in file or CLAP id>=A|B|C). The
+-- plug-ins everyone in the band has also go in a "BandSync" category (next to its Categories and Developers).
+plugins.CATEGORY = "BandSync"
+-- The category key REAPER uses for an installed plug-in: the file name for VST/VST3, the id for CLAP; nil for a
+-- plug-in inside a shell (Waves) or a JSFX. Pure.
+function plugins.tag_key(ident, kind)
+  if (kind or ""):match("^CLAP") then return ident end
+  if (kind or ""):match("^VST") and not ident:find("<", 1, true) then return ident:match("[^\\/]+$") end
+end
+-- reaper-fxtags.ini with "BandSync" on exactly the keys in `set`, every other category kept. Pure.
+function plugins.tags_ini(text, set)
+  local lines, sec, seen, at, out = {}, nil, {}, nil, {}
+  for line in ((text or "") .. "\n"):gmatch("([^\r\n]*)\r?\n") do lines[#lines + 1] = line end
+  if lines[#lines] == "" then lines[#lines] = nil end
+  for _, line in ipairs(lines) do
+    local name = line:match("^%[(.-)%]%s*$")
+    if name then
+      sec = name
+      out[#out + 1] = line
+      if name == "category" then at = #out end -- (new entries go right under the header)
+    elseif sec == "category" and line:find("=", 1, true) then
+      local k, v = line:match("^(.-)=(.*)$")
+      local cats = {}
+      for c in (v .. "|"):gmatch("([^|]*)|") do if c ~= "" and c ~= plugins.CATEGORY then cats[#cats + 1] = c end end
+      if set[k] then cats[#cats + 1] = plugins.CATEGORY; seen[k] = true end
+      if #cats > 0 then out[#out + 1] = k .. "=" .. table.concat(cats, "|") end
+    else
+      out[#out + 1] = line
+    end
+  end
+  local add = {}
+  for k in pairs(set) do if not seen[k] then add[#add + 1] = k .. "=" .. plugins.CATEGORY end end
+  table.sort(add)
+  if not at then out[#out + 1] = "[category]"; at = #out end
+  for i, l in ipairs(add) do table.insert(out, at + i, l) end
+  return table.concat(out, "\n") .. "\n"
+end
+
 -- The band's folder for this machine: its own plug-ins that everyone has, one format each. Returns how many,
 -- and the members, or nil + why (fewer than two lists: nothing to compare yet).
 function plugins.update_folder(cfg, min_members)
@@ -146,6 +184,13 @@ function plugins.update_folder(cfg, min_members)
   local old = band.read(path) or ""
   local new = plugins.folders_ini(old, plugins.FOLDER, items)
   if new ~= old then band.write_atomic(path, new) end
+  -- and the BandSync category (REAPER reads both when it starts: a new list shows after a restart)
+  local keys = {}
+  for _, it in ipairs(items) do local k = plugins.tag_key(it.ident, it.kind); if k then keys[k] = true end end
+  local tpath = reaper.GetResourcePath() .. "/reaper-fxtags.ini"
+  local told = band.read(tpath) or ""
+  local tnew = plugins.tags_ini(told, keys)
+  if tnew ~= told then band.write_atomic(tpath, tnew) end
   return #items, nil, members
 end
 

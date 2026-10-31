@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.32.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.32.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -308,13 +308,15 @@ end
 -- display only: they're never captured as the song's markers, and applying the band's markers keeps them.
 band.CLAIM_MARK = "[claimed: "
 function band.is_claim_mark(name) return (name or ""):sub(1, #band.CLAIM_MARK) == band.CLAIM_MARK end
+-- A marker or region only this machine shows: a claim, or a bandmate's ping ("[ping] Bee", lib/presence.lua).
+function band.is_local_mark(name) return band.is_claim_mark(name) or (name or ""):sub(1, 7) == "[ping] " end
 
 function band.capture_markers(proj)
   local out, i = {}, 0
   while true do
     local n, rgn, pos, rend, name, _, color = reaper.EnumProjectMarkers3(proj, i)
     if n == 0 then break end
-    if not band.is_claim_mark(name) then
+    if not band.is_local_mark(name) then
       local m = reaper.GetRegionOrMarker and reaper.GetRegionOrMarker(proj, i, "")
       local lane = m and reaper.GetRegionOrMarkerInfo_Value(proj, m, "I_LANENUMBER") or -1
       out[#out + 1] = { region = rgn, pos = pos, ["end"] = rend, name = name, color = color, lane = lane >= 0 and math.floor(lane) or nil }
@@ -382,7 +384,7 @@ band.LANE_KEYS = { "DEFAULT", "LOCKED", "COLOR", "TIMEBASE" }
 function band.apply_markers(proj, list)
   for i = reaper.CountProjectMarkers(proj) - 1, 0, -1 do
     local _, _, _, _, name = reaper.EnumProjectMarkers3(proj, i)
-    if not band.is_claim_mark(name) then reaper.DeleteProjectMarkerByIndex(proj, i) end
+    if not band.is_local_mark(name) then reaper.DeleteProjectMarkerByIndex(proj, i) end
   end
   for _, m in ipairs(list) do reaper.AddProjectMarker2(proj, m.region, m.pos, m["end"], m.name, -1, m.color) end
   if not reaper.GetRegionOrMarker then return end

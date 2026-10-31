@@ -332,7 +332,7 @@ function mirror.last_mine(entries, user)
     if e.kind == "obj" and e.user == user then
       if e.undoes and not undone[e.id] then undone[e.undoes] = true
       elseif e.redoes then undone[e.redoes] = true -- (a redo undoes an undo: the change it undid counts again)
-      elseif not e.restored and not undone[e.id] then return i end
+      elseif not e.restored and not e.auto and not undone[e.id] then return i end -- (auto: a print BandSync refreshed)
     end
   end
 end
@@ -594,6 +594,7 @@ end
 -- oids given back after an unsaved reopen whose state here is older than the band's: put back, never sent, until they
 -- match what this machine last knew (proj .. oid -> true)
 mirror.reopened = {}
+mirror.auto = {} -- proj .. oid -> its next send is a print BandSync refreshed (Undo skips those)
 
 function mirror.scan(proj, user, media_dir, local_mix)
   local objs, by_oid, tracks = {}, {}, {}
@@ -789,7 +790,13 @@ function mirror.apply(proj, ev, media_dir, local_mix)
   if ev.gone then
     local p = mirror.find(proj, kind == "fx" and "track" or kind, kind == "fx" and ev.track or oid)
     if p and kind == "item" then reaper.DeleteTrackMediaItem(reaper.GetMediaItem_Track(p), p)
-    elseif p and kind == "track" then reaper.DeleteTrack(p) end
+    elseif p and kind == "track" then -- (auto-colour rules recolour the rest when a track goes: theirs are the band's)
+      local colours = {}
+      for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); colours[x] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
+      reaper.DeleteTrack(p)
+      mirror.keep_colours = { proj = proj, colours = colours, till = reaper.time_precise() + 5 }
+      mirror.hold_colours()
+    end
     return true, ""
   end
   if kind == "track" then
@@ -798,7 +805,11 @@ function mirror.apply(proj, ev, media_dir, local_mix)
       local idx = 0 -- under the track it sat under there (or first)
       local above = ev.state.after ~= "" and mirror.find(proj, "track", ev.state.after)
       if above then idx = math.floor(reaper.GetMediaTrackInfo_Value(above, "IP_TRACKNUMBER")) end
+      local colours = {} -- (auto-colour rules recolour the other tracks when one goes in: theirs are the band's)
+      for t = 0, reaper.CountTracks(proj) - 1 do local x = reaper.GetTrack(proj, t); colours[x] = reaper.GetMediaTrackInfo_Value(x, "I_CUSTOMCOLOR") end
       reaper.InsertTrackInProject(proj, idx, 0) -- (InsertTrackAtIndex only knows the tab in front; REAPER 7.18+)
+      mirror.keep_colours = { proj = proj, colours = colours, till = reaper.time_precise() + 5 }
+      mirror.hold_colours()
       tr = reaper.GetTrack(proj, idx)
       reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", oid, true)
     end
@@ -1068,6 +1079,11 @@ function mirror.watch(proj, cfg, song, room, opts)
         if reaper.time_precise() - f.since < 3 then return end
       end
       local name = perm_name(o, by_oid)
+      local holder = rev and opts.held and opts.held(o.oid)
+      if holder then -- someone else is working on it right now (lib/presence.lua): theirs, for a few seconds
+        return put_back(o, rev, evid, { name = name, text = string.format("%s is editing %s right now: put back (try again in a few seconds)",
+          holder, o.kind == "track" and ("track " .. (name ~= "" and name or "(unnamed)")) or ((o.kind == "item" and "that item" or mirror.PART[o.kind]) .. " on " .. (name ~= "" and name or "an unnamed track"))) })
+      end
       local last = rev and event_file(room_dir, evid) or nil
       -- allowed where it is now, and where it was (moving an item off a claimed track, or renaming a claimed track,
       -- mustn't slip past the claim)
@@ -1085,9 +1101,11 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
         local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,
           name = name, pos = o.pos, hash = o.hash, hv = mirror.HV } -- (hash: what it is here; every receiver checks it came out the same)
+        if mirror.auto[tostring(proj) .. o.oid] then ev.auto, mirror.auto[tostring(proj) .. o.oid] = true, nil end
         if o.kind == "fx" then ev.files = require("fxfiles").share(state, media) end -- (samples, IRs, models it loads)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
+        require("presence").touch(proj, o.oid)
         sent = sent + 1
       else
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
@@ -1109,7 +1127,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         local fx = by_oid["F" .. o.track:sub(2)]
         if kev and kev:upper():sub(1, #mine_prefix) == mine_prefix and fx then
           local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash)
-          if ok and did then made = made + 1 end
+          if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is BandSync's, not theirs)
         end
       end
     end

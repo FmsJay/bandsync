@@ -1611,6 +1611,7 @@ local function home_who()
         ImGui.SameLine(ctx, 0, 6)
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project") else ImGui.TextColored(ctx, RED, "project differs") end
       end
+      if p.state ~= "here" and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 6); tools.follow_button(p.name) end
     end
     if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
     return home_play()
@@ -1637,6 +1638,7 @@ local function home_who()
         else ImGui.TextColored(ctx, RED, "project differs from yours"); ImGui.SetItemTooltip(ctx, "They have every change, yet their project isn't the same as yours: " ..
           "Setup > Health says more, and the Console names what came out different.") end
       end
+      if p.state ~= "here" and p.state ~= "offline" then tools.follow_button(p.name) end
       card_end()
     end
   end
@@ -1795,6 +1797,17 @@ local function nav_dot(p)
 end
 -- The Dock button: left-click picks a side; right-click arms drag-to-dock (green) so moving the window around never
 -- docks it by accident (unarmed, dragging docks only with Shift held). On the session's top bar and the start screen.
+-- Follow a bandmate's view (lib/presence.lua): Live sync moves this arrange view to theirs, a few seconds behind.
+tools.follow_button = function(name)
+  local key = "follow " .. tostring(proj)
+  local on = reaper.GetExtState(band.SECTION, key) == name
+  if ImGui.SmallButton(ctx, (on and "Following" or "Follow") .. "##follow" .. name) then
+    if on then reaper.DeleteExtState(band.SECTION, key, false) else reaper.SetExtState(band.SECTION, key, name, false) end
+  end
+  ImGui.SetItemTooltip(ctx, on and ("Your view follows " .. name .. "'s (a few seconds behind). Click to stop.")
+    or ("Keep your view where " .. name .. "'s is: scroll and zoom follow theirs, a few seconds behind."))
+end
+
 tools.dock_menu = function(docked)
   local armed = reaper.GetExtState(band.SECTION, "dock armed") ~= ""
   if armed then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end

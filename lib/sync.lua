@@ -125,7 +125,7 @@ end
 -- REAPER moves (and, in its default "beats (position, length, rate)" timebase, stretches) each item exactly as it
 -- would for a local tempo change. Positions also travel in quarter notes, so a take that crosses paths with a
 -- tempo change still lands on its beat.
-local function timeline_sig(proj) return band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }) end
+local function timeline_sig(proj) return band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj), band.capture_project(proj) }) end
 sync.timeline_sig = timeline_sig
 
 -- Whether this project follows the beat (REAPER's default) rather than the clock: then positions travel in beats.
@@ -817,6 +817,7 @@ function sync.apply(proj, ev, dir, root, can, me)
     sync.audio_follow_tempo(proj)
     band.apply_tempo(proj, ev.tempo or {})
     band.apply_markers(proj, ev.markers or {})
+    band.apply_project(proj, ev.project) -- (title, notes, group names, timebase: from 0.31.1)
     setext(proj, band.SECTION, "timeline", timeline_sig(proj))
     sync.resnap(proj)
     return true
@@ -917,11 +918,12 @@ function sync.watch_timeline(proj, cfg, song, room, can)
   local me = cfg.user
   -- tempo map / markers first: if they changed, REAPER has just moved items for it, and those moves aren't edits
   local sig, seen = timeline_sig(proj), ext(proj, band.SECTION, "timeline")
+  if seen ~= sig and seen ~= "" and (band.json_decode(seen) or {})[3] == nil then seen = "" end -- (noted before project settings travelled: a first look)
   if seen ~= sig then
     if seen ~= "" then
       if can(me, nil, nil) then -- the song's timeline is the driver's
         local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
-        sync.post(cfg, song, room, { type = "timeline", tempo = tempo, markers = markers })
+        sync.post(cfg, song, room, { type = "timeline", tempo = tempo, markers = markers, project = band.capture_project(proj) })
         sync.session_timeline(cfg, song, tempo, markers)
         band.log("sent the new tempo map and markers to the band")
         local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
@@ -947,9 +949,10 @@ function sync.watch_timeline(proj, cfg, song, room, can)
           reaper.Undo_BeginBlock2(proj)
           band.apply_tempo(proj, before[1])
           band.apply_markers(proj, before[2] or {})
+          band.apply_project(proj, before[3])
           reaper.Undo_EndBlock2(proj, "BandSync: put the band's tempo map and markers back", -1)
           sig = timeline_sig(proj)
-          sync.put_back("only the driver changes the tempo map and markers: put back (take control to change them)")
+          sync.put_back("only the driver changes the tempo map, markers and project settings: put back (take control to change them)")
         else
           band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")
         end

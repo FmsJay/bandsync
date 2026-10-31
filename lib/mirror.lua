@@ -11,13 +11,21 @@ for _, k in ipairs(LOCAL) do LOCAL_SET[k] = true end
 -- P_EXT keys that travel: our object id, and mirrored markers (band_m_*). Everything else is this machine's.
 local function ext_travels(key) return key == "band_oid" or key:sub(1, 7) == "band_m_" end
 
+-- A plug-in chain's lines that are this machine's own: FX ids, window positions, which window is open or docked.
+local FX_LOCAL = { FXID = true, FLOATPOS = true, FLOAT = true, WNDRECT = true, SHOW = true, LASTSEL = true, DOCKED = true }
+
 -- Normalized item chunk: what the band shares about this item, byte-identical on every machine that holds it.
 function mirror.normalize_item(chunk)
-  local out, in_ext = {}, false
+  local out, in_ext, takefx = {}, false, 0 -- (takefx: depth inside a take's <TAKEFX chain, 0 outside it)
   for line in chunk:gmatch("[^\r\n]+") do
     local s = line:match("^%s*(.-)%s*$")
     local key = s:match("^(%S+)")
-    if in_ext then
+    local fx_top = takefx == 1
+    if takefx > 0 then
+      if s:sub(1, 1) == "<" then takefx = takefx + 1 elseif s == ">" then takefx = takefx - 1 end
+    elseif s == "<TAKEFX" then takefx = 1 end
+    if fx_top and key and FX_LOCAL[key] then -- (a take plug-in's window opened or moved isn't a change)
+    elseif in_ext then
       if s == ">" then in_ext = false; out[#out + 1] = s
       elseif key and ext_travels(key) then out[#out + 1] = s end
     elseif s == "<EXT" or s == "<EXTI" then -- (REAPER writes an item's P_EXT as <EXTI, a track's or take's as <EXT)
@@ -37,7 +45,6 @@ end
 -- The <FXCHAIN> block of a track chunk, normalized: no FX ids, window positions or open/closed state.
 -- `skip` (optional set of FXIDs) leaves out this machine's own additions (plug-in translations). A plug-in runs
 -- from its BYPASS line to the line before the next BYPASS (FXID and WAK follow its block).
-local FX_LOCAL = { FXID = true, FLOATPOS = true, FLOAT = true, WNDRECT = true, SHOW = true, LASTSEL = true, DOCKED = true }
 function mirror.fxchain(track_chunk, skip)
   local raw, depth, on = {}, 0, false
   for line in track_chunk:gmatch("[^\r\n]+") do
@@ -73,11 +80,14 @@ end
 -- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
 -- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
 -- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
-mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", I = "item" } -- (an oid's first letter)
-mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends" } -- (a track's parts, in words)
+mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", M = "misc", I = "item" } -- (an oid's first letter)
+mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends", misc = "the groups, lock, input FX or note names" }
+mirror.PARTS = { "F", "E", "R", "M" } -- (what a track oid T-x carries: F-x, E-x, R-x, M-x)
 local ENV_LOCAL = { EGUID = true, ARM = true, VIS = true, LANEHEIGHT = true }
 local function is_env(u) return u.block and u.tag:find("ENV") and u.tag:sub(1, 3) ~= "AUX" end
 local function is_aux(u) return u.block and u.tag:sub(1, 3) == "AUX" and u.tag:find("ENV") end
+local MISC = { GROUP_FLAGS = true, GROUP_FLAGS_HIGH = true, LOCK = true, FXCHAIN_REC = true, MIDINOTENAMES = true }
+local function is_misc(u) return MISC[u.tag] ~= nil end
 
 -- A track chunk's first line, its top-level parts in order ({ tag, lines, block }) and its closing line.
 local function track_units(chunk)
@@ -99,22 +109,49 @@ local function track_units(chunk)
 end
 
 -- An envelope block as it travels: trimmed, without its view lines.
-local function env_norm(lines)
+local function env_norm(lines, drop)
   local out, depth = {}, 0
   for _, l in ipairs(lines) do
     local s = l:match("^%s*(.-)%s*$")
-    if not (depth == 1 and ENV_LOCAL[s:match("^(%S+)")]) then out[#out + 1] = s end
+    if not (depth == 1 and (drop or ENV_LOCAL)[s:match("^(%S+)")]) then out[#out + 1] = s end
     if s:sub(1, 1) == "<" then depth = depth + 1 elseif s == ">" then depth = depth - 1 end
   end
   return table.concat(out, "\n") .. "\n"
 end
 
--- A track chunk's envelopes and receives as they travel. `oid_at(index)`: the oid of the track at that 0-based
--- position, nil when it isn't mirrored (its receive is left out).
+-- A track's MIDI note names, { "chan pitch" = name }, from its chunk or a travelling state. A cleared name stays in
+-- REAPER's block as "" (the same as none).
+function mirror.note_names(text)
+  local out, on = {}, false
+  for line in text:gmatch("[^\r\n]+") do
+    local s = line:match("^%s*(.-)%s*$")
+    if s == "<MIDINOTENAMES" then on = true
+    elseif on and s == ">" then on = false
+    elseif on then
+      local chan, pitch, rest = s:match("^(%-?%d+)%s+(%d+)%s+(.*)$")
+      local name = rest and (rest:match('^"(.-)"') or rest:match("^'(.-)'") or rest:match("^`(.-)`") or rest:match("^(%S+)"))
+      if name and name ~= "" then out[chan .. " " .. pitch] = name end
+    end
+  end
+  return out
+end
+
+-- A track chunk's envelopes, receives and other settings (groups, lock, input FX, note names) as they travel.
+-- `oid_at(index)`: the oid of the track at that 0-based position, nil when it isn't mirrored (its receive is left out).
 function mirror.track_parts(chunk, oid_at)
   local _, units = track_units(chunk)
-  local env, recv, cur = {}, {}, nil
+  local env, recv, misc, cur = {}, {}, {}, nil
   for _, u in ipairs(units) do
+    if u.tag == "MIDINOTENAMES" then -- (named notes only, in a fixed order: set through REAPER's API on the other side)
+      local names, keys = mirror.note_names(table.concat(u.lines, "\n")), {}
+      for k in pairs(names) do keys[#keys + 1] = k end
+      table.sort(keys)
+      if #keys > 0 then
+        local b = { "<MIDINOTENAMES" }
+        for _, k in ipairs(keys) do local q = names[k]:find('"') and "`" or '"'; b[#b + 1] = k .. " " .. q .. names[k] .. q end
+        misc[#misc + 1] = table.concat(b, "\n") .. "\n>\n"
+      end
+    elseif is_misc(u) then misc[#misc + 1] = u.block and env_norm(u.lines, FX_LOCAL) or (u.lines[1]:match("^%s*(.-)%s*$") .. "\n") end
     if u.tag == "AUXRECV" then
       local idx, rest = u.lines[1]:match("^%s*AUXRECV%s+(%d+)(.-)%s*$")
       local src = idx and oid_at(tonumber(idx))
@@ -128,7 +165,7 @@ function mirror.track_parts(chunk, oid_at)
     end
   end
   for i, r in ipairs(recv) do recv[i] = table.concat(r) end
-  return table.concat(env), table.concat(recv)
+  return table.concat(env), table.concat(recv), table.concat(misc)
 end
 
 -- The track chunk with its envelopes (what = "env") or its mirrored receives ("recv") replaced by `state` (as
@@ -155,6 +192,9 @@ function mirror.splice_parts(chunk, what, state, index_of, oid_at)
       if not idx then return nil end
       cur = { tag = "AUXRECV", lines = { "AUXRECV " .. idx .. rest } }
       new[#new + 1] = cur
+    elseif not (cur and cur.open) and line:sub(1, 1) ~= "<" then -- (a lone line: GROUP_FLAGS, LOCK)
+      cur = { tag = line:match("^(%S+)"), lines = { line } }
+      new[#new + 1] = cur
     elseif line:sub(1, 1) == "<" and not (cur and cur.open) then
       cur = { tag = line:match("^<(%S+)"), lines = { line }, block = true, open = 1 }
       new[#new + 1] = cur
@@ -165,10 +205,13 @@ function mirror.splice_parts(chunk, what, state, index_of, oid_at)
       if cur.open == 0 then cur.open = nil end
     end
   end
+  -- note names aren't read from a chunk written back (measured 7.83): mirror.apply sets them through REAPER's API
+  for i = #new, 1, -1 do if new[i].tag == "MIDINOTENAMES" then table.remove(new, i) end end
   local out, at, after_recv = { head }, nil, false
   for _, u in ipairs(units) do
     local drop
     if what == "env" then drop = is_env(u)
+    elseif what == "misc" then drop = is_misc(u) and u.tag ~= "MIDINOTENAMES"
     elseif u.tag == "AUXRECV" then
       local idx = u.lines[1]:match("^%s*AUXRECV%s+(%d+)")
       drop = idx and oid_at(tonumber(idx)) ~= nil
@@ -328,11 +371,20 @@ function mirror.creator(oid) return (oid or ""):match("^%a%-(.-)%-%d+%-%d+$") en
 -- Track settings that travel, as one line (order matters only for hashing). Faders and pan always travel, but with
 -- Local mixing on they aren't a change here. Never: record arm, input, monitoring, height, selection.
 function mirror.track_hash(t, local_mix) return mirror.hash(mirror.track_line(t, local_mix) .. "|" .. (t.after or "")) end
+-- More of a track's settings, as { field, REAPER parameter }: the FX button, channels, the parent/master send and
+-- its channels, timebase, playback offset, solo defeat, lane settings and pan law; MIX ones follow Local mixing.
+mirror.TRACK_MORE = { { "fxen", "I_FXEN" }, { "nchan", "I_NCHAN" }, { "mainsend", "B_MAINSEND" }, { "msoffs", "C_MAINSEND_OFFS" },
+  { "msnch", "C_MAINSEND_NCH" }, { "timebase", "C_BEATATTACHMODE" }, { "playoffs", "D_PLAY_OFFSET" }, { "playoffsflag", "I_PLAY_OFFSET_FLAG" },
+  { "solodefeat", "B_SOLO_DEFEAT" }, { "lanesettings", "C_LANESETTINGS" }, { "panlaw", "D_PANLAW" }, { "panlawflags", "I_PANLAW_FLAGS" } }
+mirror.TRACK_MIX = { { "width", "D_WIDTH" }, { "panmode", "I_PANMODE" }, { "dualpanl", "D_DUALPANL" }, { "dualpanr", "D_DUALPANR" } }
+
 function mirror.track_line(t, local_mix)
   -- (colour isn't part of it: it travels with a real change, but auto-colouring (SWS) recolours new tracks on every
   -- machine, and counting that as a change made machines recolour each other)
   local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, t.solo or 0, t.phase or 0, t.icon or "",
     t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, local_mix and "" or (t.vol or ""), local_mix and "" or (t.pan or "") }
+  for _, kp in ipairs(mirror.TRACK_MORE) do f[#f + 1] = t[kp[1]] or "" end
+  for _, kp in ipairs(mirror.TRACK_MIX) do f[#f + 1] = local_mix and "" or (t[kp[1]] or "") end
   for i, v in ipairs(f) do f[i] = tostring(v):gsub("|", "/") end
   return table.concat(f, "|")
 end
@@ -409,6 +461,9 @@ function mirror.track_state(proj, tr, local_mix)
   t.plays, t.lanenames = table.concat(plays, ","), table.concat(names, ",")
   t.vol = string.format("%.6f", reaper.GetMediaTrackInfo_Value(tr, "D_VOL"))
   t.pan = string.format("%.4f", reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
+  for _, list in ipairs({ mirror.TRACK_MORE, mirror.TRACK_MIX }) do
+    for _, kp in ipairs(list) do t[kp[1]] = string.format("%.6g", reaper.GetMediaTrackInfo_Value(tr, kp[2])) end
+  end
   -- (the track above, so new tracks land in the same order)
   t.after = ""
   for i = math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 2, 0, -1 do -- (the nearest mirrored one above)
@@ -435,9 +490,15 @@ function mirror.set_track_state(proj, tr, t, local_mix)
     if l < (tonumber(t.lanes) or 0) then reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, v, true) end
     l = l + 1
   end
+  for _, kp in ipairs(mirror.TRACK_MORE) do
+    if tonumber(t[kp[1]]) then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]])) end -- (a sender without it: left)
+  end
   if not local_mix then
     if t.vol and t.vol ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", tonumber(t.vol)) end
     if t.pan and t.pan ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", tonumber(t.pan)) end
+    for _, kp in ipairs(mirror.TRACK_MIX) do
+      if tonumber(t[kp[1]]) then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]])) end
+    end
   end
 end
 
@@ -467,7 +528,7 @@ local function settle_ids(proj, list, kind, user, set_oid)
     if was and not held[was] then
       x.oid, x.restored, held[was] = was, true, true
       set_oid(x.ptr, was)
-      for _, p in ipairs(kind == "T" and { "T", "F", "E", "R" } or { "I" }) do -- what this machine knew of it (and its parts)
+      for _, p in ipairs(kind == "T" and { "T", table.unpack(mirror.PARTS) } or { "I" }) do -- what this machine knew of it (and its parts)
         local oid = p .. was:sub(2)
         if c.rec[oid] and ext(proj, oid) == "" then setext(proj, oid, c.rec[oid]) end
       end
@@ -485,7 +546,7 @@ local function settle_ids(proj, list, kind, user, set_oid)
     if c and c.guid[x.guid] ~= x.oid then c.guid[x.guid], c.dirty = x.oid, true end
     if x.restored then
       mirror.reopened[tostring(proj) .. x.oid] = true
-      if kind == "T" then for _, p in ipairs({ "F", "E", "R" }) do mirror.reopened[tostring(proj) .. p .. x.oid:sub(2)] = true end end
+      if kind == "T" then for _, p in ipairs(mirror.PARTS) do mirror.reopened[tostring(proj) .. p .. x.oid:sub(2)] = true end end
     end
   end
 end
@@ -518,8 +579,8 @@ function mirror.scan(proj, user, media_dir, local_mix)
       local fx = mirror.fxchain(chunk, skip) or ""
       local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = mirror.hash(fx) }
       objs[#objs + 1], by_oid[fo.oid] = fo, fo
-      local env, recv = mirror.track_parts(chunk, oid_at)
-      for _, p in ipairs({ { "E", "env", env }, { "R", "recv", recv } }) do
+      local env, recv, misc = mirror.track_parts(chunk, oid_at)
+      for _, p in ipairs({ { "E", "env", env }, { "R", "recv", recv }, { "M", "misc", misc } }) do
         local po = { kind = p[2], oid = p[1] .. oid:sub(2), ptr = tr, track = oid, state = p[3], hash = mirror.hash(p[3]) }
         objs[#objs + 1], by_oid[po.oid] = po, po
       end
@@ -630,7 +691,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local skip = {}
     for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
     return true, mirror.hash(mirror.fxchain(after, skip) or "")
-  elseif kind == "env" or kind == "recv" then
+  elseif kind == "env" or kind == "recv" or kind == "misc" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
     if reaper.GetPlayStateEx(proj) & 4 == 4 then return false end -- (a track chunk isn't rewritten mid-recording)
@@ -648,9 +709,16 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local new = mirror.splice_parts(chunk, kind, ev.state or "", function(o) return pos[o] end, oid_at)
     if not new then return false end -- a receive's source track hasn't arrived yet
     if new ~= chunk then reaper.SetTrackStateChunk(tr, new, false) end
+    if kind == "misc" then -- note names: through the API (see splice_parts)
+      local have, want = mirror.note_names(chunk), mirror.note_names(ev.state or "")
+      for k in pairs(have) do if not want[k] then local c, n = k:match("^(%S+) (%S+)$"); reaper.SetTrackMIDINoteNameEx(proj, tr, tonumber(n), tonumber(c), "") end end
+      for k, name in pairs(want) do
+        if have[k] ~= name then local c, n = k:match("^(%S+) (%S+)$"); reaper.SetTrackMIDINoteNameEx(proj, tr, tonumber(n), tonumber(c), name) end
+      end
+    end
     local _, after = reaper.GetTrackStateChunk(tr, "", false)
-    local env, recv = mirror.track_parts(after, oid_at)
-    return true, mirror.hash(kind == "env" and env or recv)
+    local env, recv, misc = mirror.track_parts(after, oid_at)
+    return true, mirror.hash(kind == "env" and env or kind == "recv" and recv or misc)
   elseif kind == "item" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
@@ -910,7 +978,7 @@ function mirror.selection_scope(proj)
   local set, any = {}, false
   for i = 0, reaper.CountSelectedTracks(proj) - 1 do
     local oid = trk_oid(reaper.GetSelectedTrack(proj, i))
-    if oid ~= "" then for _, p in ipairs({ "T", "F", "E", "R" }) do set[p .. oid:sub(2)] = true end; any = true end
+    if oid ~= "" then for _, p in ipairs({ "T", table.unpack(mirror.PARTS) }) do set[p .. oid:sub(2)] = true end; any = true end
   end
   if not any then return nil end
   return function(oid, last, at) return set[oid] or (last and set[last.track or ""]) or (at and set[at.track or ""]) or false end
@@ -988,6 +1056,9 @@ function mirror.end_local_mix(proj, cfg, song, room, adopt)
         if type(ev) == "table" and type(ev.state) == "table" then
           if ev.state.vol and ev.state.vol ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", tonumber(ev.state.vol)) end
           if ev.state.pan and ev.state.pan ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", tonumber(ev.state.pan)) end
+          for _, kp in ipairs(mirror.TRACK_MIX) do
+            if tonumber(ev.state[kp[1]]) then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(ev.state[kp[1]])) end
+          end
         end
         local t = mirror.track_state(proj, tr, false)
         remember(proj, oid, rev, mirror.track_hash(t, false), evid, order)

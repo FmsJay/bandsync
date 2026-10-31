@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.31.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.31.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -273,6 +273,45 @@ function band.capture_markers(proj)
     i = i + 1
   end
   return out
+end
+
+-- The project's own settings that change how the song plays or reads: title, author, notes, track group names and the
+-- timebase (with different timebases one tempo change moves items differently per machine). Travel with the timeline.
+function band.capture_project(proj)
+  local p = { title = select(2, reaper.GetSetProjectInfo_String(proj, "PROJECT_TITLE", "", false)),
+    author = select(2, reaper.GetSetProjectInfo_String(proj, "PROJECT_AUTHOR", "", false)), notes = reaper.GetSetProjectNotes(proj, false, ""),
+    groups = {}, timebase = "" }
+  for g = 1, 64 do
+    local name = select(2, reaper.GetSetProjectInfo_String(proj, "TRACK_GROUP_NAME:" .. g, "", false))
+    if name ~= "" then p.groups[tostring(g)] = name end
+  end
+  if reaper.SNM_GetIntConfigVarEx then -- (no setter in REAPER's API: SWS reaches the project's own config)
+    p.timebase = reaper.SNM_GetIntConfigVarEx(proj, "itemtimelock", -1) .. " " .. reaper.SNM_GetIntConfigVarEx(proj, "tempoenvtimelock", -1)
+  end
+  return p
+end
+
+function band.apply_project(proj, p)
+  if type(p) ~= "table" then return end
+  for _, kv in ipairs({ { "title", "PROJECT_TITLE" }, { "author", "PROJECT_AUTHOR" } }) do
+    if type(p[kv[1]]) == "string" and select(2, reaper.GetSetProjectInfo_String(proj, kv[2], "", false)) ~= p[kv[1]] then
+      reaper.GetSetProjectInfo_String(proj, kv[2], p[kv[1]], true)
+    end
+  end
+  if type(p.notes) == "string" and reaper.GetSetProjectNotes(proj, false, "") ~= p.notes then reaper.GetSetProjectNotes(proj, true, p.notes) end
+  if type(p.groups) == "table" then
+    for g = 1, 64 do
+      local want = p.groups[tostring(g)] or ""
+      if type(want) == "string" and select(2, reaper.GetSetProjectInfo_String(proj, "TRACK_GROUP_NAME:" .. g, "", false)) ~= want then
+        reaper.GetSetProjectInfo_String(proj, "TRACK_GROUP_NAME:" .. g, want, true)
+      end
+    end
+  end
+  local it, te = tostring(p.timebase or ""):match("^(%-?%d+) (%-?%d+)$")
+  if it and reaper.SNM_SetIntConfigVarEx and tonumber(it) >= 0 then
+    reaper.SNM_SetIntConfigVarEx(proj, "itemtimelock", tonumber(it))
+    reaper.SNM_SetIntConfigVarEx(proj, "tempoenvtimelock", tonumber(te))
+  end
 end
 
 function band.apply_markers(proj, list)

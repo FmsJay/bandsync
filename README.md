@@ -34,11 +34,14 @@ Machines talk only through a shared folder (Syncthing recommended), with an opti
   - Every track and item has a permanent id (never its name), so unnamed and renamed tracks are fine.
   - What you change goes out a moment after you change it (after the drop, when dragging): items (position,
     fades, mute, lane, MIDI notes, copies, new items), tracks (name, lanes and which lanes play, folders,
-    mute/solo, fader and pan), sends between tracks (level, pan, mute, channels and their send envelopes),
+    mute/solo, fader, pan, width and pan mode, channel count, the FX button, the master/parent send, timebase,
+    playback offset, group/VCA membership, lock, input FX and MIDI note names), sends between tracks (level, pan, mute, channels and their send envelopes),
     automation envelopes (volume, pan, width, mute, trim; sent once you stop and leave them for 3 seconds) and
     plug-in chains with their parameter automation (only while stopped: replacing a chain reloads the plug-ins).
     Which envelopes you show, which is armed and how tall their lanes are stay yours. Plug-ins, automation and
     sends land when that song's tab is in front (REAPER misroutes sends written into a tab behind).
+  - The song's own settings travel with the tempo map and markers (the driver's): title, author, project notes,
+    track group names and the timebase.
   - What the band changes comes in, the newest version of each object winning on every machine alike.
   - A change you may not make (the driver's, or someone's claim) is put back, Ctrl+drag copies included, with the
     reason in the panel's banner (or a tooltip by the mouse when the panel is closed).
@@ -273,7 +276,10 @@ tracks twice.
   recolour each other). Automation items (the boxes on an envelope lane) don't travel yet: their points live
   in the project, outside the track.
 - Sends to and from a track that only exists on your machine (Real time, live views) stay yours; hardware
-  outputs and the master track don't travel.
+  outputs, record arm, inputs and monitoring stay yours too.
+- Not synced yet: the master track (its fader, plug-ins and automation), Melodyne/ARA edits, automation items,
+  files a plug-in loads by itself (sampler samples, impulse responses, amp models: copy them to everyone), which
+  ruler lane a marker sits in, item grouping, frozen tracks, and render, metronome and recording settings.
 - An item's lane travels; a lane's name and which lanes play travel with its track.
 - Both changing one object while apart: the newer change wins everywhere; the other is on the Restore page.
 - Bringing a side room in: an object both rooms changed since the room was made stays as main has it.

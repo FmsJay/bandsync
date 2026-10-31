@@ -216,6 +216,26 @@ assert(mirror.splice_parts(trk, "recv", "AUXRECV T-NOT-HERE 0 1 0 0 0 0 0 0 -1:U
 local fresh = mirror.splice_parts("<TRACK\n  NAME x\n  <FXCHAIN\n  >\n>\n", "env", their_env, function() end, oid_at)
 assert(fresh:find("<VOLENV2\nVIS 1 1 1\n", 1, true) and fresh:find("VOLENV2") < fresh:find("FXCHAIN"), "a new envelope shows, before the plug-ins: " .. fresh)
 
+-- the track's other settings: group/VCA flags, lock, input FX (without its window lines), note names
+local trk2 = "<TRACK\n  NAME Gtr\n  LOCK 1\n  GROUP_FLAGS 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n  <FXCHAIN_REC\n    SHOW 0\n    LASTSEL 0\n" ..
+  "    DOCKED 0\n    BYPASS 0 0 0\n    <JS amp\n      0.5\n    >\n    FLOATPOS 10 10 300 200\n    FXID {X}\n    WAK 0 0\n  >\n" ..
+  "  <MIDINOTENAMES\n    -1 36 Kick\n  >\n  <FXCHAIN\n    SHOW 0\n  >\n>\n"
+local _, _, misc = mirror.track_parts(trk2, oid_at)
+assert(misc == "LOCK 1\nGROUP_FLAGS 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0\n<FXCHAIN_REC\nBYPASS 0 0 0\n<JS amp\n0.5\n>\nWAK 0 0\n>\n" ..
+  '<MIDINOTENAMES\n-1 36 "Kick"\n>\n', "misc part: " .. misc)
+-- note names: cleared ones ("") are the same as none; quoted or bare, the same name
+local nn = mirror.note_names('<MIDINOTENAMES\n-1 36 Kick 0 36\n-1 38 "Snare rim" 0 38\n9 42 "" 0 42\n>\n')
+assert(nn["-1 36"] == "Kick" and nn["-1 38"] == "Snare rim" and nn["9 42"] == nil, "note names parsed")
+local unlocked = misc:gsub("LOCK 1\n", "")
+local m2 = mirror.splice_parts(trk2, "misc", unlocked, function() end, oid_at)
+assert(select(3, mirror.track_parts(m2, oid_at)) == unlocked and not m2:find("LOCK", 1, true), "misc spliced: unlocked")
+assert(m2:find("<FXCHAIN\n", 1, true) and m2:find("NAME Gtr", 1, true), "the rest kept")
+-- a take plug-in's window opened or moved is not a change to the item
+local tfx = "<ITEM\nPOSITION 0\n<TAKEFX\nSHOW 0\nLASTSEL 0\nDOCKED 0\nBYPASS 0 0 0\n<JS eq\n1\n>\nFLOATPOS 0 0 0 0\nFXID {A}\nWAK 0 0\n>\n>\n"
+local tfx2 = tfx:gsub("SHOW 0", "SHOW 1"):gsub("FLOATPOS 0 0 0 0", "FLOATPOS 50 60 400 300"):gsub("{A}", "{B}")
+assert(mirror.normalize_item(tfx) == mirror.normalize_item(tfx2), "take FX windows are local: " .. mirror.normalize_item(tfx2))
+assert(mirror.normalize_item(tfx):find("<JS eq\n1\n>", 1, true), "the take plug-in itself travels")
+
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
 assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)
 print("ok")

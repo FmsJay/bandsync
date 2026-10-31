@@ -926,9 +926,13 @@ function sync.watch_timeline(proj, cfg, song, room, can)
         local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
         sync.post(cfg, song, room, { type = "timeline", tempo = tempo, markers = markers, project = band.capture_project(proj) })
         sync.session_timeline(cfg, song, tempo, markers)
-        band.log("sent the new tempo map and markers to the band")
-        local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
         local before = band.json_decode(seen) or {}
+        local now, what = band.json_decode(sig) or {}, {} -- (say what changed: it was "tempo map and markers" whatever it was)
+        for i, word in ipairs({ "the tempo map", "the markers", "the project settings (notes, title, timebase, lanes)" }) do
+          if band.json_encode(before[i] or {}) ~= band.json_encode(now[i] or {}) then what[#what + 1] = word end
+        end
+        band.log("sent " .. (#what > 0 and table.concat(what, " and ") or "the timeline") .. " to the band")
+        local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
         for i, m in ipairs(tempo) do
           local o = (before[1] or {})[i]
           if not o or o.time ~= m.time or o.bpm ~= m.bpm or o.num ~= m.num or o.denom ~= m.denom then from = math.min(from, m.time) end

@@ -155,6 +155,11 @@ REAPER's normal Undo and Redo.
 **Your name**: Setup > Options > Change name. Who drives and your claims move over, and your tracks stay yours on
 every machine (the band keeps a list of old names). Changes you made before keep the old name on the Restore page.
 
+**Drawing on the tracks**: Chat > "Draw on the tracks" (or the BandSync - Draw action). Drag over the arrange view to
+draw for everyone in the room; Done or Esc stops. Drawings sit on a bar and a track, so they stay put however anyone
+scrolls or zooms. "Show drawings" / "Hide drawings" turns the overlay on and off here (clicks always go to REAPER
+while you're not drawing); "Clear mine" takes yours away.
+
 **Working at the same time** (each machine's status file carries it, a few seconds behind):
 
 - **Edit holds**: what a bandmate changed in the last 15 seconds is theirs for that long. If you change it too, yours

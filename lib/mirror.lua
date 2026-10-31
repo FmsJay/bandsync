@@ -75,12 +75,30 @@ function mirror.fxchain(track_chunk, skip)
   return table.concat(out, "\n") .. "\n"
 end
 
+-- A plug-in chain's hash: its normalized text without each VST's last state line. That line is REAPER's program block
+-- for the instance, and a plug-in loaded from a chunk writes its program name there ("Program 1"), so the same chain
+-- read differently on every machine that received it (laptop, 2026-10-31). It still travels; only the hash skips it.
+function mirror.fx_hash(chain)
+  local lines = {}
+  for l in chain:gmatch("[^\n]+") do lines[#lines + 1] = l end
+  local i = 1
+  while i <= #lines do
+    if lines[i]:match("^<VST") then
+      local j = i + 1
+      while j <= #lines and lines[j] ~= ">" and lines[j]:sub(1, 1) ~= "<" do j = j + 1 end
+      if lines[j] == ">" and j - i - 1 >= 2 and lines[j - 1]:match("^[A-Za-z0-9+/]+=*$") then table.remove(lines, j - 1) end
+    end
+    i = i + 1
+  end
+  return mirror.hash(table.concat(lines, "\n") .. "\n")
+end
+
 -- A track's automation ("E-" + its oid) and its receives ("R-", each with its send envelopes) travel as objects of
 -- their own, cut out of the track chunk and spliced back in. Writing a track chunk back keeps its plug-ins running
 -- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
 -- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
 -- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
-mirror.HV = 2 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
+mirror.HV = 3 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
 mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", M = "misc", I = "item" } -- (an oid's first letter)
 mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends", misc = "the groups, lock, input FX or note names" }
 mirror.PARTS = { "F", "E", "R", "M" } -- (what a track oid T-x carries: F-x, E-x, R-x, M-x)
@@ -619,7 +637,7 @@ function mirror.scan(proj, user, media_dir, local_mix)
       local skip = {} -- this machine's plug-in translations (lib/page_plugins.lua): never sent
       for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
       local fx = mirror.fxchain(chunk, skip) or ""
-      local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = mirror.hash(fx) }
+      local fo = { kind = "fx", oid = "F" .. oid:sub(2), ptr = tr, track = oid, state = fx, hash = mirror.fx_hash(fx) }
       objs[#objs + 1], by_oid[fo.oid] = fo, fo
       local env, recv, misc = mirror.track_parts(chunk, oid_at)
       env = env .. mirror.ai_lines(tr)
@@ -635,7 +653,7 @@ function mirror.scan(proj, user, media_dir, local_mix)
     local mfx = mirror.fxchain(mch, mirror.live_fx(master)) or ""
     local menv = mirror.track_parts(mch, oid_at) .. mirror.ai_lines(master)
     for _, p in ipairs({ { "F-MASTER", "fx", mfx }, { "E-MASTER", "env", menv } }) do
-      local po = { kind = p[2], oid = p[1], ptr = master, track = mirror.MASTER, state = p[3], hash = mirror.hash(p[3]) }
+      local po = { kind = p[2], oid = p[1], ptr = master, track = mirror.MASTER, state = p[3], hash = p[2] == "fx" and mirror.fx_hash(p[3]) or mirror.hash(p[3]) }
       objs[#objs + 1], by_oid[po.oid] = po, po
     end
     by_oid[mirror.MASTER] = { kind = "master", state = { name = "Master" } } -- (who may change it: as a track called Master)
@@ -857,7 +875,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local _, after = reaper.GetTrackStateChunk(tr, "", false)
     local skip = ev.track == mirror.MASTER and mirror.live_fx(tr) or {}
     for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
-    return true, mirror.hash(mirror.fxchain(after, skip) or "")
+    return true, mirror.fx_hash(mirror.fxchain(after, skip) or "")
   elseif kind == "env" or kind == "recv" or kind == "misc" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
@@ -1125,7 +1143,17 @@ function mirror.watch(proj, cfg, song, room, opts)
       if made < 2 and o.kind == "item" and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") then
         local _, _, kev = mirror.known(proj, o.oid)
         local fx = by_oid["F" .. o.track:sub(2)]
-        if kev and kev:upper():sub(1, #mine_prefix) == mine_prefix and fx then
+        -- who refreshes a print: whoever may change the item and made its newest change; when its author may not
+        -- change it now (someone claimed the track since), the one who may. Never one who'd only be put back
+        -- (laptop, 2026-10-31: its re-print of a claimed track's item was put back three times).
+        local name = perm_name(o, by_oid)
+        local mine = kev and kev:upper():sub(1, #mine_prefix) == mine_prefix
+        local may = fx and kev and allowed(o, name, o.pos)
+        if may and not mine then
+          local last = event_file(room_dir, kev)
+          may = last and type(last.user) == "string" and not opts.can(last.user, name, o.pos)
+        end
+        if may then
           local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash)
           if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is BandSync's, not theirs)
         end

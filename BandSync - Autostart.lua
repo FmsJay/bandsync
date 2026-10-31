@@ -8,6 +8,13 @@ local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 
+do -- every action of this version is in the Actions list: an update through the shared folder brings new scripts,
+  -- which REAPER doesn't know until they're registered (laptop, 2026-10-31: the radial menu wasn't there)
+  local list = {}
+  for _, f in ipairs(band.files(dir, ".lua")) do if f:match("^BandSync %- .+%.lua$") then list[#list + 1] = dir .. "/" .. f end end
+  for i, path in ipairs(list) do reaper.AddRemoveReaScript(true, 0, path, i == #list) end
+end
+
 local REQUEST = reaper.GetResourcePath() .. "/BandSync/install-request"
 local tried = {} -- project key -> when we last started it (don't hammer a Live sync that refuses to run)
 local at, seen_disk = 0, nil

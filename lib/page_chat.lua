@@ -84,6 +84,23 @@ function chat.draw(ctx, ImGui, cfg, b)
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
   ImGui.SetItemTooltip(ctx, "Who sees it: everyone in this room, everyone on this song, or the whole band (every song).")
+  do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
+    local script = (debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or "") .. "/BandSync - Draw.lua"
+    local id = reaper.AddRemoveReaScript(true, 0, script, true)
+    local running = id > 0 and reaper.GetToggleCommandState(id) == 1
+    ImGui.SameLine(ctx, 0, 24)
+    if ImGui.SmallButton(ctx, "Draw on the tracks") then
+      reaper.SetExtState(band.SECTION, "draw on", "1", false)
+      if not running and id > 0 then reaper.Main_OnCommand(id, 0) end
+    end
+    ImGui.SetItemTooltip(ctx, "Draw on the arrange view for everyone in this room: drag on the tracks, Done or Esc to stop.\n" ..
+      "A drawing stays on its bar and track however anyone scrolls or zooms.")
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, running and "Hide drawings" or "Show drawings") then
+      if running then reaper.SetExtState(band.SECTION, "draw quit", "1", false) elseif id > 0 then reaper.Main_OnCommand(id, 0) end
+    end
+    ImGui.SetItemTooltip(ctx, running and "Stop showing the band's drawings here." or "Show what the band drew, over the arrange view (clicks still go to REAPER).")
+  end
   local t = load(cfg, b)
   if ImGui.BeginTabBar(ctx, "chat") then
     if ImGui.BeginTabItem(ctx, "Messages") then

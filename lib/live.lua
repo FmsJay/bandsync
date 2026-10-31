@@ -134,10 +134,66 @@ function live.fx(proj, add, fx)
     end
   end
   if not add then return nil end
-  local i = reaper.TrackFX_AddByName(master, fx == live.SONOBUS and "VST3:SonoBus (Sonosaurus)" or fx, false, -1)
-  if i < 0 and fx == live.SONOBUS then i = reaper.TrackFX_AddByName(master, "SonoBus (Sonosaurus)", false, -1) end -- VST2 / AU
+  if fx == live.SONOBUS then -- Real time mode: SonoBus on a track of its own, fed only by what's armed (live.rt_sends)
+    local rt = live.rt_track(proj, true)
+    local i = reaper.TrackFX_AddByName(rt, "VST3:SonoBus (Sonosaurus)", false, -1)
+    if i < 0 then i = reaper.TrackFX_AddByName(rt, "SonoBus (Sonosaurus)", false, -1) end -- VST2 / AU
+    if i < 0 then return nil end
+    -- its Dry Level passes what it's fed straight through: the armed tracks already reach the master themselves
+    for p = 0, reaper.TrackFX_GetNumParams(rt, i) - 1 do
+      if select(2, reaper.TrackFX_GetParamName(rt, i, p, "")) == "Dry Level" then reaper.TrackFX_SetParamNormalized(rt, i, p, 0) end
+    end
+    return rt, i
+  end
+  local i = reaper.TrackFX_AddByName(master, fx, false, -1)
   if i < 0 then return nil end
   return master, i
+end
+
+-- Real time mode's own track: SonoBus sits on it, it hears only what's armed here (sends from those tracks), and what
+-- SonoBus brings in (the bandmates' live playing) goes on to the master. This machine's alone: never mirrored.
+live.RT_NAME = "BandSync Real time"
+function live.rt_track(proj, add)
+  for t = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, t)
+    if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) == "realtime" then return tr end
+  end
+  if not add then return nil end
+  local idx = reaper.CountTracks(proj)
+  reaper.InsertTrackInProject(proj, idx, 0)
+  local tr = reaper.GetTrack(proj, idx)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", live.RT_NAME, true)
+  reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "realtime", true)
+  reaper.SetMediaTrackInfo_Value(tr, "B_MAINSEND", 1)
+  return tr
+end
+
+-- Keep Real time mode's sends in step with what's armed: an armed track feeds SonoBus, nothing else does (the
+-- backing is everyone's own copy of the song, so sending it too made everyone hear it twice, out of time).
+-- Returns how many tracks feed it.
+function live.rt_sends(proj)
+  local rt = live.rt_track(proj, false)
+  if not rt then return 0 end
+  -- its receives, in order, by source track number (the chunk's AUXRECV lines: core REAPER can't hand a send's
+  -- track to Lua without SWS, which not every bandmate has)
+  local _, chunk = reaper.GetTrackStateChunk(rt, "", false)
+  local from = {}
+  for idx in chunk:gmatch("\n%s*AUXRECV (%d+)") do from[#from + 1] = tonumber(idx) end
+  local fed = {}
+  for r = #from, 1, -1 do -- from the end, so the receive numbers stay right while removing
+    local src = reaper.GetTrack(proj, from[r])
+    if src and reaper.GetMediaTrackInfo_Value(src, "I_RECARM") == 1 and not fed[src] then fed[src] = true
+    else reaper.RemoveTrackSend(rt, -1, r - 1) end
+  end
+  local n = 0
+  for t = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, t)
+    if tr ~= rt and reaper.GetMediaTrackInfo_Value(tr, "I_RECARM") == 1 then
+      n = n + 1
+      if not fed[tr] then reaper.CreateTrackSend(tr, rt) end
+    end
+  end
+  return n
 end
 
 -- The band's SonoBus group: { group, password }, made once and kept in <shared folder>/sonobus.json for everyone

@@ -136,6 +136,7 @@ local drive_at, drive_more, drive_said = -math.huge, false, nil
 
 local sizes, last, recording, stopped_at = {}, 0, false, 0
 local last_status, status_json = 0, ""
+local rt_at = 0 -- when Real time mode's sends were last matched to what's armed
 -- A file is ready once it exists, is non-empty, and its size held still across two polls.
 local function ready(path)
   local n = band.size(path)
@@ -591,6 +592,8 @@ local function tick_body() -- returns true to keep going
   if st & 4 ~= 0 then recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
+  -- Real time mode: only what's armed feeds SonoBus (lib/live.lua rt_sends), checked about once a second
+  if now - rt_at > 1 then rt_at = now; pcall(live.rt_sends, proj) end
   -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs
   if reaper.EnumProjects(-1) == proj then livemidi.send_tick(proj, cfg, b, st & 4 ~= 0) end -- (input goes to the tab in front)
   if st & 4 == 0 and now - midi_view_at > 0.5 then

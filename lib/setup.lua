@@ -20,14 +20,18 @@ function setup.sonobus_group(cfg)
   return group, pw
 end
 
--- SonoBus on the master track, set to join the band's group by itself: BandSync writes the group, password and
--- your name into its saved state (lib/sonobus.lua), with "Reconnect Last" on, so SonoBus joins whenever it's on.
--- It stays on the master track once added, offline while not in use, so it never joins (or streams anything)
--- until someone connects. With open: brings it online, which joins. Returns the join link (for SonoBus's own app),
--- the track and the FX index; or nil + why.
+-- SonoBus on Real time mode's own track (lib/live.lua rt_track), set to join the band's group by itself: BandSync
+-- writes the group, password and your name into its saved state (lib/sonobus.lua), with "Reconnect Last" on, so
+-- SonoBus joins whenever it's on. It stays there once added, offline while not in use, so it never joins (or
+-- streams anything) until someone connects. With open: brings it online, which joins. Returns the join link (for
+-- SonoBus's own app), the track and the FX index; or nil + why.
 function setup.sonobus(cfg, b, proj, open)
   local group, pw = setup.sonobus_group(cfg)
   local m, i = live.fx(proj, false, live.SONOBUS)
+  if m and m == reaper.GetMasterTrack(proj) then -- the old place (it sent the whole mix): moves to Real time's own track
+    reaper.TrackFX_Delete(m, i)
+    m = nil
+  end
   if not m then
     m, i = live.fx(proj, true, live.SONOBUS)
     if not m then

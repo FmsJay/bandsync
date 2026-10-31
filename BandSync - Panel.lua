@@ -1859,6 +1859,10 @@ end
 local function settings_sync()
   if card("sync") then
     section_sync()
+    local pill_on = reaper.GetExtState(band.SECTION, "pill") ~= "off"
+    local pch, pv = check("Closing the panel leaves a small button over REAPER", pill_on)
+    if pch then reaper.SetExtState(band.SECTION, "pill", pv and "" or "off", true) end
+    ImGui.SetItemTooltip(ctx, "A click on the button opens the panel again where it was. Off: closing the panel closes it.")
     -- MIDI wet/dry, this machine's choice (lib/prints.lua): never changes what anyone else hears
     ImGui.SeparatorText(ctx, "MIDI plays as")
     local prints = require("prints")
@@ -2215,6 +2219,47 @@ local function banner()
   ImGui.PopStyleVar(ctx, 2)
 end
 
+-- Minimized: closing the panel leaves a small pill over REAPER (Live, who drives, new chat); a click brings the panel
+-- back where it was (floating or docked). Drag it anywhere; right-click to close BandSync or remove the button.
+-- Returns false when BandSync should close.
+local function pill_window()
+  local front = reaper.EnumProjects(-1)
+  local fb = band.binding(front)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(front)))
+  local live_on = beat and reaper.time_precise() - beat < 5
+  local unread = fb and require("page_chat").unread(cfg, fb) or 0
+  local vx, vy = ImGui.Viewport_GetWorkPos(ImGui.GetMainViewport(ctx))
+  local vw = ImGui.Viewport_GetWorkSize(ImGui.GetMainViewport(ctx))
+  local px, py = tonumber(reaper.GetExtState(band.SECTION, "pill x")), tonumber(reaper.GetExtState(band.SECTION, "pill y"))
+  ImGui.SetNextWindowPos(ctx, px or (vx + vw - 340), py or (vy + 64), ImGui.Cond_Appearing)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowRounding, 14)
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 8, 5)
+  local keep = true
+  local f = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_AlwaysAutoResize | ImGui.WindowFlags_NoDocking |
+    ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_NoFocusOnAppearing | ImGui.WindowFlags_NoNav
+  if ImGui.Begin(ctx, "BandSync pill", nil, f) then
+    local x, y = ImGui.GetWindowPos(ctx)
+    if x ~= px or y ~= py then -- dragged (by its edge): remembered
+      reaper.SetExtState(band.SECTION, "pill x", tostring(x), true); reaper.SetExtState(band.SECTION, "pill y", tostring(y), true)
+    end
+    dot(live_on and GREEN or RED)
+    ImGui.SameLine(ctx, 0, 6)
+    local label = "BandSync  ·  " .. (live_on and "Live" or "Live off") .. (view and view.driver and ("  ·  " .. (view.driver == cfg.user and "you drive" or (view.driver .. " drives"))) or "") ..
+      (unread > 0 and string.format("  ·  %d new", unread) or "")
+    if ImGui.SmallButton(ctx, label .. "##pill") then reaper.DeleteExtState(band.SECTION, "panel minimized", false) end
+    ImGui.SetItemTooltip(ctx, "Open the BandSync panel (right-click for more). Drag the pill's edge to move it.")
+    if ImGui.BeginPopupContextItem(ctx, "pillmenu") then
+      if ImGui.Selectable(ctx, "Open the panel") then reaper.DeleteExtState(band.SECTION, "panel minimized", false) end
+      if ImGui.Selectable(ctx, "Close BandSync's panel") then keep = false end
+      if ImGui.Selectable(ctx, "Remove this button (Setup > Options brings it back)") then reaper.SetExtState(band.SECTION, "pill", "off", true); keep = false end
+      ImGui.EndPopup(ctx)
+    end
+    ImGui.End(ctx)
+  end
+  ImGui.PopStyleVar(ctx, 2)
+  return keep
+end
+
 local function loop()
   if updated() or reload_now then -- reload in place: relaunching itself as an action is ignored (or asks to terminate instances)
     band.log("the panel reloaded for BandSync " .. tostring(seen_disk))
@@ -2240,7 +2285,10 @@ local function loop()
     ImGui.SetNextWindowSize(ctx, place_req[3], place_req[4])
     place_req = nil
   end
-  local visible, open = ImGui.Begin(ctx, "BandSync", true, flags)
+  local minimized = reaper.GetExtState(band.SECTION, "panel minimized") ~= ""
+  local visible, open = false, true
+  if minimized then open = pill_window()
+  else visible, open = ImGui.Begin(ctx, "BandSync", true, flags) end
   if visible then
     local wx, wy = ImGui.GetWindowPos(ctx)
     local ww, wh = ImGui.GetWindowSize(ctx)
@@ -2270,6 +2318,10 @@ local function loop()
       ImGui.PopClipRect(ctx)
     end
     ImGui.End(ctx)
+  end
+  if not minimized and not open and reaper.GetExtState(band.SECTION, "pill") ~= "off" then -- closed: minimized to the pill
+    reaper.SetExtState(band.SECTION, "panel minimized", "1", false)
+    open = true
   end
   if app then ImGui.PopFont(ctx); pop_theme() end
   banner()

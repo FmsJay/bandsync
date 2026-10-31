@@ -40,8 +40,15 @@ local function add(cfg, b, kind, v)
 end
 
 -- Messages newer than the last time this person looked at the song's chat (for the tab's count).
+local unread_at, unread_n, unread_song = -math.huge, 0, nil
 function chat.unread(cfg, b)
   if not b or not b.song then return 0 end
+  if b.song == unread_song and reaper.time_precise() - unread_at < 5 then return unread_n end -- (drawn every frame)
+  unread_at, unread_song = reaper.time_precise(), b.song
+  unread_n = chat.count_unread(cfg, b)
+  return unread_n
+end
+function chat.count_unread(cfg, b)
   local seen = reaper.GetExtState(band.SECTION, "chat seen " .. b.song)
   local n = 0
   for _, sc in ipairs(SCOPES) do

@@ -268,6 +268,17 @@ assert(not sai:find("BANDAI", 1, true) and sai:find("PT 0 1 0", 1, true), "autom
 assert(mirror.track_parts("<TRACK\n<VOLENV2\nACT 1 -1\nPOOLEDENVINST 1 1 2 0 1 0 0 0 1 0 0\nPT 0 1 0\n>\n>\n", oid_at) == "<VOLENV2\nACT 1 -1\nPT 0 1 0\n>\n",
   "an envelope's pool references are this machine's")
 
+-- a clash: Bee's offline edit (rev 2, from rev 1) lands after James's newer revision 3; the band kept James's
+local C = {
+  { kind = "obj", oid = "I-X-1", id = "c1", rev = 1, time = "2026-10-31T10:00:00Z", user = "James" },
+  { kind = "obj", oid = "I-X-1", id = "c2", rev = 2, time = "2026-10-31T10:01:00Z", user = "James" },
+  { kind = "obj", oid = "I-X-1", id = "c3", rev = 3, time = "2026-10-31T10:02:00Z", user = "James" },
+  { kind = "obj", oid = "I-X-1", id = "c4", rev = 2, time = "2026-10-31T10:05:00Z", user = "Bee" }, -- (the loser)
+}
+assert(mirror.plan_restore(C, 4)["I-X-1"].id == "c3", "restore to now: the band's version, not the later loser")
+assert(mirror.plan_restore(C, 2)["I-X-1"].id == "c2", "restore to a point before the clash")
+assert(mirror.plan_undo(C, 3)["I-X-1"].id == "c2", "undo James's rev 3: back to rev 2 (his), not Bee's losing rev 2")
+
 local a, b = mirror.new_oid("I", "Big Al", "20261030"), mirror.new_oid("I", "Big Al", "20261030")
 assert(a ~= b and a:find("^I%-BIG_AL%-20261030%-"), "oids unique, upper case: " .. a)
 print("ok")

@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.33.8", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.34.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -106,21 +106,51 @@ end
 
 -- Write under a temp name, then rename, so a syncing peer never picks up a half-written file.
 -- The ".syncthing.*.tmp" name is one Syncthing always ignores; cloud drives may upload it briefly.
-function band.write_atomic(path, data)
-  local dir, name = path:match("^(.*)/([^/]+)$")
-  local tmp = dir .. "/.syncthing." .. name .. ".tmp"
-  local f = assert(io.open(tmp, "wb"))
-  f:write(data); f:close()
+-- A write that didn't all reach the disk (a full disk) raises, and the old file stays: renaming a cut-off file into
+-- place made it the band's copy (review, 2026-10-31).
+local function finish(tmp, path, f, want)
+  local ok_close = f:close()
+  if not ok_close or band.size(tmp) ~= want then
+    os.remove(tmp)
+    error("couldn't write " .. path .. " (is the disk full?)")
+  end
   if os.rename(tmp, path) then return end -- POSIX: replaces it in one step
-  -- Windows won't rename over a file: move the old one aside first (never deleted before the new one is in place)
-  local old = dir .. "/.syncthing." .. name .. ".old"
+  -- Windows won't rename over a file: move the old one aside first (never deleted before the new one is in place;
+  -- named so Syncthing ignores it, as it does the .tmp)
+  local dir, name = path:match("^(.*)/([^/]+)$")
+  local old = dir .. "/.syncthing." .. name .. ".old.tmp"
   os.remove(old)
   os.rename(path, old)
   if not os.rename(tmp, path) then os.rename(old, path); error("cannot replace " .. path) end
   os.remove(old)
 end
+function band.write_atomic(path, data)
+  local dir, name = path:match("^(.*)/([^/]+)$")
+  local tmp = dir .. "/.syncthing." .. name .. ".tmp"
+  local f = assert(io.open(tmp, "wb"))
+  if not f:write(data) then f:close(); os.remove(tmp); error("couldn't write " .. path .. " (is the disk full?)") end
+  finish(tmp, path, f, #data)
+end
 
-function band.copy_atomic(src, dst) band.write_atomic(dst, assert(band.read(src), "cannot read " .. src)) end
+-- A copy, a piece at a time (a long recording or a video read whole took that much memory, and froze REAPER while
+-- it did), checked to be complete before it's put in place.
+function band.copy_atomic(src, dst)
+  local fi = assert(io.open(src, "rb"), "cannot read " .. src)
+  local dir, name = dst:match("^(.*)/([^/]+)$")
+  local tmp = dir .. "/.syncthing." .. name .. ".tmp"
+  local fo = io.open(tmp, "wb")
+  if not fo then fi:close(); error("cannot write " .. dst) end
+  local total = 0
+  while true do
+    local chunk = fi:read(1048576)
+    if not chunk then break end
+    if not fo:write(chunk) then fi:close(); fo:close(); os.remove(tmp); error("couldn't write " .. dst .. " (is the disk full?)") end
+    total = total + #chunk
+  end
+  fi:close()
+  if total ~= band.size(src) then fo:close(); os.remove(tmp); error("couldn't read all of " .. src) end
+  finish(tmp, dst, fo, total)
+end
 
 function band.read_json(path)
   local s = band.read(path)

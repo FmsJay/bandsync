@@ -23,10 +23,15 @@ local sync = {
 
 -- An edit put back says why in the Activity list, and, with the panel closed (no banner either), in a tooltip by the
 -- mouse, where the edit was just made: otherwise it just slid back with no word (laptop, 2026-10-30).
+-- The panel also keeps the newest one up in a bar of its own until it's dismissed (ExtState "put back"), and the
+-- small button says so: with the panel shrunk to that button, it said nothing at all (review, 2026-10-31).
 function sync.put_back(text)
   band.log(text)
+  local n = (tonumber((band.json_decode(reaper.GetExtState(band.SECTION, "put back")) or {}).n) or 0) + 1
+  reaper.SetExtState(band.SECTION, "put back", band.json_encode({ text = text, n = n, at = os.time() }), false)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
-  if not (beat and reaper.time_precise() - beat < 5) then
+  local shown = beat and reaper.time_precise() - beat < 5 and reaper.GetExtState(band.SECTION, "panel minimized") == ""
+  if not shown then
     local x, y = reaper.GetMousePosition()
     reaper.TrackCtl_SetToolTip("BandSync: " .. text, x + 14, y + 14, true)
     sync.tip_at = reaper.time_precise() -- (Live sync takes it away after a few seconds: REAPER leaves it up)
@@ -996,6 +1001,11 @@ function sync.receive(proj, cfg, song, room, can)
       break
     end
   end
+  local function refused(ev)
+    return not (sync.ANYONE[ev.type] or ev.alone or (ev.type == "obj" and sync.obj_allowed(ev, can, driver_at(ev.time)))
+      or (ev.type ~= "obj" and can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time)))
+      or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user)))
+  end
   local applied, done, undo_open = 0, {}, false
   local rdir = sync.room_dir(cfg, song, room)
   for _, ev in ipairs(pending) do
@@ -1006,19 +1016,19 @@ function sync.receive(proj, cfg, song, room, can)
       band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync can't read (" .. tostring(ev.id) .. ")")
     elseif (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
-    elseif obj and ev.user == cfg.user and not sync.obj_allowed(ev, can, driver_at(ev.time)) then
-      -- ours, but not ours to make after all (a handover we hadn't seen yet): put back here too, so we don't keep it alone
-      setext(proj, sync.APPLIED, ev.id, "1")
-      pcall(require("mirror").repair, proj, ev, rdir, sync.local_mix)
     elseif ev.user == cfg.user and not obj then
       setext(proj, sync.APPLIED, ev.id, "1") -- our own: already true here
       stamp(proj, ev) -- and what we change next comes after it, even one stamped while our clock ran ahead
-    elseif not (sync.ANYONE[ev.type] or ev.alone or (ev.type == "obj" and sync.obj_allowed(ev, can, driver_at(ev.time)))
-        or (ev.type ~= "obj" and can(ev.user, ev.was or ev.track, ev.pos, ev.type ~= "plays" and ev.take or nil, driver_at(ev.time)))
-        or (ev.type == "delete" and sync.author(ev.take) == sync.author_of(ev.user))) then
-      -- not theirs to change, as far as this machine knows: their claim (or the handover) may simply not have
-      -- synced here yet, so it waits a while before it's dropped
+    elseif not obj and refused(ev) then
+      -- (the older kinds of change) not theirs to change, as far as this machine knows: their claim or the handover may
+      -- simply not have synced here yet, so it waits a while before it's dropped
       if iso_age(ev.time) > 600 then setext(proj, sync.APPLIED, ev.id, "1") else sync.deferred[ev.id] = true end
+    elseif obj and iso_age(ev.time) <= 60 and refused(ev) then
+      -- An object change: the sender checked it against the claims as they had them when they made it. What looks
+      -- refused here is most likely a claim or handover still on its way, either way: it waits a minute, then lands
+      -- like any other. Judging it by today's claims and dropping it after 10 minutes left a machine that was away
+      -- (or a claim released since) with a different project for good, and nothing said so (review, 2026-10-31).
+      sync.deferred[ev.id] = true
     else
       if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
       -- one bad event must never block everything behind it (2026-10-28: a take-less "driver" event threw on every
@@ -1118,9 +1128,30 @@ function sync.present(cfg, song, room, within)
   return out
 end
 
+-- This computer's own id (made once, kept in REAPER's settings): two computers with the same name wrote one status
+-- file between them, each thought it was alone, and each skipped some of the other's changes as its own (review,
+-- 2026-10-31). Now the second one is told to pick another name.
+function sync.machine()
+  local id = reaper.GetExtState(band.SECTION, "machine id")
+  if id == "" then
+    math.randomseed(os.time() + math.floor(reaper.time_precise() * 1000))
+    id = string.format("%08x", math.random(0, 0x7fffffff))
+    reaper.SetExtState(band.SECTION, "machine id", id, true)
+  end
+  return id
+end
 function sync.write_status(proj, cfg, song, room, info)
   local dir = sync.room_dir(cfg, song, room) .. "/status"
   reaper.RecursiveCreateDirectory(dir, 0)
+  local path = dir .. "/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json"
+  local was = band.read_json(path)
+  if type(was) == "table" and was.machine and was.machine ~= sync.machine() and type(was.time) == "string" and band.age(was.time) < 45
+      and not sync.name_clash_said then
+    sync.name_clash_said = true
+    sync.put_back("another computer is also using the name " .. cfg.user .. ", so your changes and theirs get mixed up. " ..
+      "Change the name on one of them: Setup > Options > Change name")
+  end
+  info.machine = sync.machine()
   info.user, info.time, info.version, info.room = cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ"), band.VERSION, room
   info.takes = sync.holdings(proj)
   band.write_json(dir .. "/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json", info)

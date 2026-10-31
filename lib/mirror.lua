@@ -332,12 +332,18 @@ end
 -- Going back (History). `entries` are History's (recall.entries: mirror events have kind "obj"). A plan maps
 -- oid -> the revision to bring back, or false (the object didn't exist then: it goes). Pure.
 -- Restore project / selection state: every object in scope as it was right after entries[upto].
+-- (which revision an object had: the one that won, as sync settles it (rev first, then time and name), not the latest
+-- by time; a clash's loser is later by time and was never the band's: review, 2026-10-31)
+local function won(a, x)
+  return not x or mirror.newer({ rev = a.rev or 0, time = (a.time or "") .. (a.user or "") }, { rev = x.rev or 0, time = (x.time or "") .. (x.user or "") })
+end
+mirror.won = won
 function mirror.plan_restore(entries, upto, in_scope)
   local at, last = {}, {}
   for i, e in ipairs(entries) do
     if e.kind == "obj" and e.oid then
-      last[e.oid] = e
-      if i <= upto then at[e.oid] = e end
+      if won(e, last[e.oid]) then last[e.oid] = e end
+      if i <= upto and won(e, at[e.oid]) then at[e.oid] = e end
     end
   end
   local plan = {}
@@ -353,10 +359,12 @@ end
 function mirror.plan_undo(entries, i)
   local e = entries[i]
   if not (e and e.kind == "obj" and e.oid) then return nil end
-  for j = i - 1, 1, -1 do
+  local best -- (the revision it had before: the winner among the older ones, not just the one before it by time)
+  for j = 1, #entries do
     local p = entries[j]
-    if p.kind == "obj" and p.oid == e.oid then return { [e.oid] = (not p.gone) and p or false } end
+    if j ~= i and p.kind == "obj" and p.oid == e.oid and (p.time or "") <= (e.time or "") and won(e, p) and won(p, best) then best = p end -- (made before it)
   end
+  if best then return { [e.oid] = (not best.gone) and best or false } end
   return { [e.oid] = false }
 end
 
@@ -632,6 +640,7 @@ end
 -- match what this machine last knew (proj .. oid -> true)
 mirror.reopened = {}
 mirror.auto = {} -- proj .. oid -> its next send is a print BandSync refreshed (Undo skips those)
+mirror.unsent = {} -- proj .. oid -> changed here, not sent yet (settling, playing, Hold my changes): mirror.receive waits
 
 function mirror.scan(proj, user, media_dir, local_mix)
   local objs, by_oid, tracks = {}, {}, {}
@@ -707,7 +716,10 @@ function mirror.share_media(chunk, media_dir)
     -- wrote, and the item then reads as different on each machine)
     local copy = mirror.hash(path:lower()) .. "-" .. name:gsub("[^%w%-_.]", "_")
     local dst = media_dir .. "/" .. copy
-    if not reaper.file_exists(dst) and reaper.file_exists(path) then pcall(require("band").copy_atomic, path, dst) end
+    if not reaper.file_exists(dst) and reaper.file_exists(path) then
+      local ok, err = pcall(require("band").copy_atomic, path, dst)
+      if not ok then mirror.copy_failed = tostring(err) end -- (watch holds the item back and says so: mirror.local_files)
+    end
     -- (only once the copy is really there: pointing at a copy that was never made left everyone waiting for it)
     if reaper.file_exists(dst) then return a .. "{media:" .. room .. "}/" .. copy .. z end
     return a .. path .. z
@@ -941,9 +953,13 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     if not it then it = reaper.AddMediaItemToTrack(tr)
     elseif reaper.GetMediaItem_Track(it) ~= tr then reaper.MoveMediaItemToTrack(it, tr) end
     local sel = reaper.IsMediaItemSelected(it)
+    -- (which take plays is each person's own and isn't in what travels: setting the chunk put it back to the first,
+    -- so an audio comp lost its pick on every update from the band: review, 2026-10-31)
+    local active = reaper.CountTakes(it) > 1 and reaper.GetMediaItemInfo_Value(it, "I_CURTAKE")
     local lane = tonumber(ev.state:match("BANDLANE (%d+)"))
     reaper.SetItemStateChunk(it, mirror.resolve_media((ev.state:gsub("BANDLANE %d+\n?", "")), media_dir), false)
     reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
+    if active and active < reaper.CountTakes(it) then reaper.SetMediaItemInfo_Value(it, "I_CURTAKE", active) end
     if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane) end
     require("prints").choose(it) -- notes or the print, as this machine chose (never part of what travels)
     reaper.SetMediaItemSelected(it, sel)
@@ -963,6 +979,18 @@ end
 function mirror.receive(proj, ev, media_dir, local_mix, me)
   local order = (ev.time or "") .. (ev.user or "")
   if not mirror.wins(proj, ev.oid, ev.rev or 0, order) then return true end
+  -- a change of ours to it hasn't gone out yet (Hold my changes is on, plug-ins and automation waiting to settle or
+  -- for playback to stop, a long edit): theirs waits until ours has gone, then the two are settled like any clash.
+  -- Applied at once, ours was lost with no trace, not even on the Restore page (review, 2026-10-31).
+  -- (watch marks those: comparing hashes here also caught what applying the band's last change had changed as a
+  -- side effect, like a frozen track's items, and held it back for good)
+  if mirror.unsent[tostring(proj) .. ev.oid] then return false end
+  -- (on a track the band has deleted since: nothing to apply it to, ever. Waiting for it kept "still to come" above
+  -- 0 for good: review, 2026-10-31)
+  if ev.obj ~= "track" and ev.track and ev.track ~= mirror.MASTER then
+    local trev, th = mirror.known(proj, ev.track)
+    if trev and th == "" and not mirror.find(proj, "track", ev.track) then return true end
+  end
   -- both changed it while apart: theirs wins everywhere (the same on every machine); ours stays in History
   local krev, _, kev = mirror.known(proj, ev.oid)
   if me and krev and ev.base and ev.base < krev and kev:sub(1, #me + 1):upper() == (me:gsub(" ", "_") .. "-"):upper() then
@@ -1086,6 +1114,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     if not mirror.said[key] then mirror.said[key] = true; band.log(text) end
   end
   local function put_back(o, rev, evid, why)
+    mirror.unsent[tostring(proj) .. o.oid] = nil -- (the band's version is back: nothing of ours waits)
     local ev = event_file(room_dir, evid)
     if ev and not ev.gone then
       if o.kind == "fx" and playing then return end -- (reloading plug-ins mid-song: after the stop)
@@ -1120,7 +1149,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     local ok, err = pcall(function()
       local rev, h, evid = mirror.known(proj, o.oid)
       local rk = tostring(proj) .. o.oid
-      if h == o.hash then mirror.reopened[rk] = nil; return end
+      if h == o.hash then mirror.reopened[rk], mirror.unsent[rk] = nil, nil; return end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
         say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
         if h == "" then -- the band deleted it since: gone here too (2026-10-31: three deleted tracks came back on a reopen)
@@ -1137,10 +1166,12 @@ function mirror.watch(proj, cfg, song, room, opts)
       if o.kind == "fx" or o.kind == "env" then
         local key = tostring(proj) .. o.oid -- (per tab: a side room's copy shares the oid)
         local f = mirror.fx_seen[key]
+        mirror.unsent[rk] = true -- (until it goes: the band's change to it waits)
         if playing then return end
         if not f or f.hash ~= o.hash then mirror.fx_seen[key] = { hash = o.hash, since = reaper.time_precise() }; return end
         if reaper.time_precise() - f.since < 3 then return end
       end
+      if opts.hold then mirror.unsent[rk] = true; return end -- (Hold my changes: it stays here until switched off)
       local name = perm_name(o, by_oid)
       local holder = rev and opts.held and opts.held(o.oid)
       if holder then -- someone else is working on it right now (lib/presence.lua): theirs, for a few seconds
@@ -1155,7 +1186,12 @@ function mirror.watch(proj, cfg, song, room, opts)
       if ok_now and ok_before then
         local state = o.state
         if o.kind == "item" then
+          mirror.copy_failed = nil
           local shared = mirror.share_media(state, media)
+          if mirror.copy_failed then -- (its audio didn't reach the band's folder: sent, it'd point at a file only we have)
+            return say_once("copy" .. o.oid, string.format("couldn't copy the audio of an item on %s into the band's folder (%s): it goes out once it can",
+              name ~= "" and name or "an unnamed track", mirror.copy_failed))
+          end
           if shared ~= state then -- it now plays the shared copy here too, so the next look sees the same thing
             reaper.SetItemStateChunk(o.ptr, mirror.resolve_media((shared:gsub("BANDLANE %d+\n?", "")), media), false)
             state = mirror.item_state(o.ptr, media)
@@ -1168,6 +1204,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         if o.kind == "fx" then ev.files = require("fxfiles").share(state, media) end -- (samples, IRs, models it loads)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
+        mirror.unsent[tostring(proj) .. o.oid] = nil -- (gone out: the band's next change to it may land)
         require("presence").touch(proj, o.oid)
         sent = sent + 1
       else
@@ -1218,7 +1255,14 @@ function mirror.watch(proj, cfg, song, room, opts)
     if not ok then break end
     i = i + 1
     local rev, h, evid = mirror.known(proj, oid)
-    if not seen[oid] and h ~= "" then gone[#gone + 1] = { oid = oid, rev = rev, evid = evid } end
+    if not seen[oid] and h ~= "" then
+      if opts.hold then mirror.unsent[tostring(proj) .. oid] = true -- (held: the delete goes out when Hold is switched off)
+      elseif oid:sub(1, 1) == "I" and mirror.find(proj, "item", oid) then
+        -- still here, on a track of this machine's own (Real time, "yours, not sent"): not deleted. Sent as gone, it
+        -- went for everyone (review, 2026-10-31); the band keeps it where it was
+        say_once("local" .. oid, "an item of the band's is on a track of your own: it isn't sent from there, and the band keeps it where it was (move it back to a band track to change it)")
+      else gone[#gone + 1] = { oid = oid, rev = rev, evid = evid } end
+    end
   end
   for _, g in ipairs(gone) do
     local ok, err = pcall(function()
@@ -1234,6 +1278,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         local ev = { type = "obj", obj = o.kind, oid = g.oid, rev = (g.rev or 0) + 1, base = g.rev or 0, gone = true, track = o.track, name = name, pos = last.pos }
         local id = sync.post(cfg, song, room, ev)
         remember(proj, g.oid, ev.rev, "", id, (ev.time or "") .. me) -- (with its order: a racing edit is settled alike everywhere)
+        mirror.unsent[tostring(proj) .. g.oid] = nil
         sent = sent + 1
       else
         put_back(o, g.rev, g.evid, { name = name, text = string.format("%s on %s isn't yours to delete: it's back",
@@ -1441,6 +1486,36 @@ function mirror.room_newest(room_dir, since)
     end
   end
   return out
+end
+
+-- Bring this project in line with the band's newest version of every object whose last change it doesn't hold: a
+-- change that was skipped or never landed here (an unreadable file, a failed apply) left two projects different for
+-- good, since nothing applied it again (review, 2026-10-31). Always towards the room's own events, never towards a
+-- particular machine, so two machines can't pull each other back and forth. Objects whose newest change this machine
+-- already holds are left as they are (what came out different there isn't fixed by applying it again). Returns how
+-- many were brought in line.
+function mirror.heal(proj, room_dir, local_mix)
+  local n = 0
+  for oid, ev in pairs(mirror.room_newest(room_dir)) do
+    local _, kh, kev = mirror.known(proj, oid)
+    if kev ~= ev.id then
+      local order = (ev.time or "") .. (ev.user or "")
+      if ev.gone then
+        if kh and kh ~= "" then
+          mirror.apply(proj, { obj = ev.obj, oid = oid, gone = true, track = ev.track }, room_dir .. "/media", local_mix)
+          remember(proj, oid, ev.rev, "", ev.id, order)
+          n = n + 1
+        end
+      else
+        local ok, applied, h = pcall(mirror.apply, proj, ev, room_dir .. "/media", local_mix)
+        if ok and applied then -- (a part waiting for its tab to be in front, or a track not here yet: next time)
+          remember(proj, oid, ev.rev, h or "", ev.id, order)
+          n = n + 1
+        end
+      end
+    end
+  end
+  return n
 end
 
 -- What bringing a side room into its parent does, from both rooms' changes since the room was made: what only the

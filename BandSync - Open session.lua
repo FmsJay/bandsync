@@ -85,7 +85,11 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
 end
 
 if b then return open_song(b.song) end
-if #band.songs(cfg) == 0 then return band.msg("No published songs found in " .. cfg.root) end
+if #band.songs(cfg) == 0 then -- (the first thing a new bandmate sees: say what has to happen, not just that nothing's here)
+  return band.msg("Nothing from the band has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
+    "Ask the host to open REAPER: their BandSync panel shows a \"Let you in\" button for your computer. The band's " ..
+    "songs appear here once the folder syncs (Setup > Health shows whether it's connected).")
+end
 -- straight into the main room: side rooms are made and visited from the panel's Rooms page
 require("chooser").open(cfg, { title = "Open a band song", action = "Open" },
   function(song, room) if song then open_song(song, room) end end)

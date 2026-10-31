@@ -426,18 +426,7 @@ end
 
 local function section_band()
   ImGui.SeparatorText(ctx, "Bandmates")
-  -- machines asking to join that didn't come over the band's Tailscale (those are let in by Live sync)
-  local asking = b.role == "host" and band.json_decode(reaper.GetExtState(band.SECTION, "pending_join")) or {}
-  for _, d in ipairs(type(asking) == "table" and asking or {}) do
-    ImGui.TextColored(ctx, YELLOW, string.format("'%s' (%s, from %s) asks to join the band folder.", d.name, d.id:sub(1, 7), d.address))
-    ImGui.SameLine(ctx)
-    if ImGui.Button(ctx, "Let in##" .. d.id) then
-      local ok, why = require("services").add_device(d.id, d.name)
-      band.log(ok and ("let '" .. d.name .. "' into the band folder") or ("couldn't add '" .. d.name .. "': " .. tostring(why)))
-      reaper.DeleteExtState(band.SECTION, "pending_join", false)
-    end
-    ImGui.SetItemTooltip(ctx, "Only if you know this machine: anyone with your Syncthing ID can ask. Band machines on the band's Tailscale are let in by themselves.")
-  end
+  -- (machines asking to join: at the top of every page, tools.join_requests)
   if #view.rows == 0 then return ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
   if ImGui.BeginTable(ctx, "mates", 5, ImGui.TableFlags_RowBg | ImGui.TableFlags_SizingStretchProp) then
     for _, h in ipairs({ "Who", "State", "Seen", "Has", "Version" }) do ImGui.TableSetupColumn(ctx, h) end
@@ -1953,6 +1942,8 @@ local function frame_app()
   -- (the line keeps its height when it clears: what's under it mustn't jump as you go to click it)
   if newest and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, 0xBFD3FFFF, newest:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
   section_invites()
+  tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
+  tools.put_back_bar(ctx, ImGui) -- (an edit of yours that was undone, and why: stays until dismissed)
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
   want = reaper.GetExtState(band.SECTION, "panel do") -- a choice from the radial menu
@@ -2046,6 +2037,7 @@ local function frame()
   if app then ImGui.Unindent(ctx, 16); return frame_app() end
   if ImGui.SmallButton(ctx, "Switch to the new look") then reaper.DeleteExtState(band.SECTION, "panel_ui", true) end
   section_invites()
+  tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
       section_room()
@@ -2160,8 +2152,11 @@ local function pill_window()
     ImGui.SameLine(ctx, 0, 6)
     local label = "BandSync  ·  " .. (live_on and "Sync on" or "Sync off") .. (view and view.driver and ("  ·  " .. (view.driver == cfg.user and "you drive" or (view.driver .. " drives"))) or "") ..
       (unread > 0 and string.format("  ·  %d new message%s", unread, unread == 1 and "" or "s") or "")
+    local pb = band.json_decode(reaper.GetExtState(band.SECTION, "put back"))
+    if pb and pb.text then label = label .. string.format("  ·  %d edit%s undone", pb.n or 1, (pb.n or 1) == 1 and "" or "s") end
     if ImGui.SmallButton(ctx, label .. "##pill") then reaper.DeleteExtState(band.SECTION, "panel minimized", false) end
-    ImGui.SetItemTooltip(ctx, "Open the BandSync panel (right-click for more). Drag the pill's edge to move it.")
+    ImGui.SetItemTooltip(ctx, pb and pb.text and ("Undone: " .. pb.text .. "\nOpen the panel to see it (right-click for more).")
+      or "Open the BandSync panel (right-click for more). Drag the pill's edge to move it.")
     if ImGui.BeginPopupContextItem(ctx, "pillmenu") then
       if ImGui.Selectable(ctx, "Open the panel") then reaper.DeleteExtState(band.SECTION, "panel minimized", false) end
       if ImGui.Selectable(ctx, "Close BandSync's panel") then keep = false end

@@ -139,6 +139,7 @@ local drive_at, drive_more, drive_said = -math.huge, false, nil
 local sizes, last, recording, stopped_at = {}, 0, false, 0
 local last_status, status_json = 0, ""
 local rt_at = 0 -- when Real time mode's sends were last matched to what's armed
+local heal_since, healed_at = nil, -math.huge -- since when a caught-up bandmate's project has differed (mirror.heal)
 local mirror_cc, mirror_at, mirror_due = -1, -math.huge, false -- the project's change count at the last full look, and when
 -- A file is ready once it exists, is non-empty, and its size held still across two polls.
 local function ready(path)
@@ -243,9 +244,13 @@ local function poll()
   sync.local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
   if not (s and s.sync == "mirror") then -- made with the older take sync: left alone until it's published again
     if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older BandSync: publish it again (BandSync - Publish session) to sync it") end
-  elseif not hold then
-    local tok, terr = pcall(sync.watch_timeline, proj, cfg, b.song, b.room, my_can) -- (before the items: a tempo change moves them)
-    if not tok then band.log("tempo/markers: " .. tostring(terr)) end
+  else
+    if not hold then
+      local tok, terr = pcall(sync.watch_timeline, proj, cfg, b.song, b.room, my_can) -- (before the items: a tempo change moves them)
+      if not tok then band.log("tempo/markers: " .. tostring(terr)) end
+    end
+    -- (with Hold my changes on, the look still runs, sending nothing: it marks what you changed, so the band's
+    -- changes to those wait for yours instead of replacing them; mirror.unsent)
     -- a full look reads every track and item: only when REAPER says the project changed, or the band's changes just
     -- came in, and at least every 10 s anyway (anything REAPER doesn't count as a change still gets seen)
     local cc = reaper.GetProjectStateChangeCount(proj)
@@ -253,7 +258,7 @@ local function poll()
     if (cc ~= mirror_cc or mirror_due or now - mirror_at > 10) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
-      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix, held = held })
+      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix, held = held, hold = hold })
       if not ok then band.log("mirror sync: " .. tostring(sent))
       elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
@@ -272,6 +277,22 @@ local function poll()
     local n = 0
     if not editing() and not redo_pending() then n = sync.receive(proj, cfg, b.song, room, room_can) end
     if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")"); mirror_due = true end
+  end
+
+  -- a bandmate who has every change has had a different project from ours for a minute, and we're caught up too:
+  -- something never landed here. Bring it in line with the band's newest version (at most every 5 minutes).
+  if s and s.sync == "mirror" and not hold then
+    local mine, differs = require("mirror").root(proj), false
+    for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
+      if st.mirror and st.pending == 0 and st.mirror ~= mine then differs = true end
+    end
+    if differs and sync.pending_events(proj, cfg, b.song, b.room) == 0 then heal_since = heal_since or now else heal_since = nil end
+    if heal_since and now - heal_since > 60 and now - healed_at > 300 and reaper.EnumProjects(-1) == proj then
+      healed_at, heal_since = now, nil
+      local ok, n = pcall(require("mirror").heal, proj, sync.room_dir(cfg, b.song, b.room), sync.local_mix)
+      if not ok then band.log("couldn't bring the project in line with the band: " .. tostring(n))
+      elseif n > 0 then band.log(string.format("brought %d thing(s) in line with the band's newest version (they hadn't landed here)", n)); mirror_due = true end
+    end
   end
 
   -- the host lets new band machines in: a bandmate's installer pairs with the host's Syncthing, which then asks

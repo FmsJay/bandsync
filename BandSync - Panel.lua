@@ -1478,6 +1478,9 @@ local function maint_rows()
     { "audio", s.audio, "red", "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device." },
     { "folder", s.folder, "red", "Shared folder is syncing", "Syncthing isn't running: nothing reaches the band or comes in." },
     { "sync", s.sync, "red", "Live sync is running", "Live sync is off in this tab: press Start at the top." },
+    { "same", (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) == 0, "red", "Changes from the band come out the same here",
+      "Some changes from the band came out different here than on their machine (the Console names them). Ask the driver to " ..
+      "use History > Restore project state, or close and reopen this project." },
     { "connected", s.connected, #(view and view.rows or {}) > 0 and "red" or "yellow", s.peers and string.format("Connected to %d of %d bandmate machine(s)", s.peers, s.devices) or "Shared folder is a cloud drive",
       s.peers and "Syncthing is connected to nobody. Fine if you're alone; if bandmates are online, check this machine's Syncthing device ID."
       or "Can't tell whether Syncthing is connected." },
@@ -1599,7 +1602,7 @@ local function home_who()
     driving = view.driver == cfg.user }
   for _, r in ipairs(view.rows) do
     people[#people + 1] = { name = r.name, state = r.state, armed = r.armed, recording = r.recording, playing = r.playing,
-      driving = r.name == view.driver, version = r.version }
+      driving = r.name == view.driver, version = r.version, mirror = r.mirror }
   end
   if wide then
     for _, p in ipairs(people) do
@@ -1630,6 +1633,11 @@ local function home_who()
       if p.driving then ImGui.SameLine(ctx, 0, 4); pill("driving", YELLOW); ImGui.SetItemTooltip(ctx, "What nobody has claimed follows them.") end
       ImGui.TextDisabled(ctx, p.armed and #p.armed > 0 and ("armed: " .. table.concat(p.armed, ", ")) or "nothing armed")
       if p.version and p.version ~= band.VERSION then ImGui.TextColored(ctx, YELLOW, "BandSync " .. p.version) end
+      if p.mirror and view.my_mirror and p.state == "synced" then -- (while changes are still on their way it's bound to differ)
+        if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project as yours")
+        else ImGui.TextColored(ctx, RED, "project differs from yours"); ImGui.SetItemTooltip(ctx, "They have every change, yet their project isn't the same as yours: " ..
+          "Setup > Health says more, and the Console names what came out different.") end
+      end
       card_end()
     end
   end

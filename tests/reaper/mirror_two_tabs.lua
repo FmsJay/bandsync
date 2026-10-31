@@ -133,7 +133,9 @@ local ok, err = pcall(function()
   sync.watch_timeline(pa, A, song, room, yes)
   recv(pb, B)
   check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pb, 0) - 133) < 0.01, "B has the new tempo (" .. reaper.TimeMap2_GetDividedBpmAtTime(pb, 0) .. ")")
-end)
+  -- every change B applied came out as A had it (the integrity check found nothing)
+  local drift = reaper.GetExtState("BandSync", "mirror drift " .. tostring(pb))
+  check(drift == "", "no change came out different on B (" .. (drift == "" and "0" or drift) .. ")")end)
 if not ok then say("ERROR " .. tostring(err)) ; fails = fails + 1 end
 -- tidy: both scratch tabs saved into the scratch folder (so closing never asks) and closed
 for k, p in ipairs({ pa, pb }) do

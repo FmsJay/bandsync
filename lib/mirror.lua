@@ -409,6 +409,13 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   end
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
+  if ok and ev.hash and h ~= ev.hash and not ev.gone then -- applied, but it isn't what they have: the projects differ
+    local band = require("band")
+    local n = (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) + 1
+    reaper.SetExtState(band.SECTION, "mirror drift " .. tostring(proj), tostring(n), false)
+    band.log(string.format("%s's change to %s came out different here than on their machine (the panel's Health shows it)", tostring(ev.user),
+      (ev.name or "") ~= "" and ("something on " .. ev.name) or "an unnamed track"))
+  end
   if ok and ev.obj == "item" and ev.track then
     local tr = mirror.find(proj, "track", ev.track)
     local krev, _, kev, kord = mirror.known(proj, ev.track)
@@ -476,7 +483,8 @@ function mirror.watch(proj, cfg, song, room, opts)
             o.hash = mirror.hash(o.track .. "\n" .. state)
           end
         end
-        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track, name = name, pos = o.pos }
+        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track, name = name, pos = o.pos,
+          hash = o.hash } -- (what it is here: every receiver checks it came out the same)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
         sent = sent + 1
@@ -602,6 +610,21 @@ function mirror.end_local_mix(proj, cfg, song, room, adopt)
       end
     end
   end
+end
+
+-- One code for this whole project as mirrored (every object's version here): two machines with the same code hold
+-- the same project. Published in the status file; Who's here compares it.
+function mirror.root(proj)
+  local t, i = {}, 0
+  while true do
+    local ok, oid, v = reaper.EnumProjExtState(proj, mirror.SEC, i)
+    if not ok then break end
+    i = i + 1
+    local h = v:match("^%d+|([^|]*)|")
+    if h and h ~= "" then t[#t + 1] = oid:upper() .. "=" .. h end
+  end
+  table.sort(t)
+  return mirror.hash(table.concat(t, "\n"))
 end
 
 -- ---- side rooms ------------------------------------------------------------------------------------------

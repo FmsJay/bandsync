@@ -1,8 +1,10 @@
 -- @description BandSync: draw on the arrange view, for everyone (and see what the band drew)
 -- Shows every bandmate's drawings over the arrange view (clicks go straight through to REAPER). The Draw button in
--- Chat (or this action with "draw" asked) turns drawing on: drag to draw, Done or Esc to stop; "Clear mine" takes
--- your drawings away. A stroke sits on song time and on a track, so it stays on the right bar and track however
--- anyone scrolls or zooms. Each stroke is a file in rooms/<room>/drawings/ (synced like chat). Run it again to close.
+-- Chat (or this action with "draw" asked) turns drawing on, with a toolbar: Pen, Highlighter, Line, Arrow, Box,
+-- Text and Eraser, a colour, a size, Undo (your last one) and Clear mine; Done or Esc stops. A drawing sits on song
+-- time and on a track, so it stays on the right bar and track however anyone scrolls or zooms. Each is a file in
+-- rooms/<room>/drawings/ (synced like chat): { user, time, points, kind, color, size, text }, a file without a kind
+-- being a pen stroke (as before 0.35.3). Run it again to close.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
@@ -38,6 +40,13 @@ end)
 
 local ctx = ImGui.CreateContext("BandSync drawings")
 local PALETTE = { 0xFF5A5AFF, 0x4CC2FFFF, 0x7BE07BFF, 0xFFC24CFF, 0xC88BFFFF, 0xFF8BD0FF }
+-- the toolbar (James, 2026-11-01: "drawing on the project like it's microsoft paint"): this machine's choices, kept
+local TOOLS = { { "pen", "Pen" }, { "marker", "Highlighter" }, { "line", "Line" }, { "arrow", "Arrow" }, { "box", "Box" },
+  { "text", "Text" }, { "erase", "Eraser" } }
+local SIZES = { { 2, "S" }, { 4, "M" }, { 8, "L" } }
+local SWATCHES = { 0xFFFFFFFF, 0xFF5A5AFF, 0xFFC24CFF, 0x7BE07BFF, 0x4CC2FFFF, 0xC88BFFFF }
+local function pick(key, default) local v = reaper.GetExtState(band.SECTION, "draw " .. key); return v ~= "" and v or default end
+local function keep(key, v) reaper.SetExtState(band.SECTION, "draw " .. key, tostring(v), true) end
 local main = reaper.GetMainHwnd()
 local arrange = reaper.JS_Window_FindChildByID(main, 1000) -- (REAPER's arrange view, "trackview")
 
@@ -130,18 +139,45 @@ local function loop()
   local visible = ImGui.Begin(ctx, "BandSync drawings", nil, flags)
   if visible then
     local dl = ImGui.GetWindowDrawList(ctx)
-    local function draw_points(points, col)
-      local last
-      for _, p in ipairs(points) do
-        local sx, sy = to_screen(L, p)
-        if sx and last then ImGui.DrawList_AddLine(dl, last[1], last[2], sx, sy, col, 3) end
-        last = sx and { sx, sy } or nil
-      end
-    end
     local col = colours(b)
-    for _, s in ipairs(load(b)) do draw_points(s.points, col[s.user] or PALETTE[1]) end
-    if stroke then draw_points(stroke.points, col[cfg.user]) end
+    -- one drawing, in its own colour (or its maker's), size and kind
+    local function draw(s)
+      local c = math.tointeger(tonumber(s.color)) or col[s.user] or PALETTE[1]
+      local w = tonumber(s.size) or 3
+      local kind = s.kind or "pen"
+      if kind == "marker" then c, w = (c & 0xFFFFFF00) | 0x55, w * 3 end -- (see-through, wide)
+      local pts = {}
+      for _, p in ipairs(s.points) do local x, y = to_screen(L, p); pts[#pts + 1] = x and { x, y } or false end
+      if kind == "text" then
+        if pts[1] then ImGui.DrawList_AddText(dl, pts[1][1], pts[1][2], c, tostring(s.text or "")) end
+      elseif kind == "box" then
+        local a, z = pts[1], pts[#pts]
+        if a and z then ImGui.DrawList_AddRect(dl, math.min(a[1], z[1]), math.min(a[2], z[2]), math.max(a[1], z[1]), math.max(a[2], z[2]), c, 0, 0, w) end
+      elseif kind == "line" or kind == "arrow" then
+        local a, z = pts[1], pts[#pts]
+        if a and z then
+          ImGui.DrawList_AddLine(dl, a[1], a[2], z[1], z[2], c, w)
+          local dx, dy = z[1] - a[1], z[2] - a[2]
+          local len = math.sqrt(dx * dx + dy * dy)
+          if kind == "arrow" and len > 1 then -- (a filled head at the end, sized to the line)
+            local ux, uy, head = dx / len, dy / len, 10 + w * 2
+            ImGui.DrawList_AddTriangleFilled(dl, z[1], z[2], z[1] - head * ux - head * 0.5 * uy, z[2] - head * uy + head * 0.5 * ux,
+              z[1] - head * ux + head * 0.5 * uy, z[2] - head * uy - head * 0.5 * ux, c)
+          end
+        end
+      else
+        for i = 2, #pts do
+          if pts[i] and pts[i - 1] then ImGui.DrawList_AddLine(dl, pts[i - 1][1], pts[i - 1][2], pts[i][1], pts[i][2], c, w) end
+        end
+      end
+      return pts
+    end
+    local shown = {} -- (each drawing's points on screen, for the eraser)
+    for _, s in ipairs(load(b)) do shown[s] = draw(s) end
+    if stroke then draw(stroke) end
     if drawing then
+      local tool, size = pick("tool", "pen"), tonumber(pick("size", "4")) or 4
+      local mine = math.tointeger(tonumber(pick("color", ""))) or col[cfg.user]
       local mx, my = reaper.GetMousePosition()
       local inside = inside(L, mx, my)
       local on_bar = ImGui.IsAnyItemHovered(ctx)
@@ -149,36 +185,107 @@ local function loop()
       local down = reaper.JS_Mouse_GetState(1) & 1 == 1
       local pressed = down and not was_down
       was_down = down
-      if down and (inside or stroke) and not (on_bar and not stroke) then
-        local p = to_song(L, mx, my)
-        stroke = stroke or { points = {} }
-        local q = stroke.points[#stroke.points]
-        if p and not (q and q[1] == p[1] and q[2] == p[2] and q[3] == p[3]) then stroke.points[#stroke.points + 1] = p end -- (the mouse held still)
-      elseif stroke then -- the stroke is done: it goes to the band
-        if #stroke.points > 1 then
-          n_made = n_made + 1
-          local d = drawings_dir(b)
-          reaper.RecursiveCreateDirectory(d, 0)
-          band.write_json(string.format("%s/%s-%s-%d.json", d, (cfg.user:gsub("[^%w%-_]", "_")), os.date("!%Y%m%d-%H%M%S"), n_made),
-            { user = cfg.user, time = os.date("!%Y-%m-%dT%H:%M:%SZ"), points = stroke.points })
-          cache_at = -math.huge
+      local function save(s) -- a finished drawing goes to the band
+        n_made = n_made + 1
+        local d = drawings_dir(b)
+        reaper.RecursiveCreateDirectory(d, 0)
+        s.user, s.time = cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ")
+        band.write_json(string.format("%s/%s-%s-%d.json", d, (cfg.user:gsub("[^%w%-_]", "_")), os.date("!%Y%m%d-%H%M%S"), n_made), s)
+        cache_at = -math.huge
+      end
+      local here = inside and not on_bar
+      if tool == "erase" or tool == "text" then -- (one click each, not a drag)
+        if pressed and here then
+          local p = to_song(L, mx, my)
+          if tool == "text" and p then
+            local ok, words = reaper.GetUserInputs("BandSync: text on the tracks", 1, "Text (everyone sees it),extrawidth=200", "")
+            if ok and words:match("%S") then save({ kind = "text", points = { p }, text = words, color = mine, size = size }) end
+          elseif tool == "erase" then -- the nearest of your own drawings within a few pixels
+            local cx, cy = ImGui.PointConvertNative(ctx, mx, my, false)
+            local best, bd = nil, 12
+            for s, pts in pairs(shown) do
+              if s.user == cfg.user then
+                for i = 1, #pts do
+                  local a, z = pts[i], pts[i + 1] or pts[i]
+                  if a and z then
+                    local vx, vy = z[1] - a[1], z[2] - a[2]
+                    local t = (vx * vx + vy * vy) > 0 and math.max(0, math.min(1, ((cx - a[1]) * vx + (cy - a[2]) * vy) / (vx * vx + vy * vy))) or 0
+                    local ex, ey = a[1] + t * vx - cx, a[2] + t * vy - cy
+                    local dist = math.sqrt(ex * ex + ey * ey)
+                    if dist < bd then best, bd = s, dist end
+                  end
+                end
+              end
+            end
+            if best then os.remove(best.file); cache_at = -math.huge end
+          end
         end
+      elseif down and (here or stroke) then
+        local p = to_song(L, mx, my)
+        stroke = stroke or { kind = tool, points = {}, color = mine, size = size }
+        if tool == "pen" or tool == "marker" then
+          local q = stroke.points[#stroke.points]
+          if p and not (q and q[1] == p[1] and q[2] == p[2] and q[3] == p[3]) then stroke.points[#stroke.points + 1] = p end -- (the mouse held still)
+        elseif p then -- line, arrow, box: where it started, and where the mouse is now
+          stroke.points[1] = stroke.points[1] or p
+          stroke.points[2] = p
+        end
+      elseif stroke then
+        if #stroke.points > 1 then save(stroke) end
         stroke = nil
       end
       local keys = reaper.JS_VKeys_GetState and reaper.JS_VKeys_GetState(0) or ""
       if ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) or keys:byte(28) == 1 then reaper.DeleteExtState(band.SECTION, "draw on", false) end -- (Esc)
-      -- the bar: what drawing mode is, and the way out (in this window: a window of its own could sit under it)
+      -- the bar: the tools, and the way out (in this window: a window of its own could sit under it). Each button also
+      -- reads the OS's click, as the drawing does: the overlay can miss its own.
       ImGui.SetCursorPos(ctx, 8, 8)
-      ImGui.TextColored(ctx, col[cfg.user],"Drawing for the band: drag on the tracks.")
-      ImGui.SameLine(ctx)
-      local function button(label) return ImGui.SmallButton(ctx, label) or (pressed and ImGui.IsItemHovered(ctx)) end
-      if button("Done") then reaper.DeleteExtState(band.SECTION, "draw on", false); stroke = nil end
-      ImGui.SameLine(ctx)
+      local function button(label, on)
+        if on then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
+        local hit = ImGui.SmallButton(ctx, label) or (pressed and ImGui.IsItemHovered(ctx))
+        if on then ImGui.PopStyleColor(ctx) end
+        return hit
+      end
+      for i, t in ipairs(TOOLS) do
+        if i > 1 then ImGui.SameLine(ctx, 0, 3) end
+        if button(t[2] .. "##tool", tool == t[1]) then keep("tool", t[1]); stroke = nil end
+      end
+      ImGui.SameLine(ctx, 0, 12)
+      for i, c in ipairs(SWATCHES) do
+        if i > 1 then ImGui.SameLine(ctx, 0, 3) end
+        local hit = ImGui.ColorButton(ctx, "##swatch" .. i, c, ImGui.ColorEditFlags_NoTooltip, 16, 16) or (pressed and ImGui.IsItemHovered(ctx))
+        if hit then keep("color", c) end
+        if c == mine then ImGui.DrawList_AddRect(ImGui.GetWindowDrawList(ctx), select(1, ImGui.GetItemRectMin(ctx)) - 2, select(2, ImGui.GetItemRectMin(ctx)) - 2,
+          select(1, ImGui.GetItemRectMax(ctx)) + 2, select(2, ImGui.GetItemRectMax(ctx)) + 2, 0xFFFFFFFF, 0, 0, 2) end
+      end
+      ImGui.SameLine(ctx, 0, 3)
+      if button("Mine##colour", mine == col[cfg.user]) then reaper.DeleteExtState(band.SECTION, "draw color", true) end
+      ImGui.SetItemTooltip(ctx, "Your own colour (the one Who's here and the drawings show you in).")
+      ImGui.SameLine(ctx, 0, 12)
+      for i, z in ipairs(SIZES) do
+        if i > 1 then ImGui.SameLine(ctx, 0, 3) end
+        if button(z[2] .. "##size", size == z[1]) then keep("size", z[1]) end
+      end
+      ImGui.SetCursorPosX(ctx, 8)
+      ImGui.TextColored(ctx, mine, ({ pen = "Drag to draw.", marker = "Drag to highlight.", line = "Drag from one end to the other.",
+        arrow = "Drag from the tail to the point.", box = "Drag from corner to corner.", text = "Click where the words go.",
+        erase = "Click one of your drawings to take it away." })[tool] or "")
+      ImGui.SameLine(ctx, 0, 12)
+      if button("Undo") then -- your newest drawing in this room
+        local last
+        for _, s in ipairs(load(b)) do
+          if s.user == cfg.user and (not last or tostring(s.time) .. s.file > tostring(last.time) .. last.file) then last = s end
+        end
+        if last then os.remove(last.file); cache_at, stroke = -math.huge, nil end
+      end
+      ImGui.SetItemTooltip(ctx, "Take away your last drawing (everyone's copy goes too).")
+      ImGui.SameLine(ctx, 0, 3)
       if button("Clear mine") then
         for _, s in ipairs(load(b)) do if s.user == cfg.user then os.remove(s.file) end end
         cache_at, stroke = -math.huge, nil
       end
       ImGui.SetItemTooltip(ctx, "Take away every drawing you made in this room (everyone's copy goes too).")
+      ImGui.SameLine(ctx, 0, 3)
+      if button("Done") then reaper.DeleteExtState(band.SECTION, "draw on", false); stroke = nil end
     end
     ImGui.End(ctx)
   end

@@ -101,16 +101,17 @@ end
 -- default), Syncthing held them back about 7 s at a time (2026-10-28, laptop -> PC). Checked once per Live sync
 -- start; only what differs is set. Returns what it set ({} when nothing), or nil + why.
 services.WATCH = { ["fswatcher-enabled"] = "true", ["fswatcher-delays"] = "1", ["fswatcher-timeouts"] = "2" }
-function services.tune_band_folder()
+function services.tune_band_folder(folder)
+  folder = folder or "bandsync" -- (each band's own Syncthing folder: band.info)
   local st = services.syncthing_path()
   if not st then return nil, "Syncthing wasn't found" end
   local set = {}
   for key, want in pairs(services.WATCH) do
-    local got = (reaper.ExecProcess(q(st) .. " cli config folders bandsync " .. key .. " get", 8000) or ""):match("^0\n(.-)%s*$")
-    if not got then return nil, "Syncthing didn't answer (is it running, with a folder called bandsync?)" end
+    local got = (reaper.ExecProcess(q(st) .. " cli config folders " .. folder .. " " .. key .. " get", 8000) or ""):match("^0\n(.-)%s*$")
+    if not got then return nil, "Syncthing didn't answer (is it running, with a folder called " .. folder .. "?)" end
     if tonumber(got) and tonumber(want) and tonumber(got) == tonumber(want) or got == want then -- (2 and 2.0 alike)
     else
-      local r = reaper.ExecProcess(q(st) .. " cli config folders bandsync " .. key .. " set " .. want, 8000) or ""
+      local r = reaper.ExecProcess(q(st) .. " cli config folders " .. folder .. " " .. key .. " set " .. want, 8000) or ""
       if not r:match("^0\n") then return nil, "couldn't set " .. key .. ": " .. r:gsub("^%d+\n", "") end
       set[#set + 1] = key .. " " .. got .. " -> " .. want
     end
@@ -187,14 +188,18 @@ end
 -- What a set-up bandmate sends someone new: one line to paste on a Mac and one on Windows, each running the
 -- installer with this machine's ID already in it, so nobody types an ID (Mac, 2026-10-31: "2MOGZMD" + Return was
 -- the first try). The ?<time> keeps GitHub's cache from handing out an installer from before the last release.
-function services.invite_text(id)
+-- With the band (band.info): its folder id and name ride along, so the installer joins that band.
+function services.invite_text(id, info)
+  info = info or { id = "bandsync", name = "the band" }
   local base = "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/"
-  return "Join the band on BandSync. Paste ONE of these:\n\n" ..
+  local q1 = function(s) return "'" .. tostring(s):gsub("'", "") .. "'" end -- (band names are plain: band.clean)
+  return "Join " .. info.name .. " on BandSync. Paste ONE of these:\n\n" ..
     "Mac (in Terminal):\n" ..
-    'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " bash\n\n" ..
+    'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " BS_BAND_ID=" .. info.id ..
+    " BS_BAND_NAME=" .. q1(info.name) .. " bash\n\n" ..
     "Windows (in PowerShell):\n" ..
     '$f="$env:TEMP\\bandsync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
-    "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. "\n\n" ..
+    "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. " -BandId " .. info.id .. " -BandName " .. q1(info.name) .. "\n\n" ..
     "When it's done, tell me: I let you in from my BandSync panel."
 end
 
@@ -212,14 +217,46 @@ function services.on_tailnet(address)
   return (address or ""):lower():match("^%[?fd7a:115c:a1e0:") ~= nil
 end
 
--- Add a machine to Syncthing and share the band folder ("bandsync") with it. Returns true, or nil + why.
-function services.add_device(id, name)
+-- A band's Syncthing folder id from its name: "bandsync-" and the name in lower case, letters, digits and dashes. Pure.
+function services.band_id(name)
+  local slug = (name or ""):lower():gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
+  return "bandsync-" .. (slug ~= "" and slug or "band")
+end
+
+-- Start a band (docs/bands-design.md): its own shared folder beside this band's (<parent>/BandSync <Name>), with
+-- _band/band.json saying who it is, and its own Syncthing folder (shared with nobody yet: Invite a bandmate). This
+-- computer then works in it. Returns its folder, or nil + why.
+function services.new_band(cfg, name)
+  name = band.clean(name or "")
+  if name == "" then return nil, "Give the band a name." end
+  local st = services.syncthing_path()
+  if not st then return nil, "Syncthing wasn't found" end
+  local id = services.band_id(name)
+  for _, x in ipairs(band.bands()) do
+    if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a band called " .. x.name .. "." end
+  end
+  local here = ((cfg.base or cfg).root or ""):gsub("[/\\]+$", "")
+  local root = (here:match("^(.*)[/\\][^/\\]+$") or here) .. "/BandSync " .. name
+  if band.subdirs(root)[1] then return nil, root .. " is already there: pick another name, or remove that folder." end
+  reaper.RecursiveCreateDirectory(root .. "/_band", 0)
+  band.write_json(root .. "/_band/band.json", { name = name, id = id, drive = "BandSync - " .. name })
+  local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. id .. " --label " .. q("BandSync " .. name) .. " --path " .. q(root), 15000) or ""
+  if not r:match("^0\n") then return nil, "Syncthing didn't add the band's folder: " .. r:gsub("^%d+\n", "") end
+  reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " order set smallestFirst", 8000)
+  services.tune_band_folder(id)
+  band.use_band(root)
+  return root
+end
+
+-- Add a machine to Syncthing and share a band's folder (`folder`: its Syncthing id, "bandsync" for the first band)
+-- with it, and only that one. Returns true, or nil + why.
+function services.add_device(id, name, folder)
   local st = services.syncthing_path()
   if not st then return nil, "Syncthing wasn't found" end
   if not services.is_device_id(id) then return nil, "not a device ID: " .. tostring(id) end
   name = (name or ""):gsub("[^%w%-_ ]", "")
   local r1 = reaper.ExecProcess(q(st) .. " cli config devices add --device-id " .. id .. (name ~= "" and (" --name " .. q(name)) or ""), 15000) or ""
-  local r2 = reaper.ExecProcess(q(st) .. " cli config folders bandsync devices add --device-id " .. id, 15000) or ""
+  local r2 = reaper.ExecProcess(q(st) .. " cli config folders " .. (folder or "bandsync") .. " devices add --device-id " .. id, 15000) or ""
   if not r1:match("^0\n") then return nil, "Syncthing didn't add it: " .. r1:gsub("^%d+\n", "") end
   if not r2:match("^0\n") then return nil, "added, but the band folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
   return true

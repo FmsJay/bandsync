@@ -19,13 +19,14 @@ local drive = {}
 -- seen (so the panel can say the shortcut is missing). `subdirs(dir)` lists folder names; `has(path)`, if given, says
 -- whether a folder is there even when a listing leaves it out (on a Mac the shortcut is a symlink into
 -- .shortcut-targets-by-id, 2026-10-31). Pure.
-function drive.find(places, subdirs, has)
+function drive.find(places, subdirs, has, name)
+  name = name or "BandSync" -- (each band its own Drive folder: band.info)
   local missing
   for _, md in ipairs(places) do
-    if has and has(md .. "/BandSync") then return md .. "/BandSync" end
+    if has and has(md .. "/" .. name) then return md .. "/" .. name end
     local dirs = subdirs(md)
     for _, d in ipairs(dirs) do
-      if d:lower() == "bandsync" then return md .. "/" .. d end
+      if d:lower() == name:lower() then return md .. "/" .. d end
     end
     if dirs[1] and not missing then missing = md end
   end
@@ -51,24 +52,30 @@ local function places()
   return out
 end
 
-local found, found_at = nil, -math.huge
+local looked = {} -- per band (its Drive folder's name): { found, at, missing, away }
 drive.missing = nil -- a My Drive with no BandSync folder in it (the shared folder isn't added yet), for the panel
 function drive.root(cfg)
   local r = reaper.GetExtState(band.SECTION, "drive_root")
   if r == "off" then return nil end
   if r ~= "" then return r end
-  if reaper.time_precise() - found_at < 300 then return found end
-  found_at = reaper.time_precise()
-  found, drive.missing = drive.find(places(), band.subdirs,
-    function(p) return reaper.EnumerateSubdirectories(p, 0) ~= nil or reaper.EnumerateFiles(p, 0) ~= nil end)
-  -- the band's Drive was here and isn't now: that Google account signed out, or Drive switched to another one (Mac,
-  -- 2026-10-31: a personal and a band account on one machine). Said, not guessed at: drive.away, for the panel.
-  local seen = reaper.GetExtState(band.SECTION, "drive_seen")
-  if found then
-    drive.away = nil
-    if seen ~= found then reaper.SetExtState(band.SECTION, "drive_seen", found, true) end
-  elseif seen ~= "" then drive.away, drive.missing = seen, nil end
-  return found
+  local info = band.info(cfg and cfg.root)
+  local l = looked[info.drive] or { at = -math.huge }
+  looked[info.drive] = l
+  if reaper.time_precise() - l.at >= 300 then
+    l.at = reaper.time_precise()
+    l.found, l.missing = drive.find(places(), band.subdirs,
+      function(p) return reaper.EnumerateSubdirectories(p, 0) ~= nil or reaper.EnumerateFiles(p, 0) ~= nil end, info.drive)
+    -- the band's Drive was here and isn't now: that Google account signed out, or Drive switched to another one (Mac,
+    -- 2026-10-31: a personal and a band account on one machine). Said, not guessed at: drive.away, for the panel.
+    local key = "drive_seen" .. (info.id == "bandsync" and "" or (" " .. info.id)) -- (the first band keeps its old key)
+    local seen = reaper.GetExtState(band.SECTION, key)
+    l.away = nil
+    if l.found then
+      if seen ~= l.found then reaper.SetExtState(band.SECTION, key, l.found, true) end
+    elseif seen ~= "" then l.away, l.missing = seen, nil end
+  end
+  drive.missing, drive.away = l.missing, l.away -- (this band's, for the panel)
+  return l.found
 end
 
 -- A take file's name -> take id, revision (1 for the first print), and whether it's the manifest. Pure.

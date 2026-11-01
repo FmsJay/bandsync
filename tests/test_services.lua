@@ -14,7 +14,11 @@ assert(services.on_tailnet("[fd7a:115c:a1e0::7e48:8e48]:22000"), "Tailscale's IP
 assert(not services.on_tailnet("[fd7a:115c:a1e1::1]:22000") and not services.on_tailnet(""), "other IPv6, nothing")
 -- the invitation: both lines carry the ID as the installers read it (BS_HOST_ID on a Mac, -HostId on Windows)
 local inv_id = "2MOGZMD-MVLUUSO-D6GXQIG-HMDVUBG-AOW6LHR-LMQQT6P-V4V5P73-6ZR5NQZ"
-local inv = services.invite_text(inv_id)
-assert(inv:find('install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. inv_id .. " bash", 1, true), "Mac line")
-assert(inv:find("-File $f -HostId " .. inv_id, 1, true) and inv:find('"$env:TEMP\\bandsync_install.ps1"', 1, true), "Windows line")
+local inv = services.invite_text(inv_id, { id = "bandsync", name = "Chilio" })
+assert(inv:find('install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. inv_id .. " BS_BAND_ID=bandsync BS_BAND_NAME='Chilio' bash", 1, true), "Mac line")
+assert(inv:find("-File $f -HostId " .. inv_id .. " -BandId bandsync -BandName 'Chilio'", 1, true) and inv:find('"$env:TEMP\\bandsync_install.ps1"', 1, true), "Windows line")
+assert(inv:find("^Join Chilio on BandSync"), "it says which band")
+-- a band's Syncthing folder id from its name
+assert(services.band_id("The Night Shift") == "bandsync-the-night-shift" and services.band_id("  Chilio ") == "bandsync-chilio", "ids")
+assert(services.band_id("") == "bandsync-band" and services.band_id("Jazz--Trio") == "bandsync-jazz-trio", "empty, repeats")
 print("ok")

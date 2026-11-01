@@ -9,6 +9,7 @@
 param(
   [string]$Tag = "main",          # which BandSync version's helper files to use (the .cmd passes its own)
   [string]$User = "", [string]$HostId = "", [string]$Root = "",
+  [string]$BandId = "", [string]$BandName = "", # the band an invitation is for: its Syncthing folder id and name
   [ValidateSet("", "yes", "no")][string]$Hosting = "", [ValidateSet("", "yes", "no")][string]$Live = "", [ValidateSet("", "yes", "no")][string]$Solo = "",
   [ValidateSet("", "yes", "no")][string]$Plugins = "", # the band plug-in pack (free, open source)
   [ValidateSet("", "yes", "no")][string]$Extras = "", # the larger extras: amp modelers, Odin 2, sforzando + Salamander piano
@@ -33,7 +34,7 @@ $boxed = Get-ChildItem "$env:LOCALAPPDATA\Packages\*\LocalCache\Local\$probe" -E
 Remove-Item (Join-Path $env:LOCALAPPDATA $probe) -ErrorAction SilentlyContinue
 if ($boxed) {
   $argv = @("-Tag", $Tag, "-Scripts", $Scripts)
-  foreach ($k in "User", "HostId", "Root", "Hosting", "Live", "Solo", "Plugins", "Extras", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
+  foreach ($k in "User", "HostId", "Root", "BandId", "BandName", "Hosting", "Live", "Solo", "Plugins", "Extras", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
   if ($NoApps) { $argv += "-NoApps" }
   $quoted = ($argv | ForEach-Object { if ($_ -match '^-') { $_ } else { '"' + $_ + '"' } }) -join " "
   $cmd = Join-Path $env:TEMP "bandsync_install_outside.cmd"
@@ -74,7 +75,14 @@ if (-not $isHost) {
     if ($hostId -notmatch $idPattern) { Warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)." }
   }
 }
-$root = if ($Root) { $Root } else { Ask "Where should the shared BandSync folder be" (Join-Path $env:USERPROFILE "BandSync") }
+# the band (docs/bands-design.md): each its own shared folder. An invitation names it; the first one set up names it.
+$folderId = ($BandId.ToLower() -replace '[^a-z0-9-]', ''); if (-not $folderId) { $folderId = "bandsync" }
+$bandName = $BandName -replace '[^\w\- ]', ''
+if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Your band's name" "My band") -replace '[^\w\- ]', '' } }
+if (-not $bandName) { $bandName = "the band" }
+$driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "BandSync - $bandName" }
+$defRoot = if ($folderId -eq "bandsync") { Join-Path $env:USERPROFILE "BandSync" } else { Join-Path $env:USERPROFILE "BandSync $bandName" }
+$root = if ($Root) { $Root } else { Ask "Where should $bandName's shared folder be" $defRoot }
 # SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
 # (James, 2026-10-31: "it feels like a core feature"); -Live no / -Solo no still leave them out.
 $wantLive = $Live -ne "no"
@@ -238,6 +246,11 @@ $myId = (ST device-id | Select-Object -Last 1).ToString().Trim()
 
 $root = $root.TrimEnd('\', '/')
 New-Item -ItemType Directory -Force $root | Out-Null
+$bj = Join-Path $root "_band\band.json"
+if ($isHost -and -not (Test-Path $bj)) { # (who this folder is: lib/band.lua band.info; names are plain)
+  New-Item -ItemType Directory -Force (Join-Path $root "_band") | Out-Null
+  [IO.File]::WriteAllText($bj, (@{ name = $bandName; id = $folderId; drive = $driveName } | ConvertTo-Json -Compress))
+}
 # per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
 # full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
 $ign = Join-Path $root ".stignore"
@@ -245,22 +258,23 @@ if (-not $isHost -and -not ((Test-Path $ign) -and (Select-String -Path $ign -Pat
   [IO.File]::AppendAllText($ign, ((@('// BandSync: what this computer downloads (written by BandSync, up to the line below)', '!/_*', '!/plugins', '!/drummaps', '!/*/session.json', '!/*/folder.json', '!/*/live.json', '!/*/invites', '!/*/rooms/*/room.json', '!/*/rooms/*/summary', '!/*/rooms/*/status', '/*/*', '// BandSync end') -join "`n") + "`n")) # (no BOM: PowerShell 5.1's -Encoding UTF8 writes one, and the block's first line then reads as something else)
   Ok "this computer gets each song in full once it's opened (the rest: their listing)"
 }
-if (-not ((STcli config folders list) -match '^bandsync$')) { STcli config defaults folder path set (Split-Path $root) | Out-Null } # fresh setup only
-$folders = STcli config folders list
-if ($folders -notcontains "bandsync") {
-  STcli config folders add --id bandsync --label BandSync --path $root | Out-Null
-  Ok "shared folder 'bandsync' -> $root"
-} else { Ok "shared folder 'bandsync' already set up" }
-STcli config folders bandsync order set smallestFirst | Out-Null
-STcli config folders bandsync fswatcher-delays set 1 | Out-Null  # the default 10 s delay added 10 s to every take
+$folders = @(STcli config folders list)
+if (-not ($folders | Where-Object { $_ })) { STcli config defaults folder path set (Split-Path $root) | Out-Null } # fresh setup only
+$label = if ($folderId -eq "bandsync") { "BandSync" } else { "BandSync $bandName" }
+if ($folders -notcontains $folderId) {
+  STcli config folders add --id $folderId --label $label --path $root | Out-Null
+  Ok "$bandName's shared folder -> $root"
+} else { Ok "$bandName's shared folder is already set up" }
+STcli config folders $folderId order set smallestFirst | Out-Null
+STcli config folders $folderId fswatcher-delays set 1 | Out-Null  # the default 10 s delay added 10 s to every take
 STcli config devices $myId name set $user | Out-Null
 if (-not $isHost) {
   $devices = STcli config devices list
   if ($devices -notcontains $hostId) {
     STcli config devices add --device-id $hostId --name "Bandmate" --introducer --auto-accept-folders | Out-Null
   }
-  $shared = STcli config folders bandsync devices list
-  if ($shared -notcontains $hostId) { STcli config folders bandsync devices add --device-id $hostId | Out-Null }
+  $shared = STcli config folders $folderId devices list
+  if ($shared -notcontains $hostId) { STcli config folders $folderId devices add --device-id $hostId | Out-Null }
   Ok "paired with your bandmate"
 }
 
@@ -408,7 +422,7 @@ if ($wantSolo) {
   # (one drive letter per Google account signed in: the one that has BandSync is the band's, as BandSync itself looks)
   $myDrive = {
     $all = @(foreach ($l in [char[]](67..90)) { $d = [string]$l + ":\My Drive"; if (Test-Path $d) { $d } })
-    $band = @($all | Where-Object { Test-Path "$_\BandSync" })
+    $band = @($all | Where-Object { Test-Path "$_\$driveName" })
     if ($band) { $band[0] } elseif ($all) { $all[0] } else { $null }
   }
   $driveOk = $false
@@ -417,13 +431,13 @@ if ($wantSolo) {
     $null = Wait-Until { & $myDrive }
   }
   $md = & $myDrive
-  if ($md -and (Test-Path "$md\BandSync")) { Ok "Google Drive: the band's BandSync folder is there"; $driveOk = $true }
-  elseif ($md -and $isHost) { New-Item -ItemType Directory "$md\BandSync" | Out-Null; Ok "Google Drive: made BandSync in your My Drive"; $driveOk = $true }
+  if ($md -and (Test-Path "$md\$driveName")) { Ok "Google Drive: the band's '$driveName' folder is there"; $driveOk = $true }
+  elseif ($md -and $isHost) { New-Item -ItemType Directory "$md\$driveName" | Out-Null; Ok "Google Drive: made '$driveName' in your My Drive"; $driveOk = $true }
   elseif ($md) {
     Say "Add the band's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
     Say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press any key to skip."
     Start-Process "https://drive.google.com/drive/shared-with-me"
-    if (Wait-Until { Test-Path "$md\BandSync" }) { Ok "Google Drive: the band's BandSync folder is there"; $driveOk = $true }
+    if (Wait-Until { Test-Path "$md\$driveName" }) { Ok "Google Drive: the band's '$driveName' folder is there"; $driveOk = $true }
   }
   if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each bandmate (Editor), at drive.google.com." }
   elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }

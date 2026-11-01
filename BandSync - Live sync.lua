@@ -27,6 +27,7 @@ local function reached(t, theirs)
 end
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
+cfg = band.for_tab(cfg, b) -- (this tab's own band, whichever band this computer is working in now)
 -- one Live sync per song tab: triggering this action again while it runs does nothing (no "terminate instances?"
 -- box); another tab's runs from a launcher action of its own (band.start_live), and starting it again for this tab
 -- only says so
@@ -79,7 +80,7 @@ for _, d in ipairs(band.subdirs(cfg.root)) do
     local ok, why = services.ensure_syncthing()
     if ok == "started" then band.log("started Syncthing"); st_started = reaper.time_precise() elseif not ok then band.log("Syncthing: " .. why) end
     if ok then -- quick hand-off for live use (lib/services.lua): the live MIDI view a couple of seconds behind
-      local set, err = services.tune_band_folder()
+      local set, err = services.tune_band_folder(band.info(cfg.root).id)
       if set and #set > 0 then band.log("Syncthing's band folder tuned for live use: " .. table.concat(set, ", "))
       elseif not set then
         -- just started, it doesn't answer for a few seconds (2026-10-29, laptop): try again for a few minutes
@@ -192,7 +193,7 @@ local function poll()
   end
   if tune_left > 0 and reaper.time_precise() - tune_at > 30 then
     tune_left, tune_at = tune_left - 1, reaper.time_precise()
-    local set, err = require("services").tune_band_folder()
+    local set, err = require("services").tune_band_folder(band.info(cfg.root).id)
     if set then
       tune_left = 0
       band.log(#set > 0 and ("Syncthing's band folder tuned for live use: " .. table.concat(set, ", ")) or "Syncthing is answering")
@@ -308,16 +309,18 @@ local function poll()
     end
   end
 
-  -- the host lets new band machines in: a bandmate's installer pairs with the host's Syncthing, which then asks
-  -- here. Over the band's Tailscale (only band machines are on it) they're added and given the band folder at once;
-  -- anything else waits for a click in the panel (Bandmates)
-  if host then
+  -- new band machines: a bandmate's installer pairs with whoever's ID it was given (any bandmate: Invite a
+  -- bandmate), whose Syncthing then asks here, and the panel shows "Let them in". (Until 0.35 only the host looked,
+  -- so an invite from anyone else never showed the button.) On the host of a computer in one band, a machine asking
+  -- over the band's Tailscale (only band machines are on it) is let in at once; with several bands, never on its own.
+  do
     local services = require("services")
     local ask = {}
+    local auto = host and #band.bands() <= 1
     for _, d in ipairs(services.pending_devices()) do
-      if services.on_tailnet(d.address) and not joined[d.id] then
+      if auto and services.on_tailnet(d.address) and not joined[d.id] then
         joined[d.id] = true
-        local ok, why = services.add_device(d.id, d.name)
+        local ok, why = services.add_device(d.id, d.name, band.info(cfg.root).id)
         band.log(ok and string.format("'%s' (%s) joined the band folder: it asked over the band's Tailscale", d.name, d.id:sub(1, 7))
           or ("couldn't add '" .. d.name .. "': " .. tostring(why)))
       elseif not joined[d.id] then

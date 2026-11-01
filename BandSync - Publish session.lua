@@ -69,7 +69,7 @@ band.write_json(band.session_path(cfg, song), {
   published = os.date("!%Y-%m-%dT%H:%M:%SZ"), srate = band.srate(proj),
   tempo = band.capture_tempo(proj), markers = band.capture_markers(proj),
 })
-band.bind(proj, { role = "host", song = song, room = "main", version = version })
+band.bind(proj, { role = "host", song = song, room = "main", version = version, root = cfg.root })
 reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.capture_tempo(proj), band.capture_markers(proj) }))
 reaper.Main_SaveProject(proj, false)
 local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))

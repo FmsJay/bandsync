@@ -68,17 +68,18 @@ end
 -- by Live sync by itself). On every page of the panel, at the top: in the classic panel only, a new bandmate who
 -- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).
 function tools.join_requests(ctx, ImGui, b)
-  if not b or b.role ~= "host" then return end
+  if not b then return end -- (any bandmate's invite brings a request here: not only the host's)
+  local binfo = band.info(b.root or reaper.GetExtState(band.SECTION, "sync_root"))
   local asking = band.json_decode(reaper.GetExtState(band.SECTION, "pending_join"))
   local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}
   for _, d in ipairs(type(asking) == "table" and asking or {}) do
     if type(d) == "table" and d.id and not skip[d.id] then
-      ImGui.TextColored(ctx, 0xF2BF40FF, string.format("%s's computer wants to join the band folder.", tostring(d.name)))
+      ImGui.TextColored(ctx, 0xF2BF40FF, string.format("%s's computer wants to join %s.", tostring(d.name), binfo.name))
       ImGui.SetItemTooltip(ctx, string.format("Syncthing device %s, from %s.", d.id:sub(1, 7), tostring(d.address)))
       ImGui.SameLine(ctx)
       if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id) then
-        local ok, why = require("services").add_device(d.id, d.name)
-        band.log(ok and ("let '" .. tostring(d.name) .. "' into the band folder: the songs reach them now")
+        local ok, why = require("services").add_device(d.id, d.name, binfo.id)
+        band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. binfo.name .. ": the songs reach them now")
           or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
         reaper.DeleteExtState(band.SECTION, "pending_join", false)
       end

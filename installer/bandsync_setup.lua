@@ -41,6 +41,16 @@ step("shared folder writable", probe ~= nil, root)
 local user = (req.user or ""):gsub("[^%w%-_ ]", "")
 step("name", user ~= "", user)
 if probe and user ~= "" then
+  -- joining another band: the band this computer was in stays one of its bands (Setup > Options > Bands)
+  local was, bands = reaper.GetExtState("BandSync", "sync_root"), reaper.GetExtState("BandSync", "bands")
+  local list = {}
+  for r in bands:gmatch("[^|]+") do list[#list + 1] = r end
+  for _, r in ipairs({ was, root }) do
+    local have = false
+    for _, x in ipairs(list) do if x == r then have = true end end
+    if r ~= "" and not have then list[#list + 1] = r end
+  end
+  reaper.SetExtState("BandSync", "bands", table.concat(list, "|"), true)
   reaper.SetExtState("BandSync", "sync_root", root, true)
   reaper.SetExtState("BandSync", "user", user, true)
 end

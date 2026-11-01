@@ -89,7 +89,7 @@ function songsync.apply(cfg)
   local new = songsync.merge(old, not songsync.keep_all() and songsync.wanted(cfg) or nil)
   if new == old then return false end
   band.write_atomic(path, new)
-  pcall(function() require("services").rescan("bandsync") end)
+  pcall(function() require("services").rescan(band.info(cfg.root).id) end)
   return true
 end
 

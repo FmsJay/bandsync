@@ -44,7 +44,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
       end
     end
     if reaper.CountTracks(0) > 0 then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
-    b = { role = "guest", song = song, room = room }
+    b = { role = "guest", song = song, room = room, root = cfg.root }
   end
 
   local proj, projfile = reaper.EnumProjects(-1)

@@ -7,7 +7,8 @@
 # (hearing each other) and Google Drive for desktop (the band's copy). Every app comes from its official source.
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
-# BS_LIVE / BS_SOLO (no: leave out SonoBus + Tailscale / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG.
+# BS_LIVE / BS_SOLO (no: leave out SonoBus + Tailscale / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG,
+# BS_BAND_ID / BS_BAND_NAME (the band an invitation is for: its Syncthing folder id and name; the first band is "bandsync").
 # A bandmate's panel (Invite a bandmate) hands out the curl line above with BS_HOST_ID already in it.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
@@ -65,8 +66,17 @@ if ! yes "$HOSTING"; then
 else
   say "You're the first: at the end you get your Syncthing ID to send to each bandmate who installs."
 fi
+# the band (docs/bands-design.md): each its own shared folder. An invitation names it; the first one set up names it.
+FOLDER_ID="$(printf '%s' "${BS_BAND_ID:-bandsync}" | LC_ALL=C tr -cd 'a-z0-9-')"; [ -n "$FOLDER_ID" ] || FOLDER_ID=bandsync
+BAND_NAME="$(plain "${BS_BAND_NAME:-}")"
+if yes "$HOSTING" && [ -z "$BAND_NAME" ]; then
+  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Your band's name" "My band")")"; done
+fi
+[ -n "$BAND_NAME" ] || BAND_NAME="the band"
+DRIVE_NAME="BandSync"; DEF_ROOT="$HOME/BandSync"
+if [ "$FOLDER_ID" != bandsync ]; then DRIVE_NAME="BandSync - $BAND_NAME"; DEF_ROOT="$HOME/BandSync $BAND_NAME"; fi
 while :; do
-  ROOT="${BS_ROOT:-$(ask "Where should the shared BandSync folder be" "$HOME/BandSync")}"
+  ROOT="${BS_ROOT:-$(ask "Where should $BAND_NAME's shared folder be" "$DEF_ROOT")}"
   ROOT="$(printf '%s' "$ROOT" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/\\\(.\)/\1/g')" # (dragged in from Finder: "\ " and a trailing space)
   ROOT="${ROOT/#\~/$HOME}"
   ROOT="${ROOT%/}"
@@ -239,7 +249,7 @@ if yes "$SOLO" && have "Google Drive"; then
   drives() { ls -d "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive" 2>/dev/null; }
   mydrive() {
     [ -n "${PICKED:-}" ] && [ -d "$PICKED" ] && { echo "$PICKED"; return; }
-    local d; while IFS= read -r d; do [ -d "$d/BandSync" ] && { echo "$d"; return; }; done < <(drives)
+    local d; while IFS= read -r d; do [ -d "$d/$DRIVE_NAME" ] && { echo "$d"; return; }; done < <(drives)
     drives | head -1
   }
   account() { echo "$1" | sed -n 's#.*/GoogleDrive-\([^/]*\)/My Drive$#\1#p'; } # the account's e-mail, from its folder
@@ -251,21 +261,21 @@ if yes "$SOLO" && have "Google Drive"; then
     while [ -z "$(mydrive)" ]; do read -t 3 -r </dev/tty && break; done
   fi
   MD="$(mydrive)"
-  if [ -n "$MD" ] && [ ! -d "$MD/BandSync" ] && [ "$(drives | wc -l)" -gt 1 ]; then
+  if [ -n "$MD" ] && [ ! -d "$MD/$DRIVE_NAME" ] && [ "$(drives | wc -l)" -gt 1 ]; then
     say "Google Drive has several accounts signed in here. Which one is the band's (it gets the band's folder)?"
     i=0; while IFS= read -r d; do i=$((i + 1)); echo "    $i) $(account "$d")"; done < <(drives)
     n="$(ask "Number" 1)"
     PICKED="$(drives | sed -n "${n}p")"; [ -n "$PICKED" ] && MD="$PICKED"
   fi
-  if [ -n "$MD" ] && [ -d "$MD/BandSync" ]; then ok "Google Drive: the band's BandSync folder is there ($(account "$MD"))"; DRIVE_OK=1
+  if [ -n "$MD" ] && [ -d "$MD/$DRIVE_NAME" ]; then ok "Google Drive: the band's '$DRIVE_NAME' folder is there ($(account "$MD"))"; DRIVE_OK=1
   elif [ -n "$MD" ] && yes "$HOSTING"; then
-    mkdir -p "$MD/BandSync" && ok "Google Drive: made BandSync in your My Drive (share it at the end)"; DRIVE_OK=1
+    mkdir -p "$MD/$DRIVE_NAME" && ok "Google Drive: made '$DRIVE_NAME' in your My Drive (share it at the end)"; DRIVE_OK=1
   elif [ -n "$MD" ]; then
-    say "Add the band's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
+    say "Add the band's Drive folder: in the page that opens, right-click '$DRIVE_NAME' > Organize > Add shortcut > My Drive."
     say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press Return to skip."
     open "https://drive.google.com/drive/shared-with-me?authuser=$(account "$MD")" # (in that account, not whichever the browser has)
-    while [ ! -d "$MD/BandSync" ]; do read -t 3 -r </dev/tty && break; done
-    [ -d "$MD/BandSync" ] && { ok "Google Drive: the band's BandSync folder is there"; DRIVE_OK=1; }
+    while [ ! -d "$MD/$DRIVE_NAME" ]; do read -t 3 -r </dev/tty && break; done
+    [ -d "$MD/$DRIVE_NAME" ] && { ok "Google Drive: the band's '$DRIVE_NAME' folder is there"; DRIVE_OK=1; }
   fi
 fi
 # the band plug-in pack (optional): free, open-source plug-ins every bandmate can have, each from its official release
@@ -345,22 +355,27 @@ up=""; for i in $(seq 1 60); do stcli show system >/dev/null && { up=1; break; }
 [ -n "$up" ] || { warn "Syncthing didn't answer; finish its setup by hand (see installer/SKILL.md)"; exit 1; }
 MY_ID="$("$ST" device-id --home "$STHOME" 2>/dev/null | tail -1 | tr -d '[:space:]')"
 mkdir -p "$ROOT"
+if yes "$HOSTING" && [ ! -f "$ROOT/_band/band.json" ]; then # (who this folder is: lib/band.lua band.info; names are plain)
+  mkdir -p "$ROOT/_band"
+  printf '{ "name": "%s", "id": "%s", "drive": "%s" }\n' "$BAND_NAME" "$FOLDER_ID" "$DRIVE_NAME" > "$ROOT/_band/band.json"
+fi
 # per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
 # full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
 if ! yes "$HOSTING" && ! grep -q '^// BandSync end$' "$ROOT/.stignore" 2>/dev/null; then
   printf '%s\n' '// BandSync: what this computer downloads (written by BandSync, up to the line below)' '!/_*' '!/plugins' '!/drummaps' '!/*/session.json' '!/*/folder.json' '!/*/live.json' '!/*/invites' '!/*/rooms/*/room.json' '!/*/rooms/*/summary' '!/*/rooms/*/status' '/*/*' '// BandSync end' >> "$ROOT/.stignore" && ok "this computer gets each song in full once it's opened (the rest: their listing)"
 fi
-if stcli config folders list | grep -qx bandsync; then ok "shared folder 'bandsync' already set up"
+LABEL="BandSync"; [ "$FOLDER_ID" != bandsync ] && LABEL="BandSync $BAND_NAME"
+if stcli config folders list | grep -qx "$FOLDER_ID"; then ok "$BAND_NAME's shared folder is already set up"
 else
-  stcli config defaults folder path set "$(dirname "$ROOT")" >/dev/null # new folders land beside it
-  stcli config folders add --id bandsync --label BandSync --path "$ROOT" >/dev/null && ok "shared folder 'bandsync' -> $ROOT"
+  stcli config folders list | grep -q . || stcli config defaults folder path set "$(dirname "$ROOT")" >/dev/null # (fresh setup: new folders land beside it)
+  stcli config folders add --id "$FOLDER_ID" --label "$LABEL" --path "$ROOT" >/dev/null && ok "$BAND_NAME's shared folder -> $ROOT"
 fi
-stcli config folders bandsync order set smallestFirst >/dev/null
-stcli config folders bandsync fswatcher-delays set 1 >/dev/null  # the default 10 s delay added 10 s to every take
+stcli config folders "$FOLDER_ID" order set smallestFirst >/dev/null
+stcli config folders "$FOLDER_ID" fswatcher-delays set 1 >/dev/null  # the default 10 s delay added 10 s to every take
 stcli config devices "$MY_ID" name set "$USERNAME_BS" >/dev/null
 if ! yes "$HOSTING"; then
   stcli config devices list | grep -qx "$HOST_ID" || stcli config devices add --device-id "$HOST_ID" --name "Bandmate" --introducer --auto-accept-folders >/dev/null
-  stcli config folders bandsync devices list | grep -qx "$HOST_ID" || stcli config folders bandsync devices add --device-id "$HOST_ID" >/dev/null
+  stcli config folders "$FOLDER_ID" devices list | grep -qx "$HOST_ID" || stcli config folders "$FOLDER_ID" devices add --device-id "$HOST_ID" >/dev/null
   CONNECTED=""
   stcli show connections 2>/dev/null | tr -d '\n ' | grep -q "\"$HOST_ID\":{[^}]*\"connected\":true" && CONNECTED=1
   if [ -n "$CONNECTED" ]; then ok "paired with your bandmate, and connected"

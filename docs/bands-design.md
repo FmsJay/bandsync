@@ -1,4 +1,4 @@
-# Bands and per-song sync (per-song sync built in 0.34.7; bands next)
+# Bands and per-song sync (per-song sync built in 0.34.7, bands in 0.35.0)
 
 James, 2026-10-31: "having separate 'sessions' or 'bands' within bandsync instead of sharing every project with
 everyone", and "only get a song at a time based on what's being worked on ... otherwise that'll be a lot to sync

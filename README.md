@@ -255,6 +255,21 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
   Live sync also keeps a copy of the room on Google Drive (store and forward), so what someone does alone reaches the
   others even if you're never online together.
 
+### Bands
+
+Each band is its own shared folder: its own songs, bandmates' names, plug-in list, drum maps, SonoBus group and
+Google Drive copy, and nobody in your other bands sees it. `_band/band.json` in the folder says which band it is
+(name, Syncthing folder id, Drive folder name); a folder without one is the first band (Syncthing id `bandsync`,
+Drive folder `BandSync`).
+
+- **Start a band** (Setup > Options > Bands): makes its folder beside your first band's (`BandSync <Name>`) and its
+  own Syncthing folder, shared with nobody yet. Then *Invite a bandmate*: the invitation is for the band you're
+  working in, and their installer joins that band (`BS_BAND_ID` / `BS_BAND_NAME` on a Mac, `-BandId` / `-BandName`
+  on Windows). *Let them in* shares only that band's folder.
+- **Switch** (Setup > Options > Bands, or the start screen when you're in more than one): new songs, *Join the band's
+  song* and the song list are that band's. Song tabs keep their own band, so two bands' songs can be open at once.
+- The first person to set up a band names it in the installer.
+
 ### Songs on this computer (per-song sync)
 
 Every computer gets every song's listing (a few KB: what the song chooser shows), and a song in full only once it's

@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.34.10", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.35.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -233,13 +233,14 @@ end
 
 -- Old names, so a renamed bandmate's tracks stay theirs: <root>/_band/names.json, an old name's tag -> the name now.
 -- (Checked by mirror.is_creator; read at most every 10 s.)
-local names_at, names = -math.huge, {}
+local names_at, names = {}, {}
 function band.names(root)
-  if reaper.time_precise() - names_at > 10 then
-    names_at = reaper.time_precise()
-    names = band.read_json((root or reaper.GetExtState(band.SECTION, "sync_root")) .. "/_band/names.json") or {}
+  root = root or reaper.GetExtState(band.SECTION, "sync_root")
+  if reaper.time_precise() - (names_at[root] or -math.huge) > 10 then
+    names_at[root] = reaper.time_precise()
+    names[root] = band.read_json(root .. "/_band/names.json") or {}
   end
-  return names
+  return names[root]
 end
 
 -- Someone took a new name: everywhere the band's files hold the old one (who drives each room, their claims, their
@@ -253,7 +254,7 @@ function band.rename(root, old, new)
   map[tag(new)] = nil
   reaper.RecursiveCreateDirectory(root .. "/_band", 0)
   band.write_json(root .. "/_band/names.json", map)
-  names_at = -math.huge
+  names_at[root] = nil
   local n = 0
   for _, song in ipairs(band.subdirs(root)) do
     for _, room in ipairs(band.subdirs(root .. "/" .. song .. "/rooms")) do
@@ -277,7 +278,7 @@ end
 -- A project is bound to one song: role (host/guest), song, room, version, take_mode.
 function band.binding(proj)
   local b = {}
-  for _, k in ipairs({ "role", "song", "room", "version", "take_mode", "stem_mode", "print" }) do
+  for _, k in ipairs({ "role", "song", "room", "version", "take_mode", "stem_mode", "print", "root" }) do
     local _, v = reaper.GetProjExtState(proj, band.SECTION, k)
     b[k] = v ~= "" and v or nil
   end
@@ -312,6 +313,52 @@ function band.color_in(c)
   c = math.floor(tonumber(c) or 0)
   if c == 0 or not reaper.ColorToNative then return c end
   return (c & ~0xFFFFFF) | reaper.ColorToNative(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF)
+end
+
+-- ---- bands: each band is its own shared folder (docs/bands-design.md) ----------------------------------------
+-- <root>/_band/band.json says which band a folder is: { name, id = its Syncthing folder id, drive = its Google Drive
+-- folder's name }. A folder without one is the first band BandSync had: id "bandsync", Drive folder "BandSync".
+function band.info(root)
+  local j = (root and band.read_json(root .. "/_band/band.json")) or {}
+  local id = type(j.id) == "string" and j.id ~= "" and j.id or "bandsync"
+  return { name = type(j.name) == "string" and j.name ~= "" and j.name or "the band", id = id,
+    drive = type(j.drive) == "string" and j.drive ~= "" and j.drive or (id == "bandsync" and "BandSync" or ("BandSync - " .. (j.name or id))) }
+end
+-- The bands this computer is in (persistent ExtState "bands": their folders), the current one always among them:
+-- { { root, name, id, drive } }, by name.
+function band.bands()
+  local roots, seen, out = {}, {}, {}
+  for r in reaper.GetExtState(band.SECTION, "bands"):gmatch("[^|]+") do roots[#roots + 1] = r end
+  roots[#roots + 1] = reaper.GetExtState(band.SECTION, "sync_root")
+  for _, r in ipairs(roots) do
+    if r ~= "" and not seen[r] and band.subdirs(r)[1] then -- (a folder that's gone, or never synced, is left out)
+      seen[r] = true
+      local i = band.info(r)
+      out[#out + 1] = { root = r, name = i.name, id = i.id, drive = i.drive }
+    end
+  end
+  table.sort(out, function(a, z) return a.name:lower() < z.name:lower() end)
+  return out
+end
+-- Make `root` the band this computer works in (new songs, the start screen, the chooser), and remember it.
+function band.use_band(root)
+  local list = {}
+  for _, x in ipairs(band.bands()) do list[#list + 1] = x.root end
+  local known = false
+  for _, r in ipairs(list) do if r == root then known = true end end
+  if not known then list[#list + 1] = root end
+  reaper.SetExtState(band.SECTION, "bands", table.concat(list, "|"), true)
+  reaper.SetExtState(band.SECTION, "sync_root", root, true)
+end
+-- The settings for a song tab: its own band's folder, whichever band this computer is working in now. A tab
+-- bound before bands (no root) is in the current band. `cfg.base` keeps the computer's own settings.
+function band.for_tab(cfg, b)
+  local base = cfg and (cfg.base or cfg)
+  if not base then return nil end
+  if b and b.root and b.root ~= base.root and band.subdirs(b.root)[1] then
+    return { root = b.root, user = base.user, base = base }
+  end
+  return base
 end
 
 function band.bind(proj, b)

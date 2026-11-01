@@ -323,6 +323,7 @@ local label = ""
 local function refresh()
   proj = reaper.EnumProjects(-1)
   b = band.binding(proj)
+  cfg = band.for_tab(cfg, b) -- (the front tab's own band: two bands' songs can be open at once)
   banner_text = nil -- (a tab that isn't a band session has no banner: it showed over a new empty tab)
   if not b then return end
   view = status.gather(cfg, b, proj)
@@ -1637,7 +1638,7 @@ local function home_who()
   local my_id = services.my_device_id()
   ImGui.BeginDisabled(ctx, not my_id)
   if ImGui.SmallButton(ctx, "Invite a bandmate") then
-    ImGui.SetClipboardText(ctx, services.invite_text(my_id))
+    ImGui.SetClipboardText(ctx, services.invite_text(my_id, band.info(cfg.root)))
     band.log("an invitation is on your clipboard: paste it to your bandmate (a message, an email). It installs BandSync " ..
       "already paired with this computer; then press 'Let them in' here when they're done.")
   end
@@ -1835,7 +1836,40 @@ local function page_setup()
   end
   if ImGui.BeginTabItem(ctx, "Options") then
     -- (Songs: inline, the panel's main chunk is near Lua's 200-locals limit) per-song sync, lib/songsync.lua
-    layout({ { settings_look, 320 }, { settings_sync, 420 }, { settings_drive, 360 }, { function()
+    layout({ { settings_look, 320 }, { settings_sync, 420 }, { function()
+  if card("bands") then -- (each band its own shared folder: docs/bands-design.md)
+    heading("Bands", 17)
+    local here = band.info(cfg.root)
+    ImGui.TextWrapped(ctx, "You're working in " .. here.name .. ".")
+    ImGui.SetItemTooltip(ctx, (cfg.base or cfg).root)
+    for _, x in ipairs(band.bands()) do
+      if x.root ~= (cfg.base or cfg).root then
+        if ImGui.SmallButton(ctx, "Switch to##band" .. x.root) then
+          band.use_band(x.root); cfg = band.settings(); drive_at = -math.huge
+          band.log("working in " .. x.name .. " now: its songs, plug-ins and bandmates")
+        end
+        ImGui.SameLine(ctx)
+        ImGui.Text(ctx, x.name)
+        ImGui.SetItemTooltip(ctx, x.root)
+      end
+    end
+    if ImGui.Button(ctx, "Start a band") then
+      local ok, name = reaper.GetUserInputs("BandSync: start a band", 1, "Band name,extrawidth=120", "")
+      if ok and name ~= "" then
+        local root, why = require("services").new_band(cfg, name)
+        if root then
+          cfg = band.settings(); drive_at = -math.huge
+          band.log("started the band " .. band.info(root).name .. " in " .. root)
+          band.msg("You're working in " .. band.info(root).name .. " now: its own songs, plug-ins and bandmates, shared with nobody yet.\n\n" ..
+            "Open a project and Start a band song from it, then Invite a bandmate (Home) to bring people in. Switch bands in Setup > Options.")
+        else band.msg(tostring(why)) end
+      end
+    end
+    ImGui.SetItemTooltip(ctx, "A band of its own (another group of people): its own shared folder, songs, plug-ins and Drive copy.\n" ..
+      "Nobody in your other bands sees it.")
+    card_end()
+  end
+end, 360 }, { settings_drive, 360 }, { function()
   if card("songs") then
     heading("Songs on this computer", 17)
     local ss = require("songsync")
@@ -2159,7 +2193,20 @@ local function frame()
       for _, r in ipairs(require("chooser").songs(cfg)) do start_songs.list[#start_songs.list + 1] = r.song end
     end
     local list = start_songs.list
-    ImGui.TextWrapped(ctx, "This project isn't a band song.")
+    local bands = band.bands()
+    ImGui.TextWrapped(ctx, "This project isn't a band song. Band: " .. band.info(cfg.root).name)
+    if #bands > 1 then
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Switch band") then
+        local names = { "#Work in which band?" }
+        for _, x in ipairs(bands) do names[#names + 1] = x.name end
+        local pick = band.pick(names)
+        for _, x in ipairs(bands) do
+          if x.name == pick then band.use_band(x.root); cfg = band.settings(); start_songs = nil; drive_at = -math.huge end
+        end
+      end
+      ImGui.SetItemTooltip(ctx, "You're in several bands: new songs, Join the band's song and the song list are this band's.")
+    end
     ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF)
     if ImGui.Button(ctx, "Join the band's song") then action("Open session") end
     ImGui.PopStyleColor(ctx)

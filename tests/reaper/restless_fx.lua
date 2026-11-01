@@ -100,6 +100,12 @@ local ok, err = pcall(function()
   t = reaper.time_precise()
   while reaper.time_precise() - t < 8 and sent("Laptop", "fx") == n3 do watch(pa, A); hold(0.3) end
   check(sent("Laptop", "fx") == n3 + 1, "moving its knob goes out")
+  t = reaper.time_precise()
+  while reaper.time_precise() - t < 10 and pkey(it) == key do watch(pa, A); hold(0.3) end
+  check(pkey(it) ~= key, "and its part prints again, as it sounds different")
+  local key2 = pkey(it)
+  for _ = 1, 8 do watch(pa, A); hold(0.2) end
+  check(pkey(it) == key2, "once")
   recv(pb, B)
   check(math.abs(reaper.TrackFX_GetParam(reaper.GetTrack(pb, 0), 1, 0) - 0.5) < 0.01, "and lands on the bandmate")
   for _ = 1, 8 do watch(pb, B); hold(0.2) end

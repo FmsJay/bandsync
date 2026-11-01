@@ -1552,7 +1552,14 @@ function mirror.watch(proj, cfg, song, room, opts)
         if may then
           local dest = prints.route(reaper.GetMediaItem_Track(o.ptr)) -- (an instrument on another track: its chain is part of the print)
           local dfx = dest and by_oid["F" .. mirror.track_oid(dest):sub(2)]
-          local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash, dfx and dfx.hash or nil, cfg)
+          -- (a restless plug-in's knobs aren't in its chain's hash, but they change the sound: Disperser's Amount moved
+          -- and went out, and the print stayed as it was: Mac, 0.42.1)
+          local function sounds(f)
+            if not f then return nil end
+            if f.print_key == nil then f.print_key = mirror.restless_in(f.state) and (f.hash .. mirror.hash(mirror.fx_params(f.ptr))) or f.hash end
+            return f.print_key
+          end
+          local ok, did = pcall(prints.refresh, proj, o.ptr, media, sounds(fx), sounds(dfx), cfg)
           if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is BandSync's, not theirs)
         end
       end

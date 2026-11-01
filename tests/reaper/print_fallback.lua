@@ -95,6 +95,27 @@ local ok, err = pcall(function()
   local nb = sent("James")
   watch(pb, B, yes, { Laptop = true })
   check(sent("James") == nb, "and doesn't explode or send anything of his own")
+  -- a JSFX that isn't on this machine: REAPER keeps an empty stand-in, not offline (Mac, 0.39.1: a silent print)
+  reaper.SelectProjectInstance(pb)
+  reaper.InsertTrackInProject(pb, 2, 0)
+  local js = reaper.GetTrack(pb, 2)
+  local f = reaper.TrackFX_AddByName(js, "JS: 2op PM Synth", false, -1)
+  if f < 0 then f = reaper.TrackFX_AddByName(js, "ReaSynth", false, -1) end
+  check(prints.fx_here(js, f) and prints.track_plays(js), "a plug-in that's here counts as here")
+  local real_exists = reaper.file_exists
+  reaper.file_exists = function() return false end -- (as on a machine without its file)
+  local kind = select(2, reaper.TrackFX_GetNamedConfigParm(js, f, "fx_type"))
+  local missing = not prints.track_plays(js)
+  reaper.file_exists = real_exists
+  check(kind ~= "JS" or missing, "a JSFX whose file isn't here doesn't count, though REAPER shows it loaded")
+  -- MIDI sent to a JS instrument on another track (a chmaha drum kit) counts as routed (Mac, 0.39.1: JS ones didn't)
+  reaper.InsertTrackInProject(pb, 3, 0); reaper.InsertTrackInProject(pb, 4, 0)
+  local mt, kt = reaper.GetTrack(pb, 3), reaper.GetTrack(pb, 4)
+  local kfx = reaper.TrackFX_AddByName(kt, "JS: Dr. Nine", false, -1)
+  if kfx < 0 then kfx = reaper.TrackFX_AddByName(kt, "DrNine", false, -1) end
+  local snd = reaper.CreateTrackSend(mt, kt)
+  reaper.SetTrackSendInfo_Value(mt, 0, snd, "I_SRCCHAN", -1)
+  check(kfx < 0 or prints.route(mt) == kt, "MIDI to a JS drum kit on another track prints through it" .. (kfx < 0 and " (no Dr. Nine here: not tried)" or ""))
 end)
 lacks(false)
 if not ok then say("ERROR " .. tostring(err)); fails = fails + 1 end

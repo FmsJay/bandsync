@@ -26,11 +26,28 @@ end
 -- such send: a track sending MIDI to several instruments prints through the first.)
 -- Whether a track has an instrument: a loaded one, or one that isn't here (offline: TrackFX_GetInstrument doesn't
 -- count those, so the computer missing it, the one that most needs the print, didn't see the routing at all), known
--- by REAPER's "VSTi:", "VST3i:", "AUi:", "CLAPi:" name.
+-- by REAPER's "VSTi:", "VST3i:", "AUi:", "CLAPi:" name. A JSFX has no such name and TrackFX_GetInstrument doesn't see
+-- it (Mac, 0.39.1): one counts when its file says "in_pin:none" (no audio in: chmaha's kits, organ and pianos), tags
+-- itself an instrument, or is called a synth; read once per file. (A JS instrument that says none of that is missed.)
+local js_inst = {} -- Effects-relative path -> true/false
+local function js_instrument(tr, i)
+  local _, kind = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_type")
+  if kind ~= "JS" then return false end
+  local _, ident = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_ident")
+  ident = (ident or ""):gsub("\\", "/")
+  if js_inst[ident] == nil then
+    local text = (band.read(reaper.GetResourcePath() .. "/Effects/" .. ident) or ""):sub(1, 65536)
+    local head = text:sub(1, (text:find("\n@") or #text)):lower() -- (the header, up to the first @section: chmaha's run 11 KB)
+    -- (not one with no audio out either: a MIDI-only effect, an arpeggiator, says in_pin:none too)
+    js_inst[ident] = not head:find("\nout_pin:none", 1, true) and (head:find("\nin_pin:none", 1, true) ~= nil
+      or head:find("tags:[^\n]*instrument") ~= nil or (head:match("^desc:([^\n]*)") or head:match("\ndesc:([^\n]*)") or ""):find("synth", 1, true) ~= nil)
+  end
+  return js_inst[ident]
+end
 local function has_instrument(tr)
   if reaper.TrackFX_GetInstrument(tr) >= 0 then return true end
   for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
-    if select(2, reaper.TrackFX_GetFXName(tr, i)):match("^%u+%d*i: ") then return true end
+    if select(2, reaper.TrackFX_GetFXName(tr, i)):match("^%u+%d*i: ") or js_instrument(tr, i) then return true end
   end
   return false
 end
@@ -71,16 +88,28 @@ function prints.midi_only(tr, dest)
   return false
 end
 
+-- Whether a track's plug-in really loads here. A missing VST, AU or CLAP shows offline; a missing JSFX doesn't: REAPER
+-- keeps an empty stand-in (not offline, silent), so its file is looked for in Effects (Mac, 0.39.1: it printed a
+-- JS synth it didn't have, and its silent print replaced the PC's good one).
+function prints.fx_here(tr, i)
+  if reaper.TrackFX_GetOffline(tr, i) then return false end
+  local _, kind = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_type")
+  if kind ~= "JS" then return true end
+  local _, ident = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_ident") -- (relative to Effects: "ReaTeam JSFX/Synth/x.jsfx")
+  ident = (ident or ""):gsub("\\", "/")
+  return ident == "" or reaper.file_exists(reaper.GetResourcePath() .. "/Effects/" .. ident) or reaper.file_exists(ident)
+end
+
 -- Does every plug-in on the item's track load here (and on the instrument's track, for a routed one)? A missing one
--- shows offline: its notes would play silent.
+-- would leave its notes silent.
 function prints.track_plays(tr)
   for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
-    if reaper.TrackFX_GetOffline(tr, i) then return false end
+    if not prints.fx_here(tr, i) then return false end
   end
   local dest = prints.route(tr)
   if dest then
     for i = 0, reaper.TrackFX_GetCount(dest) - 1 do
-      if reaper.TrackFX_GetOffline(dest, i) then return false end
+      if not prints.fx_here(dest, i) then return false end
     end
   end
   return true

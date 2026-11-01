@@ -110,9 +110,10 @@ local function launch(exe, job)
     band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s"\r\n', ps, exe, job))
     if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
-  else -- shortcut: untried on a Mac; a job that never finishes counts as failed, and prints render in front again
+  else -- a Mac (only when switched on: bg.on): tried on 0.39.1, renders in ~1 s but shows a window and takes the keys
     local sh = job:gsub("%.rpp$", ".sh")
-    band.write_atomic(sh, string.format("BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -renderproject '%s' >/dev/null 2>&1 &\n", exe, job))
+    band.write_atomic(sh, string.format("find '%s' -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null\n" .. -- (claimed jobs' empty folders)
+      "BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -renderproject '%s' >/dev/null 2>&1 &\n", TMP, exe, job))
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
   end
 end

@@ -628,6 +628,74 @@ function sync.print_item(proj, it, take, out, name, tail, dry) -- (dry: the take
   return reaper.file_exists(path) and path or nil
 end
 
+-- Print a MIDI item that plays an instrument on another track (lib/prints.lua prints.route): that track rendered as a
+-- stem over the item's time, with only this item feeding it. For the render its other inputs and its own items are
+-- muted, and so are the source track's other items; its fader and pan are left out (they travel as the mix), as in
+-- render_item. Everything is put back after. Returns the .flac path, or nil. Active tab only.
+function sync.print_routed(proj, it, take, dest, out, name)
+  local src = reaper.GetMediaItem_Track(it)
+  local pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+  local len = reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+  local base = name
+  for n = 2, 99 do -- (a leftover REAPER still holds can't be replaced: a fresh name instead, as render_item)
+    os.remove(out .. "/" .. name .. ".flac"); os.remove(out .. "/" .. name .. ".opus")
+    if not reaper.file_exists(out .. "/" .. name .. ".flac") then break end
+    name = base .. "-" .. n
+  end
+  local undo = {}
+  local function track(tr, k, v)
+    local was = reaper.GetMediaTrackInfo_Value(tr, k)
+    undo[#undo + 1] = function() reaper.SetMediaTrackInfo_Value(tr, k, was) end
+    reaper.SetMediaTrackInfo_Value(tr, k, v)
+  end
+  local function item(x, v)
+    local was = reaper.GetMediaItemInfo_Value(x, "B_MUTE")
+    undo[#undo + 1] = function() reaper.SetMediaItemInfo_Value(x, "B_MUTE", was) end
+    reaper.SetMediaItemInfo_Value(x, "B_MUTE", v)
+  end
+  reaper.PreventUIRefresh(1)
+  local playing, sel_tracks = reaper.GetActiveTake(it), {}
+  for i = 0, reaper.CountSelectedTracks(proj) - 1 do sel_tracks[#sel_tracks + 1] = reaper.GetSelectedTrack(proj, i) end
+  reaper.SetActiveTake(take)
+  item(it, 0)
+  local lane = lane_of(it)
+  local lanes = lane and lanes_playing(src)
+  if lane then reaper.SetMediaTrackInfo_Value(src, "C_LANEPLAYS:" .. lane, 1) end
+  track(src, "B_MUTE", 0)
+  for i = 0, reaper.CountTrackMediaItems(src) - 1 do
+    local x = reaper.GetTrackMediaItem(src, i)
+    if x ~= it then item(x, 1) end
+  end
+  for i = 0, reaper.CountTrackMediaItems(dest) - 1 do item(reaper.GetTrackMediaItem(dest, i), 1) end
+  local receives = {}
+  for r = 0, reaper.GetTrackNumSends(dest, -1) - 1 do
+    if reaper.GetTrackSendInfo_Value(dest, -1, r, "P_SRCTRACK") ~= src then
+      receives[r] = reaper.GetTrackSendInfo_Value(dest, -1, r, "B_MUTE")
+      reaper.SetTrackSendInfo_Value(dest, -1, r, "B_MUTE", 1)
+    end
+  end
+  track(dest, "B_MUTE", 0); track(dest, "D_VOL", 1); track(dest, "D_PAN", 0)
+  reaper.SetOnlyTrackSelected(dest)
+  band.render({ RENDER_SETTINGS = 2, RENDER_BOUNDSFLAG = 0, RENDER_STARTPOS = pos, RENDER_ENDPOS = pos + len, RENDER_SRATE = 0,
+    RENDER_CHANNELS = 2, RENDER_TAILFLAG = 0, RENDER_TAILMS = 0, RENDER_ADDTOPROJ = 0 }, -- &2: stems only (the selected track), 0: this time range
+    { RENDER_FILE = out, RENDER_PATTERN = name, RENDER_FORMAT = band.FLAC, RENDER_FORMAT2 = band.OPUS })
+  for r, m in pairs(receives) do reaper.SetTrackSendInfo_Value(dest, -1, r, "B_MUTE", m) end
+  for i = #undo, 1, -1 do undo[i]() end
+  if lane then set_lanes_playing(src, lanes) end
+  reaper.SetActiveTake(playing)
+  for i = 0, reaper.CountTracks(proj) - 1 do reaper.SetTrackSelected(reaper.GetTrack(proj, i), false) end
+  for _, t in ipairs(sel_tracks) do if reaper.ValidatePtr2(proj, t, "MediaTrack*") then reaper.SetTrackSelected(t, true) end end
+  reaper.PreventUIRefresh(-1)
+  -- a stem render may name the file after the track as well: whatever it made under this name is the print
+  if not reaper.file_exists(out .. "/" .. name .. ".flac") then
+    for _, f in ipairs(band.files(out)) do
+      local ext = f:match("^" .. name:gsub("%p", "%%%0") .. ".-%.(%a+)$")
+      if ext == "flac" or ext == "opus" then os.rename(out .. "/" .. f, out .. "/" .. name .. "." .. ext) end
+    end
+  end
+  return reaper.file_exists(out .. "/" .. name .. ".flac") and (out .. "/" .. name .. ".flac") or nil
+end
+
 -- ---- events -------------------------------------------------------------------------------------
 
 local ev_seq = 0

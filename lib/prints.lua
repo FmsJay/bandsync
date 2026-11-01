@@ -21,10 +21,39 @@ function prints.takes(it)
   return midi, print
 end
 
--- Does every plug-in on the item's track load here? (A missing one shows offline: its notes would play silent.)
+-- A MIDI track that plays an instrument on another track: no instrument of its own, and a send carrying MIDI to a
+-- track that has one (a sampler fed by several MIDI tracks, drums on a kit track). -> that track, or nil. (The first
+-- such send: a track sending MIDI to several instruments prints through the first.)
+-- Whether a track has an instrument: a loaded one, or one that isn't here (offline: TrackFX_GetInstrument doesn't
+-- count those, so the computer missing it, the one that most needs the print, didn't see the routing at all), known
+-- by REAPER's "VSTi:", "VST3i:", "AUi:", "CLAPi:" name.
+local function has_instrument(tr)
+  if reaper.TrackFX_GetInstrument(tr) >= 0 then return true end
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+    if select(2, reaper.TrackFX_GetFXName(tr, i)):match("^%u+%d*i: ") then return true end
+  end
+  return false
+end
+function prints.route(tr)
+  if has_instrument(tr) then return nil end
+  for s = 0, reaper.GetTrackNumSends(tr, 0) - 1 do
+    local dest = reaper.GetTrackSendInfo_Value(tr, 0, s, "P_DESTTRACK")
+    local midi = math.floor(reaper.GetTrackSendInfo_Value(tr, 0, s, "I_MIDIFLAGS")) & 31 ~= 31 -- (31: MIDI off)
+    if dest and midi and reaper.GetTrackSendInfo_Value(tr, 0, s, "B_MUTE") == 0 and has_instrument(dest) then return dest end
+  end
+end
+
+-- Does every plug-in on the item's track load here (and on the instrument's track, for a routed one)? A missing one
+-- shows offline: its notes would play silent.
 function prints.track_plays(tr)
   for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
     if reaper.TrackFX_GetOffline(tr, i) then return false end
+  end
+  local dest = prints.route(tr)
+  if dest then
+    for i = 0, reaper.TrackFX_GetCount(dest) - 1 do
+      if reaper.TrackFX_GetOffline(dest, i) then return false end
+    end
   end
   return true
 end
@@ -132,18 +161,22 @@ end
 
 -- Make or refresh the print of a MIDI item (rendered through its track: this tab in front, transport stopped).
 -- Only when the track's plug-ins all load here (else the print would be silent). Returns true when the item changed.
--- An audio take with Melodyne (or another ARA plug-in) gets its print the same way (see prints.ARA).
-function prints.refresh(proj, it, media_dir, fx_hash)
+-- An audio take with Melodyne (or another ARA plug-in) gets its print the same way (see prints.ARA). A track that
+-- plays an instrument on another track (prints.route) prints through that track (sync.print_routed), and that
+-- track's chain (`route_hash`) is part of what the print is made from.
+function prints.refresh(proj, it, media_dir, fx_hash, route_hash)
   local midi, print = prints.takes(it)
   if not midi then return refresh_ara(proj, it, media_dir) end
   local tr = reaper.GetMediaItem_Track(it)
-  if reaper.TrackFX_GetCount(tr) == 0 or not prints.track_plays(tr) then return false end
-  local h = prints.source(it, midi, fx_hash)
+  local dest = prints.route(tr)
+  if (reaper.TrackFX_GetCount(tr) == 0 and not dest) or not prints.track_plays(tr) then return false end
+  local h = prints.source(it, midi, (fx_hash or "") .. (dest and ("\0" .. (route_hash or "")) or ""))
   if print and take_ext(print, prints.KEY) == h then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
   local name = "print-" .. (oid ~= "" and oid or "item") .. "-" .. h
   reaper.RecursiveCreateDirectory(media_dir, 0)
-  local path = require("sync").print_item(proj, it, midi, media_dir, name, nil)
+  local sync = require("sync")
+  local path = dest and sync.print_routed(proj, it, midi, dest, media_dir, name) or (not dest and sync.print_item(proj, it, midi, media_dir, name, nil))
   if not path then return false end
   local was = reaper.GetActiveTake(it)
   local ptk = print or reaper.AddTakeToMediaItem(it)

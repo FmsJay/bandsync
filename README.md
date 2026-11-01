@@ -73,9 +73,12 @@ Everything below is the detail.
     reason in the panel's banner (or a tooltip by the mouse when the panel is closed).
   - Never touches a track while you record on it.
 - **MIDI** travels as notes. Whoever changes a MIDI part also renders a print (its sound, through their
-  instrument), kept as the item's second take. Each person picks how MIDI plays on their machine (Setup >
-  Options): **Auto** (your instruments when the track's plug-ins all load, else the print), **Notes** or
-  **Sound**. That choice never changes what anyone else hears.
+  instrument), kept as the item's second take: "dry" is the notes, "wet" the print. A MIDI track that plays an
+  instrument on another track (a MIDI send to a sampler or drum-kit track) is printed through that track, with
+  only that item feeding it. Each person picks how MIDI plays on their machine (Setup > Options): **Auto** (your
+  instruments when every plug-in it plays through loads here, else the print), **Dry** or **Wet**. That choice
+  never changes what anyone else hears. When an instrument on another track doesn't load here, Setup > Health
+  names it and says you hear the band's print.
 - **Local mixing** (Home): your faders and pan stay yours. Switching it off asks whether to take the band's
   mix or send yours.
 - Songs published with BandSync before 0.30 are left alone: publish them again to sync them.

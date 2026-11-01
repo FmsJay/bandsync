@@ -1492,6 +1492,18 @@ local function maint_rows()
   if not maint_st or maint_st.for_proj ~= proj or reaper.time_precise() - maint_at > 10 then -- (another tab's said "Live sync is off" here: laptop, 0.34.9)
     maint_at, maint_st = reaper.time_precise(), setup.check(cfg, b, proj)
     maint_st.for_proj = proj
+    -- MIDI tracks playing an instrument on another track that doesn't load here (lib/prints.lua prints.route)
+    maint_st.routed = {}
+    local prints = require("prints")
+    for i = 0, reaper.CountTracks(proj) - 1 do
+      local tr = reaper.GetTrack(proj, i)
+      local dest = prints.route(tr)
+      if dest and not prints.track_plays(tr) then
+        local fx = select(2, reaper.TrackFX_GetFXName(dest, math.max(0, reaper.TrackFX_GetInstrument(dest))))
+        maint_st.routed[#maint_st.routed + 1] = { track = select(2, reaper.GetTrackName(tr)), dest = select(2, reaper.GetTrackName(dest)),
+          fx = (fx:gsub("^%w+i?: ", ""):gsub(" %(.-%)$", "")) }
+      end
+    end
   end
   local s = maint_st
   -- (Live sync, read now: a check made while a dialog paused every script, closing a tab, say, kept "Live sync is
@@ -1532,6 +1544,11 @@ local function maint_rows()
   if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "BandSync " .. view.newer .. " is in use in the band; you have " .. band.VERSION .. ": press Update below." } end
   local dmiss = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").missing
   if dmiss then rows[#rows + 1] = { "drive", false, "yellow", "", "Google Drive: no shared BandSync folder in " .. dmiss .. " (at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive)." } end
+  for _, m in ipairs(s.routed or {}) do
+    rows[#rows + 1] = { "routed " .. m.track, false, "yellow", "", string.format("'%s' plays %s on '%s', which doesn't load on this computer: " ..
+      "you hear the band's print (the wet take) where there is one, and nothing where there isn't. Installing %s brings the notes back here.",
+      m.track, m.fx, m.dest, m.fx) }
+  end
   local daway = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").away
   if daway then
     local who = daway:match("GoogleDrive%-([^/]+)/") or daway:match("^(%a:)")

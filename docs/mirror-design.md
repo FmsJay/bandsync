@@ -46,8 +46,13 @@ whenever the notes or the instrument change. Each person picks how MIDI plays on
 **Dry** (the notes, own instruments), **Wet** (the owner's print) or **Auto** (dry when the instrument is
 installed here, else wet). The active take is local and never mirrored, so nobody's choice changes anyone
 else's. The takes are named for it: "dry" (the notes) and "wet" (the print), each keeping any name it had after a
-dash. Audio gets a print only for Melodyne and other ARA edits (the editable take is dry there, the print wet); an
-audio track with a plug-in someone lacks has no print yet.
+dash. A MIDI track playing an instrument on another track (no instrument of its own, a MIDI send to a track with
+one: prints.route) is printed through that track: a one-track stem over the item's time, with that track's other
+inputs and items and the source track's other items muted for the render (sync.print_routed). The instrument
+track's chain is part of the print's source hash, so changing it prints again; Health names a routed instrument
+that doesn't load here (an offline plug-in counts as an instrument by its "VSTi:"-style name). Audio gets a print
+only for Melodyne and other ARA edits (the editable take is dry there, the print wet); an audio track with a
+plug-in someone lacks has no print yet.
 
 ## History
 

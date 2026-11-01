@@ -1323,7 +1323,9 @@ function mirror.watch(proj, cfg, song, room, opts)
           may = last and type(last.user) == "string" and not opts.can(last.user, name, o.pos)
         end
         if may then
-          local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash)
+          local dest = prints.route(reaper.GetMediaItem_Track(o.ptr)) -- (an instrument on another track: its chain is part of the print)
+          local dfx = dest and by_oid["F" .. mirror.track_oid(dest):sub(2)]
+          local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash, dfx and dfx.hash or nil)
           if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is BandSync's, not theirs)
         end
       end

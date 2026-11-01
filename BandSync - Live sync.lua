@@ -269,7 +269,9 @@ local function poll()
     -- came in, and at least every 10 s anyway (anything REAPER doesn't count as a change still gets seen)
     local cc = reaper.GetProjectStateChangeCount(proj)
     -- (not mid-drag: watch would skip it, and the change it skipped mustn't count as seen)
-    if (cc ~= mirror_cc or mirror_due or now - mirror_at > 10) and not mouse_down() then
+    -- (every second while a print renders in the background: it goes in once done, not up to 10 s later: laptop, 0.40.0)
+    local waiting = now - mirror_at > 1 and require("bgrender").waiting()
+    if (cc ~= mirror_cc or mirror_due or waiting or now - mirror_at > 10) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
       local here = {} -- (bandmates in the song now: one of them may print what its author can't, lib/prints.lua)

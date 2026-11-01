@@ -92,6 +92,24 @@ local ok, err = pcall(function()
   check(select(2, reaper.GetSetMediaItemTakeInfo_String(wet, "P_NAME", "", false)):match("^wet") ~= nil, "it's labelled wet")
   check(reaper.GetActiveTake(it) == dry and reaper.GetMediaTrackInfo_Value(tr, "I_FXEN") == 1, "here the plug-in loads: the dry take plays through it")
   check(not prints.refresh(pa, it, media, "fxhash", nil, cfg), "up to date: nothing more to render")
+  -- a change prints again (in the background); putting it back reuses the first print: nothing rendered at all
+  local vol = reaper.GetMediaItemTakeInfo_Value(dry, "D_VOL")
+  reaper.SetMediaItemTakeInfo_Value(dry, "D_VOL", 0.5)
+  local t2, did2 = reaper.time_precise(), false
+  while not did2 and reaper.time_precise() - t2 < 90 do
+    did2 = prints.refresh(pa, it, media, "fxhash", nil, cfg)
+    if not did2 then local w = reaper.time_precise(); while reaper.time_precise() - w < 0.3 do end end
+  end
+  reaper.SetMediaItemTakeInfo_Value(dry, "D_VOL", vol)
+  local n_done, n_failed = require("bgrender").counts()
+  local t3 = reaper.time_precise()
+  local back = prints.refresh(pa, it, media, "fxhash", nil, cfg)
+  local d3, f3 = require("bgrender").counts()
+  local twos = 0
+  for _, f in ipairs(band.files(media)) do if f:match("%-2%.%a+$") then twos = twos + 1 end end
+  check(did2 and back and reaper.time_precise() - t3 < 0.5 and d3 == n_done and f3 == n_failed and not require("bgrender").waiting(),
+    string.format("going back to what was printed reuses that print at once (%.2f s, nothing rendered)", reaper.time_precise() - t3))
+  check(twos == 0 and reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(select(2, prints.takes(it))), "") == wpath, "the same file, no \"-2\" copies")
   -- the other track: everyone has its plug-in, so no print, and nothing renders
   check(not prints.refresh(pa, other, media, "fxhash2", nil, cfg) and not require("bgrender").busy() and reaper.CountTakes(other) == 1, "no print where everyone has the plug-ins")
   -- playing the wet take: the track's FX held off here, and the band still sees them on
@@ -114,6 +132,7 @@ local ok, err = pcall(function()
   reaper.MIDI_Sort(mtk)
   reaper.GetSetMediaItemInfo_String(mi, "P_EXT:band_oid", "I-JAMES-20261101000000-3", true)
   local rfg = require("sync").print_routed(pa, mi, mtk, kit, media, "fg-routed")
+  local d1 = require("bgrender").counts()
   local t1, rdid = reaper.time_precise(), false
   while not rdid and reaper.time_precise() - t1 < 90 do
     rdid = prints.refresh(pa, mi, media, "fx", "route", cfg)
@@ -122,7 +141,7 @@ local ok, err = pcall(function()
   local rwet = select(2, prints.takes(mi))
   local rpath = rwet and reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(rwet), "") or ""
   local d2, f2 = require("bgrender").counts()
-  check(rdid and d2 == 2 and f2 == 0, string.format("a routed MIDI print renders in the background too (%.1f s; %d done, %d failed)", reaper.time_precise() - t1, d2, f2))
+  check(rdid and d2 == d1 + 1 and f2 == 0, string.format("a routed MIDI print renders in the background too (%.1f s; %d done, %d failed)", reaper.time_precise() - t1, d2, f2))
   local rp, fp = rpath ~= "" and peak(rpath) or -999, rfg and peak(rfg) or -999
   check(rp > -60 and math.abs(rp - fp) < 0.1, string.format("and sounds as the in-front one does (%.2f / %.2f dBFS peak)", rp, fp))
   -- SWS auto-colouring: off while a band song is in front, back on elsewhere

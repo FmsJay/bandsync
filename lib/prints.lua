@@ -229,6 +229,10 @@ end
 -- Render a print: in the background where that works (lib/bgrender.lua: nil while it renders, and a later pass
 -- picks it up), else here and now. `render()` renders it in front and returns its path; `tracks`: what it goes through.
 function prints.render(oid, name, out, tracks, render)
+  -- already printed: a print's name says what it was made from and who rendered it, so going back to a state it had
+  -- (an undo, a note put back) finds its print here. Rendered again, its file (still open in REAPER) couldn't be
+  -- replaced, so the background print was dropped and rendered in front as "-2" (laptop, 0.40.0).
+  if reaper.file_exists(out .. "/" .. name .. ".flac") then return out .. "/" .. name .. ".flac" end
   local bg = require("bgrender")
   if bg.on() then
     local path, state = bg.claim(oid, name, out)

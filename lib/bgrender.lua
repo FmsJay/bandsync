@@ -96,7 +96,9 @@ foreach ($d in "Effects", "Data") {
 New-Item -ItemType Directory -Force (Join-Path $profile "UserPlugins") | Out-Null
 $fx = Join-Path $profile "UserPlugins\FX"
 if (-not (Test-Path $fx) -and (Test-Path (Join-Path $res "UserPlugins\FX"))) { New-Item -ItemType Junction -Path $fx -Target (Join-Path $res "UserPlugins\FX") | Out-Null }
-Get-ChildItem (Split-Path $dir) -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $dir -and -not (Get-ChildItem $_.FullName -Force) } | Remove-Item -ErrorAction SilentlyContinue
+# job folders done with: empty ones, and any an hour old (its item went before its print was picked up: laptop, 0.40.0)
+Get-ChildItem (Split-Path $dir) -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $dir -and $_.Name -ne "profile" -and -not $_.LinkType -and
+  (-not (Get-ChildItem $_.FullName -Force) -or $_.LastWriteTime -lt (Get-Date).AddHours(-1)) } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 $desk = [BandSyncDesk]::CreateDesktop("BandSyncRender", [IntPtr]::Zero, [IntPtr]::Zero, 0, 0x10000000, [IntPtr]::Zero)
 $si = New-Object BandSyncDesk+SI
 $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
@@ -164,7 +166,7 @@ local function launch(exe, job)
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
   else -- a Mac (only when switched on: bg.on): tried on 0.39.1, renders in ~1 s but shows a window and takes the keys
     local sh = job:gsub("%.rpp$", ".sh")
-    band.write_atomic(sh, string.format("find '%s' -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null\n" .. -- (claimed jobs' empty folders)
+    band.write_atomic(sh, string.format("find '%s' -mindepth 1 -maxdepth 1 -type d ! -name profile \\( -empty -o -mmin +60 \\) -exec rm -rf {} + 2>/dev/null\n" .. -- (job folders done with)
       "P='%s'; R='%s'\n" .. -- (the render profile's links, as on Windows)
       "for d in Effects Data; do [ -e \"$P/$d\" ] || [ ! -d \"$R/$d\" ] || ln -s \"$R/$d\" \"$P/$d\"; done\n" ..
       "mkdir -p \"$P/UserPlugins\"; [ -e \"$P/UserPlugins/FX\" ] || [ ! -d \"$R/UserPlugins/FX\" ] || ln -s \"$R/UserPlugins/FX\" \"$P/UserPlugins/FX\"\n" ..
@@ -279,13 +281,18 @@ function bg.claim(key, name, out)
   for _, f in ipairs(files) do
     -- (whatever the render called it: a stem render may add the track's name, a leftover a "-2")
     local ext = f:match("%.(%a+)$")
-    os.remove(out .. "/" .. name .. "." .. ext)
-    if os.rename(j.dir .. "/" .. f, out .. "/" .. name .. "." .. ext) and ext == "flac" then flac = out .. "/" .. name .. "." .. ext end
+    local to = out .. "/" .. name .. "." .. ext
+    os.remove(to)
+    -- (one REAPER still holds can't be replaced: it's the same print, made from the same, so that one stands)
+    if (os.rename(j.dir .. "/" .. f, to) or reaper.file_exists(to)) and ext == "flac" then flac = to end
   end
   drop(key)
   if flac then done = done + 1 end
   return flac, not flac and "failed" or nil
 end
+
+-- Whether any job is out (Live sync then looks every second, so a finished print goes in at once).
+function bg.waiting() return next(jobs) ~= nil end
 
 -- Prints done in the background this session, and jobs that failed (tests, Health).
 function bg.counts() return done, failed end

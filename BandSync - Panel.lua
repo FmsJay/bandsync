@@ -492,6 +492,10 @@ local function section_drive()
   ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every few minutes, while stopped): what someone " ..
     "does alone reaches the band whenever they next open the song, and every end-of-session point is kept there.")
     or off and "Off on this machine." or "No Google Drive for desktop here (My Drive not found).")
+  if drive_root then -- (which account's Drive it is, in view: with several signed in it matters; Mac, 0.34.5)
+    ImGui.TextDisabled(ctx, "Copies to " .. (drive_root:match("GoogleDrive%-([^/]+)/") or drive_root:match("^(%a:)") or drive_root))
+    ImGui.SetItemTooltip(ctx, drive_root)
+  end
   local missing = not drive_root and not off and require("drive").missing
   if missing then
     ImGui.PushTextWrapPos(ctx, 0)
@@ -1653,6 +1657,7 @@ local function home_who()
       ImGui.SetItemTooltip(ctx, p.state .. (p.armed and #p.armed > 0 and (", armed: " .. table.concat(p.armed, ", ")) or ", nothing armed") ..
         (p.version and p.version ~= band.VERSION and (", BandSync " .. p.version) or ""))
       if p.recording then ImGui.SameLine(ctx, 0, 6); pill("recording", RED) elseif p.driving then ImGui.SameLine(ctx, 0, 6); pill("driving", YELLOW) end
+      if p.state == "syncing" then ImGui.SameLine(ctx, 0, 6); ImGui.TextColored(ctx, YELLOW, "getting changes") end -- (the bar just says "Sending")
       if p.mirror and view.my_mirror and p.state == "synced" then -- (as on the cards: the docked list said nothing, match or not)
         ImGui.SameLine(ctx, 0, 6)
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project") else ImGui.TextColored(ctx, RED, "project differs") end
@@ -1672,8 +1677,8 @@ local function home_who()
       ImGui.PushFont(ctx, nil, 16)
       ImGui.Text(ctx, p.name)
       ImGui.PopFont(ctx)
-      pill(p.state, p.state == "here" and GREEN or rgba(status.COLORS[p.state] or { 0.55, 0.55, 0.55 }))
-      ImGui.SetItemTooltip(ctx, ({ here = "This machine.", ["synced"] = "Has every change.", ["syncing"] = "Still receiving changes.",
+      pill(p.state == "syncing" and "getting changes" or p.state, p.state == "here" and GREEN or rgba(status.COLORS[p.state] or { 0.55, 0.55, 0.55 }))
+      ImGui.SetItemTooltip(ctx, ({ here = "This machine.", ["synced"] = "Has every change.", ["syncing"] = "Still getting changes (yours or the band's).",
         offline = "Not seen for over a minute.", ["no receipt"] = "Has sent takes, but never ran Live sync here." })[p.state] or p.state)
       if p.recording then ImGui.SameLine(ctx, 0, 4); pill("recording", RED)
       elseif p.playing and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 4); pill("playing", 0x8FB3F8FF) end
@@ -1766,9 +1771,9 @@ local function settings_sync()
     -- MIDI wet/dry, this machine's choice (lib/prints.lua): never changes what anyone else hears
     ImGui.SeparatorText(ctx, "MIDI plays as")
     local prints = require("prints")
-    for _, m in ipairs({ { "auto", "Auto", "Your instruments when the track's plug-ins all load here, else the sound the band printed." },
-        { "notes", "Notes", "Always your own instruments (dry): you can change the sound." },
-        { "sound", "Sound", "Always the printed sound (wet): exactly what whoever played it heard." } }) do
+    for _, m in ipairs({ { "auto", "Auto", "The dry take (the notes, through your instruments) when the track's plug-ins all load here, else the wet one." },
+        { "notes", "Dry", "Always the dry take: the notes through your own instruments, so you can change the sound." },
+        { "sound", "Wet", "Always the wet take: the sound the band printed, exactly what whoever played it heard." } }) do
       if m[1] ~= "auto" then ImGui.SameLine(ctx) end
       if ImGui.RadioButton(ctx, m[2] .. "##midiplays", prints.mode() == m[1]) then
         reaper.SetExtState(band.SECTION, "midi_plays", m[1], true)
@@ -1941,7 +1946,7 @@ local function frame_app()
       lines[#lines + 1] = r.name .. ": " .. (not here and "not here (gets your changes when back)" or r.state == "syncing" and "still getting changes" or "has everything")
     end
     if (view.my_pending or 0) > 0 then label, colour = string.format("Receiving %d", view.my_pending), YELLOW
-    elseif #behind > 0 then label, colour = "Sending to " .. table.concat(behind, ", "), YELLOW
+    elseif #behind > 0 then label, colour = "Sending", YELLOW -- (who to: Who's here; names here crowded the bar, James)
     elseif online == 0 then label, colour = "Sync on (nobody else here)", GREEN
     else label, colour = "In sync", GREEN end
     tip = "Live sync is running in this tab: your takes and changes go out, the band's come in." .. (#lines > 0 and ("\n\n" .. table.concat(lines, "\n")) or "")

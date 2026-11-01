@@ -43,9 +43,11 @@ else, not only known takes). Receivers check the same rule (deferral as before).
 
 The MIDI item is the truth and travels as MIDI. Its owner also renders a print (the wet sound) as a second take
 whenever the notes or the instrument change. Each person picks how MIDI plays on their machine:
-**Notes** (dry, own instruments), **Sound** (wet, the owner's print) or **Auto** (notes when the instrument is
-installed here, else the print). The active take is local and never mirrored, so nobody's choice changes anyone
-else's. Audio uses the same mechanism: a print take only when someone lacks a plug-in on that track.
+**Dry** (the notes, own instruments), **Wet** (the owner's print) or **Auto** (dry when the instrument is
+installed here, else wet). The active take is local and never mirrored, so nobody's choice changes anyone
+else's. The takes are named for it: "dry" (the notes) and "wet" (the print), each keeping any name it had after a
+dash. Audio gets a print only for Melodyne and other ARA edits (the editable take is dry there, the print wet); an
+audio track with a plug-in someone lacks has no print yet.
 
 ## History
 

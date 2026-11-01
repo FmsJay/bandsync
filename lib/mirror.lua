@@ -1345,8 +1345,15 @@ function mirror.watch(proj, cfg, song, room, opts)
       end
       local o = { kind = last.obj or (g.oid:sub(1, 1) == "T" and "track" or "item"), oid = g.oid, track = last.track, state = last.state }
       local name = last.name or ""
+      local _, th, tev = mirror.known(proj, o.track or "")
       if mirror.PART[o.kind] then -- (its track went: the track's own deletion covers it)
         remember(proj, g.oid, (g.rev or 0) + 1, "", g.evid)
+      elseif o.kind == "item" and th == "" and (tev or ""):upper():sub(1, #mine_prefix) ~= mine_prefix
+          and not mirror.find(proj, "track", o.track) then
+        -- the band deleted its track, and the item went with it here before the item's own delete arrived: theirs,
+        -- not ours (the Mac put back 226 of a deleted track's items one by one: laptop's restore, 0.34.4). Same rev,
+        -- so the item's delete still lands when it comes.
+        remember(proj, g.oid, g.rev or 0, "", g.evid)
       elseif allowed(o, name, last.pos) then
         local ev = { type = "obj", obj = o.kind, oid = g.oid, rev = (g.rev or 0) + 1, base = g.rev or 0, gone = true, track = o.track, name = name, pos = last.pos }
         local id = sync.post(cfg, song, room, ev)

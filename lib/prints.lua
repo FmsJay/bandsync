@@ -36,6 +36,19 @@ function prints.source(it, mtk, fx_hash)
     string.format("%.6f", reaper.GetMediaItemInfo_Value(it, "D_LENGTH")))
 end
 
+-- The two takes say what they are: "dry" (the notes, or the editable ARA take) and "wet" (the print), each keeping
+-- the name it had after a dash ("dry - Keys verse"). It used to be take 1 and "print of ..." (James, 2026-10-31).
+-- Pure: an earlier label ("dry - ", "wet - ", "print of ") is taken off first, so naming again never stacks.
+function prints.label(kind, name)
+  name = (name or ""):gsub("^print of ", ""):gsub("^dry %- ", ""):gsub("^wet %- ", ""):gsub("^dry$", ""):gsub("^wet$", "")
+  return name ~= "" and (kind .. " - " .. name) or kind
+end
+local function label_takes(dry, wet)
+  local name = select(2, reaper.GetSetMediaItemTakeInfo_String(dry, "P_NAME", "", false))
+  reaper.GetSetMediaItemTakeInfo_String(dry, "P_NAME", prints.label("dry", name), true)
+  reaper.GetSetMediaItemTakeInfo_String(wet, "P_NAME", prints.label("wet", name), true)
+end
+
 -- This machine's choice: "auto" (default), "notes" or "sound".
 function prints.mode() local m = reaper.GetExtState(band.SECTION, "midi_plays"); return m ~= "" and m or "auto" end
 
@@ -109,7 +122,7 @@ local function refresh_ara(proj, it, media_dir)
   local ptk = print or reaper.AddTakeToMediaItem(it)
   reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))
   reaper.SetMediaItemTakeInfo_Value(ptk, "D_STARTOFFS", 0)
-  reaper.GetSetMediaItemTakeInfo_String(ptk, "P_NAME", "print of " .. select(2, reaper.GetSetMediaItemTakeInfo_String(ara, "P_NAME", "", false)), true)
+  label_takes(ara, ptk)
   reaper.GetSetMediaItemTakeInfo_String(ptk, "P_EXT:" .. prints.KEY, h, true)
   reaper.GetSetMediaItemTakeInfo_String(ara, "P_EXT:" .. prints.HERE, h, true)
   prints.choose(it)
@@ -136,7 +149,7 @@ function prints.refresh(proj, it, media_dir, fx_hash)
   local ptk = print or reaper.AddTakeToMediaItem(it)
   reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))
   reaper.SetMediaItemTakeInfo_Value(ptk, "D_STARTOFFS", 0)
-  reaper.GetSetMediaItemTakeInfo_String(ptk, "P_NAME", "print of " .. select(2, reaper.GetSetMediaItemTakeInfo_String(midi, "P_NAME", "", false)), true)
+  label_takes(midi, ptk)
   reaper.GetSetMediaItemTakeInfo_String(ptk, "P_EXT:" .. prints.KEY, h, true)
   if was then reaper.SetActiveTake(was) end
   prints.choose(it)

@@ -28,15 +28,28 @@ local ok, err = pcall(function()
   end
   reaper.PreventUIRefresh(-1)
   local t0 = reaper.time_precise()
-  local sent = mirror.watch(pa, A, song, room, { can = yes, mode = "open" })
+  -- a burst goes out a quarter second a pass (mirror.more: there's more), as Live sync runs it: passes until done,
+  -- none of them holding REAPER up for long
+  local longest_send = 0
+  local function send_all()
+    local n = 0
+    repeat
+      local p0 = reaper.time_precise()
+      n = n + mirror.watch(pa, A, song, room, { can = yes, mode = "open" })
+      longest_send = math.max(longest_send, reaper.time_precise() - p0)
+    until not mirror.more
+    return n
+  end
+  local sent = send_all()
   for rev = 2, 4 do -- every item moved, and sent again
     for i = 0, reaper.CountMediaItems(pa) - 1 do
       local it = reaper.GetMediaItem(pa, i)
       reaper.SetMediaItemInfo_Value(it, "D_POSITION", reaper.GetMediaItemInfo_Value(it, "D_POSITION") + 0.25)
     end
-    sent = sent + mirror.watch(pa, A, song, room, { can = yes, mode = "open" })
+    sent = sent + send_all()
   end
   out[#out + 1] = string.format("A sent %d events in %.1f s", sent, reaper.time_precise() - t0)
+  check(longest_send < 1.5, string.format("no sending pass held REAPER up for long (%.2f s; a whole burst at once took several)", longest_send))
   reaper.Main_OnCommand(40859, 0); pb = reaper.EnumProjects(-1)
   local passes, worst, total, applied = 0, 0, 0, 0
   repeat

@@ -126,6 +126,15 @@ local function end_of_session(why)
     band.log(ok and out and ("end-of-session project saved to Google Drive: " .. out:match("[^/]+$")) or
       ("couldn't save the end-of-session project to Drive: " .. tostring(ok and err or out)))
   end
+  -- history older than 30 days that nothing needs (lib/trim.lua): the room's driver trims it, at most once a day,
+  -- right after this kept version is saved
+  local key = "trimmed " .. b.song .. "/" .. b.room
+  if sync.driver(cfg, b.song, b.room, s0) == cfg.user and reaper.GetExtState(band.SECTION, key) ~= os.date("!%Y-%m-%d") then
+    reaper.SetExtState(band.SECTION, key, os.date("!%Y-%m-%d"), true)
+    local ok, gone = pcall(require("trim").run, cfg, b.song, b.room, 30)
+    if ok and gone > 0 then band.log(string.format("trimmed %d change(s) older than 30 days that no saved version needs (kept in 'BandSync history archive')", gone))
+    elseif not ok then band.log("couldn't trim old history: " .. tostring(gone)) end
+  end
 end
 local reloaded -- this instance handed over to the updated code (which saves the end of session itself)
 reaper.atexit(function()
@@ -600,7 +609,9 @@ local function tick_body() -- returns true to keep going
     if not ok then band.log("sync error: " .. tostring(err)) end
     -- more of the band's changes waiting than one pass applies: the next pass in 0.3 s, not 2 s (320 moved items
     -- took 73 s to land at 2 s a pass; laptop, 0.34.4). Each pass still applies at most a quarter second.
-    if sync.backlog then last = reaper.time_precise() - every + 0.3 end
+    -- (and when a burst of ours is still going out: mirror.watch sends a quarter second of it per pass)
+    if require("mirror").more then mirror_due = true end
+    if sync.backlog or require("mirror").more then last = reaper.time_precise() - every + 0.3 end
   end
   return true
 end

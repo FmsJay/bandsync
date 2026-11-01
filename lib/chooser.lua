@@ -8,6 +8,7 @@ local chooser = {}
 -- keep(song): only songs it says yes to (Solo edit lists songs with a solo version).
 function chooser.songs(cfg, keep)
   local out = {}
+  local renamed = band.names and band.names(cfg.root) or {} -- (old name's tag -> the name now: _band/names.json)
   for _, song in ipairs(band.songs(cfg)) do
     if not keep or keep(song) then
       local s = band.read_json(band.session_path(cfg, song)) or {}
@@ -18,7 +19,8 @@ function chooser.songs(cfg, keep)
         for _, f in ipairs(band.files(rdir .. "/" .. room .. "/status", ".json")) do -- each machine's receipt: who, and when
           local st = band.read_json(rdir .. "/" .. room .. "/status/" .. f)
           if type(st) == "table" then
-            if type(st.user) == "string" and not seen[st.user] then seen[st.user] = true; row.members[#row.members + 1] = st.user end
+            local who = type(st.user) == "string" and (renamed[(st.user:gsub("[^%w]", "_")):upper()] or st.user)
+            if who and not seen[who] then seen[who] = true; row.members[#row.members + 1] = who end
             if type(st.time) == "string" and st.time > row.last then row.last = st.time end
           end
         end

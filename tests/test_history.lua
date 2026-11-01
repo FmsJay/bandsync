@@ -34,7 +34,7 @@ local TL = {
 }
 assert(recall.replay(TL, 1).timeline == nil, "no timeline change yet: the published one applies")
 assert(recall.replay(TL, 3).timeline.tempo[2].bpm == 88, "after the change: its map")
-assert(recall.describe(TL[2]):match("^changed the tempo map %(96 bpm 4/4 at 0.00 s, 88 bpm 4/4 at 90.00 s%)"), recall.describe(TL[2]))
+assert(recall.describe(TL[2]):match("^changed the tempo or markers: now 96 bpm 4/4 at 0.00 s, 88 bpm 4/4 at 90.00 s"), recall.describe(TL[2]))
 -- 0.8 events: replay steps over them (they change no arrangement), describe names them
 local V8 = {
   E[1],

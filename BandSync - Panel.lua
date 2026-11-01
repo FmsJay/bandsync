@@ -665,7 +665,8 @@ local function back_button(i, what, single)
     local driving = view.driver == cfg.user
     local w = what:gsub("|", "/")
     local sel, whole = "The selected tracks, as they were " .. w, "The whole song, as it was " .. w
-    local pick = band.pick({ sel, (driving and "" or "#") .. whole .. (driving and "" or " (the driver does this)") })
+    local pick = band.pick({ "#Back to how things were " .. w .. " (goes to the band as new changes):", sel,
+      (driving and "" or "#") .. whole .. (driving and "" or " (the driver does this)") })
     if pick == sel then
       local scope = mirror.selection_scope(proj)
       if not scope then band.msg("Select the tracks to put back first (click their names in REAPER).")
@@ -678,7 +679,6 @@ local function back_button(i, what, single)
       last, hist_at = 0, 0
     end
   end
-  ImGui.SetItemTooltip(ctx, "Put the tracks selected in REAPER, or the whole song (the driver), back to how they were " .. what .. ". Goes to the band as new changes.")
 end
 
 -- Filtered: the matching changes as one list (newest first), each with its own button.
@@ -689,7 +689,7 @@ local function history_filtered(driving)
   for i = #entries, 1, -1 do
     local e = entries[i]
     local line = describe(e)
-    local ok = (hf.who == "" or e.user == hf.who) and (not want or (type(want) == "function" and want(e)) or (type(want) == "table" and want[e.kind]))
+    local ok = not e.auto and (hf.who == "" or e.user == hf.who) and (not want or (type(want) == "function" and want(e)) or (type(want) == "table" and want[e.kind]))
       and (hf.track == "" or (e.name or e.track or ""):lower() == hf.track:lower())
       and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
     if ok then
@@ -793,8 +793,11 @@ local function section_history()
     end
     for gi = #groups, 1, -1 do
       local g = groups[gi]
+      local shown = {} -- (prints BandSync refreshed by itself are left out: no one made them)
+      for i = g.first, g.last do if not entries[i].auto then shown[#shown + 1] = i end end
+      if #shown == 0 then goto next_group end
       ImGui.PushID(ctx, gi)
-      local n = g.last - g.first + 1
+      local n = #shown
       back_button(g.last, string.format("right after %s's changes at %s", g.user, local_time(g.to)), n == 1)
       ImGui.SameLine(ctx)
       local head = string.format("%s%s  ·  %s%s", g.user, g.solo and " (Solo edit)" or g.user == g.driver and " (driving)" or "",
@@ -802,11 +805,11 @@ local function section_history()
       local open = ImGui.TreeNodeEx(ctx, "g", head, ImGui.TreeNodeFlags_SpanAvailWidth)
       if not open then -- what it was about, wrapped under the line that opens it
         ImGui.Indent(ctx)
-        ImGui.TextDisabled(ctx, describe(entries[g.first]) .. (n > 1 and string.format("  (+%d more)", n - 1) or ""))
+        ImGui.TextDisabled(ctx, describe(entries[shown[1]]) .. (n > 1 and string.format("  (+%d more)", n - 1) or ""))
         ImGui.Unindent(ctx)
       end
       if open then
-        for i = g.first, g.last do
+        for _, i in ipairs(shown) do
           ImGui.PushID(ctx, i)
           back_button(i, string.format("right after %s's change at %s", entries[i].user, local_time(entries[i].time)), true)
           ImGui.SameLine(ctx)
@@ -818,6 +821,7 @@ local function section_history()
         ImGui.TreePop(ctx)
       end
       ImGui.PopID(ctx)
+      ::next_group::
     end
     if not wide then ImGui.EndChild(ctx) end
   end

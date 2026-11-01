@@ -1218,12 +1218,18 @@ function mirror.watch(proj, cfg, song, room, opts)
     if why.text then sync.put_back(why.text) end
   end
   local seen = {}
+  -- a burst (hundreds of items moved at once) goes out a quarter second a pass, the rest on the next passes, which
+  -- Live sync runs straight after: writing all 320 at once held REAPER up for 4.7 s (laptop, 0.34.5). What waits is
+  -- marked unsent, so the band's changes to it wait too. `mirror.more`: there's more to send.
+  local t_send = reaper.time_precise()
+  mirror.more = false
   for _, o in ipairs(objs) do
     seen[o.oid] = true
     local ok, err = pcall(function()
       local rev, h, evid, kord = mirror.known(proj, o.oid)
       local rk = tostring(proj) .. o.oid
       if h == o.hash then mirror.reopened[rk], mirror.unsent[rk] = nil, nil; return end
+      if sent > 0 and reaper.time_precise() - t_send > 0.25 then mirror.unsent[rk], mirror.more = true, true; return end
       -- recorded under a hash this machine no longer makes (before 0.34.4 a Mac hashed plug-in files and colours its
       -- own way): what's here IS the band's version, so it's re-anchored, not sent as a change of ours. Once per record.
       if rev and h ~= "" and not mirror.anchor_seen[rk .. "\0" .. h] then
@@ -1305,7 +1311,7 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- MIDI prints: an item whose newest change is this person's gets a fresh print once its notes, length or the
   -- band's plug-in chain on its track changed (it goes out on the next pass). Only theirs, so two machines never take
   -- turns re-printing one item. Rendering needs this tab in front and the transport stopped; two per pass at most.
-  if reaper.EnumProjects(-1) == proj and not playing then
+  if reaper.EnumProjects(-1) == proj and not playing and not mirror.more then -- (prints wait until a burst has gone)
     local prints, made = require("prints"), 0
     prints.watch_ara(proj) -- (a Melodyne window closed: that take gets a new print below)
     for _, o in ipairs(objs) do
@@ -1348,6 +1354,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     end
   end
   for _, g in ipairs(gone) do
+    if sent > 0 and reaper.time_precise() - t_send > 0.25 then mirror.more = true; break end -- (the rest next pass, as above)
     local ok, err = pcall(function()
       local last = event_file(room_dir, g.evid)
       if not last then -- nothing to go on (its last change isn't here): forgotten, not resurrected or repeated

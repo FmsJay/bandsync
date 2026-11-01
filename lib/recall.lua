@@ -218,7 +218,7 @@ function recall.describe(e)
     for i, m in ipairs(t) do
       changes[#changes + 1] = string.format("%g bpm%s at %.2f s", m.bpm, (m.num or 0) > 0 and string.format(" %d/%d", m.num, m.denom) or "", m.time)
     end
-    return string.format("changed the tempo map (%s), %d marker(s)/region(s)", table.concat(changes, ", "), #(e.markers or {}))
+    return string.format("changed the tempo or markers: now %s, %d marker(s)/region(s)", table.concat(changes, ", "), #(e.markers or {}))
   end
   return tostring(e.kind)
 end

@@ -233,6 +233,11 @@ Restore (its own page):
   restore goes to the band as new changes, so it can be undone the same way.
 - **Saved versions** (every handover, or *Save this version*), and *Open it as it was before BandSync* (the copy Publish
   kept). **Render the final mix** puts the whole song's mix in the shared folder's `<Song>/mixes/` for everyone.
+- **Old history is trimmed**: once a day, at the end of a session, the room's driver takes away changes older than
+  30 days that nothing needs. Each thing's newest change stays, so does everything a major saved version (end of
+  session, "yours before…", or one you saved by hand) needs to restore exactly; only the snapshots before a
+  handover may lose their exact past. Trimmed files go to `BandSync history archive` beside the band folder on the
+  driver's computer, not away for good.
 
 Chat (its own page): **This room**, **This song** or **Band**, each with **Messages**, **To-do** (anyone ticks
 them off) and **Links** (lyrics, charts, documents). Each message is its own small file, so nothing ever clashes.

@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.35.8", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.35.9", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -370,6 +370,10 @@ function band.for_tab(cfg, b)
   end
   return base
 end
+
+-- The key that says "start Live sync with REAPER for this project": its path in one spelling (forward slashes, lower
+-- case), as REAPER may be handed it with either slash (Recent projects, the browser, a script).
+function band.autosync_key(path) return "autosync " .. (path or ""):gsub("\\", "/"):lower() end
 
 function band.bind(proj, b)
   for k, v in pairs(b) do reaper.SetProjExtState(proj, band.SECTION, k, tostring(v)) end

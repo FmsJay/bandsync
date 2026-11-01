@@ -469,7 +469,7 @@ for i = 0, 512 do
   if not p then break end
   if p == proj then our_file = f or "" end
 end
-local autokey = "autosync " .. our_file:lower()
+local autokey = band.autosync_key(our_file)
 if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", true) end
 local tick
 local livemidi = require("livemidi")

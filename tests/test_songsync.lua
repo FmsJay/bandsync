@@ -9,8 +9,8 @@ local text = table.concat(block, "\n")
 local function at(s) for i, l in ipairs(block) do if l == s then return i end end end
 assert(at("!/_*") and at("!/plugins") and at("!/drummaps"), "band-wide folders always come")
 assert(at("!/Lantern") < at("!/Mirror Test"), "opened songs, in name order")
-assert(at("!/Mirror Test") < at("!/*/session.json") and at("!/*/rooms/*/summary") < at("/*/*"), "every ! line before the one ignore line")
-assert(block[#block - 1] == "/*/*", "the rest of every other song is the last rule")
+assert(at("!/Mirror Test") < at("!/*/session.json") and at("!/*/rooms/*/summary") < at("(?d)/*/*"), "every ! line before the one ignore line")
+assert(block[#block - 1] == "(?d)/*/*", "the rest of every other song is the last rule, deletable when the band deletes the song")
 -- merging keeps the person's own lines, and replacing the block never stacks it
 local own = "// my own\n(?d).DS_Store\n"
 local once = songsync.merge(own, { Lantern = true })

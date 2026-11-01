@@ -25,7 +25,7 @@ function songsync.block(wanted)
   table.sort(list)
   for _, s in ipairs(list) do out[#out + 1] = "!/" .. s end
   for _, p in ipairs(songsync.LISTING) do out[#out + 1] = "!" .. p end
-  out[#out + 1] = "/*/*"
+  out[#out + 1] = "(?d)/*/*" -- ((?d): a folder the band deletes goes, its ignored files with it)
   out[#out + 1] = END
   return out
 end

@@ -362,7 +362,7 @@ fi
 # per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
 # full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
 if ! yes "$HOSTING" && ! grep -q '^// BandSync end$' "$ROOT/.stignore" 2>/dev/null; then
-  printf '%s\n' '// BandSync: what this computer downloads (written by BandSync, up to the line below)' '!/_*' '!/plugins' '!/drummaps' '!/*/session.json' '!/*/folder.json' '!/*/live.json' '!/*/invites' '!/*/rooms/*/room.json' '!/*/rooms/*/summary' '!/*/rooms/*/status' '/*/*' '// BandSync end' >> "$ROOT/.stignore" && ok "this computer gets each song in full once it's opened (the rest: their listing)"
+  printf '%s\n' '// BandSync: what this computer downloads (written by BandSync, up to the line below)' '!/_*' '!/plugins' '!/drummaps' '!/*/session.json' '!/*/folder.json' '!/*/live.json' '!/*/invites' '!/*/rooms/*/room.json' '!/*/rooms/*/summary' '!/*/rooms/*/status' '(?d)/*/*' '// BandSync end' >> "$ROOT/.stignore" && ok "this computer gets each song in full once it's opened (the rest: their listing)"
 fi
 LABEL="BandSync"; [ "$FOLDER_ID" != bandsync ] && LABEL="BandSync $BAND_NAME"
 if stcli config folders list | grep -qx "$FOLDER_ID"; then ok "$BAND_NAME's shared folder is already set up"

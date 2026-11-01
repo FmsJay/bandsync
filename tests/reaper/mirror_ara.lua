@@ -6,6 +6,7 @@ reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "recall", "json", "prints" }) do package.loaded[m] = nil end
+require("prints").SETTLE = 0 -- (print_bursts covers the wait)
 local sync, mirror, prints = require("sync"), require("mirror"), require("prints")
 local stamp = os.time()
 local root = D .. "/aroot_" .. stamp

@@ -243,6 +243,31 @@ function prints.audio_source(it, tk, fx_hash)
   return require("mirror").hash(table.concat(f, "|") .. "|" .. (fx_hash or ""))
 end
 
+-- A part is rendered once it has held still, and those whose last change is oldest go first (James, 2026-11-01): a
+-- burst measured on the PC rendered every state it passed through, and one part being edited held up all the others.
+-- Going back to a state already printed doesn't wait (prints.render finds it first). `seen`: still asking; one that
+-- stopped (deleted, or printed by someone else now) no longer holds anyone up.
+prints.SETTLE = 3 -- seconds a part must stay unchanged
+local queue = {} -- item oid -> { name, since, seen }
+local QUEUE_SEEN = 5
+local function my_turn(oid, name)
+  if prints.SETTLE <= 0 then return true end
+  local now, w = reaper.time_precise(), queue[oid]
+  if not w or w.name ~= name or now - w.seen > QUEUE_SEEN then w = { name = name, since = now }; queue[oid] = w end
+  w.seen = now
+  if now - w.since < prints.SETTLE then return false end
+  for k, o in pairs(queue) do
+    if k ~= oid and o.since < w.since and now - o.seen <= QUEUE_SEEN then return false end
+  end
+  return true
+end
+-- Whether a part is waiting for its turn (Live sync then looks every second).
+function prints.waiting()
+  local now = reaper.time_precise()
+  for _, o in pairs(queue) do if now - o.seen <= QUEUE_SEEN then return true end end
+  return false
+end
+
 -- Render a print: in the background where that works (lib/bgrender.lua: nil while it renders, and a later pass
 -- picks it up), else here and now. `render()` renders it in front and returns its path; `tracks`: what it goes through.
 function prints.render(oid, name, out, tracks, render)
@@ -263,12 +288,14 @@ function prints.render(oid, name, out, tracks, render)
     if path then return path end
     if state == "running" then return nil end
     if state ~= "failed" then
-      if bg.busy() then return nil end
+      if not my_turn(oid, name) or bg.busy() then return nil end
+      queue[oid] = nil
       local keep = {}
       for _, t in ipairs(tracks) do keep[#keep + 1] = reaper.GetTrackGUID(t) end
       if bg.start(oid, name, keep, render) then return nil end
     end
-  end
+  elseif not my_turn(oid, name) then return nil end
+  queue[oid] = nil
   return render()
 end
 

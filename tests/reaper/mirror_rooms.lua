@@ -3,6 +3,7 @@ local D = reaper.GetResourcePath() .. "/BandSync/tests" -- scratch: never the sh
 reaper.RecursiveCreateDirectory(D, 0)
 package.path = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "recall", "prints" }) do package.loaded[m] = nil end
+require("prints").SETTLE = 0 -- (print_bursts covers the wait)
 local sync, mirror = require("sync"), require("mirror")
 local root = D .. "/rroot_" .. os.time()
 local song = "RoomLab"

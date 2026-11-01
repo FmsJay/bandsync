@@ -14,6 +14,9 @@ local bg = {}
 local WIN = reaper.GetOS():find("^Win") ~= nil
 local TMP = ((WIN and (os.getenv("TEMP") or os.getenv("TMP")) or os.getenv("TMPDIR") or "/tmp"):gsub("\\", "/"):gsub("/+$", "")) .. "/bandsync-render"
 bg.WAIT = 180 -- seconds before a job that hasn't finished counts as failed
+bg.MAX = 3 -- renders at once
+bg.SPACING = 0.5 -- seconds between starting them
+local last_start, cancelled, ini_slot = -math.huge, 0, 0
 local jobs = {} -- name -> { dir, started, sizes, at }
 local done, failed = 0, 0
 
@@ -76,7 +79,7 @@ end
 -- hidden .cmd don't stop that. The launcher stays until that REAPER quits (a desktop goes with its last handle),
 -- writes its process id to pid.txt, and tidies empty job folders.
 local LAUNCH = [==[
-param($exe, $job, $res, $profile)
+param($exe, $job, $res, $profile, $ini)
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class BandSyncDesk {
@@ -104,7 +107,7 @@ $si = New-Object BandSyncDesk+SI
 $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
 $si.desktop = "BandSyncRender"
 $pi = New-Object BandSyncDesk+PI
-$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "' + (Join-Path $profile "reaper.ini") + '" -renderproject "' + $job + '"'
+$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "' + (Join-Path $profile $ini) + '" -renderproject "' + $job + '"'
 $env:BANDSYNC_RENDER = "1" # (inherited: Scripts/__startup.lua's guard skips the person's startup scripts in it)
 # ([NullString]::Value, not $null: PowerShell passes $null to a string parameter as "", and CreateProcess refuses "")
 if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
@@ -143,25 +146,46 @@ function bg.profile_ini(text)
   end
   return table.concat(out, "\n") .. "\n"
 end
+-- A second REAPER rewrites its settings as it quits. One starting at that moment read half of them, lost its plug-in
+-- folders, and began scanning the default one where nobody could see, holding its place until the time limit (PC, three
+-- at once, 2026-11-01). So each job gets a reaper.ini of its own (a read-only one stops REAPER at a "Configuration Write
+-- Error" box, waiting for an OK nobody can give), and the plug-in lists they share are read-only, rewritten only when
+-- this REAPER's have changed.
+local function read_only(on)
+  if WIN then reaper.ExecProcess(string.format('cmd /c attrib %sR "%s\\reaper-*.ini"', on and "+" or "-", (PROFILE:gsub("/", "\\"))), 5000)
+  else reaper.ExecProcess(string.format("/bin/sh -c \"chmod %s '%s'/reaper-*.ini\"", on and "a-w" or "u+w", PROFILE), 5000) end
+end
 local function profile()
   local res = reaper.GetResourcePath():gsub("\\", "/")
   reaper.RecursiveCreateDirectory(PROFILE, 0)
+  local want = {} -- file name -> what it should hold
   for _, f in ipairs(band.files(res)) do
     for _, pat in ipairs(COPY) do
-      if f:lower():match(pat) then band.copy_atomic(res .. "/" .. f, PROFILE .. "/" .. f); break end
+      if f:lower():match(pat) then want[f] = band.read(res .. "/" .. f); break end
     end
   end
-  band.write_atomic(PROFILE .. "/reaper.ini", bg.profile_ini(band.read(reaper.get_ini_file())))
+  local stale = {}
+  for f, text in pairs(want) do if text and band.read(PROFILE .. "/" .. f) ~= text then stale[#stale + 1] = f end end
+  if #stale > 0 then
+    read_only(false)
+    for _, f in ipairs(stale) do band.write_atomic(PROFILE .. "/" .. f, want[f]) end
+    read_only(true)
+  end
   return res
 end
 bg.PROFILE = PROFILE
 
 local function launch(exe, job)
-  local res = profile()
+  -- (not rewritten under a REAPER that may be reading it: with a job out, the copies from that job's start stand)
+  local res = next(jobs) and reaper.GetResourcePath():gsub("\\", "/") or profile()
+  ini_slot = ini_slot % 12 + 1 -- (a few, in turn: never one a REAPER that's just finished may still be writing)
+  local ini = "job" .. ini_slot .. ".ini"
+  reaper.RecursiveCreateDirectory(PROFILE, 0)
+  band.write_atomic(PROFILE .. "/" .. ini, bg.profile_ini(band.read(reaper.get_ini_file())))
   if WIN then
     local cmd, vbs, ps = job:gsub("%.rpp$", ".cmd"), TMP .. "/hidden.vbs", TMP .. "/launch.ps1"
     if band.read(ps) ~= LAUNCH then band.write_atomic(ps, LAUNCH) end
-    band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s" "%s" "%s"\r\n', ps, exe, job, res, PROFILE))
+    band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s" "%s" "%s" "%s"\r\n', ps, exe, job, res, PROFILE, ini))
     if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
   else -- a Mac (only when switched on: bg.on): tried on 0.39.1, renders in ~1 s but shows a window and takes the keys
@@ -170,8 +194,8 @@ local function launch(exe, job)
       "P='%s'; R='%s'\n" .. -- (the render profile's links, as on Windows)
       "for d in Effects Data; do [ -e \"$P/$d\" ] || [ ! -d \"$R/$d\" ] || ln -s \"$R/$d\" \"$P/$d\"; done\n" ..
       "mkdir -p \"$P/UserPlugins\"; [ -e \"$P/UserPlugins/FX\" ] || [ ! -d \"$R/UserPlugins/FX\" ] || ln -s \"$R/UserPlugins/FX\" \"$P/UserPlugins/FX\"\n" ..
-      "BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -cfgfile \"$P/reaper.ini\" -renderproject '%s' >/dev/null 2>&1 &\n",
-      TMP, PROFILE, res, exe, job))
+      "BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -cfgfile \"$P/%s\" -renderproject '%s' >/dev/null 2>&1 &\n",
+      TMP, PROFILE, res, exe, ini, job))
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
   end
 end
@@ -185,7 +209,7 @@ local function exe_path()
   return d .. "/REAPER.app/Contents/MacOS/REAPER"
 end
 
--- Render in the background, one print per item (`key`) at a time: `render(dir)` sets the project up and calls
+-- Render in the background, up to bg.MAX at once and one per item (`key`): `render(dir)` sets the project up and calls
 -- band.render as it always does (which saves the copy into `dir` instead of rendering); `keep`: the tracks the
 -- print goes through. Active tab only.
 function bg.start(key, name, keep, render)
@@ -203,6 +227,7 @@ function bg.start(key, name, keep, render)
   band.write_atomic(job, bg.prepare(band.read(job), set))
   launch(exe_path(), job)
   jobs[key] = { name = name, dir = dir, started = reaper.time_precise(), sizes = {} }
+  last_start = reaper.time_precise()
   return true
 end
 
@@ -239,29 +264,35 @@ local function drop(key)
   jobs[key] = nil
 end
 local function launch_failed(j) return (band.read(j.dir .. "/pid.txt") or ""):match("^failed") ~= nil end
+-- End a job's REAPER, if it's still there. -> whether that could be asked (Windows, once its process id is known).
+local function end_job(j)
+  local pid = tonumber((band.read(j.dir .. "/pid.txt") or ""):match("^%d+"))
+  if not (pid and WIN) then return false end
+  local kill = TMP .. "/kill" .. pid .. ".cmd" -- (one each, deleting itself: jobs can end together)
+  band.write_atomic(kill, "@taskkill /PID " .. pid .. ' /T /F\r\n@del "%~f0"\r\n')
+  reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', TMP .. "/hidden.vbs", kill), -1)
+  return true
+end
 -- A job that's gone wrong: its REAPER (if it's still there, stuck on something nobody can see) is ended.
 local function timed_out(key)
   failed = failed + 1
-  local pid = tonumber((band.read(jobs[key].dir .. "/pid.txt") or ""):match("^%d+"))
-  if pid and WIN then
-    local kill = TMP .. "/kill.cmd"
-    band.write_atomic(kill, "@taskkill /PID " .. pid .. " /T /F\r\n")
-    reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', TMP .. "/hidden.vbs", kill), -1)
-  end
+  end_job(jobs[key])
   drop(key)
   band.log("a print didn't render in the background within " .. bg.WAIT .. " s: it renders here instead" ..
     ((failed >= 2 and done == 0) and " (and so will the rest this session)" or ""))
 end
 
--- Whether a background render is still going (one at a time: each is a whole REAPER).
+-- Whether another render has to wait: each is a whole REAPER, so bg.MAX at most, and starting one (saving the project's
+-- copy) holds this REAPER up for a moment, so one at a time, spaced out.
 function bg.busy()
+  local running = 0
   for key, j in pairs(jobs) do
     if not finished(j) then
-      if reaper.time_precise() - j.started <= bg.WAIT and not launch_failed(j) then return true end
-      timed_out(key)
+      if reaper.time_precise() - j.started <= bg.WAIT and not launch_failed(j) then running = running + 1
+      else timed_out(key) end
     end
   end
-  return false
+  return running >= bg.MAX or reaper.time_precise() - last_start < bg.SPACING
 end
 
 -- The item's print `name`, moved into `out` once rendered: its .flac path. Else nil and "running", "failed", or
@@ -269,6 +300,13 @@ end
 function bg.claim(key, name, out)
   local j = jobs[key]
   if not j then return nil end
+  -- the item has changed since this job started: nobody wants its print, and it holds a place (a heavy instrument, for
+  -- minutes). On a Mac no process id is kept, so it runs on and is dropped when it ends.
+  if j.name ~= name and end_job(j) then
+    cancelled = cancelled + 1
+    jobs[key] = nil -- (its folder goes with the others: it's empty of what we want, and its REAPER may still hold it)
+    return nil
+  end
   local files = finished(j)
   if not files then
     if reaper.time_precise() - j.started <= bg.WAIT and not launch_failed(j) then return nil, "running" end
@@ -295,6 +333,6 @@ end
 function bg.waiting() return next(jobs) ~= nil end
 
 -- Prints done in the background this session, and jobs that failed (tests, Health).
-function bg.counts() return done, failed end
+function bg.counts() return done, failed, cancelled end
 
 return bg

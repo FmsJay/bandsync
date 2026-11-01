@@ -6,6 +6,7 @@ local D = reaper.GetResourcePath() .. "/BandSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "json" }) do package.loaded[m] = nil end
+require("prints").SETTLE = 0 -- (print_bursts covers the wait)
 local band, sync, mirror, prints, plugins = require("band"), require("sync"), require("mirror"), require("prints"), require("plugins")
 local root = D .. "/froot_" .. os.time()
 local song, room = "PrintLab", "main"

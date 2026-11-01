@@ -509,6 +509,14 @@ local function section_drive()
     ImGui.PopTextWrapPos(ctx)
   end
 end
+-- Two computers' fingerprints differ for 10-15 s after any edit (each publishes its own every few seconds, and the
+-- print follows the notes), and red then read as a failed sync (James, 2026-11-01). Red once they've stayed apart 30 s.
+local apart = {} -- bandmate -> { key = their fingerprint and ours, since = when that pair first showed }
+local function settled_apart(p, mine)
+  local key, a = p.mirror .. mine, apart[p.name]
+  if not a or a.key ~= key then a = { key = key, since = reaper.time_precise() }; apart[p.name] = a end
+  return reaper.time_precise() - a.since >= 30
+end
 local function section_claims()
   local owned, here = {}, {} -- (a claim on a track that isn't there isn't listed: its owner drops it, sync.drop_gone_claims)
   for i = 0, reaper.CountTracks(proj) - 1 do here[sync.base_name(select(2, reaper.GetTrackName(reaper.GetTrack(proj, i)))):lower()] = true end
@@ -1706,7 +1714,9 @@ local function home_who()
       if p.state == "syncing" then ImGui.SameLine(ctx, 0, 6); ImGui.TextColored(ctx, YELLOW, "getting changes") end -- (the bar just says "Sending")
       if p.mirror and view.my_mirror and p.state == "synced" then -- (as on the cards: the docked list said nothing, match or not)
         ImGui.SameLine(ctx, 0, 6)
-        if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project") else ImGui.TextColored(ctx, RED, "project differs") end
+        if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project")
+        elseif settled_apart(p, view.my_mirror) then ImGui.TextColored(ctx, RED, "project differs")
+        else ImGui.TextDisabled(ctx, "settling") end
       end
       if p.state ~= "here" and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 6); tools.follow_button(p.name) end
       if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
@@ -1733,6 +1743,7 @@ local function home_who()
       if p.version and p.version ~= band.VERSION then ImGui.TextColored(ctx, YELLOW, "BandSync " .. p.version) end
       if p.mirror and view.my_mirror and p.state == "synced" then -- (while changes are still on their way it's bound to differ)
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project as yours")
+        elseif not settled_apart(p, view.my_mirror) then ImGui.TextDisabled(ctx, "settling")
         else ImGui.TextColored(ctx, RED, "project differs from yours"); ImGui.SetItemTooltip(ctx, "They have every change, yet their project isn't the same as yours: " ..
           "Setup > Health says more, and the Console names what came out different.") end
       end

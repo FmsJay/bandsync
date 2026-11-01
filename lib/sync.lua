@@ -1255,7 +1255,10 @@ function sync.receive(proj, cfg, song, room, can)
       -- (or a claim released since) with a different project for good, and nothing said so (review, 2026-10-31).
       sync.deferred[ev.id] = true
     else
-      if not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end -- one undo point per pass, only when needed
+      -- one undo point per pass, only when something lands: reading our own change back opened one too, which sat on
+      -- top of the edit and held its print, so Ctrl+Z took two presses and the first left the note moved (PC, 0.40.3)
+      local lands = not obj or require("mirror").wins(proj, ev.oid, ev.rev or 0, (ev.time or "") .. (ev.user or ""))
+      if lands and not undo_open then reaper.Undo_BeginBlock2(proj); undo_open = true end
       -- one bad event must never block everything behind it (2026-10-28: a take-less "driver" event threw on every
       -- pass, so the handover's edits and tempo change never applied): log it and move on
       local ok, res = pcall(sync.apply, proj, ev, sync.room_dir(cfg, song, room), cfg.root, can, cfg.user)

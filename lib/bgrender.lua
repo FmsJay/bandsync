@@ -20,16 +20,23 @@ local last_start, cancelled, ini_slot = -math.huge, 0, 0
 local jobs = {} -- name -> { dir, started, sizes, at }
 local done, failed = 0, 0
 
--- Whether prints go to the background here (ExtState "bg render" = "off" turns it off for good).
--- On a Mac only when switched on: a second REAPER there takes the keyboard for ~0.7 s, shows a "Scanning VST
--- plugins" box and a second Dock icon, and `open -j -g` was worse (Mac, 0.39.0): there's no hidden desktop to put it on.
+-- The Mac's helpers (lib/mac, built by tools/mac/build.sh, shipped by ReaPack to Macs only): the folder, or nil.
+-- A second REAPER on a Mac took the keyboard for ~0.7 s and showed its windows, and there's no hidden desktop to put it
+-- on, so it runs from a private copy of REAPER.app that macOS treats as background-only (no focus, no Dock icon), with
+-- a library that keeps its windows transparent (tools/mac/hide.m): nothing seen in 6 of 6 runs (Mac, 2026-11-01).
+local LIB = (debug.getinfo(1, "S").source or ""):match("^@?(.*)[/\\][^/\\]+$") or "."
+function bg.helpers()
+  local d = LIB .. "/mac"
+  if not WIN and reaper.file_exists(d .. "/bandsync-hide.dylib") and reaper.file_exists(d .. "/bandsync-launch") then return d end
+end
+-- Whether prints go to the background here (ExtState "bg render": "off" or "on" overrides this default).
+function bg.default_on() return WIN or bg.helpers() ~= nil end
 function bg.on()
   local set = reaper.GetExtState(band.SECTION, "bg render")
-  if set == "off" or (not WIN and set ~= "on") then return false end
+  if set == "off" or (not bg.default_on() and set ~= "on") then return false end
   if failed >= 2 and done == 0 then return false end
   return WIN or reaper.GetOS():find("^OSX") ~= nil or reaper.GetOS():find("^macOS") ~= nil
 end
-function bg.default_on() return WIN end
 
 -- The copy, ready for the second REAPER: the plug-ins of every track not in `keep` (REAPER track GUIDs) and the
 -- master's switched offline (BYPASS <bypass> <offline> ...). A stem of the selected track (RENDER_STEMS 2: a
@@ -175,6 +182,46 @@ local function profile()
 end
 bg.PROFILE = PROFILE
 
+-- What runs one job on a Mac. Pure (t: tmp, profile, res, exe, ini, job, helpers). Makes the private copy the first time
+-- and again after REAPER or a helper changes (`built` says what it was made from), in a job's own script so this REAPER
+-- never waits for it. pid.txt lets a job be ended; done.txt says its REAPER has quit, so its files are complete.
+local MAC_JOB = [==[
+find @TMP@ -mindepth 1 -maxdepth 1 -type d ! -name profile \( -empty -o -mmin +60 \) -exec rm -rf {} + 2>/dev/null
+P=@PROFILE@; R=@RES@; X=@EXE@; J=@JOB@; H=@HELPERS@
+D="${J%/*}"
+for d in Effects Data; do [ -e "$P/$d" ] || [ ! -d "$R/$d" ] || ln -s "$R/$d" "$P/$d"; done
+mkdir -p "$P/UserPlugins"; [ -e "$P/UserPlugins/FX" ] || [ ! -d "$R/UserPlugins/FX" ] || ln -s "$R/UserPlugins/FX" "$P/UserPlugins/FX"
+export BANDSYNC_RENDER=1
+if [ -n "$H" ]; then
+  C="$HOME/Library/Caches/BandSync"; A="$C/REAPER-render.app"; S="${X%/Contents/MacOS/*}"; B="${X##*/}"
+  W="$(stat -f '%m %z' "$X" "$H/bandsync-hide.dylib" "$H/bandsync-launch" | tr '\n' ' ')"
+  mkdir -p "$C"
+  find "$C/build.lock" -maxdepth 0 -mmin +5 -exec rmdir {} + 2>/dev/null
+  if [ "$(cat "$C/built" 2>/dev/null)" != "$W" ] && mkdir "$C/build.lock" 2>/dev/null; then
+    rm -rf "$A" "$C/built"
+    ditto "$S" "$A" && plutil -replace LSBackgroundOnly -bool YES "$A/Contents/Info.plist" && codesign --force --deep -s - "$A" &&
+      cp "$H/bandsync-hide.dylib" "$H/bandsync-launch" "$C/" && xattr -c "$C/bandsync-hide.dylib" "$C/bandsync-launch" &&
+      chmod +x "$C/bandsync-launch" && echo "$W" > "$C/built"
+    rmdir "$C/build.lock"
+  fi
+  n=0
+  while [ "$(cat "$C/built" 2>/dev/null)" != "$W" ] && [ -d "$C/build.lock" ] && [ "$n" -lt 240 ]; do sleep 0.5; n=$((n+1)); done
+  if [ "$(cat "$C/built" 2>/dev/null)" != "$W" ]; then echo failed > "$D/pid.txt"; exit 1; fi
+  nohup "$C/bandsync-launch" "$C/bandsync-hide.dylib" "$A/Contents/MacOS/$B" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "$P/@INI@" -renderproject "$J" >/dev/null 2>&1 &
+else
+  nohup "$X" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "$P/@INI@" -renderproject "$J" >/dev/null 2>&1 &
+fi
+p=$!
+echo "$p" > "$D/pid.txt"
+wait "$p"
+echo "$?" > "$D/done.txt"
+]==]
+function bg.mac_script(t)
+  local function q(s) return "'" .. tostring(s or ""):gsub("'", "'\\''") .. "'" end
+  local vals = { TMP = q(t.tmp), PROFILE = q(t.profile), RES = q(t.res), EXE = q(t.exe), JOB = q(t.job), HELPERS = q(t.helpers), INI = t.ini }
+  return (MAC_JOB:gsub("@(%u+)@", vals))
+end
+
 local function launch(exe, job)
   -- (not rewritten under a REAPER that may be reading it: with a job out, the copies from that job's start stand)
   local res = next(jobs) and reaper.GetResourcePath():gsub("\\", "/") or profile()
@@ -188,14 +235,9 @@ local function launch(exe, job)
     band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s" "%s" "%s" "%s"\r\n', ps, exe, job, res, PROFILE, ini))
     if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
-  else -- a Mac (only when switched on: bg.on): tried on 0.39.1, renders in ~1 s but shows a window and takes the keys
+  else
     local sh = job:gsub("%.rpp$", ".sh")
-    band.write_atomic(sh, string.format("find '%s' -mindepth 1 -maxdepth 1 -type d ! -name profile \\( -empty -o -mmin +60 \\) -exec rm -rf {} + 2>/dev/null\n" .. -- (job folders done with)
-      "P='%s'; R='%s'\n" .. -- (the render profile's links, as on Windows)
-      "for d in Effects Data; do [ -e \"$P/$d\" ] || [ ! -d \"$R/$d\" ] || ln -s \"$R/$d\" \"$P/$d\"; done\n" ..
-      "mkdir -p \"$P/UserPlugins\"; [ -e \"$P/UserPlugins/FX\" ] || [ ! -d \"$R/UserPlugins/FX\" ] || ln -s \"$R/UserPlugins/FX\" \"$P/UserPlugins/FX\"\n" ..
-      "BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -cfgfile \"$P/%s\" -renderproject '%s' >/dev/null 2>&1 &\n",
-      TMP, PROFILE, res, exe, ini, job))
+    band.write_atomic(sh, bg.mac_script({ tmp = TMP, profile = PROFILE, res = res, exe = exe, ini = ini, job = job, helpers = bg.helpers() }))
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
   end
 end
@@ -226,13 +268,13 @@ function bg.start(key, name, keep, render)
   for _, g in ipairs(keep) do set[g:upper()] = true end
   band.write_atomic(job, bg.prepare(band.read(job), set))
   launch(exe_path(), job)
-  jobs[key] = { name = name, dir = dir, started = reaper.time_precise(), sizes = {} }
+  jobs[key] = { name = name, dir = dir, started = reaper.time_precise() }
   last_start = reaper.time_precise()
   return true
 end
 
 -- A job's output files once it has finished, else nil. Finished: on Windows, they can be renamed (REAPER holds
--- them open while it writes; each is renamed and back); elsewhere, their sizes held still for 2 s.
+-- them open while it writes; each is renamed and back); on a Mac, its script says its REAPER has quit.
 local function finished(j)
   local files = {}
   for _, f in ipairs(band.files(j.dir)) do
@@ -248,14 +290,7 @@ local function finished(j)
     end
     return files
   end
-  local now, same = reaper.time_precise(), j.at ~= nil and reaper.time_precise() - j.at >= 2
-  for _, f in ipairs(files) do
-    local n = band.size(j.dir .. "/" .. f)
-    if not n or n == 0 or n ~= j.sizes[f] then same = false end
-    j.sizes[f] = n
-  end
-  if same then return files end
-  if not j.at or now - j.at >= 2 then j.at = now end
+  if reaper.file_exists(j.dir .. "/done.txt") then return files end
   return nil
 end
 local function drop(key)
@@ -263,11 +298,15 @@ local function drop(key)
   for _, f in ipairs(band.files(j.dir)) do os.remove(j.dir .. "/" .. f) end
   jobs[key] = nil
 end
-local function launch_failed(j) return (band.read(j.dir .. "/pid.txt") or ""):match("^failed") ~= nil end
--- End a job's REAPER, if it's still there. -> whether that could be asked (Windows, once its process id is known).
+local function launch_failed(j)
+  if (band.read(j.dir .. "/pid.txt") or ""):match("^failed") then return true end
+  return not WIN and reaper.file_exists(j.dir .. "/done.txt") and not finished(j) -- (it quit with no print)
+end
+-- End a job's REAPER, if it's still there. -> whether that could be asked (once its process id is known).
 local function end_job(j)
   local pid = tonumber((band.read(j.dir .. "/pid.txt") or ""):match("^%d+"))
-  if not (pid and WIN) then return false end
+  if not pid then return false end
+  if not WIN then reaper.ExecProcess("/bin/kill -9 " .. pid, -1); return true end
   local kill = TMP .. "/kill" .. pid .. ".cmd" -- (one each, deleting itself: jobs can end together)
   band.write_atomic(kill, "@taskkill /PID " .. pid .. ' /T /F\r\n@del "%~f0"\r\n')
   reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', TMP .. "/hidden.vbs", kill), -1)
@@ -301,7 +340,7 @@ function bg.claim(key, name, out)
   local j = jobs[key]
   if not j then return nil end
   -- the item has changed since this job started: nobody wants its print, and it holds a place (a heavy instrument, for
-  -- minutes). On a Mac no process id is kept, so it runs on and is dropped when it ends.
+  -- minutes). (Before its process id is known it runs on, and is dropped when it ends.)
   if j.name ~= name and end_job(j) then
     cancelled = cancelled + 1
     jobs[key] = nil -- (its folder goes with the others: it's empty of what we want, and its REAPER may still hold it)

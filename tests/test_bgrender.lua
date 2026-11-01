@@ -82,4 +82,14 @@ do
   local body = text:match("function sync%.print_item.-\nend\n")
   assert(body and not body:find("SelectAllMediaItems(", 1, true), "print_item keeps clear of SelectAllMediaItems")
 end
+-- the Mac's job script (bash -n checks its syntax from the release steps)
+local helped = bg.mac_script({ tmp = "/t/r", profile = "/t/r/profile", res = "/res", exe = "/Applications/REAPER.app/Contents/MacOS/REAPER",
+  ini = "job3.ini", job = "/t/r/print-1/job.rpp", helpers = "/res/Scripts/BandSync/lib/mac" })
+assert(helped:find("LSBackgroundOnly", 1, true) and helped:find("H='/res/Scripts/BandSync/lib/mac'", 1, true), "makes the private copy")
+assert(helped:find('"$P/job3.ini"', 1, true) and helped:find("J='/t/r/print-1/job.rpp'", 1, true) and not helped:find("@%u+@"), "every value filled in")
+assert(helped:find('echo "$?" > "$D/done.txt"', 1, true) and helped:find('echo "$p" > "$D/pid.txt"', 1, true), "says when it's done, and its process")
+local plain = bg.mac_script({ tmp = "/t", profile = "/p", res = "/r", exe = "/x", ini = "job1.ini", job = "/j/job.rpp" })
+assert(plain:find("H=''", 1, true), "no helpers: REAPER itself")
+assert(bg.mac_script({ tmp = "/t", profile = "/p", res = "/it's", exe = "/x", ini = "job1.ini", job = "/j" }):find([[R='/it'\''s']], 1, true), "a quote in a path")
+assert(bg.helpers() == nil, "Windows has no helpers")
 print("ok")

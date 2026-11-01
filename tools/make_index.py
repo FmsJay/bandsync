@@ -43,6 +43,9 @@ for f in sorted(ROOT.glob("BandSync - *.lua")):
 for f in sorted((ROOT / "lib").glob("*.lua")):
     rel = f"lib/{f.name}"
     ET.SubElement(ver, "source", file=rel).text = url(rel)
+for f in sorted((ROOT / "lib" / "mac").glob("*")):  # compiled helpers (tools/mac/build.sh): Macs only
+    rel = f"lib/mac/{f.name}"
+    ET.SubElement(ver, "source", file=rel, platform="darwin").text = url(rel)
 
 ET.indent(index)
 ET.ElementTree(index).write(INDEX, encoding="utf-8", xml_declaration=True)

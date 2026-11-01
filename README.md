@@ -183,6 +183,9 @@ By hand:
 - **Open bandmates' MIDI edits as they happen** (Setup > Options, off by default, this computer only): when someone's
   change to a MIDI part reaches you, it opens in the MIDI editor with the notes they changed selected. A MIDI editor
   you opened yourself is left alone. Which notes are selected and which lanes an editor shows never go to the band.
+- **Background renders on a Mac** use a private copy of REAPER (about 170 MB in `~/Library/Caches/BandSync`, made once and
+  again after REAPER updates) that macOS keeps in the background, with a small library that keeps its windows
+  transparent. It never touches your REAPER. Setup > Options can switch background rendering off.
 - **Wet takes in a burst**: a part is rendered once it has held still for 3 seconds, up to three at once, whichever
   changed longest ago first, so a part you're still editing doesn't hold up the others and doesn't render every step.
   A render of a version that's gone is ended. Going back to a version already printed needs no render and doesn't wait.

@@ -1,3 +1,5 @@
 *.sh text eol=lf
 *.command text eol=lf
 *.cmd text eol=crlf
+*.dylib binary
+lib/mac/bandsync-launch binary

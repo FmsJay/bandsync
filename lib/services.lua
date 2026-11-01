@@ -203,6 +203,37 @@ function services.invite_text(id, info)
     "When it's done, tell me: I let you in from my BandSync panel."
 end
 
+-- A bandmate already known here offering a band's folder: someone in one of your bands joining another of them (an
+-- invitation's installer shares that band's folder with you). { { folder, id, name } }, from a background check at
+-- most 20 s old. (A new machine is a pending device instead: pending_devices.)
+function services.pending_folders()
+  local st = services.syncthing_path()
+  local data = st and band.json_decode(background("st-pending-folders", q(st) .. " cli show pending folders", 20) or "")
+  local list = {}
+  for folder, f in pairs(type(data) == "table" and data or {}) do
+    for id in pairs(type(f) == "table" and type(f.offeredBy) == "table" and f.offeredBy or {}) do
+      if services.is_device_id(id) then list[#list + 1] = { folder = folder, id = id } end
+    end
+  end
+  table.sort(list, function(a, z) return a.folder .. a.id < z.folder .. z.id end)
+  return list
+end
+-- A device's name in Syncthing (what its owner called their computer), or its ID's first 7 characters.
+function services.device_name(id)
+  local st = services.syncthing_path()
+  local r = st and reaper.ExecProcess(q(st) .. " cli config devices " .. id .. " name get", 8000) or ""
+  return r:match("^0\n(.-)%s*$") or id:sub(1, 7)
+end
+-- Share a band's folder with a machine Syncthing already knows. Returns true, or nil + why.
+function services.share_folder(folder, id)
+  local st = services.syncthing_path()
+  if not st then return nil, "Syncthing wasn't found" end
+  if not services.is_device_id(id) then return nil, "not a device ID: " .. tostring(id) end
+  local r = reaper.ExecProcess(q(st) .. " cli config folders " .. folder .. " devices add --device-id " .. id, 15000) or ""
+  if not r:match("^0\n") then return nil, "Syncthing didn't share it: " .. r:gsub("^%d+\n", "") end
+  return true
+end
+
 -- A Syncthing device ID: 8 groups of 7 letters/digits.
 local ID_PATTERN = "^" .. ("[%u%d]"):rep(7) .. ("%-" .. ("[%u%d]"):rep(7)):rep(7) .. "$"
 function services.is_device_id(id)

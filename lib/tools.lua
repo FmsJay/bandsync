@@ -74,12 +74,15 @@ function tools.join_requests(ctx, ImGui, b)
   local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}
   for _, d in ipairs(type(asking) == "table" and asking or {}) do
     if type(d) == "table" and d.id and not skip[d.id] then
-      ImGui.TextColored(ctx, 0xF2BF40FF, string.format("%s's computer wants to join %s.", tostring(d.name), binfo.name))
+      ImGui.TextColored(ctx, 0xF2BF40FF, string.format("%s's computer wants to join %s.", tostring(d.name), d.band or binfo.name))
       ImGui.SetItemTooltip(ctx, string.format("Syncthing device %s, from %s.", d.id:sub(1, 7), tostring(d.address)))
       ImGui.SameLine(ctx)
-      if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id) then
-        local ok, why = require("services").add_device(d.id, d.name, binfo.id)
-        band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. binfo.name .. ": the songs reach them now")
+      if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id .. (d.folder or "")) then
+        local services = require("services")
+        local ok, why
+        if d.folder then ok, why = services.share_folder(d.folder, d.id) -- (already a bandmate: just this band's folder)
+        else ok, why = services.add_device(d.id, d.name, binfo.id) end
+        band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the songs reach them now")
           or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
         reaper.DeleteExtState(band.SECTION, "pending_join", false)
       end

@@ -327,6 +327,17 @@ local function poll()
         ask[#ask + 1] = d
       end
     end
+    -- a bandmate already known here joining another of your bands: they offer that band's folder (0.35: without
+    -- this, their second band never came back to them)
+    local mine = {}
+    for _, x in ipairs(band.bands()) do mine[x.id] = x.name end
+    for _, f in ipairs(services.pending_folders()) do
+      if mine[f.folder] then
+        joined.names = joined.names or {}
+        joined.names[f.id] = joined.names[f.id] or services.device_name(f.id)
+        ask[#ask + 1] = { id = f.id, name = joined.names[f.id], folder = f.folder, band = mine[f.folder] }
+      end
+    end
     reaper.SetExtState(band.SECTION, "pending_join", band.json_encode(ask), false)
   end
 

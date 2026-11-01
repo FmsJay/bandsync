@@ -90,8 +90,15 @@ Everything below is the detail.
   colour until they're done); or **Whose track** (every track in the colour of whoever is editing it, claimed it, or
   made it). Only on that computer: the band's own colours are kept aside meanwhile, never sent or lost.
 - **Prints render in the background**: a second, hidden REAPER renders each one from a copy of the song while you
-  carry on (a few seconds each, one at a time), and it's added when it's done. Where that doesn't work it renders in
-  front as before.
+  carry on (a few seconds each, one at a time), and it's added when it's done; on Windows it runs on a desktop of its
+  own, so nothing shows or takes the keyboard. Where that doesn't work it renders in front as before; Setup > Options
+  turns it off. BandSync adds a guard to the top of Scripts/__startup.lua so your own startup scripts don't run in it.
+- **Who prints**: whoever changed a part, when they have every plug-in it plays through. Someone who doesn't is
+  covered by a bandmate in the song who does (the first by name), and **Print selected tracks here** (Claims) puts you
+  in charge of printing those tracks whenever you're in the song with their plug-ins.
+- **Takes become lanes**: in a band song an item's takes (several in one item) are turned into fixed lanes by REAPER's
+  own "explode takes to fixed lanes and add comp areas", so a comp you made by picking takes stays the comp (the
+  song plays the same, sample for sample). A track that already has wet takes waits (it would split them).
 - **Local mixing** (Home): your faders and pan stay yours. Switching it off asks whether to take the band's
   mix or send yours.
 - Songs published with BandSync before 0.30 are left alone: publish them again to sync them.

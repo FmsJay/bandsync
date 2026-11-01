@@ -321,4 +321,138 @@ function prints.refresh(proj, it, media_dir, fx_hash, route_hash, cfg)
   return true
 end
 
+-- ---- who prints (0.39) -----------------------------------------------------------------------------------------
+-- An item's print is made by (James, 2026-11-01):
+--   1. the bandmate in charge of printing its track ("Print selected tracks here", kept in their claims file), when
+--      they're in the song now and have every plug-in it plays through;
+--   2. else whoever changed it last, if they have those plug-ins (here or not: theirs waits for them);
+--   3. else the first bandmate in the song now, by name, who has them.
+-- Every machine works it out the same way, so one machine prints it. Whether someone has a plug-in: their published
+-- list (lib/plugins.lua); this machine: whether it actually loads here.
+
+-- The plug-in keys an item's print goes through: its track's, and the instrument track's for a routed one.
+function prints.track_keys(tr)
+  local plugins, keys = require("plugins"), {}
+  for _, t in ipairs({ tr, prints.route(tr) }) do
+    for i = 0, reaper.TrackFX_GetCount(t) - 1 do
+      local ok, name = reaper.TrackFX_GetNamedConfigParm(t, i, "fx_name")
+      if not ok or name == "" then name = select(2, reaper.TrackFX_GetFXName(t, i)) end
+      keys[#keys + 1] = plugins.key(name)
+    end
+  end
+  return keys
+end
+local lists = { at = -math.huge, by = {} } -- user -> set of plug-in keys (their published list), read once a minute
+function prints.has(cfg, user, keys)
+  if reaper.time_precise() - lists.at > 60 then
+    lists.at, lists.by = reaper.time_precise(), {}
+    for _, f in ipairs(band.files(cfg.root .. "/plugins", ".json")) do
+      local l = band.read_json(cfg.root .. "/plugins/" .. f)
+      if type(l) == "table" and type(l.user) == "string" and type(l.names) == "table" then
+        local set = {}
+        for _, k in ipairs(l.names) do set[k] = true end
+        lists.by[l.user] = set
+      end
+    end
+  end
+  local set = lists.by[user]
+  if not set then return false end
+  for _, k in ipairs(keys) do if not set[k] then return false end end
+  return true
+end
+-- Who prints this item: a user name, or nil (nobody can). `author`: who changed it last; `here`: { user = true }
+-- (bandmates in the song now, this machine's user too); `printers`: sync.authority's (lower track name -> {user}).
+-- `can(user)`: whether that user has every plug-in it plays through. Pure.
+function prints.printer(track, author, here, printers, can)
+  local d = printers[(track or ""):lower()]
+  if d and here[d.user] and can(d.user) then return d.user end
+  if author and can(author) then return author end
+  local names = {}
+  for u in pairs(here) do names[#names + 1] = u end
+  table.sort(names)
+  for _, u in ipairs(names) do if can(u) then return u end end
+  return nil
+end
+
+-- Claims card: "Print selected tracks here", and who prints what. (In this file: the panel is near Lua's limit.)
+function prints.printing_ui(ctx, ImGui, cfg, b, proj, who)
+  local sync = require("sync")
+  local function save(fn)
+    local c, why = sync.my_claims(cfg, b.song, b.room)
+    if not c then return band.msg(why) end
+    c.prints = c.prints or {}
+    fn(c)
+    sync.set_claims(cfg, b.song, b.room, c)
+  end
+  if ImGui.Button(ctx, "Print selected tracks here") then
+    if reaper.CountSelectedTracks(proj) == 0 then return band.msg("Select the tracks whose wet takes you want to render first.") end
+    save(function(c)
+      for i = 0, reaper.CountSelectedTracks(proj) - 1 do
+        local n = sync.base_name(select(2, reaper.GetTrackName(reaper.GetSelectedTrack(proj, i))))
+        local dup = false
+        for _, x in ipairs(c.prints) do dup = dup or x:lower() == n:lower() end
+        if not dup then c.prints[#c.prints + 1] = n end
+      end
+    end)
+  end
+  ImGui.SetItemTooltip(ctx, "Their wet takes are rendered here, with your plug-ins, whoever changes them: while you're in the song\n" ..
+    "and have every plug-in they play through. Otherwise whoever changed them prints, or someone here who has the plug-ins.")
+  local mine, others = {}, {}
+  for _, p in pairs(who and who.printers or {}) do
+    if p.user == cfg.user then mine[#mine + 1] = p.name else others[#others + 1] = p.name .. " (" .. p.user .. ")" end
+  end
+  table.sort(mine); table.sort(others)
+  if #mine > 0 then
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Stop printing them") then save(function(c) c.prints = {} end) end
+    ImGui.TextDisabled(ctx, "You print: " .. table.concat(mine, ", "))
+  end
+  if #others > 0 then ImGui.TextDisabled(ctx, "Printed by: " .. table.concat(others, ", ")) end
+end
+
+-- Setup > Options: rendering in the background, this machine's choice.
+function prints.options(ctx, ImGui)
+  local on = reaper.GetExtState(band.SECTION, "bg render") ~= "off"
+  local rv, v = ImGui.Checkbox(ctx, "Render wet takes in the background##bgrender", on)
+  if rv then reaper.SetExtState(band.SECTION, "bg render", v and "" or "off", true) end
+  ImGui.SetItemTooltip(ctx, "On: a hidden second REAPER renders each wet take while you keep working (a few seconds each).\n" ..
+    "Off: REAPER renders them in front, holding up the screen for a moment each time.")
+end
+
+-- ---- takes become lanes (0.39) -----------------------------------------------------------------------------------
+-- In a band song, an item's takes (several in one item, one playing) become fixed lanes, the way REAPER 7 keeps
+-- alternatives (James, 2026-11-01): REAPER's own "explode takes to fixed lanes and add comp areas from active takes"
+-- (42636), which keeps a comp exactly (tested: the same render, sample for sample, before and after), so a take
+-- picked per stretch becomes a comp lane. Wet takes then work on every lane. Per track, only by whoever owns one of
+-- its items' takes (`mine(item)`: their newest change, or not sent yet), so two machines never explode one at once;
+-- a track holding a wet take (or an ARA one) waits, as exploding would split print from item. Returns tracks done.
+function prints.takes_to_lanes(proj, mine)
+  local done = 0
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    local want, blocked = false, require("mirror").local_track(tr)
+    for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+      local it = reaper.GetTrackMediaItem(tr, j)
+      local real = 0
+      for k = 0, reaper.CountTakes(it) - 1 do
+        local tk = reaper.GetTake(it, k)
+        if tk and take_ext(tk, prints.KEY) == "" then real = real + 1 end
+      end
+      if real < reaper.CountTakes(it) or (real > 1 and prints.ara_take(it)) then blocked = true end
+      if real > 1 and mine(it) then want = true end
+    end
+    if want and not blocked then
+      local sel = {}
+      for s = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, s) end
+      reaper.SetOnlyTrackSelected(tr)
+      reaper.Main_OnCommand(42636, 0) -- Take: Explode takes on selected tracks to fixed lanes and add comp areas from active takes
+      reaper.SetTrackSelected(tr, false)
+      for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaTrack*") then reaper.SetTrackSelected(s, true) end end
+      band.log("the takes on " .. select(2, reaper.GetTrackName(tr)) .. " became lanes (the takes you picked stay the comp)")
+      done = done + 1
+    end
+  end
+  return done
+end
+
 return prints

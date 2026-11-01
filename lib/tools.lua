@@ -64,6 +64,19 @@ function tools.set_autostart(on, dir)
   return pcall(band.write_atomic, startup_path(), text) -- (write_atomic returns nothing: it raises when it can't)
 end
 
+-- The hidden REAPER that renders wet takes (lib/bgrender.lua) would run everything in Scripts/__startup.lua too (on
+-- James's PC: Chordbox, Adaptive grid, Gridbox, the Reaper Daemon bridge, BandSync's Autostart). A guard at the top
+-- of that file stops it there: the render REAPER is started with BANDSYNC_RENDER set. Added once; the rest of the
+-- file is the person's and stays as it is.
+local GUARD_A, GUARD_Z = "-- BandSync render guard", "-- /BandSync render guard"
+function tools.render_guard()
+  local text = band.read(startup_path()) or ""
+  if text:find(GUARD_A, 1, true) then return true end
+  reaper.RecursiveCreateDirectory(reaper.GetResourcePath() .. "/Scripts", 0)
+  return pcall(band.write_atomic, startup_path(), GUARD_A .. " (the hidden REAPER that renders BandSync's wet takes stops here)\n" ..
+    "if os.getenv(\"BANDSYNC_RENDER\") then return end\n" .. GUARD_Z .. "\n" .. text)
+end
+
 -- A machine asking to join the band folder (the host's Syncthing has it waiting; one on the band's Tailscale is let in
 -- by Live sync by itself). On every page of the panel, at the top: in the classic panel only, a new bandmate who
 -- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).

@@ -1312,8 +1312,10 @@ function mirror.watch(proj, cfg, song, room, opts)
       local last = rev and event_file(room_dir, evid) or nil
       -- allowed where it is now, and where it was (moving an item off a claimed track, or renaming a claimed track,
       -- mustn't slip past the claim)
-      local ok_now = allowed(o, name, o.pos) or (o.kind == "track" and last ~= nil and allowed(o, last.name or "", last.pos))
-      local ok_before = not last or last.gone or allowed(o, last.name or "", last.pos)
+      -- (a wet take BandSync just made: whoever is to print it may send it, whatever the claims: prints.printer)
+      local auto = o.kind == "item" and mirror.auto[tostring(proj) .. o.oid]
+      local ok_now = auto or allowed(o, name, o.pos) or (o.kind == "track" and last ~= nil and allowed(o, last.name or "", last.pos))
+      local ok_before = auto or not last or last.gone or allowed(o, last.name or "", last.pos)
       if ok_now and ok_before then
         local state = o.state
         if o.kind == "item" then
@@ -1358,19 +1360,32 @@ function mirror.watch(proj, cfg, song, room, opts)
   if reaper.EnumProjects(-1) == proj and not playing and not mirror.more then -- (prints wait until a burst has gone)
     local prints, made = require("prints"), 0
     prints.watch_ara(proj) -- (a Melodyne window closed: that take gets a new print below)
+    -- takes become lanes, by whoever owns them (their newest change, or not sent yet)
+    prints.takes_to_lanes(proj, function(it)
+      local _, _, k = mirror.known(proj, itm_oid(it))
+      return not k or k == "" or k:upper():sub(1, #mine_prefix) == mine_prefix
+    end)
+    local here = { [me] = true } -- (bandmates in the song now: who may print in place of whoever changed an item)
+    for u in pairs(opts.here or {}) do here[u] = true end
+    local keys_of = {} -- track -> the plug-in keys its prints go through
     for _, o in ipairs(objs) do
       if made < 2 and o.kind == "item" and reaper.ValidatePtr2(proj, o.ptr, "MediaItem*") then
         local _, _, kev = mirror.known(proj, o.oid)
         local fx = by_oid["F" .. o.track:sub(2)]
-        -- who refreshes a print: whoever may change the item and made its newest change; when its author may not
-        -- change it now (someone claimed the track since), the one who may. Never one who'd only be put back
-        -- (laptop, 2026-10-31: its re-print of a claimed track's item was put back three times).
+        -- who refreshes a print (prints.printer): the track's printer if they're here and can, else whoever changed
+        -- it last if they can, else the first one here who can. Whoever changed it last but may not change it now
+        -- (someone claimed the track since) is stood in for by the one who may (laptop, 2026-10-31: its re-print of a
+        -- claimed track's item was put back three times).
         local name = perm_name(o, by_oid)
-        local mine = kev and kev:upper():sub(1, #mine_prefix) == mine_prefix
-        local may = fx and kev and allowed(o, name, o.pos)
-        if may and not mine then
-          local last = event_file(room_dir, kev)
-          may = last and type(last.user) == "string" and not opts.can(last.user, name, o.pos)
+        local may = false
+        if fx and kev then
+          local tr = reaper.GetMediaItem_Track(o.ptr)
+          local author = kev:upper():sub(1, #mine_prefix) == mine_prefix and me or (event_file(room_dir, kev) or {}).user
+          if type(author) ~= "string" then author = nil end
+          if author and author ~= me and not opts.can(author, name, o.pos) and allowed(o, name, o.pos) then author = me end
+          keys_of[tr] = keys_of[tr] or prints.track_keys(tr)
+          local function can(u) if u == me then return prints.track_plays(tr) end return prints.has(cfg, u, keys_of[tr]) end
+          may = prints.printer(name, author, here, opts.printers or {}, can) == me
         end
         if may then
           local dest = prints.route(reaper.GetMediaItem_Track(o.ptr)) -- (an instrument on another track: its chain is part of the print)

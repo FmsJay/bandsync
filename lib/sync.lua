@@ -227,7 +227,7 @@ function sync.set_claims(cfg, song, room, claims)
   -- back) an older contested claim
   local old = band.read_json(sync.claims_path(cfg, song, room, cfg.user)) or {}
   local since = {}
-  for _, k in ipairs({ "tracks", "regions" }) do
+  for _, k in ipairs({ "tracks", "regions", "prints" }) do
     for _, name in ipairs(claims[k] or {}) do
       since[k .. ":" .. name:lower()] = (old.since or {})[k .. ":" .. name:lower()] or now
     end
@@ -307,6 +307,7 @@ function sync.authority(cfg, song, room, s)
   local driver = sync.driver(cfg, song, room, s)
   local mode = sync.mode(cfg, song, room)
   local tracks, regions, times = {}, {}, {} -- lower name -> { user, time }; times: { user, time, from, to }
+  local printers = {} -- lower track name -> { user, time, name }: who's in charge of printing it (lib/prints.lua)
   local dir = sync.room_dir(cfg, song, room) .. "/claims"
   local released = sync.released(cfg, song, room) -- (claims the driver let go of for someone who was away)
   for _, f in ipairs(band.files(dir, ".json")) do
@@ -318,6 +319,12 @@ function sync.authority(cfg, song, room, s)
         if tonumber(t.from) and tonumber(t.to) and t.to > t.from and not (gone and at <= gone) then
           times[#times + 1] = { user = c.user, time = at, from = t.from, to = t.to }
         end
+      end
+      for _, name in ipairs(c.prints or {}) do -- (newest wins, as for tracks)
+        local k = name:lower()
+        local t = (c.since or {})["prints:" .. k] or c.time
+        local o = printers[k]
+        if not (gone and t <= gone) and (not o or o.time < t or (o.time == t and o.user < c.user)) then printers[k] = { user = c.user, time = t, name = name } end
       end
       for _, list in ipairs({ { c.tracks, tracks }, { c.regions, regions } }) do
         for _, name in ipairs(list[1] or {}) do
@@ -369,7 +376,7 @@ function sync.authority(cfg, song, room, s)
       if mode == "open" and not claimed(track, pos) then return true end
       return take ~= nil and sync.author(take) == sync.author_of(user) and not claimed(track, pos)
     end,
-    { driver = driver, tracks = tracks, regions = regions, times = times, owner = owner, spans = spans, mode = mode }
+    { driver = driver, tracks = tracks, regions = regions, times = times, owner = owner, spans = spans, mode = mode, printers = printers }
 end
 
 -- Show the time claims as regions named "[claimed: <user>]" (this machine only; see band.CLAIM_MARK). Redrawn

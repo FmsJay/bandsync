@@ -64,4 +64,8 @@ assert(m[6] == "    MUTESOLO 1 0 0" and m[7] == "    ISBUS 0 0" and m[8] == "   
 assert(m[11] == "    MUTESOLO 0 0 0" and m[12] == "    ISBUS 0 0" and m[13] == "    MAINSEND 1 0", "the kept one: playing, to the master")
 local plain = table.concat({ '<REAPER_PROJECT', '  RENDER_STEMS 32', '  <TRACK {A}', '    MUTESOLO 0 0 0', '  >', '>', '' }, "\n")
 assert(bg.prepare(plain, {}) == plain, "an item render (RENDER_STEMS 32) keeps its tracks as they are")
+local ext = table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '    <BANDSYNC', '      SONG Lantern', '    >', '    <BANDSYNC.MIRROR', '      X 1', '    >',
+  '    <OTHER', '      Y 2', '    >', '  >', '>', '' }, "\n")
+assert(bg.prepare(ext, {}) == table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '    <OTHER', '      Y 2', '    >', '  >', '>', '' }, "\n"),
+  "BandSync's project state left out of the copy, anyone else's kept")
 print("ok")

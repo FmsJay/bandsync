@@ -28,14 +28,17 @@ end
 -- master's switched offline (BYPASS <bypass> <offline> ...). A stem of the selected track (RENDER_STEMS 2: a
 -- routed MIDI print, sync.print_routed) finds "Nothing to render!" from the command line (PC, 0.37.0), so that one
 -- renders the master mix instead: every other track muted, no folders (a parent's plug-ins and fader stay out, as
--- in a stem), the kept tracks sent to the master, the master's fader at 0 dB. Pure.
+-- in a stem), the kept tracks sent to the master, the master's fader at 0 dB. BandSync's own project state goes
+-- (<EXTSTATE>'s BANDSYNC blocks): the copy isn't the band's song, so opened from Recent projects it's just a project.
+-- Pure.
 function bg.prepare(text, keep)
   local mix = tonumber(text:match("\n%s*RENDER_STEMS (%d+)")) == 2
-  local out, depth, inside, keeping = {}, 0, nil, true
+  local out, depth, inside, keeping, skip = {}, 0, nil, true, nil
   for raw in text:gmatch("[^\n]*\n?") do
     if raw == "" then break end
     local line = raw
     local s = line:match("^%s*(.-)%s*$")
+    if not skip and depth == 2 and inside == "EXTSTATE" and s:match("^<BANDSYNC") then skip = depth end
     if depth == 1 and s:sub(1, 1) == "<" then
       local guid = s:match("^<TRACK%s+(%b{})")
       inside, keeping = s:match("^<(%S+)"), guid ~= nil and keep[guid:upper()] or false
@@ -54,7 +57,11 @@ function bg.prepare(text, keep)
     end
     if s:sub(1, 1) == "<" then depth = depth + 1 elseif s == ">" then depth = depth - 1 end
     if depth == 1 and s == ">" then inside, keeping = nil, true end
-    out[#out + 1] = line
+    if skip then
+      if depth == skip then skip = nil end -- (its closing line, left out too)
+    else
+      out[#out + 1] = line
+    end
   end
   return table.concat(out)
 end
@@ -84,6 +91,7 @@ $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
 $si.desktop = "BandSyncRender"
 $pi = New-Object BandSyncDesk+PI
 $cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -renderproject "' + $job + '"'
+$env:BANDSYNC_RENDER = "1" # (inherited: Scripts/__startup.lua's guard skips the person's startup scripts in it)
 # ([NullString]::Value, not $null: PowerShell passes $null to a string parameter as "", and CreateProcess refuses "")
 if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
   Set-Content (Join-Path $dir "pid.txt") $pi.pid
@@ -100,7 +108,7 @@ local function launch(exe, job)
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
   else -- shortcut: untried on a Mac; a job that never finishes counts as failed, and prints render in front again
     local sh = job:gsub("%.rpp$", ".sh")
-    band.write_atomic(sh, string.format("nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -renderproject '%s' >/dev/null 2>&1 &\n", exe, job))
+    band.write_atomic(sh, string.format("BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -renderproject '%s' >/dev/null 2>&1 &\n", exe, job))
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
   end
 end
@@ -119,6 +127,7 @@ function bg.start(key, name, keep, render)
   reaper.RecursiveCreateDirectory(dir, 0)
   for _, f in ipairs(band.files(dir)) do os.remove(dir .. "/" .. f) end
   local job = dir .. "/job.rpp"
+  pcall(require("tools").render_guard) -- (the person's startup scripts don't run in it)
   band.render_job = { dir = dir, copy = job }
   local ok, err = pcall(render, dir)
   band.render_job = nil

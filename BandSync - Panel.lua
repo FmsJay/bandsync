@@ -602,8 +602,10 @@ local function section_claims()
   next_to("Release mine")
   if ImGui.Button(ctx, "Release mine") and reaper.MB("Release all your claims (tracks, regions and time)? Everything you claimed follows the driver again.",
       "BandSync", 4) == 6 then
-    sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {}, times = {} })
+    local c = sync.my_claims(cfg, b.song, b.room) or {} -- (printing duties stay: "Stop printing them" lets those go)
+    sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {}, times = {}, prints = c.prints })
   end
+  require("prints").printing_ui(ctx, ImGui, cfg, b, proj, who) -- "Print selected tracks here"
 end
 local function section_control()
   ImGui.SeparatorText(ctx, "Who changes what")
@@ -1813,6 +1815,7 @@ local function settings_sync()
       end
       ImGui.SetItemTooltip(ctx, m[3])
     end
+    prints.options(ctx, ImGui) -- rendering in the background
     require("people").options(ctx, ImGui, cfg) -- your colour, and whose colours tracks show here
     card_end()
   end

@@ -271,7 +271,10 @@ local function poll()
     if (cc ~= mirror_cc or mirror_due or now - mirror_at > 10) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
-      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix, held = held, hold = hold })
+      local here = {} -- (bandmates in the song now: one of them may print what its author can't, lib/prints.lua)
+      for _, st in ipairs(presence.peers(cfg, b.song, b.room)) do here[st.user] = true end
+      local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix,
+        held = held, hold = hold, here = here, printers = who.printers })
       if not ok then band.log("mirror sync: " .. tostring(sent))
       elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false

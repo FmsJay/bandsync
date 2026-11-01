@@ -680,6 +680,7 @@ mirror.reopened = {}
 mirror.auto = {} -- proj .. oid -> its next send is a print BandSync refreshed (Undo skips those)
 mirror.unsent = {} -- proj .. oid -> changed here, not sent yet (settling, playing, Hold my changes): mirror.receive waits
 mirror.anchor_seen = {} -- proj .. oid .. known hash -> its event was checked against what's here (see watch)
+mirror.orphaned = {} -- proj -> { track oid = true }: changes skipped while that track was gone (sync.receive looks again)
 
 function mirror.scan(proj, user, media_dir, local_mix)
   local objs, by_oid, tracks = {}, {}, {}
@@ -1055,7 +1056,14 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   -- 0 for good: review, 2026-10-31)
   if ev.obj ~= "track" and ev.track and ev.track ~= mirror.MASTER then
     local trev, th = mirror.known(proj, ev.track)
-    if trev and th == "" and not mirror.find(proj, "track", ev.track) then return true end
+    if trev and th == "" and not mirror.find(proj, "track", ev.track) then
+      -- (unless the track comes back later in the same download: its return may still be on its way, so the room is
+      -- looked over once its changes have all landed; sync.receive. Laptop, 0.34.8: a fresh song lost Keys' items)
+      local o = mirror.orphaned[tostring(proj)] or {}
+      o[ev.track] = true
+      mirror.orphaned[tostring(proj)] = o
+      return true
+    end
   end
   -- both changed it while apart: theirs wins everywhere (the same on every machine); ours stays in History
   local krev, _, kev = mirror.known(proj, ev.oid)

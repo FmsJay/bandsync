@@ -1137,6 +1137,20 @@ function sync.receive(proj, cfg, song, room, can)
     end
   end
   require("mirror").index_for(nil)
+  -- a change skipped because its track was gone, and the track may have come back since (a download arrives in
+  -- batches, out of history order): once this pass has drained the queue, everything's newest change that hasn't
+  -- landed is put in place (mirror.heal: only what differs)
+  local mirror = require("mirror")
+  local orph = mirror.orphaned[tostring(proj)]
+  if orph and not budget_out then
+    local back = false
+    for toid in pairs(orph) do if mirror.find(proj, "track", toid) then orph[toid] = nil; back = true end end
+    if back then -- (only when such a track exists again: a track that stays deleted costs one lookup a pass)
+      local hok, n = pcall(mirror.heal, proj, rdir, sync.local_mix)
+      if hok and n > 0 then band.log(string.format("%d change(s) landed once their track was back", n)) end
+    end
+    if next(orph) == nil then mirror.orphaned[tostring(proj)] = nil end
+  end
   if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the band", -1) end
   for _, d in ipairs(done) do band.log(d) end
   return applied

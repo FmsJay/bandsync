@@ -74,4 +74,5 @@ local ini = bg.profile_ini(table.concat({ "[REAPER]", "splash=1", "midiins=19954
   "asio_driver=1", "[other]", "x=1" }, "\r\n"))
 assert(ini == table.concat({ "[REAPER]", "audiocloseinactive=1", "splash=0", "midiins=0", "midiouts_clock=0", "midiins_x_h=0",
   "csurf_cnt=0", "asio_driver=1", "[other]", "x=1", "" }, "\n"), ini)
+assert(bg.profile_ini("[reaper]\nfoo=1\n") == "[reaper]\naudiocloseinactive=1\nfoo=1\n") -- (the Mac's section is lower case)
 print("ok")

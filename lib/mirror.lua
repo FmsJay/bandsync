@@ -5,7 +5,9 @@ local mirror = {}
 -- Lines in an item chunk that are this machine's business only: selection, REAPER's own ids (regenerated on
 -- apply), MIDI pooling (a copy is its own item), MIDI editor view state, which take is active (wet/dry is each
 -- person's choice) and item grouping (group numbers are per project: another machine's group 3 is other items).
-local LOCAL = { "SEL", "IGUID", "IID", "GUID", "POOLEDEVTS", "POOLCOLOR", "CFGEDITVIEW", "CFGEDIT", "EVTFILTER", "KEYSNAP", "TRACKSEL", "GROUP" }
+-- Which notes are selected is each person's too: a selected event is written "e"/"x"/"<x", and goes out as "E"/"X"/"<X"
+-- (opening the MIDI editor sent its VELLANE line, and a moved note went out selected: laptop, 2026-11-01).
+local LOCAL = { "SEL", "IGUID", "IID", "GUID", "POOLEDEVTS", "POOLCOLOR", "CFGEDITVIEW", "CFGEDIT", "EVTFILTER", "KEYSNAP", "TRACKSEL", "GROUP", "VELLANE" }
 local LOCAL_SET = {}
 for _, k in ipairs(LOCAL) do LOCAL_SET[k] = true end
 -- P_EXT keys that travel: our object id, and mirrored markers (band_m_*). Everything else is this machine's.
@@ -34,6 +36,8 @@ function mirror.normalize_item(chunk)
       out[#out + 1] = "TAKE" -- ("TAKE SEL" marks the active take: local)
     elseif s == "<SOURCE MIDIPOOL" then
       out[#out + 1] = "<SOURCE MIDI" -- (a pooled copy arrives as an item of its own: REAPER writes it as plain MIDI there)
+    elseif s:match("^[ex]m? ") or s:match("^<x ") then
+      out[#out + 1] = s:gsub("^(<?)(.)", function(lt, c) return lt .. c:upper() end, 1)
     elseif not (key and LOCAL_SET[key]) then
       out[#out + 1] = s
     end
@@ -135,7 +139,7 @@ end
 -- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
 -- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
 -- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
-mirror.HV = 4 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
+mirror.HV = 5 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
 mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", M = "misc", I = "item" } -- (an oid's first letter)
 mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends", misc = "the groups, lock, input FX or note names" }
 mirror.PARTS = { "F", "E", "R", "M" } -- (what a track oid T-x carries: F-x, E-x, R-x, M-x)
@@ -1095,8 +1099,12 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
       "(Undo on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing",
       race and "at the same moment as you" or "while you were apart"))
   end
+  local midiview = ev.obj == "item" and not ev.gone and require("midiview")
+  if midiview and not (midiview.on() and midiview.recent(ev.time)) then midiview = nil end
+  local notes_before = midiview and midiview.notes(mirror.find(proj, "item", ev.oid))
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
+  if ok and midiview then midiview.show(proj, mirror.find(proj, "item", ev.oid), notes_before) end
   -- applied, but it isn't what they have: the projects differ (only when made the same way: a change from an older
   -- BandSync hashed fewer of a track's settings, so it always reads as different; the laptop saw 4 on its first open)
   -- (nor when the colour counts on one machine and not the other: SWS auto-colouring)
@@ -1200,9 +1208,7 @@ function mirror.watch(proj, cfg, song, room, opts)
   local mine_prefix = (me:gsub(" ", "_") .. "-"):upper() -- (event ids start with their author's name)
   local function allowed(o, name, pos)
     if opts.can(me, name, pos) then return true end
-    -- your own new tracks (and what's on them) are yours, except in Driver only
-    local t = o.kind == "track" and o.oid or o.track
-    return opts.mode ~= "driver" and mirror.is_creator(t, me)
+    return sync.maker_may(o.kind == "track" and o.oid or o.track, me, name, pos, opts.mode)
   end
   local function say_once(key, text)
     if not mirror.said[key] then mirror.said[key] = true; band.log(text) end
@@ -1236,6 +1242,17 @@ function mirror.watch(proj, cfg, song, room, opts)
     end
     back = back + 1
     if why.text then sync.put_back(why.text) end
+  end
+  -- A track made here is claimed by whoever made it, once it has a name (James, 2026-11-01: an unseen "the maker may
+  -- change it" let the PC change Bass I; a claim shows on the Claims card and can be released). Not by the driver
+  -- (everything nobody claimed is theirs already) nor in Driver only. Only tracks first sent from 0.40.3 on.
+  local function claim_new(o, rev, name)
+    local k = "P_EXT:band_claim_new"
+    if not rev then reaper.GetSetMediaTrackInfo_String(o.ptr, k, "1", true) end
+    if name == "" or select(2, reaper.GetSetMediaTrackInfo_String(o.ptr, k, "", false)) ~= "1" then return end
+    reaper.GetSetMediaTrackInfo_String(o.ptr, k, "", true)
+    if opts.mode == "driver" or me == sync.driver_name or (sync.is_claimed and sync.is_claimed(name)) then return end
+    if sync.claim_tracks(cfg, song, room, { name }) then band.log("you made track " .. name .. ": it's claimed for you (Claims card: release it to share it)") end
   end
   local seen = {}
   -- a burst (hundreds of items moved at once) goes out a quarter second a pass, the rest on the next passes, which
@@ -1279,7 +1296,11 @@ function mirror.watch(proj, cfg, song, room, opts)
       if rev and h ~= "" and not mirror.anchor_seen[rk .. "\0" .. h] then
         mirror.anchor_seen[rk .. "\0" .. h] = true
         local ev = event_file(room_dir, evid)
-        if ev and ev.hash == o.hash then remember(proj, o.oid, rev, o.hash, evid, kord); return end
+        -- (or its item, read the way this machine reads one now: 0.40.3 left selected notes and VELLANE out)
+        if ev and (ev.hash == o.hash or o.kind == "item" and type(ev.state) == "string"
+            and mirror.item_hash(o.track, mirror.normalize_item(ev.state)) == o.hash) then
+          remember(proj, o.oid, rev, o.hash, evid, kord); return
+        end
       end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
         say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
@@ -1340,6 +1361,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         mirror.unsent[tostring(proj) .. o.oid] = nil -- (gone out: the band's next change to it may land)
         require("presence").touch(proj, o.oid)
         sent = sent + 1
+        if o.kind == "track" and o.ptr then claim_new(o, rev, name) end
       else
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
         -- whose it is, and what would let you: "or take control" told the driver to take control (laptop, round 2)
@@ -1552,7 +1574,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     end
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
-    elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or (opts.mode ~= "driver" and mirror.is_creator(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid, cfg.user))) then
+    elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or sync.maker_may(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid, cfg.user, name, p.t and p.t.pos or nil, opts.mode)) then
       refused = refused + 1
     elseif p.t then
       local ok, nh = mirror.apply(proj, p.t, media, opts.local_mix)

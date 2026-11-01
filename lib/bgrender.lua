@@ -138,7 +138,7 @@ function bg.profile_ini(text)
     elseif k == "audiocloseinactive" then line = nil end
     if line then
       out[#out + 1] = line
-      if line == "[REAPER]" then out[#out + 1] = "audiocloseinactive=1" end
+      if line:upper() == "[REAPER]" then out[#out + 1] = "audiocloseinactive=1" end -- (the Mac writes [reaper]: Mac, 0.40.2)
     end
   end
   return table.concat(out, "\n") .. "\n"

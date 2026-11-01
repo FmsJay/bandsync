@@ -521,6 +521,15 @@ local function section_claims()
   end
   table.sort(owned, function(x, y) return x[1] < y[1] end)
   if #owned == 0 then ImGui.TextDisabled(ctx, "Nothing claimed: everything follows the driver.") end
+  if who.mode ~= "driver" and cfg.user ~= who.driver then -- (sync.maker_may: shown, or it looks like a hole in the claims)
+    local mirror, made = require("mirror"), {}
+    for i = 0, reaper.CountTracks(proj) - 1 do
+      local tr = reaper.GetTrack(proj, i)
+      local name = sync.base_name(select(2, reaper.GetTrackName(tr)))
+      if name ~= "" and not who.tracks[name:lower()] and mirror.is_creator(mirror.track_oid(tr), cfg.user) then made[#made + 1] = name end
+    end
+    if #made > 0 then ImGui.TextDisabled(ctx, "You made these, so they're yours to change until someone claims them: " .. table.concat(made, ", ")) end
+  end
   local function release(o) -- let go of just this one
     local c, why = sync.my_claims(cfg, b.song, b.room)
     if not c then return band.msg(why) end
@@ -1819,6 +1828,7 @@ local function settings_sync()
       ImGui.SetItemTooltip(ctx, m[3])
     end
     prints.options(ctx, ImGui) -- rendering in the background
+    require("midiview").options(ctx, ImGui)
     require("people").options(ctx, ImGui, cfg) -- your colour, and whose colours tracks show here
     card_end()
   end

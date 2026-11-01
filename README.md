@@ -180,6 +180,9 @@ By hand:
   who drives, **Undo** / **Redo** (your own changes, for everyone; each asks first, and says if a bandmate changed the
   same thing since), **Dock** and, floating, **Full screen** and **Window** (half the screen, the next screen, back).
   Under the bar, what BandSync just did shows for a few seconds.
+- **Open bandmates' MIDI edits as they happen** (Setup > Options, off by default, this computer only): when someone's
+  change to a MIDI part reaches you, it opens in the MIDI editor with the notes they changed selected. A MIDI editor
+  you opened yourself is left alone. Which notes are selected and which lanes an editor shows never go to the band.
 - **Pages**: **Home** (Who's here with *Take control*, Real time mode, who changes what, Local mixing, claims),
   **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **Restore**,
   **Plugins** and **Setup** (Health, Console, Options, Updates). A red or yellow dot on Setup means Health has
@@ -236,7 +239,8 @@ Who may change what:
 - **Driver**: their changes reach everyone, except on what someone has claimed. *Take control* (next to Who's
   here) makes you the driver; it checks everyone has caught up first, and every handover saves a version.
 - **Editing modes** (Home; the driver picks): **Only the driver**, **Driver + claims** (default: the driver, and
-  everyone on what they've claimed, plus the new tracks they make themselves) or **Anyone** (anything unclaimed;
+  everyone on what they've claimed; a track you make is claimed for you once it has a name, unless you drive, and
+  a track you made stays yours to change until someone claims it, listed on the Claims card) or **Anyone** (anything unclaimed;
   the tempo map, markers and project settings too; a clash goes to whoever changed it more: docs/clashes.md).
 - **Claims**: *Claim selected tracks*, *Claim region at cursor* or *Claim time selection* (shown to everyone as a
   `[claimed: you]` region). A track claim beats a time claim, which beats a region claim, which beats the driver.

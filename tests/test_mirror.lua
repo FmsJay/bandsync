@@ -49,6 +49,11 @@ local pooled = "<ITEM\nPOSITION 0\nPOOLCOLOR 57375313 R\n<SOURCE MIDIPOOL\nHASDA
 local plain = "<ITEM\nPOSITION 0\nPOOLCOLOR 40598097 R\n<SOURCE MIDI\nHASDATA 1 960 QN\nE 0 90 3c 60\n>\n>\n"
 assert(mirror.normalize_item(pooled) == mirror.normalize_item(plain), "MIDI pooling is local: " .. mirror.normalize_item(pooled))
 assert(mirror.hash("a") ~= mirror.hash("b"), "hash tells apart")
+-- which notes are selected and which lanes the MIDI editor shows are each person's: opening the editor isn't a change
+local picked = "<ITEM\n<SOURCE MIDI\nHASDATA 1 960 QN\nCCINTERP 32\nVELLANE 64 100 0 0 1\ne 0 90 3c 60\nem 240 80 3c 00\nx 0 90 3e 60 0 0 0\n<x 0 0\n>\nE 0 90 40 60\n>\n>\n"
+local clean = "<ITEM\n<SOURCE MIDI\nHASDATA 1 960 QN\nCCINTERP 32\nE 0 90 3c 60\nEm 240 80 3c 00\nX 0 90 3e 60 0 0 0\n<X 0 0\n>\nE 0 90 40 60\n>\n>\n"
+assert(mirror.normalize_item(picked) == mirror.normalize_item(clean), "selection and view are local: " .. mirror.normalize_item(picked))
+assert(mirror.normalize_item(mirror.normalize_item(picked)) == mirror.normalize_item(clean), "normalizing twice changes nothing")
 -- an <EXT> with nothing that travels disappears
 local bare = mirror.normalize_item("<ITEM\nPOSITION 1\n<EXT\nband_sent x\n>\n>")
 assert(not bare:find("EXT"), "empty EXT dropped: " .. bare)

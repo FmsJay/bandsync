@@ -1,0 +1,17 @@
+-- midiview.diff and recent are pure (lupa or Lua 5.4, from the repo root)
+package.path = "lib/?.lua;" .. package.path
+reaper = reaper or {}
+local midiview = require("midiview")
+local new, gone = midiview.diff({ "a", "b", "c" }, { "a", "x", "c" })
+assert(#new == 1 and new[1] == 2 and gone == 1, "a moved note: one new, one gone")
+new, gone = midiview.diff({ "a", "b" }, { "a", "b" })
+assert(#new == 0 and gone == 0, "the same notes: nothing to show")
+new, gone = midiview.diff({ "a" }, { "a", "a" })
+assert(#new == 1 and new[1] == 2 and gone == 0, "a doubled note counts")
+new, gone = midiview.diff({}, { "a", "b" })
+assert(#new == 2 and gone == 0, "a new part: every note")
+local now = os.time({ year = 2026, month = 11, day = 1, hour = 17, min = 55, sec = 0 })
+assert(midiview.recent("2026-11-01T17:54:51Z", now), "seconds ago")
+assert(not midiview.recent("2026-11-01T17:53:00Z", now), "over a minute ago: catching up")
+assert(not midiview.recent(nil, now), "no time")
+print("ok")

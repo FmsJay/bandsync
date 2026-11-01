@@ -401,6 +401,7 @@ function sync.authority(cfg, song, room, s)
     end
   end
   sync.owner_of = owner -- for messages ("... is James's to change")
+  sync.is_claimed = claimed -- (sync.maker_may)
   return function(user, track, pos, take, drv) -- drv: the driver to judge by (an event's own time), else today's
       if mode == "driver" then return user == (drv or driver) end
       if owner(track, pos, drv) == user then return true end
@@ -963,9 +964,28 @@ end
 sync.failed = {} -- event id -> how many times applying it threw
 function sync.obj_allowed(ev, can, driver)
   if can(ev.user, ev.name or "", ev.pos, nil, driver) then return true end
-  local t = ev.obj == "track" and ev.oid or ev.track
-  local mirror = require("mirror")
-  return sync.room_mode ~= "driver" and mirror.is_creator(t, ev.user)
+  return sync.maker_may(ev.obj == "track" and ev.oid or ev.track, ev.user, ev.name or "", ev.pos, sync.room_mode)
+end
+
+-- A track's maker may change it and what's on it while nobody has claimed it, unless the room is Driver only. Before
+-- 0.40.3 the maker beat a bandmate's claim too, and nothing showed it (James, 2026-11-01: "it gets confusing"); new
+-- tracks are now claimed by their maker (mirror.watch), and the Claims card lists the unclaimed ones you made.
+function sync.maker_may(oid, user, name, pos, mode)
+  return mode ~= "driver" and require("mirror").is_creator(oid, user) and not (sync.is_claimed and sync.is_claimed(name, pos))
+end
+
+-- Add tracks to my claims. -> true, or nil and why.
+function sync.claim_tracks(cfg, song, room, names)
+  local c, why = sync.my_claims(cfg, song, room)
+  if not c then return nil, why end
+  c.tracks = c.tracks or {}
+  for _, name in ipairs(names) do
+    local have = false
+    for _, n in ipairs(c.tracks) do have = have or n:lower() == name:lower() end
+    if not have then c.tracks[#c.tracks + 1] = name end
+  end
+  sync.set_claims(cfg, song, room, c)
+  return true
 end
 
 function sync.apply(proj, ev, dir, root, can, me)

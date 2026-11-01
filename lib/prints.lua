@@ -117,9 +117,26 @@ end
 
 -- What a print is made from: the notes, the item's length and the band's plug-in chain on its track (`fx_hash`:
 -- mirror's hash of it, which leaves this machine's translations out, so it's the same on every machine).
+-- Not which notes are selected: REAPER's MIDI_GetHash counts that (even notes-only), so an undo after a hand edit,
+-- which leaves the moved note selected, rendered the same notes again (laptop, 2026-11-01). Second value: the hash
+-- before 0.40.3, so prints made then stay current until their notes change (no re-render of every part at once).
+local function unselected(raw, mtk)
+  return require("mirror").memo("ms\0" .. raw, function()
+    local ok, buf = reaper.MIDI_GetAllEvts(mtk, "")
+    if not ok then return raw end
+    local out, pos = {}, 1
+    while pos + 8 < #buf do -- each event: offset (int32), flags (byte: 1 = selected), message (int32 length, bytes)
+      local off, flags, msg, nxt = string.unpack("<i4Bs4", buf, pos)
+      out[#out + 1] = string.pack("<i4Bs4", off, flags & ~1, msg)
+      pos = nxt
+    end
+    return table.concat(out)
+  end)
+end
 function prints.source(it, mtk, fx_hash)
-  return require("mirror").hash(select(2, reaper.MIDI_GetHash(mtk, false, "")) .. (fx_hash or "") ..
-    string.format("%.6f", reaper.GetMediaItemInfo_Value(it, "D_LENGTH")))
+  local mirror, raw = require("mirror"), select(2, reaper.MIDI_GetHash(mtk, false, ""))
+  local tail = (fx_hash or "") .. string.format("%.6f", reaper.GetMediaItemInfo_Value(it, "D_LENGTH"))
+  return mirror.hash(unselected(raw, mtk) .. tail), mirror.hash(raw .. tail)
 end
 
 -- The two takes say what they are: "dry" (the notes, or the editable ARA take) and "wet" (the print), each keeping
@@ -343,8 +360,10 @@ function prints.refresh(proj, it, media_dir, fx_hash, route_hash, cfg)
   if (reaper.TrackFX_GetCount(tr) == 0 and not dest) or not prints.track_plays(tr) then return false end
   if audio and not prints.lacking(tr, cfg) then return false end
   local dry = midi or audio
-  local h = midi and prints.source(it, midi, (fx_hash or "") .. (dest and ("\0" .. (route_hash or "")) or "")) or prints.audio_source(it, audio, fx_hash)
-  if print and take_ext(print, prints.KEY) == h then return false end
+  local h, old
+  if midi then h, old = prints.source(it, midi, (fx_hash or "") .. (dest and ("\0" .. (route_hash or "")) or ""))
+  else h = prints.audio_source(it, audio, fx_hash) end
+  if print and (take_ext(print, prints.KEY) == h or old and take_ext(print, prints.KEY) == old) then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
   local name = print_name(oid, h)
   reaper.RecursiveCreateDirectory(media_dir, 0)

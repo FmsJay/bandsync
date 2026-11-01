@@ -127,6 +127,7 @@ local function seg_dist(cx, cy, a, z)
 end
 local TEXT_SIZE = { [2] = 14, [4] = 20, [8] = 30 }
 local bar_ext -- the toolbar's screen rectangle last frame: its dark backing, and where a press isn't drawing
+local press_n, fired = 0, {} -- each press counted; a toolbar button acts once per press (see button())
 
 local function loop()
   if reaper.GetExtState(band.SECTION, "draw quit") ~= "" then reaper.DeleteExtState(band.SECTION, "draw quit", false); return end -- (Hide drawings)
@@ -215,6 +216,9 @@ local function loop()
     if drawing then
       local tool, size = pick("tool", "pen"), tonumber(pick("size", "4")) or 4
       local mine = math.tointeger(tonumber(pick("color", ""))) or col[cfg.user]
+      local listed = mine == col[cfg.user]
+      for _, c in ipairs(SWATCHES) do if c == mine then listed = true end end
+      if not listed then mine = col[cfg.user]; reaper.DeleteExtState(band.SECTION, "draw color", true) end -- (a colour 0.35.3 had: yours again)
       local mx, my = reaper.GetMousePosition()
       local cx, cy = ImGui.PointConvertNative(ctx, mx, my, false)
       local in_bar = bar_ext and cx >= bar_ext[1] and cx <= bar_ext[3] and cy >= bar_ext[2] and cy <= bar_ext[4]
@@ -224,6 +228,7 @@ local function loop()
       local down = reaper.JS_Mouse_GetState(1) & 1 == 1
       local clicked = ImGui.IsMouseClicked(ctx, 0)
       local pressed = clicked or (down and not was_down)
+      if pressed and not (down and was_down) then press_n = press_n + 1 end
       was_down = down
       local px, py = mx, my -- (where the press was, native)
       if clicked then
@@ -232,6 +237,7 @@ local function loop()
       end
       local here = inside(L, px, py) and not on_bar
       local _, why = to_song(L, mx, my)
+      if on_bar then why = nil end -- (the track under the toolbar isn't where you're drawing)
       local function save(s) -- a finished drawing goes to the band
         n_made = n_made + 1
         local d = drawings_dir(b)
@@ -292,13 +298,21 @@ local function loop()
       if bar_ext then ImGui.DrawList_AddRectFilled(dl, bar_ext[1], bar_ext[2], bar_ext[3], bar_ext[4], 0x1B1D20E6, 6) end
       local fh = ImGui.GetFrameHeightWithSpacing(ctx)
       local _, wh = ImGui.GetWindowSize(ctx)
-      ImGui.SetCursorPos(ctx, 12, math.max(8, wh - 2 * fh - 12))
+      local at_top = pick("bar", "bottom") == "top" -- (wherever it is it covers a track: Top/Bottom moves it)
+      ImGui.SetCursorPos(ctx, 12, at_top and 8 or math.max(8, wh - 2 * fh - 12))
       local sx, sy = ImGui.GetCursorScreenPos(ctx)
       local maxx, maxy = sx, sy
       local function grew() local x, y = ImGui.GetItemRectMax(ctx); maxx, maxy = math.max(maxx, x), math.max(maxy, y) end
+      -- once per press: the OS's press (on the way down) and ImGui's own click (on the way up) were two, and Undo took
+      -- two drawings away (laptop, 0.35.4)
+      local function once(id, hit)
+        if not hit or fired[id] == press_n then return false end
+        fired[id] = press_n
+        return true
+      end
       local function button(label, on)
         if on then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
-        local hit = ImGui.SmallButton(ctx, label) or (pressed and ImGui.IsItemHovered(ctx))
+        local hit = once(label, ImGui.SmallButton(ctx, label) or (pressed and ImGui.IsItemHovered(ctx)))
         if on then ImGui.PopStyleColor(ctx) end
         grew()
         return hit
@@ -310,11 +324,13 @@ local function loop()
       ImGui.SameLine(ctx, 0, 12)
       for i, c in ipairs(SWATCHES) do
         if i > 1 then ImGui.SameLine(ctx, 0, 3) end
-        local hit = ImGui.ColorButton(ctx, "##swatch" .. i, c, ImGui.ColorEditFlags_NoTooltip, 16, 16) or (pressed and ImGui.IsItemHovered(ctx))
+        local hit = once("swatch" .. i, ImGui.ColorButton(ctx, "##swatch" .. i, c, ImGui.ColorEditFlags_NoTooltip, 16, 16) or (pressed and ImGui.IsItemHovered(ctx)))
         grew()
         if hit then keep("color", c) end
-        if c == mine then ImGui.DrawList_AddRect(ImGui.GetWindowDrawList(ctx), select(1, ImGui.GetItemRectMin(ctx)) - 2, select(2, ImGui.GetItemRectMin(ctx)) - 2,
-          select(1, ImGui.GetItemRectMax(ctx)) + 2, select(2, ImGui.GetItemRectMax(ctx)) + 2, 0xFFFFFFFF, 0, 0, 2) end
+        local ax, ay = ImGui.GetItemRectMin(ctx)
+        local zx, zy = ImGui.GetItemRectMax(ctx)
+        ImGui.DrawList_AddRect(ImGui.GetWindowDrawList(ctx), ax, ay, zx, zy, 0x8A8F96FF, 0, 0, 1) -- (the dark one shows on the dark bar)
+        if c == mine then ImGui.DrawList_AddRect(ImGui.GetWindowDrawList(ctx), ax - 2, ay - 2, zx + 2, zy + 2, 0xFFFFFFFF, 0, 0, 2) end
       end
       ImGui.SameLine(ctx, 0, 3)
       if button("Mine##colour", mine == col[cfg.user]) then reaper.DeleteExtState(band.SECTION, "draw color", true) end
@@ -343,6 +359,9 @@ local function loop()
         cache_at, stroke = -math.huge, nil
       end
       ImGui.SetItemTooltip(ctx, "Take away every drawing you made in this room (everyone's copy goes too).")
+      ImGui.SameLine(ctx, 0, 12)
+      if button(at_top and "Bottom##bar" or "Top##bar") then keep("bar", at_top and "bottom" or "top") end
+      ImGui.SetItemTooltip(ctx, "Move this bar to the " .. (at_top and "foot" or "top") .. " of the tracks (it covers whatever's under it).")
       ImGui.SameLine(ctx, 0, 12)
       ImGui.AlignTextToFramePadding(ctx)
       ImGui.Text(ctx, why == "local" and "That's one of BandSync's own tracks: draw on a band track." or ({ pen = "Drag to draw.",

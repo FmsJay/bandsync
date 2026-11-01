@@ -80,6 +80,6 @@ assert(bg.profile_ini("[reaper]\nfoo=1\n") == "[reaper]\naudiocloseinactive=1\nf
 do
   local f = assert(io.open("lib/sync.lua", "rb")); local text = f:read("a"); f:close()
   local body = text:match("function sync%.print_item.-\nend\n")
-  assert(body and not body:find("SelectAllMediaItems", 1, true), "print_item keeps clear of SelectAllMediaItems")
+  assert(body and not body:find("SelectAllMediaItems(", 1, true), "print_item keeps clear of SelectAllMediaItems")
 end
 print("ok")

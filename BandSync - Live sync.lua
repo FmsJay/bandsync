@@ -270,7 +270,7 @@ local function poll()
     local cc = reaper.GetProjectStateChangeCount(proj)
     -- (not mid-drag: watch would skip it, and the change it skipped mustn't count as seen)
     -- (every second while a print renders in the background: it goes in once done, not up to 10 s later: laptop, 0.40.0)
-    local waiting = now - mirror_at > 1 and (require("bgrender").waiting() or require("prints").waiting()) -- (or a part waiting its turn)
+    local waiting = now - mirror_at > 1 and (require("bgrender").waiting() or require("prints").waiting() or require("mirror").unsettled) -- (or a part waiting its turn, or a plug-in chain to settle)
     if (cc ~= mirror_cc or mirror_due or waiting or now - mirror_at > 10) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
@@ -612,7 +612,7 @@ local function tick_body() -- returns true to keep going
     if not ok and midi_view_err ~= tostring(e) then midi_view_err = tostring(e); band.log("live MIDI view: " .. tostring(e)) end
   end
   local every = reaper.GetPlayStateEx(proj) & 1 == 1 and 2 -- playing: a pass can stall REAPER ~0.5 s (seen on the laptop)
-    or (lagbars or now - stopped_at < 8) and 0.5 or 2 -- side by side, or just after a recording: look often
+    or (lagbars or now - stopped_at < 8 or require("bgrender").waiting() or require("prints").waiting()) and 0.5 or 2 -- side by side, just after a recording, or with a print on its way: look often
   local redo = reaper.Undo_CanRedo2(proj)
   if redo and redo:find("^BandSync") then -- you just undid one of BandSync's changes: keep undoing if you like
     undo_since = undo_since or now

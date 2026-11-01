@@ -49,6 +49,22 @@ local pooled = "<ITEM\nPOSITION 0\nPOOLCOLOR 57375313 R\n<SOURCE MIDIPOOL\nHASDA
 local plain = "<ITEM\nPOSITION 0\nPOOLCOLOR 40598097 R\n<SOURCE MIDI\nHASDATA 1 960 QN\nE 0 90 3c 60\n>\n>\n"
 assert(mirror.normalize_item(pooled) == mirror.normalize_item(plain), "MIDI pooling is local: " .. mirror.normalize_item(pooled))
 assert(mirror.hash("a") ~= mirror.hash("b"), "hash tells apart")
+-- a restless plug-in counts by its first line in a chain's hash; everything else as ever
+do
+  local function chain(blob, other)
+    return '<FXCHAIN\nBYPASS 0 0 0\n<VST "VST3: Disperser (Kilohearts)" d.vst3 0 "" 1\n' .. blob .. '\nAAAA\n>\nFXID {1}\nBYPASS 0 0 0\n<VST "VST: ReaEQ (Cockos)" e.dll 0 "" 2\n' .. other .. '\nAAAA\n>\n>\n'
+  end
+  local blocks = mirror.plugin_blocks({ "<FXCHAIN", "BYPASS 0 0 0", '<JS a/b ""', "1 2", "<JS_SER", "abc", ">", ">", "<PARMENV 1", ">", ">" })
+  assert(#blocks == 1 and blocks[1].key == "a/b" and blocks[1].first == 3 and blocks[1].last == 8, "a plug-in block, nested and all")
+  assert(mirror.fx_differing(chain("x", "y"), chain("z", "y"))[1] == "VST3: Disperser (Kilohearts)", "which plug-in differs")
+  assert(#mirror.fx_differing(chain("x", "y"), chain("x", "y")) == 0, "none")
+  assert(mirror.restless_in(chain("x", "y")) == nil and mirror.fx_hash(chain("x", "y")) ~= mirror.fx_hash(chain("z", "y")), "before: its data counts")
+  assert(mirror.restless_add({ "VST3: Disperser (Kilohearts)" }) and not mirror.restless_add({ "VST3: Disperser (Kilohearts)" }), "added once")
+  assert(mirror.fx_hash(chain("x", "y")) == mirror.fx_hash(chain("z", "y")), "after: it doesn't")
+  assert(mirror.fx_hash(chain("x", "y")) ~= mirror.fx_hash(chain("x", "w")), "another plug-in's still does")
+  assert(mirror.restless_in(chain("x", "y"))[1] == "VST3: Disperser (Kilohearts)", "named on the chain")
+  mirror.restless = {}
+end
 -- which notes are selected and which lanes the MIDI editor shows are each person's: opening the editor isn't a change
 local picked = "<ITEM\n<SOURCE MIDI\nHASDATA 1 960 QN\nCCINTERP 32\nVELLANE 64 100 0 0 1\ne 0 90 3c 60\nem 240 80 3c 00\nx 0 90 3e 60 0 0 0\n<x 0 0\n>\nE 0 90 40 60\n>\n>\n"
 local clean = "<ITEM\n<SOURCE MIDI\nHASDATA 1 960 QN\nCCINTERP 32\nE 0 90 3c 60\nEm 240 80 3c 00\nX 0 90 3e 60 0 0 0\n<X 0 0\n>\nE 0 90 40 60\n>\n>\n"

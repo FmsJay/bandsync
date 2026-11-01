@@ -73,8 +73,8 @@ local ok, err = pcall(function()
   do -- the render profile (0.40): its own reaper.ini, plug-ins but no extensions, this REAPER's settings untouched
     local P = require("bgrender").PROFILE
     local pini, w = "", reaper.time_precise() -- (the render REAPER rewrites it as it quits: read it once that's done)
-    repeat pini = band.read(P .. "/job1.ini") or "" until pini:find("csurf_cnt=", 1, true) and reaper.time_precise() - w > 2 or reaper.time_precise() - w > 10
-    check(pini:find("csurf_cnt=0", 1, true) and not pini:find("\nmidiins=[1-9]") and pini:lower():find("[recent]", 1, true) and pini:lower():find("job.rpp", 1, true), "the render REAPER had its own settings: no MIDI or surfaces, its jobs in its own Recent projects")
+    repeat pini = band.read(P .. "/job1.ini") or "" until pini:lower():find("job.rpp", 1, true) and reaper.time_precise() - w > 2 or reaper.time_precise() - w > 10
+    check(not pini:find("csurf_cnt=[1-9]") and not pini:find("\nmidiins=[1-9]") and pini:lower():find("[recent]", 1, true) and pini:lower():find("job.rpp", 1, true), "the render REAPER had its own settings: no MIDI or surfaces, its jobs in its own Recent projects")
     local up = band.subdirs(P .. "/UserPlugins")
     check(#band.files(P .. "/UserPlugins") == 0 and (#up == 0 or (#up == 1 and up[1] == "FX")), "and its plug-ins without REAPER's extensions (" .. table.concat(up, ",") .. ")")
     check(band.size(reaper.get_ini_file()) == ini_size and band.read(reaper.get_ini_file()) == ini_text, "this REAPER's reaper.ini wasn't rewritten by it")

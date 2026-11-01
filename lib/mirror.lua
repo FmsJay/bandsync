@@ -96,12 +96,113 @@ local function portable(s)
 end
 mirror.portable = portable
 
+-- Restless plug-ins: some write different saved data every time REAPER reads it (Kilohearts Disperser, Mac, 0.42.0). Their
+-- track never held still, so its chain never went out and its parts never got a print, and nothing said so. One that
+-- keeps changing while its knobs don't and nothing else in the project does (mirror.watch) goes on this list, which
+-- every machine learns from the band's events. Its saved data then stays out of the hash, and its knobs say when it
+-- really changed. (Not everything's data: loading a patch in a sampler changes only that, and must still count.)
+mirror.restless = {} -- plug-in name -> true
+mirror.RESTLESS_FLIPS, mirror.RESTLESS_SECS = 4, 12 -- changes in a row, and for how long, before a plug-in counts
+local RESTLESS_KEY = "restless plugins"
+local function restless_key(line) return line:match('^<%S+%s+"([^"]*)"') or line:match("^<%S+%s+(%S+)") end
+local function fx_block_start(l) return l:sub(1, 1) == "<" and l ~= "<FXCHAIN" and not l:match("^<PARMENV") and not l:match("^<PROGRAMENV") end
+-- A chain's plug-in blocks. Pure. -> list of { key, first, last, text } (line numbers in `lines`).
+function mirror.plugin_blocks(lines)
+  local out, i = {}, 1
+  while i <= #lines do
+    if fx_block_start(lines[i]) then
+      local depth, j = 1, i
+      while depth > 0 and j < #lines do
+        j = j + 1
+        if lines[j]:sub(1, 1) == "<" then depth = depth + 1 elseif lines[j] == ">" then depth = depth - 1 end
+      end
+      local b = out[#out]
+      if lines[i]:match("^<JS_SER") and b then -- (a JSFX's saved data: a block of its own, right after the plug-in's)
+        b.last, b.text = j, table.concat(lines, "\n", b.first, j)
+      else
+        out[#out + 1] = { key = restless_key(lines[i]), first = i, last = j, text = table.concat(lines, "\n", i, j) }
+      end
+      i = j
+    end
+    i = i + 1
+  end
+  return out
+end
+local function chain_lines(chain)
+  local lines = {}
+  for l in (chain or ""):gmatch("[^\n]+") do lines[#lines + 1] = l end
+  return lines
+end
+-- The restless plug-ins in a chain (a list), and which plug-ins differ between two reads of one. Pure.
+function mirror.restless_in(chain)
+  if not next(mirror.restless) then return nil end
+  local names, seen = {}, {}
+  for _, b in ipairs(mirror.plugin_blocks(chain_lines(chain))) do
+    if b.key and mirror.restless[b.key] and not seen[b.key] then seen[b.key] = true; names[#names + 1] = b.key end
+  end
+  return #names > 0 and names or nil
+end
+function mirror.fx_differing(a, b)
+  local x, y, names = mirror.plugin_blocks(chain_lines(a)), mirror.plugin_blocks(chain_lines(b)), {}
+  if #x ~= #y then return names end
+  for i, p in ipairs(x) do
+    if p.key and p.key == y[i].key and p.text ~= y[i].text then names[#names + 1] = p.key end
+  end
+  return names
+end
+function mirror.restless_load()
+  if mirror.restless_loaded or not (reaper and reaper.GetExtState) then return end
+  mirror.restless_loaded = true
+  for n in reaper.GetExtState("BandSync", RESTLESS_KEY):gmatch("[^\n]+") do mirror.restless[n] = true end
+end
+-- Add names (from this machine's own finding, or a bandmate's event). -> whether any is new.
+function mirror.restless_add(names)
+  local new = false
+  for _, n in ipairs(type(names) == "table" and names or {}) do
+    if type(n) == "string" and not mirror.restless[n] then mirror.restless[n], new = true, true end
+  end
+  if new and reaper and reaper.SetExtState then
+    local all = {}
+    for n in pairs(mirror.restless) do all[#all + 1] = n end
+    table.sort(all)
+    reaper.SetExtState("BandSync", RESTLESS_KEY, table.concat(all, "\n"), true)
+  end
+  return new
+end
+local function restless_sig()
+  local all = {}
+  for n in pairs(mirror.restless) do all[#all + 1] = n end
+  table.sort(all)
+  return table.concat(all, "\0")
+end
+-- All the knobs of a track's plug-ins, as a string: what says a restless plug-in really changed. This machine's only,
+-- as a machine without the plug-in has none, so it never goes into a hash.
+function mirror.fx_params(tr)
+  local out = {}
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+    for p = 0, math.min(reaper.TrackFX_GetNumParams(tr, i), 3000) - 1 do
+      out[#out + 1] = string.format("%.4f", (reaper.TrackFX_GetParamNormalized(tr, i, p)))
+    end
+    out[#out + 1] = "|"
+  end
+  return table.concat(out, ",")
+end
+
 -- A plug-in chain's hash: its normalized text without each VST's last state line. That line is REAPER's program block
 -- for the instance, and a plug-in loaded from a chunk writes its program name there ("Program 1"), so the same chain
 -- read differently on every machine that received it (laptop, 2026-10-31). It still travels; only the hash skips it.
+-- A restless plug-in counts by its first line only.
 function mirror.fx_hash(chain)
   local lines = {}
   for l in portable(chain):gmatch("[^\n]+") do lines[#lines + 1] = l end
+  if next(mirror.restless) then
+    local blocks = mirror.plugin_blocks(lines)
+    for b = #blocks, 1, -1 do
+      if blocks[b].key and mirror.restless[blocks[b].key] then
+        for k = blocks[b].last - 1, blocks[b].first + 1, -1 do table.remove(lines, k) end
+      end
+    end
+  end
   local i = 1
   while i <= #lines do
     if lines[i]:match("^<VST") then
@@ -705,6 +806,7 @@ mirror.anchor_seen = {} -- proj .. oid .. known hash -> its event was checked ag
 mirror.orphaned = {} -- proj -> { track oid = true }: changes skipped while that track was gone (sync.receive looks again)
 
 function mirror.scan(proj, user, media_dir, local_mix)
+  mirror.restless_load()
   local objs, by_oid, tracks = {}, {}, {}
   local tl = {}
   for i = 0, reaper.CountTracks(proj) - 1 do
@@ -728,7 +830,7 @@ function mirror.scan(proj, user, media_dir, local_mix)
       objs[#objs + 1], by_oid[oid], tracks[tr] = o, o, oid
       local _, chunk = reaper.GetTrackStateChunk(tr, "", false)
       local lfx = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false))
-      local parts = mirror.memo("t\0" .. at_sig .. "\0" .. lfx .. "\0" .. chunk, function()
+      local parts = mirror.memo("t\0" .. at_sig .. "\0" .. restless_sig() .. "\0" .. lfx .. "\0" .. chunk, function()
         local skip = {} -- this machine's plug-in translations (lib/page_plugins.lua): never sent
         for g in lfx:gmatch("({[^}]+})for=") do skip[g] = true end
         local fx = mirror.fxchain(chunk, skip) or ""
@@ -996,6 +1098,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local _, after = reaper.GetTrackStateChunk(tr, "", false)
     local skip = ev.track == mirror.MASTER and mirror.live_fx(tr) or {}
     for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
+    mirror.fx_knobs[tostring(proj) .. ev.oid] = nil -- (its knobs are the band's now: the next look notes them)
     return true, mirror.fx_hash(mirror.fxchain(after, skip) or "")
   elseif kind == "env" or kind == "recv" or kind == "misc" then
     local tr = mirror.find(proj, "track", ev.track)
@@ -1066,6 +1169,7 @@ end
 
 -- An incoming "obj" event (from sync.apply). Returns true when handled (applied or older than what we hold).
 function mirror.receive(proj, ev, media_dir, local_mix, me)
+  if ev.obj == "fx" and ev.restless then mirror.restless_load(); mirror.restless_add(ev.restless) end
   local order = (ev.time or "") .. (ev.user or "")
   if not mirror.wins(proj, ev.oid, ev.rev or 0, order) then return true end
   -- a change of ours to it hasn't gone out yet (Hold my changes is on, plug-ins and automation waiting to settle or
@@ -1144,6 +1248,7 @@ end
 
 mirror.said = mirror.said or {} -- (things said once per session, not every pass)
 mirror.fx_seen = mirror.fx_seen or {} -- oid -> { hash, since }: a plug-in chain goes out once it has settled
+mirror.fx_knobs = mirror.fx_knobs or {} -- oid -> its knobs when it last went out or landed (chains with a restless plug-in)
 
 -- Where a recording this person wasn't allowed to add goes (kept, never deleted): a track of their own, not sent.
 local function keep_track(proj, name)
@@ -1204,6 +1309,7 @@ function mirror.watch(proj, cfg, song, room, opts)
   local media = room_dir .. "/media"
   local objs, by_oid = mirror.scan(proj, cfg.user, media, opts.local_mix)
   local me, sent, back = cfg.user, 0, 0
+  mirror.unsettled = false
   local playing = reaper.GetPlayStateEx(proj) & 1 == 1
   local mine_prefix = (me:gsub(" ", "_") .. "-"):upper() -- (event ids start with their author's name)
   local function allowed(o, name, pos)
@@ -1289,16 +1395,25 @@ function mirror.watch(proj, cfg, song, room, opts)
           remember(proj, o.oid, rev, o.hash, evid, kord); return
         end
       end
-      if h == o.hash then mirror.reopened[rk], mirror.unsent[rk] = nil, nil; return end
+      -- a chain with a restless plug-in: the hash can't see its knobs move, so they're looked at here
+      local knobs_moved, knobs
+      if o.kind == "fx" and h == o.hash and mirror.restless_in(o.state) then
+        knobs = mirror.fx_params(o.ptr)
+        if mirror.fx_knobs[rk] == nil then mirror.fx_knobs[rk] = knobs end
+        knobs_moved = mirror.fx_knobs[rk] ~= knobs
+      end
+      if h == o.hash and not knobs_moved then mirror.reopened[rk], mirror.unsent[rk] = nil, nil; return end
       if sent > 0 and reaper.time_precise() - t_send > 0.25 then mirror.unsent[rk], mirror.more = true, true; return end
       -- recorded under a hash this machine no longer makes (before 0.34.4 a Mac hashed plug-in files and colours its
       -- own way): what's here IS the band's version, so it's re-anchored, not sent as a change of ours. Once per record.
-      if rev and h ~= "" and not mirror.anchor_seen[rk .. "\0" .. h] then
+      if rev and h ~= "" and not knobs_moved and not mirror.anchor_seen[rk .. "\0" .. h] then
         mirror.anchor_seen[rk .. "\0" .. h] = true
         local ev = event_file(room_dir, evid)
         -- (or its item, read the way this machine reads one now: 0.40.3 left selected notes and VELLANE out)
+        -- (or its chain: a plug-in on it was found restless since)
         if ev and (ev.hash == o.hash or o.kind == "item" and type(ev.state) == "string"
-            and mirror.item_hash(o.track, mirror.normalize_item(ev.state)) == o.hash) then
+            and mirror.item_hash(o.track, mirror.normalize_item(ev.state)) == o.hash
+            or o.kind == "fx" and type(ev.state) == "string" and mirror.fx_hash(ev.state) == o.hash) then
           remember(proj, o.oid, rev, o.hash, evid, kord); return
         end
       end
@@ -1320,7 +1435,28 @@ function mirror.watch(proj, cfg, song, room, opts)
         local f = mirror.fx_seen[key]
         mirror.unsent[rk] = true -- (until it goes: the band's change to it waits)
         if playing then return end
-        if not f or f.hash ~= o.hash then mirror.fx_seen[key] = { hash = o.hash, since = reaper.time_precise() }; return end
+        mirror.unsettled = true -- (Live sync looks again soon)
+        if not f or f.hash ~= o.hash or f.knobs ~= knobs then
+          local now, cc = reaper.time_precise(), reaper.GetProjectStateChangeCount(proj)
+          local n = { hash = o.hash, knobs = knobs, since = now, text = o.state, cc = cc, flips = 0, began = now }
+          if o.kind == "fx" then
+            n.params = mirror.fx_params(o.ptr)
+            -- it changed again with its knobs still and nothing else happening: restless, if it goes on
+            if f and f.text and f.hash ~= o.hash and f.cc == cc and f.params == n.params then n.flips, n.began = (f.flips or 0) + 1, f.began or now end
+            if n.flips >= mirror.RESTLESS_FLIPS and now - n.began >= mirror.RESTLESS_SECS then
+              local names = mirror.fx_differing(f.text, o.state)
+              if mirror.restless_add(names) then
+                band.log(table.concat(names, ", ") .. " keeps changing its saved data by itself: BandSync goes by its knobs from now on")
+                o.hash = mirror.fx_hash(o.state)
+                knobs = mirror.fx_params(o.ptr)
+                mirror.fx_knobs[rk] = knobs
+                n = { hash = o.hash, knobs = nil, since = now }
+              end
+            end
+          end
+          mirror.fx_seen[key] = n
+          return
+        end
         if reaper.time_precise() - f.since < 3 then return end
       end
       if opts.hold then mirror.unsent[rk] = true; return end -- (Hold my changes: it stays here until switched off)
@@ -1355,7 +1491,11 @@ function mirror.watch(proj, cfg, song, room, opts)
         local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,
           name = name, pos = o.pos, hash = o.hash, hv = mirror.HV } -- (hash: what it is here; every receiver checks it came out the same)
         if mirror.auto[tostring(proj) .. o.oid] then ev.auto, mirror.auto[tostring(proj) .. o.oid] = true, nil end
-        if o.kind == "fx" then ev.files = require("fxfiles").share(state, media) end -- (samples, IRs, models it loads)
+        if o.kind == "fx" then
+          ev.files = require("fxfiles").share(state, media) -- (samples, IRs, models it loads)
+          ev.restless = mirror.restless_in(state)
+          if ev.restless then mirror.fx_knobs[rk] = knobs or mirror.fx_params(o.ptr) end
+        end
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
         mirror.unsent[tostring(proj) .. o.oid] = nil -- (gone out: the band's next change to it may land)

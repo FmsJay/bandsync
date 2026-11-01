@@ -1417,6 +1417,9 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
       end
     end
+    -- (a print just went on: out on the very next pass. It waited for the 10-second look: 9 s on a print that was
+    -- already there, 18 s on a rendered one: PC, 0.41.1)
+    if made > 0 then mirror.more = true end
   end
   -- gone here: deleted (sent, if allowed) or put back
   local i, gone = 0, {}

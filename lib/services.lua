@@ -130,7 +130,8 @@ function services.syncthing_peers()
   if not peers_on then peers_why, peers_n = peers_n, nil end
   return peers_on, peers_n or peers_why
 end
-function services.syncthing_peers_now()
+-- Syncthing's API, from its own config: the start of a curl command for `path`, or nil + why.
+local function st_api(path, method)
   local home = WIN and ((os.getenv("LOCALAPPDATA") or "") .. "/Syncthing")
     or first_existing({ (os.getenv("HOME") or "") .. "/Library/Application Support/Syncthing/config.xml",
       (os.getenv("HOME") or "") .. "/.local/state/syncthing/config.xml", (os.getenv("HOME") or "") .. "/.config/syncthing/config.xml" })
@@ -143,8 +144,18 @@ function services.syncthing_peers_now()
   local key, addr = gui:match("<apikey>(.-)</apikey>"), gui:match("<address>(.-)</address>")
   if not key or not addr then return nil, "Syncthing config has no API key" end
   local tls = gui:match('^[^>]*tls="true"') ~= nil
-  local out = background("syncthing-connections", string.format('curl -s -m 3 %s-H "X-API-Key: %s" %s://%s/rest/system/connections',
-    tls and "-k " or "", key, tls and "https" or "http", addr), 20) or ""
+  return string.format('curl -s -m 3 %s%s-H "X-API-Key: %s" "%s://%s%s"', tls and "-k " or "", method and ("-X " .. method .. " ") or "",
+    key, tls and "https" or "http", addr, path)
+end
+-- Have Syncthing scan a folder now (it reads a changed .stignore then: lib/songsync.lua). In the background.
+function services.rescan(folder)
+  local cmd = st_api("/rest/db/scan?folder=" .. folder, "POST")
+  if cmd then background("syncthing-rescan", cmd, 0) end
+end
+function services.syncthing_peers_now()
+  local cmd, why = st_api("/rest/system/connections")
+  if not cmd then return nil, why end
+  local out = background("syncthing-connections", cmd, 20) or ""
   local data = band.json_decode(out)
   if type(data) ~= "table" or type(data.connections) ~= "table" then return nil, "Syncthing didn't answer" end
   local n, on = 0, 0

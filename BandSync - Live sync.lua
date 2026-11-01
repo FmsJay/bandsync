@@ -42,6 +42,7 @@ end
 local my_token = string.format("%.6f-%d", reaper.time_precise(), math.random(1, 1e9))
 reaper.SetExtState(band.SECTION, "live owner " .. tostring(proj), my_token, false)
 local host = b.role == "host"
+pcall(require("songsync").want, cfg, b.song) -- (a song syncing in a tab here comes in full: per-song sync)
 local s0 = band.read_json(band.session_path(cfg, b.song)) or {}
 local baseline = sync.mark_baseline(proj)
 sync.audio_follow_tempo(proj) -- band audio follows tempo changes piece by piece (REAPER auto-stretch), never drifting

@@ -39,6 +39,7 @@ local ok, name = reaper.GetUserInputs("BandSync: publish", 1, "Song name,extrawi
 if not ok then return end
 local song = band.clean(name)
 if song == "" then return band.msg("Give the song a name.") end
+require("songsync").want(cfg, song) -- (yours: it syncs here in full, whatever this computer downloads of others)
 local old = old_for(song)
 if old and old.host ~= cfg.user and b.song ~= song then
   return band.msg("There's already a band song called '" .. song .. "' (hosted by " .. tostring(old.host) .. ").\n\n" ..

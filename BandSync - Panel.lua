@@ -1827,7 +1827,34 @@ local function page_setup()
     ImGui.EndTabItem(ctx)
   end
   if ImGui.BeginTabItem(ctx, "Options") then
-    layout({ { settings_look, 320 }, { settings_sync, 420 }, { settings_drive, 360 }, { settings_more, 400 } })
+    -- (Songs: inline, the panel's main chunk is near Lua's 200-locals limit) per-song sync, lib/songsync.lua
+    layout({ { settings_look, 320 }, { settings_sync, 420 }, { settings_drive, 360 }, { function()
+  if card("songs") then
+    heading("Songs on this computer", 17)
+    local ss = require("songsync")
+    local all = ss.keep_all()
+    local ch, v = check("Keep every song on this computer", all)
+    if ch then reaper.SetExtState(band.SECTION, "songs keep all", v and "1" or "", true); ss.apply(cfg) end
+    ImGui.SetItemTooltip(ctx, "On: every band song comes here in full (the computer that stays on, so new bandmates always have a source).\n" ..
+      "Off: every song's listing comes, and a song in full once you open it here.")
+    if not all then
+      local list, wanted = band.songs(cfg), ss.wanted(cfg)
+      local n = 0
+      for _, s in ipairs(list) do if wanted[s] then n = n + 1 end end
+      ImGui.TextDisabled(ctx, string.format("%d of %d songs in full here; the rest come when you open them.", n, #list))
+      for _, s in ipairs(list) do
+        if wanted[s] and s ~= (b and b.song) then
+          if ImGui.SmallButton(ctx, "Stop downloading##ss" .. s) and reaper.MB("Stop downloading '" .. s .. "' to this computer?\n\n" ..
+              "Its files stay here (remove them yourself to free the space), and it comes back in full when you open it again. " ..
+              "Nothing changes for the band.", "BandSync", 4) == 6 then ss.drop(cfg, s) end
+          ImGui.SameLine(ctx)
+          ImGui.Text(ctx, s)
+        end
+      end
+    end
+    card_end()
+  end
+end, 360 }, { settings_more, 400 } })
     ImGui.EndTabItem(ctx)
   end
   if ImGui.BeginTabItem(ctx, "Updates") then maint_upkeep(); ImGui.EndTabItem(ctx) end

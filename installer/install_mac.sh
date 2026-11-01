@@ -345,6 +345,11 @@ up=""; for i in $(seq 1 60); do stcli show system >/dev/null && { up=1; break; }
 [ -n "$up" ] || { warn "Syncthing didn't answer; finish its setup by hand (see installer/SKILL.md)"; exit 1; }
 MY_ID="$("$ST" device-id --home "$STHOME" 2>/dev/null | tail -1 | tr -d '[:space:]')"
 mkdir -p "$ROOT"
+# per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
+# full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
+if ! yes "$HOSTING" && ! grep -q '^// BandSync end$' "$ROOT/.stignore" 2>/dev/null; then
+  printf '%s\n' '// BandSync: what this computer downloads (written by BandSync, up to the line below)' '!/_*' '!/plugins' '!/drummaps' '!/*/session.json' '!/*/folder.json' '!/*/live.json' '!/*/invites' '!/*/rooms/*/room.json' '!/*/rooms/*/summary' '!/*/rooms/*/status' '/*/*' '// BandSync end' >> "$ROOT/.stignore" && ok "this computer gets each song in full once it's opened (the rest: their listing)"
+fi
 if stcli config folders list | grep -qx bandsync; then ok "shared folder 'bandsync' already set up"
 else
   stcli config defaults folder path set "$(dirname "$ROOT")" >/dev/null # new folders land beside it

@@ -255,6 +255,17 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
   Live sync also keeps a copy of the room on Google Drive (store and forward), so what someone does alone reaches the
   others even if you're never online together.
 
+### Songs on this computer (per-song sync)
+
+Every computer gets every song's listing (a few KB: what the song chooser shows), and a song in full only once it's
+opened there, so a new bandmate's first sync isn't the whole library. Opening a song in the chooser brings the rest
+of it (the chooser says "downloaded when you open it"). Setup > Options > **Songs on this computer** lists the songs
+here in full, with **Stop downloading** for one you're done with (its files stay until you remove them; nothing
+changes for the band), and **Keep every song on this computer** for the machine that stays on, so new bandmates
+always have somewhere to get a song from. It works through Syncthing's ignore file in the shared folder
+(`.stignore`, never synced: each computer its own); BandSync writes its own block there and leaves any other lines
+alone. Computers that already had songs keep every song they had.
+
 ### Real time mode
 
 Home's **Real time mode** switch: you hear each other as you play (SonoBus, peer to peer), and play, stop and record

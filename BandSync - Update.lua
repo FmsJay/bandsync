@@ -10,6 +10,8 @@ local _, me = reaper.get_action_context()
 local entry = reaper.APIExists("ReaPack_GetOwner") and reaper.ReaPack_GetOwner(me)
 if entry then
   reaper.ReaPack_FreeEntry(entry)
+  -- (GitHub serves the previous index for a minute or so after a release: ReaPack then finds nothing new; Mac, 0.34.6)
+  band.log("updating through ReaPack: if it finds nothing new just after a release, GitHub hasn't caught up yet: press Update again in a minute")
   return reaper.Main_OnCommand(reaper.NamedCommandLookup("_REAPACK_SYNC"), 0) -- ReaPack: Synchronize packages
 end
 

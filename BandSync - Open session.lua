@@ -17,6 +17,7 @@ if b and b.role == "host" then
 end
 
 local function open_song(song, room) -- room: for a new tab (nil when refreshing a bound one)
+  require("songsync").want(cfg, song) -- (only its listing may be here yet: from now on it comes in full)
   local s = band.read_json(band.session_path(cfg, song))
   if not s then return band.msg("Couldn't read session.json for '" .. song .. "' (still syncing?).") end
   band.check_version(s.bandsync, "'" .. song .. "'")

@@ -147,7 +147,10 @@ function chooser.preview(cfg, song, room)
     local here = js and reaper.file_exists(reaper.GetResourcePath() .. "/Effects/" .. js) or (not js and have[require("plugins").key(n)])
     if not here then missing[#missing + 1] = n end
   end
-  local text = string.format("%d tracks, %d MB of audio. ", tonumber(best.tracks) or 0, tonumber(best.media_mb) or 0) ..
+  local ss = require("songsync")
+  local here = ss.keep_all() or ss.wanted(cfg)[song] -- (per-song sync: the rest of a song comes once it's opened)
+  local text = string.format("%d tracks, %d MB of audio%s. ", tonumber(best.tracks) or 0, tonumber(best.media_mb) or 0,
+    here and "" or ", downloaded when you open it") ..
     (#missing == 0 and "Every plug-in it uses loads here." or string.format("%d plug-in(s) it uses aren't on this machine (hover to see).", #missing))
   previews[key] = { text = text, missing = missing }
   return previews[key]

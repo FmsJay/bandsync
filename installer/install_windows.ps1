@@ -238,6 +238,13 @@ $myId = (ST device-id | Select-Object -Last 1).ToString().Trim()
 
 $root = $root.TrimEnd('\', '/')
 New-Item -ItemType Directory -Force $root | Out-Null
+# per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
+# full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
+$ign = Join-Path $root ".stignore"
+if (-not $isHost -and -not ((Test-Path $ign) -and (Select-String -Path $ign -Pattern '^// BandSync end$' -Quiet))) {
+  [IO.File]::AppendAllText($ign, ((@('// BandSync: what this computer downloads (written by BandSync, up to the line below)', '!/_*', '!/plugins', '!/drummaps', '!/*/session.json', '!/*/folder.json', '!/*/live.json', '!/*/invites', '!/*/rooms/*/room.json', '!/*/rooms/*/summary', '!/*/rooms/*/status', '/*/*', '// BandSync end') -join "`n") + "`n")) # (no BOM: PowerShell 5.1's -Encoding UTF8 writes one, and the block's first line then reads as something else)
+  Ok "this computer gets each song in full once it's opened (the rest: their listing)"
+}
 if (-not ((STcli config folders list) -match '^bandsync$')) { STcli config defaults folder path set (Split-Path $root) | Out-Null } # fresh setup only
 $folders = STcli config folders list
 if ($folders -notcontains "bandsync") {

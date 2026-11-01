@@ -48,22 +48,30 @@ function songsync.merge(text, wanted)
 end
 
 -- This machine's choices (persistent ExtState): the songs opened here, and "keep every song".
-local KEY, ALL = "songs here", "songs keep all"
+local KEY, ALL, SEEN = "songs here", "songs keep all", "songs here checked"
 function songsync.keep_all() return reaper.GetExtState(band.SECTION, ALL) ~= "" end
+-- Whether a song is here in more than its listing: any changes, takes, media or stems. (0.34.7 looked at events
+-- only, and an older song with takes but no events, like CompTest, read as not here: James's PC, 2026-11-01.)
+local function here_in_full(cfg, s)
+  local dir = band.song_dir(cfg, s)
+  if #band.subdirs(dir .. "/stems") > 0 then return true end
+  for _, room in ipairs(band.subdirs(dir .. "/rooms")) do
+    for _, part in ipairs({ "events", "takes", "media", "_trash" }) do
+      if #band.files(dir .. "/rooms/" .. room .. "/" .. part) > 0 then return true end
+    end
+  end
+  return false
+end
 function songsync.wanted(cfg)
   local raw = reaper.GetExtState(band.SECTION, KEY)
-  if raw == "" then -- first time: every song already here in full stays (a machine that had everything keeps it)
-    local set = {}
-    for _, s in ipairs(band.songs(cfg)) do
-      for _, room in ipairs(band.subdirs(band.song_dir(cfg, s) .. "/rooms")) do
-        if #band.files(band.song_dir(cfg, s) .. "/rooms/" .. room .. "/events") > 0 then set[s] = true end
-      end
-    end
-    songsync.save(set)
-    return set
-  end
   local set = {}
   for s in raw:gmatch("[^|]+") do set[s] = true end
+  -- once per machine: every song already here in full stays (a machine that had everything keeps it)
+  if reaper.GetExtState(band.SECTION, SEEN) == "" then
+    for _, s in ipairs(band.songs(cfg)) do if here_in_full(cfg, s) then set[s] = true end end
+    songsync.save(set)
+    reaper.SetExtState(band.SECTION, SEEN, "2", true)
+  end
   return set
 end
 function songsync.save(set)

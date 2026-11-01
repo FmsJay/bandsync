@@ -150,6 +150,7 @@ local drive_at, drive_more, drive_said = -math.huge, false, nil
 
 local sizes, last, recording, stopped_at = {}, 0, false, 0
 local paint_at = -math.huge -- when tracks were last coloured for who's working on them
+local claims_at = -math.huge -- when our claims on gone tracks were last looked for (sync.drop_gone_claims)
 local last_status, status_json = 0, ""
 local rt_at = 0 -- when Real time mode's sends were last matched to what's armed
 local heal_since, healed_at = nil, -math.huge -- since when a caught-up bandmate's project has differed (mirror.heal)
@@ -315,6 +316,7 @@ local function poll()
       reaper.DeleteExtState(band.SECTION, "mirror drift last", false)
     end
     if differs and sync.pending_events(proj, cfg, b.song, b.room) == 0 then heal_since = heal_since or now else heal_since = nil end
+    if now - claims_at > 10 then claims_at = now; pcall(sync.drop_gone_claims, proj, cfg, b.song, b.room) end
     if heal_since and now - heal_since > 60 and now - healed_at > 300 and reaper.EnumProjects(-1) == proj then
       healed_at, heal_since = now, nil
       local ok, n = pcall(require("mirror").heal, proj, sync.room_dir(cfg, b.song, b.room), sync.local_mix)

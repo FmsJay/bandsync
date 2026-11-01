@@ -88,6 +88,9 @@ local ok, err = pcall(function()
   local one = true
   for j = 0, reaper.CountTrackMediaItems(va) - 1 do one = one and reaper.CountTakes(reaper.GetTrackMediaItem(va, j)) == 1 end
   check(one, "each lane item has one take")
+  local lanes = {}
+  for l = 0, reaper.GetMediaTrackInfo_Value(va, "I_NUMFIXEDLANES") - 1 do lanes[#lanes + 1] = select(2, reaper.GetSetMediaTrackInfo_String(va, "P_LANENAME:" .. l, "", false)) end
+  check(table.concat(lanes, "|") == "C1|Take 1|Take 2", "the lanes are named C1, Take 1, Take 2 (" .. table.concat(lanes, "|") .. ")")
   recv(pb, B)
   local vb = reaper.GetTrack(pb, 1)
   check(vb and reaper.CountTrackMediaItems(vb) == reaper.CountTrackMediaItems(va) and reaper.GetMediaTrackInfo_Value(vb, "I_NUMFIXEDLANES") == reaper.GetMediaTrackInfo_Value(va, "I_NUMFIXEDLANES"),
@@ -95,6 +98,14 @@ local ok, err = pcall(function()
   local nb = sent("James")
   watch(pb, B, yes, { Laptop = true })
   check(sent("James") == nb, "and doesn't explode or send anything of his own")
+  -- a claim on a track that's gone is let go by its owner (once caught up, and missing a while)
+  sync.set_claims(A, song, room, { tracks = { "Keys", "Gone Track" }, regions = {}, times = {}, prints = { "Gone Track" } })
+  sync.GONE_WAIT = 0
+  reaper.SelectProjectInstance(pa)
+  sync.drop_gone_claims(pa, A, song, room); sync.drop_gone_claims(pa, A, song, room)
+  sync.GONE_WAIT = 30
+  local mc = sync.my_claims(A, song, room)
+  check(#mc.tracks == 1 and mc.tracks[1] == "Keys" and #mc.prints == 0, "a claim on a track that's gone is dropped, the rest kept (" .. table.concat(mc.tracks, ",") .. ")")
   -- a JSFX that isn't on this machine: REAPER keeps an empty stand-in, not offline (Mac, 0.39.1: a silent print)
   reaper.SelectProjectInstance(pb)
   reaper.InsertTrackInProject(pb, 2, 0)

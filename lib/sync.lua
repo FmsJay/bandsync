@@ -221,6 +221,39 @@ function sync.my_claims(cfg, song, room)
   if reaper.file_exists(path) then return nil, "your claims file is busy (syncing?): try again in a moment" end
   return { tracks = {}, regions = {}, times = {} }
 end
+-- Claims on tracks that are gone (deleted, or renamed): James, 2026-11-01, "automatically remove claims on deleted
+-- tracks" (a claim on the Mac's deleted Scratch Mac stayed listed). Each machine drops its own (a claims file has
+-- one writer), once it has caught up with the band and the track has been missing 30 s: a machine still catching up
+-- may not have every track yet. Someone else's waits for them; the panel doesn't list it meanwhile. Returns how many.
+sync.GONE_WAIT = 30 -- seconds a claimed track must stay missing
+local missing_since = {} -- "tracks:<lower name>" -> when it was first missing here
+function sync.drop_gone_claims(proj, cfg, song, room)
+  if sync.pending_events(proj, cfg, song, room) ~= 0 or reaper.CountTracks(proj) == 0 then return 0 end
+  local c = sync.my_claims(cfg, song, room)
+  if not c then return 0 end
+  local here = {}
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    here[base_name(select(2, reaper.GetTrackName(reaper.GetTrack(proj, i)))):lower()] = true
+  end
+  local now, dropped = reaper.time_precise(), {}
+  for _, k in ipairs({ "tracks", "prints" }) do
+    local keep = {}
+    for _, n in ipairs(c[k] or {}) do
+      local key = k .. ":" .. n:lower()
+      if here[n:lower()] then missing_since[key] = nil; keep[#keep + 1] = n
+      else
+        missing_since[key] = missing_since[key] or now
+        if now - missing_since[key] < sync.GONE_WAIT then keep[#keep + 1] = n else dropped[#dropped + 1] = n end
+      end
+    end
+    c[k] = keep
+  end
+  if #dropped == 0 then return 0 end
+  sync.set_claims(cfg, song, room, c)
+  band.log("let go of your claim on " .. table.concat(dropped, ", ") .. ": no such track any more")
+  return #dropped
+end
+
 function sync.set_claims(cfg, song, room, claims)
   local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
   -- each track/region keeps the date it was claimed: claiming something else later mustn't re-date (and so win

@@ -510,8 +510,11 @@ local function section_drive()
   end
 end
 local function section_claims()
-  local owned = {}
-  for name, c in pairs(who.tracks) do owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
+  local owned, here = {}, {} -- (a claim on a track that isn't there isn't listed: its owner drops it, sync.drop_gone_claims)
+  for i = 0, reaper.CountTracks(proj) - 1 do here[sync.base_name(select(2, reaper.GetTrackName(reaper.GetTrack(proj, i)))):lower()] = true end
+  for name, c in pairs(who.tracks) do
+    if here[name] then owned[#owned + 1] = { string.format("track %s: %s", c.name or name, c.user), c.user == cfg.user and "tracks", c.name or name } end
+  end
   for name, c in pairs(who.regions) do owned[#owned + 1] = { string.format("region %s: %s", c.name or name, c.user), c.user == cfg.user and "regions", c.name or name } end
   for _, t in ipairs(who.times or {}) do
     owned[#owned + 1] = { string.format("%s: %s", bar_span(t.from, t.to), t.user), t.user == cfg.user and "times", t }

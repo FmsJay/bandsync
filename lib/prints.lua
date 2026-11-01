@@ -477,6 +477,11 @@ function prints.takes_to_lanes(proj, mine)
       for s = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, s) end
       reaper.SetOnlyTrackSelected(tr)
       reaper.Main_OnCommand(42636, 0) -- Take: Explode takes on selected tracks to fixed lanes and add comp areas from active takes
+      local n = 0 -- (the take lanes come out "1" and unnamed: "Take 1", "Take 2"...; the comp lane stays "C1")
+      for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
+        local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "", false))
+        if name == "" or name:match("^%d+$") then n = n + 1; reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "Take " .. n, true) end
+      end
       reaper.SetTrackSelected(tr, false)
       for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaTrack*") then reaper.SetTrackSelected(s, true) end end
       band.log("the takes on " .. select(2, reaper.GetTrackName(tr)) .. " became lanes (the takes you picked stay the comp)")

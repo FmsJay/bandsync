@@ -387,6 +387,14 @@ local function poll()
       if ok then moved, more = moved + n, more or m
       elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
     end
+    if not more then -- then the other songs here, one a pass: each keeps a copy a bandmate can open from Drive
+      local ss = require("songsync")
+      local songs = ss.keep_all() and band.songs(cfg) or {}
+      if not ss.keep_all() then for s in pairs(ss.wanted(cfg)) do songs[#songs + 1] = s end; table.sort(songs) end
+      local ok, n, m = pcall(drive.upkeep, cfg, droot, songs, b.song, 1.0)
+      if ok then moved, more = moved + n, more or m
+      elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
+    end
     pcall(require("sessionfile").catch_up, b.song, 1.0) -- your recordings the end-of-session projects use
     if more and not drive_more then band.log("Google Drive: bringing the band's copy of this room up to date (carries on between passes)") end
     if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end

@@ -111,7 +111,23 @@ function drive.trashed(events)
   return out
 end
 
-local seen_events = {} -- path -> { type, take, time, id } (events are written once, so read once)
+-- Whose each recording in a room's media folder is: the author of the first change that used it (a recording's file
+-- is named by REAPER, not after anyone, so the name can't say; later changes by others only move it). Media used
+-- from another room's folder is that room's. `events` = { {user, time, id, media = { {room, file} }} }. Pure.
+function drive.media_owners(events, room)
+  local first = {}
+  for _, ev in ipairs(events) do
+    local key = (ev.time or "") .. (ev.id or "")
+    for _, m in ipairs(ev.media or {}) do
+      if m[1] == room and ev.user and (not first[m[2]] or key < first[m[2]].key) then first[m[2]] = { key = key, user = ev.user } end
+    end
+  end
+  local out = {}
+  for f, v in pairs(first) do out[f] = v.user end
+  return out
+end
+
+local seen_events = {} -- path -> { type, take, time, id, user, media } (events are written once, so read once)
 local function read_events(dir)
   local out = {}
   for _, f in ipairs(band.files(dir, ".json")) do
@@ -119,7 +135,11 @@ local function read_events(dir)
     local e = seen_events[p]
     if not e then
       local ev = band.read_json(p)
-      e = ev and { type = ev.type, take = ev.take, time = ev.time, id = ev.id } or false
+      e = ev and { type = ev.type, take = ev.take, time = ev.time, id = ev.id, user = ev.user } or false
+      if e and type(ev.state) == "string" then -- (an item's chunk: the recordings it plays)
+        e.media = {}
+        for room, rel in ev.state:gmatch('FILE "{media:([^}]+)}/([^"]+)"') do e.media[#e.media + 1] = { room, rel } end
+      end
       if e then seen_events[p] = e end
     end
     if e then out[#out + 1] = e end
@@ -160,6 +180,18 @@ local function tidy(dir)
   for _, f in ipairs(gone) do os.remove(dir .. "/" .. f) end
 end
 
+-- Changes the history trim took out of the room (lib/trim.lua lists them in trimmed/): Drive's copy still has them.
+local seen_trims = {} -- path -> its list (written once)
+local function trimmed(dir)
+  local out = {}
+  for _, f in ipairs(band.files(dir, ".json")) do
+    local p = dir .. "/" .. f
+    seen_trims[p] = seen_trims[p] or band.read_json(p) or nil
+    for _, id in ipairs(type(seen_trims[p]) == "table" and seen_trims[p] or {}) do out[tostring(id) .. ".json"] = true end
+  end
+  return out
+end
+
 local function into_trash_index(dir, f)
   local idx = band.read_json(dir .. "/index.json") or {}
   if not idx[f] then idx[f] = os.date("!%Y-%m-%d"); band.write_json(dir .. "/index.json", idx) end
@@ -176,13 +208,21 @@ function drive.mirror(here, there, budget, user, wait)
     n = n + 1
   end
   -- written once: whatever's missing goes across
-  for _, sub in ipairs({ "events", "recall", "midi", "media" }) do -- (media: recordings and prints the items use)
+  local events = read_events(here .. "/events")
+  local owners = drive.media_owners(events, here:match("([^/]+)$"))
+  for _, sub in ipairs({ "trimmed", "events", "recall", "midi", "media" }) do -- (media: recordings and prints the items use)
     local A, B = band.files(here .. "/" .. sub), band.files(there .. "/" .. sub)
     local inA, inB = {}, {}
     for _, f in ipairs(A) do inA[f] = true end
     for _, f in ipairs(B) do inB[f] = true end
+    if sub == "events" then -- trimmed: not brought back from Drive, and gone from it once whoever made them sees that
+      for f in pairs(trimmed(here .. "/trimmed")) do -- ("trimmed" goes first: a list may have just come from Drive)
+        inA[f], inB[f] = true, true
+        if mine(f, user) and reaper.file_exists(there .. "/events/" .. f) then os.remove(there .. "/events/" .. f) end
+      end
+    end
     for _, f in ipairs(A) do
-      if not inB[f] and due(here .. "/" .. sub .. "/" .. f, f, user, wait) then
+      if not inB[f] and (sub == "media" and owners[f] == user or due(here .. "/" .. sub .. "/" .. f, f, user, wait)) then
         if out_of_time() then return n, true end
         copy(here .. "/" .. sub .. "/" .. f, there .. "/" .. sub .. "/" .. f)
       end
@@ -204,7 +244,7 @@ function drive.mirror(here, there, budget, user, wait)
   end
   -- takes: each file where it belongs, on both sides
   tidy(there .. "/takes"); tidy(there .. "/_trash")
-  local trashed = drive.trashed(read_events(here .. "/events"))
+  local trashed = drive.trashed(events)
   local where = {} -- name -> { [side .. "/" .. sub] = true }
   local cur_rev, newest, mrev = {}, {}, {} -- per take: newest manifest's revision and path; per manifest path: its revision
   for _, side in ipairs({ here, there }) do
@@ -255,6 +295,27 @@ function drive.mirror(here, there, budget, user, wait)
     end
   end
   return n, false
+end
+
+-- Every song here in full keeps its copy on Drive, not only the one open (James, 2026-11-01): a song a bandmate
+-- made can then be opened when nobody who has it is online, since opening a song brings its rooms from Drive
+-- (Live sync's pass for the open song). One song a pass, in turn, carried on while it has work left. `songs`: the
+-- songs here in full; `skip`: the open one (its own pass). Returns files copied, whether that song has more, and it.
+local turn = { i = 0 }
+function drive.upkeep(cfg, droot, songs, skip, budget)
+  local list = {}
+  for _, s in ipairs(songs) do if s ~= skip then list[#list + 1] = s end end
+  if #list == 0 then return 0, false end
+  if not turn.more or not list[turn.i] then turn.i = turn.i % #list + 1 end
+  local song, t0, n, more = list[turn.i], reaper.time_precise(), 0, false
+  for _, room in ipairs(band.subdirs(band.song_dir(cfg, song) .. "/rooms")) do
+    local left = (budget or 1) - (reaper.time_precise() - t0)
+    if left <= 0 then more = true; break end
+    local k, m = drive.mirror(band.song_dir(cfg, song) .. "/rooms/" .. room, droot .. "/" .. song .. "/rooms/" .. room, left, cfg.user)
+    n, more = n + k, more or m
+  end
+  turn.more = more
+  return n, more, song
 end
 
 return drive

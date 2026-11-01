@@ -42,7 +42,8 @@ writes it:
 - **The machine that stays on** (the host) can choose "keep every song", so new members always have a source.
 
 Limits to know:
-- A song arrives only from a bandmate who has it and is online (or from the Drive copy, already in place).
+- A song arrives from a bandmate who has it and is online, and from the Drive copy (every machine keeps its own part
+  of every song it has in full there, so a song opens even when nobody who has it is online).
 - Syncthing rescans after an ignore change; the first pull of a big song takes as long as its audio does.
 
 ## Order of work

@@ -33,4 +33,13 @@ assert(root == nil and missing == nil, "no Google Drive at all")
 local mac = "/Users/x/Library/CloudStorage/GoogleDrive-b@y.com/My Drive"
 root = drive.find({ "G:/My Drive", mac }, subdirs, function(p) return p == mac .. "/BandSync" end)
 assert(root == mac .. "/BandSync", "the shortcut, though no listing shows it")
+-- whose a recording is: the first change that used it, in its own room
+local owners = drive.media_owners({
+  { user = "Laptop", time = "2026-11-01T02:00:00Z", id = "b", media = { { "main", "rec1.flac" }, { "main", "rec2.flac" } } },
+  { user = "James", time = "2026-11-01T01:00:00Z", id = "a", media = { { "main", "rec1.flac" } } },
+  { user = "Mac", time = "2026-11-01T00:00:00Z", id = "c", media = { { "side", "rec3.flac" } } },
+  { user = "Mac", time = "2026-11-01T00:00:00Z", id = "d" },
+}, "main")
+assert(owners["rec1.flac"] == "James" and owners["rec2.flac"] == "Laptop", "the first user's, whoever moved it later")
+assert(owners["rec3.flac"] == nil, "another room's recording isn't this room's to send")
 print("ok")

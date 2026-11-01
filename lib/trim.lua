@@ -69,10 +69,16 @@ function trim.run(cfg, song, room, days)
   local root = cfg.root:gsub("[/\\]+$", "")
   local archive = (root:match("^(.*)[/\\][^/\\]+$") or root) .. "/BandSync history archive/" .. song .. "/" .. room
   reaper.RecursiveCreateDirectory(archive, 0)
-  local n = 0
+  local n, took = 0, {}
   for _, id in ipairs(gone) do
     local from, to = dir .. "/" .. id .. ".json", archive .. "/" .. id .. ".json"
-    if os.rename(from, to) or (band.copy_atomic and band.copy_atomic(from, to) and os.remove(from)) then n = n + 1 end
+    if os.rename(from, to) or (band.copy_atomic and band.copy_atomic(from, to) and os.remove(from)) then n, took[#took + 1] = n + 1, id end
+  end
+  -- what went, for the band: the Google Drive copy still has these, and would bring them back (lib/drive.lua)
+  if #took > 0 then
+    local list = dir:gsub("/events$", "/trimmed")
+    reaper.RecursiveCreateDirectory(list, 0)
+    band.write_json(list .. "/" .. cfg.user:gsub("[^%w%-_]", "_") .. "-" .. os.date("!%Y%m%d-%H%M%S") .. ".json", took)
   end
   return n
 end

@@ -44,6 +44,9 @@ local ok, err = pcall(function()
   check(n > 0 and after == before - n, "trimmed files left the events folder")
   local archive = base:match("^(.*)/[^/]+$") .. "/BandSync history archive/" .. song .. "/" .. room
   check(#band.files(archive, ".json") == n, "and every one is in the archive")
+  local lists = band.files(sync.room_dir(A, song, room) .. "/trimmed", ".json")
+  local listed = #lists == 1 and band.read_json(sync.room_dir(A, song, room) .. "/trimmed/" .. lists[1]) or {}
+  check(#listed == n, "and listed for the band in trimmed/, so the Drive copy doesn't bring them back (" .. #listed .. ")")
   -- the newest change of each item, and the saved version's moment, are still there
   local pt = recall.list(A, song, room)[1]
   local kept_at = {}

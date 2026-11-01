@@ -135,7 +135,7 @@ end
 -- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
 -- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
 -- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
-mirror.HV = 3 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
+mirror.HV = 4 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
 mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", M = "misc", I = "item" } -- (an oid's first letter)
 mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends", misc = "the groups, lock, input FX or note names" }
 mirror.PARTS = { "F", "E", "R", "M" } -- (what a track oid T-x carries: F-x, E-x, R-x, M-x)
@@ -492,7 +492,19 @@ end
 
 -- Track settings that travel, as one line (order matters only for hashing). Faders and pan always travel, but with
 -- Local mixing on they aren't a change here. Never: record arm, input, monitoring, height, selection.
-function mirror.track_hash(t, local_mix) return mirror.hash(mirror.track_line(t, local_mix) .. "|" .. (t.after or "")) end
+-- `colour` (tests and re-anchoring): whether the colour counts; by default it does unless SWS colours tracks here.
+function mirror.track_hash(t, local_mix, colour) return mirror.hash(mirror.track_line(t, local_mix, colour) .. "|" .. (t.after or "")) end
+-- Does SWS auto-colouring colour tracks on this machine? Then its track colours are its own: not a change, and not
+-- sent (its rules would recolour whatever the band set, and sending them made machines recolour each other).
+local auto_colour = { at = -math.huge }
+function mirror.own_colours()
+  if not reaper.NamedCommandLookup then return false end
+  if reaper.time_precise() - auto_colour.at > 1 then
+    local id = reaper.NamedCommandLookup("_SWSAUTOCOLOR_ENABLE")
+    auto_colour.at, auto_colour.on = reaper.time_precise(), id > 0 and reaper.GetToggleCommandState(id) == 1
+  end
+  return auto_colour.on
+end
 -- More of a track's settings, as { field, REAPER parameter }: the FX button, channels, the parent/master send and
 -- its channels, timebase, playback offset, solo defeat, lane settings and pan law; MIX ones follow Local mixing.
 mirror.TRACK_MORE = { { "fxen", "I_FXEN" }, { "nchan", "I_NCHAN" }, { "mainsend", "B_MAINSEND" }, { "msoffs", "C_MAINSEND_OFFS" },
@@ -500,13 +512,13 @@ mirror.TRACK_MORE = { { "fxen", "I_FXEN" }, { "nchan", "I_NCHAN" }, { "mainsend"
   { "solodefeat", "B_SOLO_DEFEAT" }, { "lanesettings", "C_LANESETTINGS" }, { "panlaw", "D_PANLAW" }, { "panlawflags", "I_PANLAW_FLAGS" } }
 mirror.TRACK_MIX = { { "width", "D_WIDTH" }, { "panmode", "I_PANMODE" }, { "dualpanl", "D_DUALPANL" }, { "dualpanr", "D_DUALPANR" } }
 
-function mirror.track_line(t, local_mix)
-  -- (colour isn't part of it: it travels with a real change, but auto-colouring (SWS) recolours new tracks on every
-  -- machine, and counting that as a change made machines recolour each other)
+function mirror.track_line(t, local_mix, colour)
   local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, "", t.phase or 0, t.icon or "", -- ("": solo is each person's own)
     t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, local_mix and "" or (t.vol or ""), local_mix and "" or (t.pan or "") }
   for _, kp in ipairs(mirror.TRACK_MORE) do f[#f + 1] = t[kp[1]] or "" end
   for _, kp in ipairs(mirror.TRACK_MIX) do f[#f + 1] = local_mix and "" or (t[kp[1]] or "") end
+  if colour == nil then colour = not mirror.own_colours() end
+  if colour then f[#f + 1] = t.color or 0 end -- (left off, not blank, when it doesn't count: the line from before 0.36)
   for i, v in ipairs(f) do f[i] = tostring(v):gsub("|", "/") end
   return table.concat(f, "|")
 end
@@ -574,7 +586,7 @@ function mirror.track_state(proj, tr, local_mix)
     depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH"), mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
     solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), phase = reaper.GetMediaTrackInfo_Value(tr, "B_PHASE"),
     color = require("band").color_out(reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR")), icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false)),
-    freemode = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE"), lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES"),
+    autocolour = mirror.own_colours() or nil, freemode = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE"), lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES"),
     collapsed = reaper.GetMediaTrackInfo_Value(tr, "C_LANESCOLLAPSED") }
   local plays, names = {}, {}
   for l = 0, t.lanes - 1 do
@@ -602,7 +614,7 @@ function mirror.set_track_state(proj, tr, t, local_mix)
       { "phase", "B_PHASE" }, { "collapsed", "C_LANESCOLLAPSED" }, { "depth", "I_FOLDERDEPTH" } }) do
     if t[kp[1]] then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]]) or 0) end
   end
-  if t.color then reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", require("band").color_in(t.color)) end
+  if t.color and not t.autocolour then reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", require("band").color_in(t.color)) end
   reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", t.icon or "", true)
   local l = 0
   for v in ((t.plays or "") .. ","):gmatch("([^,]*),") do
@@ -642,6 +654,7 @@ end
 -- Copies (Ctrl+drag, paste, duplicate track) carry their source's oid. Whichever of them REAPER's own GUID shows to
 -- be the one this machine already knew keeps the oid, wherever it sits (a copy placed before its source must not take
 -- it: the source would then look new and be put back); the others become new objects. Returns the oid per entry.
+mirror.CSEC = "BandSync.colours" -- "colours" = "own" (SWS auto-colours tracks here) or "band": as of the last look
 mirror.GSEC = "BandSync.mirrorg" -- oid -> REAPER GUID of the object holding it here (this machine's own)
 local function settle_ids(proj, list, kind, user, set_oid)
   local keeper, matched, c, held = {}, {}, ids(proj), {}
@@ -1081,7 +1094,9 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
   -- applied, but it isn't what they have: the projects differ (only when made the same way: a change from an older
   -- BandSync hashed fewer of a track's settings, so it always reads as different; the laptop saw 4 on its first open)
-  if ok and ev.hash and ev.hv == mirror.HV and h ~= ev.hash and not ev.gone then
+  -- (nor when the colour counts on one machine and not the other: SWS auto-colouring)
+  local same_way = ev.obj ~= "track" or type(ev.state) ~= "table" or (ev.state.autocolour == true) == (mirror.own_colours() == true)
+  if ok and ev.hash and ev.hv == mirror.HV and same_way and h ~= ev.hash and not ev.gone then
     local band = require("band")
     local n = (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) + 1
     reaper.SetExtState(band.SECTION, "mirror drift " .. tostring(proj), tostring(n), false)
@@ -1223,6 +1238,8 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- marked unsent, so the band's changes to it wait too. `mirror.more`: there's more to send.
   local t_send = reaper.time_precise()
   mirror.more = false
+  local scheme = mirror.own_colours() and "own" or "band" -- (whether track colours count here, per project: see below)
+  local rescheme = select(2, reaper.GetProjExtState(proj, mirror.CSEC, "colours")) ~= scheme
   for _, o in ipairs(objs) do
     seen[o.oid] = true
     local ok, err = pcall(function()
@@ -1236,6 +1253,14 @@ function mirror.watch(proj, cfg, song, room, opts)
         mirror.anchor_seen[rk .. "\0" .. h] = true
         local ev = event_file(room_dir, evid)
         if ev and ev.hash == o.hash then remember(proj, o.oid, rev, o.hash, evid, kord); return end
+        -- the colour has just started or stopped counting here (before 0.36 it never did; SWS auto-colouring switched
+        -- on or off): a track that differs from the band's version only in colour isn't a change of ours either
+        local function sans_colour(t) -- (through JSON both, as the event's was: REAPER's 0.0 reads back as 0)
+          return mirror.track_hash(band.json_decode(band.json_encode(t)), opts.local_mix, false)
+        end
+        if o.kind == "track" and rescheme and ev and type(ev.state) == "table" and sans_colour(ev.state) == sans_colour(o.state) then
+          remember(proj, o.oid, rev, o.hash, evid, kord); return
+        end
       end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
         say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
@@ -1385,6 +1410,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     if not ok then say_once("err" .. g.oid, "mirror sync skipped " .. g.oid .. ": " .. tostring(err)) end
   end
   mirror.save_ids(proj)
+  if rescheme and not mirror.more then reaper.SetProjExtState(proj, mirror.CSEC, "colours", scheme) end
   mirror.summary(proj, cfg, room_dir, objs, media)
   return sent, back
 end

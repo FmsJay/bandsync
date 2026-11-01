@@ -266,7 +266,10 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
   says so: yours is still on the Restore page (*Undo* on theirs brings it back).
 - **The Google Drive copy** (Setup > Options): Syncthing only moves files while two machines are on at the same time.
   Live sync also keeps a copy of the room on Google Drive (store and forward), so what someone does alone reaches the
-  others even if you're never online together.
+  others even if you're never online together. Every song on your computer in full keeps its Drive copy (your
+  changes and recordings; the others' come from their machines), one song at a time in the background. Opening a
+  song that's only listed here brings it from Drive as well as from bandmates, so it opens even when nobody who has it
+  is online. What the history trim took out stays out of the Drive copy too.
 
 ### Bands
 
@@ -343,7 +346,9 @@ on Windows and 350 MB on a Mac): Surge XT (synth + effects, GPL-3), Dexed (FM sy
 (MIT), Dragonfly Reverb (GPL-3), Chow Tape Model (GPL-3), BYOD (guitar and bass amps, tuner; GPL-3), ZL Equalizer 2
 and ZL Compressor (AGPL-3), ChowMatrix (delay, BSD-3), and through ReaPack the JSFX of Saike and Chokehold (MIT) and
 chmaha's *DSP to JSFX* (the effects and instruments REAPER 7.83 bundled and 7.84 removed: drum kits, piano and
-e-piano, organ, channel strip...; GPL-3 with MIT/AGPL parts).
+e-piano, organ, channel strip...; GPL-3 with MIT/AGPL parts). On Windows the plug-ins with a setup program install
+together at the end without their setup windows, and Windows asks for permission once (say no and each one's own
+setup opens instead).
 
 **Extras** (a second question, about 820 MB on Windows, 880 MB on a Mac, most of it the piano): Neural Amp Modeler
 0.7.13 and AIDA-X (amp capture players), Odin 2 (synth), and the Salamander Grand piano (SFZ) with sforzando to play
@@ -395,8 +400,8 @@ tracks twice.
   plug-in a bandmate doesn't have stays in their copy as offline, its settings kept (see Plugins: translations).
 - Prints render through the item's track (not parent folders or sends) and only on a machine where all of that
   track's plug-ins load; rendering shows REAPER's render window for a moment (REAPER has no background render).
-- Track colours travel with a real change but aren't a change on their own (auto-colouring would make machines
-  recolour each other). Automation items arrive as items of their own (pooled ones aren't pooled on the other side).
+- Track colours travel, unless SWS auto-colouring is switched on on that computer (Extensions > Auto Color/Icon/Layout):
+  then its colours are its own, so they aren't sent and its rules don't recolour the band's tracks elsewhere. Automation items arrive as items of their own (pooled ones aren't pooled on the other side).
 - Sends to and from a track that only exists on your machine (Real time, live views) stay yours; hardware
   outputs, record arm, inputs and monitoring stay yours too.
 - Not synced, on purpose: render, metronome and recording settings, and the master fader (each person's own).

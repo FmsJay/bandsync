@@ -21,7 +21,7 @@ the same project.
   unpooled), MIDI editor view state (`CFGEDITVIEW`, `CFGEDIT`, `EVTFILTER`, `KEYSNAP`, `TRACKSEL`), the active-take
   marker (wet/dry is per machine). Media paths are rewritten to `{room}/media/<file>`; recordings are copied there
   once (FLAC), receivers resolve the token to their shared folder.
-- **Track**: name, folder depth, order (oid of the track above), mute/solo/phase, colour/icon, lanes
+- **Track**: name, folder depth, order (oid of the track above), mute/solo/phase, colour (not where SWS auto-colours tracks)/icon, lanes
   (`I_FREEMODE`, `I_NUMFIXEDLANES`, `C_LANEPLAYS:n`, lane names, `C_LANESCOLLAPSED`), envelopes (later), and
   fader/pan unless the person has **Local mixing** on. Never: record arm, input, monitoring, height, selection.
 - **FX chain**: the `<FXCHAIN>` block minus `FXID`/`FLOATPOS`/`WNDRECT`/`SHOW`, sent only when its hash changes

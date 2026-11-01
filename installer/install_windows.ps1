@@ -130,6 +130,34 @@ function Release-Asset($repo, $pattern, $tag) {
   $api = if ($tag) { "https://api.github.com/repos/$repo/releases/tags/$tag" } else { "https://api.github.com/repos/$repo/releases/latest" }
   try { (Invoke-RestMethod $api -UseBasicParsing).assets | Where-Object { $_.name -match $pattern } | Select-Object -First 1 } catch { $null }
 }
+# Every plug-in installer here that opens a wizard is an Inno Setup one (2026-11-01: Dexed, Airwindows, Chow Tape,
+# BYOD, ChowMatrix, NAM, AIDA-X, Odin 2). Those run without their windows, all at the end in one go, so Windows asks
+# for permission once instead of once each. Any other installer opens its own windows as before.
+$script:Quiet = @()
+function Is-Inno($exe) { try { (Get-Item -LiteralPath $exe).VersionInfo.Comments -match 'Inno Setup' } catch { $false } }
+function Run-Installer($name, $exe, $have) {
+  if (Is-Inno $exe) { $script:Quiet += @{ name = $name; exe = $exe; have = $have }; return $true }
+  Say "  $name's own installer opens: click through it (the defaults are fine)."
+  Start-Process $exe -Wait
+  return $false
+}
+function Install-Quiet {
+  if ($script:Quiet.Count -eq 0) { return }
+  Say "Installing $($script:Quiet.Count) plug-in(s) without their setup windows: Windows asks for permission once."
+  $run = ($script:Quiet | ForEach-Object { "Start-Process -Wait -FilePath '$($_.exe -replace "'", "''")' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-'" }) -join "; "
+  $asked = $true
+  try { Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList @("-NoProfile", "-Command", $run) } catch { $asked = $false }
+  foreach ($q in $script:Quiet) {
+    $there = @($q.have | Where-Object { Test-Path $_ }).Count -gt 0
+    if (-not $there -and -not $asked) { # (permission declined: each one's own installer, as before)
+      Say "  $($q.name)'s own installer opens: click through it (the defaults are fine)."
+      Start-Process $q.exe -Wait
+      $there = @($q.have | Where-Object { Test-Path $_ }).Count -gt 0
+    }
+    if ($there) { Ok "$($q.name) installed" } else { Warn "$($q.name) : not found where expected afterwards ($($q.have -join ' or ')); check it in REAPER's FX browser" }
+  }
+  $script:Quiet = @()
+}
 function Install-Plugin($name, $repo, $pattern, $tag, $have) {
   if ($NoApps) { return }
   # ($have: one place or several where it lands, wildcards allowed)
@@ -141,8 +169,7 @@ function Install-Plugin($name, $repo, $pattern, $tag, $have) {
   Say "Downloading $name ($($a.name)) ..."
   try { Invoke-WebRequest $a.browser_download_url -OutFile $file -UseBasicParsing } catch { Warn "$name didn't download: $_"; return }
   if ($file -match '\.exe$') {
-    Say "  $name's own installer opens: click through it (the defaults are fine)."
-    Start-Process $file -Wait
+    if (Run-Installer $name $file $have) { return } # (later, with the others: Install-Quiet)
   } elseif ($file -match '\.msi$') {
     Say "  $name's installer runs (it may ask for permission)."
     Start-Process msiexec -ArgumentList "/i `"$file`" /passive" -Wait
@@ -156,10 +183,7 @@ function Install-Plugin($name, $repo, $pattern, $tag, $have) {
     $vst3 | ForEach-Object { Copy-Item $_.FullName (Join-Path $fx $_.Name) -Recurse -Force }
     # a zip holding the plug-in's own installer instead (Neural Amp Modeler 0.7.13: "NeuralAmpModeler Installer.exe")
     $exe = Get-ChildItem $x -Recurse -Filter *.exe | Select-Object -First 1
-    if ($vst3.Count -eq 0 -and $exe) {
-      Say "  $name's own installer opens: click through it (the defaults are fine)."
-      Start-Process $exe.FullName -Wait
-    }
+    if ($vst3.Count -eq 0 -and $exe -and (Run-Installer $name $exe.FullName $have)) { return } # (its folder stays until then)
     Remove-Item $x -Recurse -Force -ErrorAction SilentlyContinue
   }
   if (& $there) { Ok "$name installed" } else { Warn "$name : not found where expected afterwards ($($have -join ' or ')); check it in REAPER's FX browser" }
@@ -194,6 +218,7 @@ if ($wantPlugins) {
       } catch { Warn "the piano didn't download: $_" }
     }
   }
+  Install-Quiet
   Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the band's 'everyone has' list only takes them after a restart)"
 }
 

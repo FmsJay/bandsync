@@ -110,6 +110,20 @@ local ok, err = pcall(function()
   check(did2 and back and reaper.time_precise() - t3 < 0.5 and d3 == n_done and f3 == n_failed and not require("bgrender").waiting(),
     string.format("going back to what was printed reuses that print at once (%.2f s, nothing rendered)", reaper.time_precise() - t3))
   check(twos == 0 and reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(select(2, prints.takes(it))), "") == wpath, "the same file, no \"-2\" copies")
+  -- a bandmate's print of a state is as good as ours: put the laptop's in, go to that state, it goes in at once
+  reaper.SetMediaItemTakeInfo_Value(dry, "D_VOL", 0.25)
+  local h4 = prints.audio_source(it, dry, "fxhash")
+  local theirs = media .. "/print-I-JAMES-20261101000000-1-" .. h4 .. "-Laptop.flac"
+  band.copy_atomic(wpath, theirs)
+  local d4, f4 = require("bgrender").counts()
+  local t4 = reaper.time_precise()
+  local got = prints.refresh(pa, it, media, "fxhash", nil, cfg)
+  local d5, f5 = require("bgrender").counts()
+  check(got and d5 == d4 and f5 == f4 and not require("bgrender").waiting() and
+    reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(select(2, prints.takes(it))), ""):match("[^/\\]*$") == theirs:match("[^/\\]*$"),
+    string.format("a bandmate's print of the same state goes in at once, not rendered again (%.2f s)", reaper.time_precise() - t4))
+  reaper.SetMediaItemTakeInfo_Value(dry, "D_VOL", vol)
+  prints.refresh(pa, it, media, "fxhash", nil, cfg)
   -- the other track: everyone has its plug-in, so no print, and nothing renders
   check(not prints.refresh(pa, other, media, "fxhash2", nil, cfg) and not require("bgrender").busy() and reaper.CountTakes(other) == 1, "no print where everyone has the plug-ins")
   -- playing the wet take: the track's FX held off here, and the band still sees them on

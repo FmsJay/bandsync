@@ -232,7 +232,14 @@ function prints.render(oid, name, out, tracks, render)
   -- already printed: a print's name says what it was made from and who rendered it, so going back to a state it had
   -- (an undo, a note put back) finds its print here. Rendered again, its file (still open in REAPER) couldn't be
   -- replaced, so the background print was dropped and rendered in front as "-2" (laptop, 0.40.0).
+  -- Anyone's print of it will do (the same item and source: "print-<oid>-<hash>-<who>"), ours first: going back to the
+  -- laptop's state rendered the PC's own copy of it (PC, 0.40.1).
   if reaper.file_exists(out .. "/" .. name .. ".flac") then return out .. "/" .. name .. ".flac" end
+  local base = name:match("^(print%-.+%-%x%x%x%x%x%x%x%x)%-") or name
+  for _, f in ipairs(band.files(out, ".flac")) do
+    local rest = f:sub(#base + 1)
+    if f:sub(1, #base) == base and (rest == ".flac" or rest:sub(1, 1) == "-") then return out .. "/" .. f end
+  end
   local bg = require("bgrender")
   if bg.on() then
     local path, state = bg.claim(oid, name, out)

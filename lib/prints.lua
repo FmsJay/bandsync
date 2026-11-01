@@ -34,6 +34,13 @@ local function has_instrument(tr)
   end
   return false
 end
+-- A print's file name: the item, what it was made from, and who rendered it. Two machines rendering the same item
+-- made one name with different bytes, and on Windows Syncthing can't replace a file REAPER has open, so it retried
+-- for good (laptop, 0.35.6).
+local function print_name(oid, h)
+  local who = (reaper.GetExtState(band.SECTION, "user"):gsub("[^%w%-_]", "_"))
+  return "print-" .. (oid ~= "" and oid or "item") .. "-" .. h .. (who ~= "" and ("-" .. who) or "")
+end
 function prints.route(tr)
   if has_instrument(tr) then return nil end
   for s = 0, reaper.GetTrackNumSends(tr, 0) - 1 do
@@ -41,6 +48,27 @@ function prints.route(tr)
     local midi = math.floor(reaper.GetTrackSendInfo_Value(tr, 0, s, "I_MIDIFLAGS")) & 31 ~= 31 -- (31: MIDI off)
     if dest and midi and reaper.GetTrackSendInfo_Value(tr, 0, s, "B_MUTE") == 0 and has_instrument(dest) then return dest end
   end
+end
+
+-- The send from a routed MIDI track to its instrument carries MIDI only, when the track has no audio of its own:
+-- with the print playing (Wet), a send carrying audio took it into the instrument too, which passed it on, and the
+-- band heard it twice, 6 dB hot (laptop, 0.35.6). It goes to the band like any routing change. Returns true if set.
+function prints.midi_only(tr, dest)
+  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do -- (audio on the track besides prints: its send is left as it is)
+    for k = 0, reaper.CountTakes(reaper.GetTrackMediaItem(tr, i)) - 1 do
+      local tk = reaper.GetTake(reaper.GetTrackMediaItem(tr, i), k)
+      if tk and not reaper.TakeIsMIDI(tk) and take_ext(tk, prints.KEY) == "" then return false end
+    end
+  end
+  for s = 0, reaper.GetTrackNumSends(tr, 0) - 1 do
+    if reaper.GetTrackSendInfo_Value(tr, 0, s, "P_DESTTRACK") == dest and reaper.GetTrackSendInfo_Value(tr, 0, s, "I_SRCCHAN") ~= -1 then
+      reaper.SetTrackSendInfo_Value(tr, 0, s, "I_SRCCHAN", -1) -- (-1: no audio)
+      band.log(string.format("the send from '%s' to '%s' now carries MIDI only, so its print doesn't play twice",
+        select(2, reaper.GetTrackName(tr)), select(2, reaper.GetTrackName(dest))))
+      return true
+    end
+  end
+  return false
 end
 
 -- Does every plug-in on the item's track load here (and on the instrument's track, for a routed one)? A missing one
@@ -146,7 +174,7 @@ local function refresh_ara(proj, it, media_dir)
   if print and take_ext(print, prints.KEY) == h then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
   reaper.RecursiveCreateDirectory(media_dir, 0)
-  local path = require("sync").print_item(proj, it, ara, media_dir, "print-" .. (oid ~= "" and oid or "item") .. "-" .. h, nil, true)
+  local path = require("sync").print_item(proj, it, ara, media_dir, print_name(oid, h), nil, true)
   if not path then return false end
   local ptk = print or reaper.AddTakeToMediaItem(it)
   reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))
@@ -173,11 +201,12 @@ function prints.refresh(proj, it, media_dir, fx_hash, route_hash)
   local h = prints.source(it, midi, (fx_hash or "") .. (dest and ("\0" .. (route_hash or "")) or ""))
   if print and take_ext(print, prints.KEY) == h then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
-  local name = "print-" .. (oid ~= "" and oid or "item") .. "-" .. h
+  local name = print_name(oid, h)
   reaper.RecursiveCreateDirectory(media_dir, 0)
   local sync = require("sync")
   local path = dest and sync.print_routed(proj, it, midi, dest, media_dir, name) or (not dest and sync.print_item(proj, it, midi, media_dir, name, nil))
   if not path then return false end
+  if dest then prints.midi_only(tr, dest) end
   local was = reaper.GetActiveTake(it)
   local ptk = print or reaper.AddTakeToMediaItem(it)
   reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))

@@ -58,6 +58,13 @@ local ok, err = pcall(function()
   for r = 0, reaper.GetTrackNumSends(kit, -1) - 1 do if reaper.GetTrackSendInfo_Value(kit, -1, r, "B_MUTE") ~= 0 then recv_muted = true end end
   check(not recv_muted, "Kit's receives are unmuted again")
   check(reaper.GetActiveTake(it) == midi, "the dry take plays here (Auto: the instrument loads)")
+  -- the send carries MIDI only now (with Wet, the print went down an audio send into Kit too and played twice)
+  local s_notes = -1
+  for s = 0, reaper.GetTrackNumSends(notes, 0) - 1 do if reaper.GetTrackSendInfo_Value(notes, 0, s, "P_DESTTRACK") == kit then s_notes = s end end
+  check(s_notes >= 0 and reaper.GetTrackSendInfo_Value(notes, 0, s_notes, "I_SRCCHAN") == -1, "Notes' send to Kit carries MIDI only now")
+  check(reaper.GetTrackSendInfo_Value(other, 0, 0, "I_SRCCHAN") ~= -1, "Other's send is left as it was (not printed yet)")
+  local wfile = reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(wet))
+  check(wfile:find("%-" .. (reaper.GetExtState("BandSync", "user"):gsub("[^%w%-_]", "_")) .. "%.flac$") ~= nil, "the print's file carries who rendered it (" .. (wfile:match("[^/\\]+$") or "") .. ")")
   -- the same notes again: nothing to do
   check(prints.refresh(p, it, media, "fx", "kit") == false, "an unchanged item isn't printed again")
   -- the instrument changed: printed again

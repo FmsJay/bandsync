@@ -28,6 +28,7 @@ end
 local b = band.binding(proj)
 if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
 cfg = band.for_tab(cfg, b) -- (this tab's own band, whichever band this computer is working in now)
+if not b.root then reaper.SetProjExtState(proj, band.SECTION, "root", cfg.root); b.root = cfg.root end -- (a tab from before bands: its band, from now on)
 -- one Live sync per song tab: triggering this action again while it runs does nothing (no "terminate instances?"
 -- box); another tab's runs from a launcher action of its own (band.start_live), and starting it again for this tab
 -- only says so

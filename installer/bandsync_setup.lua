@@ -91,12 +91,42 @@ local function already_installed()
   return true
 end
 
+-- The plug-in pack's JSFX without BandSync's own ReaPack sync to ride along with: a sync of their own, only when
+-- one of them is missing (a re-run with all there leaves ReaPack alone, see above).
+local function jsfx_only()
+  if not (req.jsfx and reaper.APIExists("ReaPack_AddSetRepository")) then return end
+  local added = false
+  for _, r in ipairs(JSFX_REPOS) do
+    local have = reaper.APIExists("ReaPack_GetRepositoryInfo") and reaper.ReaPack_GetRepositoryInfo(r[1])
+    if not have then
+      local ok_r, e = reaper.ReaPack_AddSetRepository(r[1], r[2], true, 1)
+      step("add " .. r[1] .. " JSFX repository", ok_r, e ~= "" and e or r[2])
+      added = added or ok_r
+    end
+  end
+  if added then
+    reaper.ReaPack_ProcessQueue(true)
+    local sync = reaper.NamedCommandLookup("_REAPACK_SYNC")
+    if sync ~= 0 then reaper.Main_OnCommand(sync, 0) end
+  end
+end
+-- This version already runs here from somewhere other than ReaPack (the band folder's staged copy, a checkout): a
+-- ReaPack copy beside it gave the laptop two of every action and two Live syncs to choose from (0.35.1).
+local function runs_elsewhere()
+  local ok = reaper.APIExists("ReaPack_GetRepositoryInfo") and reaper.ReaPack_GetRepositoryInfo("BandSync")
+  return not ok and WANT ~= nil and installed_version() == WANT
+end
+
 if req.mode == "reapack" then
   if not reaper.APIExists("ReaPack_AddSetRepository") then
     step("ReaPack installed", false, "install ReaPack (reapack.com) and restart REAPER first")
   elseif already_installed() then
     step("BandSync " .. WANT .. " already installed through ReaPack", true, "left as it is")
     req.mode, req.open_panel = "verify", true -- nothing to wait for; land in the panel (it stayed shut, Mac 0.34.3)
+  elseif runs_elsewhere() then
+    step("BandSync " .. WANT .. " already runs here (not through ReaPack)", true, "left as it is: no second copy")
+    jsfx_only()
+    req.mode, req.open_panel = "verify", true
   else
     local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
     step("add BandSync repository", added, err ~= "" and err or req.repo_url)
@@ -122,24 +152,7 @@ elseif req.mode == "folder" then
   end
   for n, path in ipairs(scripts) do reaper.AddRemoveReaScript(true, 0, path, n == #scripts) end
   step("register actions from shared folder", #scripts > 0, #scripts .. " scripts in " .. dir)
-  -- the plug-in pack's JSFX: BandSync came from the folder, so there's no BandSync ReaPack sync to ride along with; a
-  -- sync of their own, only when one of them is missing (a re-run with both there leaves ReaPack alone, see above)
-  if req.jsfx and reaper.APIExists("ReaPack_AddSetRepository") then
-    local added = false
-    for _, r in ipairs(JSFX_REPOS) do
-      local have = reaper.APIExists("ReaPack_GetRepositoryInfo") and reaper.ReaPack_GetRepositoryInfo(r[1])
-      if not have then
-        local ok_r, e = reaper.ReaPack_AddSetRepository(r[1], r[2], true, 1)
-        step("add " .. r[1] .. " JSFX repository", ok_r, e ~= "" and e or r[2])
-        added = added or ok_r
-      end
-    end
-    if added then
-      reaper.ReaPack_ProcessQueue(true)
-      local sync = reaper.NamedCommandLookup("_REAPACK_SYNC")
-      if sync ~= 0 then reaper.Main_OnCommand(sync, 0) end
-    end
-  end
+  jsfx_only() -- (BandSync came from the folder: no BandSync ReaPack sync for the JSFX to ride along with)
 end
 
 -- What's registered now, autostart, the result file, and the panel. With ReaPack, run once its sync has brought the

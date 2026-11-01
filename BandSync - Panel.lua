@@ -323,7 +323,10 @@ local label = ""
 local function refresh()
   proj = reaper.EnumProjects(-1)
   b = band.binding(proj)
-  cfg = band.for_tab(cfg, b) -- (the front tab's own band: two bands' songs can be open at once)
+  -- the front tab's own band (two bands' songs can be open at once), on this computer's settings as they are now:
+  -- an installer, or another panel, may have switched the band since this one started (laptop, 0.35.1)
+  local now_root, now_user = reaper.GetExtState(band.SECTION, "sync_root"), reaper.GetExtState(band.SECTION, "user")
+  cfg = band.for_tab(now_root ~= "" and now_user ~= "" and { root = now_root, user = now_user } or cfg, b)
   banner_text = nil -- (a tab that isn't a band session has no banner: it showed over a new empty tab)
   if not b then return end
   view = status.gather(cfg, b, proj)
@@ -2056,7 +2059,7 @@ local function frame_app()
     at_row("Start")
     if ImGui.Button(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
-  local drives = view.driver == cfg.user and "you drive" or (tostring(view.driver) .. " drives")
+  local drives = view.driver == cfg.user and "you drive" or view.driver and (view.driver .. " drives") or "nobody drives yet"
   at_row(drives); ImGui.AlignTextToFramePadding(ctx)
   ImGui.TextDisabled(ctx, drives)
   ImGui.SetItemTooltip(ctx, "The driver's changes go to everyone, except on what someone has claimed.")

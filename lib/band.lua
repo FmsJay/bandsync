@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.35.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.35.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -355,8 +355,18 @@ end
 function band.for_tab(cfg, b)
   local base = cfg and (cfg.base or cfg)
   if not base then return nil end
-  if b and b.root and b.root ~= base.root and band.subdirs(b.root)[1] then
-    return { root = b.root, user = base.user, base = base }
+  local root = b and b.root
+  if b and not root and b.song then
+    -- a tab bound before bands names no band: the one whose folder has its song (laptop, 0.35.1: a Chilio song read
+    -- through Test Band, "nil drives", once the computer worked in Test Band). The current band first.
+    local roots = { base.root }
+    for _, x in ipairs(band.bands()) do roots[#roots + 1] = x.root end
+    for _, r in ipairs(roots) do
+      if reaper.file_exists(band.session_path({ root = r }, b.song)) then root = r; break end
+    end
+  end
+  if root and root ~= base.root and band.subdirs(root)[1] then
+    return { root = root, user = base.user, base = base }
   end
   return base
 end

@@ -132,7 +132,9 @@ function Release-Asset($repo, $pattern, $tag) {
 }
 function Install-Plugin($name, $repo, $pattern, $tag, $have) {
   if ($NoApps) { return }
-  if (Test-Path $have) { Ok "$name is already installed"; return }
+  # ($have: one place or several where it lands, wildcards allowed)
+  $there = { @($have | Where-Object { Test-Path $_ }).Count -gt 0 }
+  if (& $there) { Ok "$name is already installed"; return }
   $a = Release-Asset $repo $pattern $tag
   if (-not $a) { Warn "$name : no download found on github.com/$repo, skipped (install it by hand if you like)"; return }
   $file = Join-Path $env:TEMP $a.name
@@ -150,11 +152,17 @@ function Install-Plugin($name, $repo, $pattern, $tag, $have) {
     $fx = Join-Path $res "UserPlugins\FX"
     New-Item -ItemType Directory -Force $fx | Out-Null
     # the bundles themselves, not the .vst3 file inside each bundle's Contents
-    Get-ChildItem $x -Recurse -Filter *.vst3 | Where-Object { $_.FullName.Substring($x.Length) -notmatch '\.vst3\\.' } |
-      ForEach-Object { Copy-Item $_.FullName (Join-Path $fx $_.Name) -Recurse -Force }
+    $vst3 = @(Get-ChildItem $x -Recurse -Filter *.vst3 | Where-Object { $_.FullName.Substring($x.Length) -notmatch '\.vst3\\.' })
+    $vst3 | ForEach-Object { Copy-Item $_.FullName (Join-Path $fx $_.Name) -Recurse -Force }
+    # a zip holding the plug-in's own installer instead (Neural Amp Modeler 0.7.13: "NeuralAmpModeler Installer.exe")
+    $exe = Get-ChildItem $x -Recurse -Filter *.exe | Select-Object -First 1
+    if ($vst3.Count -eq 0 -and $exe) {
+      Say "  $name's own installer opens: click through it (the defaults are fine)."
+      Start-Process $exe.FullName -Wait
+    }
     Remove-Item $x -Recurse -Force -ErrorAction SilentlyContinue
   }
-  if (Test-Path $have) { Ok "$name installed" } else { Warn "$name : not found where expected afterwards ($have); check it in REAPER's FX browser" }
+  if (& $there) { Ok "$name installed" } else { Warn "$name : not found where expected afterwards ($($have -join ' or ')); check it in REAPER's FX browser" }
 }
 if ($wantPlugins) {
   $vst3 = Join-Path $env:CommonProgramFiles "VST3"
@@ -169,7 +177,7 @@ if ($wantPlugins) {
   Install-Plugin "ChowMatrix (delay)" "Chowdhury-DSP/ChowMatrix" 'Win-.*\.exe$' $null (Join-Path $vst3 "ChowMatrix*")
   if ($wantExtras) {
     # NAM: v0.7.14 and later have no release files; 0.7.13 is the newest that does
-    Install-Plugin "Neural Amp Modeler" "sdatkinson/NeuralAmpModelerPlugin" '-win\.zip$' "v0.7.13" (Join-Path $res "UserPlugins\FX\NeuralAmpModeler*")
+    Install-Plugin "Neural Amp Modeler" "sdatkinson/NeuralAmpModelerPlugin" '-win\.zip$' "v0.7.13" @((Join-Path $res "UserPlugins\FX\NeuralAmpModeler*"), (Join-Path $env:CommonProgramFiles "VST3\NeuralAmpModeler*"))
     Install-Plugin "AIDA-X" "AidaDSP/AIDA-X" 'win64-installer\.exe$' $null (Join-Path $vst3 "AIDA-X*")
     Install-Plugin "Odin 2" "TheWaveWarden/odin2" 'WinInstaller\.exe$' "NightlyDevel" (Join-Path $vst3 "Odin2*")
     Install-App "plogue.sforzando" "sforzando (plays the piano below)"

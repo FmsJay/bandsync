@@ -1801,7 +1801,7 @@ local function settings_sync()
     if pch then reaper.SetExtState(band.SECTION, "pill", pv and "" or "off", true) end
     ImGui.SetItemTooltip(ctx, "A click on the button opens the panel again where it was. Off: closing the panel closes it.")
     -- MIDI wet/dry, this machine's choice (lib/prints.lua): never changes what anyone else hears
-    ImGui.SeparatorText(ctx, "MIDI plays as")
+    ImGui.SeparatorText(ctx, "MIDI and audio play as")
     local prints = require("prints")
     for _, m in ipairs({ { "auto", "Auto", "The dry take (the notes, through your instruments) when the track's plug-ins all load here, else the wet one." },
         { "notes", "Dry", "Always the dry take: the notes through your own instruments, so you can change the sound." },
@@ -1813,6 +1813,7 @@ local function settings_sync()
       end
       ImGui.SetItemTooltip(ctx, m[3])
     end
+    require("people").options(ctx, ImGui, cfg) -- your colour, and whose colours tracks show here
     card_end()
   end
 end

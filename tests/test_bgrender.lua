@@ -1,4 +1,4 @@
--- bgrender.offline_others is pure (lupa or Lua 5.4, from the repo root)
+-- bgrender.prepare is pure (lupa or Lua 5.4, from the repo root)
 package.path = "lib/?.lua;" .. package.path
 reaper = reaper or {}
 reaper.GetOS = reaper.GetOS or function() return "Win64" end
@@ -33,11 +33,35 @@ local rpp = table.concat({
   '  >',
   '>',
   '' }, "\n")
-local out = bg.offline_others(rpp, { ["{BBBB-2}"] = true })
+local out = bg.prepare(rpp, { ["{BBBB-2}"] = true })
 local lines = {}
 for l in out:gmatch("[^\n]+") do lines[#lines + 1] = l end
 assert(lines[3] == "    BYPASS 0 1 0", "the master's plug-ins go offline: " .. lines[3])
 assert(lines[10] == "      BYPASS 0 1 0" and lines[16] == "        BYPASS 1 1 0", "another track's, its items' too, bypass kept")
 assert(lines[23] == "      BYPASS 0 0 0" and lines[24] == "      BYPASS 1 0 0", "the kept track's stay as they were (GUIDs in any case)")
 assert(#out == #rpp, "nothing else changes")
+-- a routed print's stem renders as the master mix: others muted, folders flat, kept ones to the master at 0 dB
+local stem = table.concat({
+  '<REAPER_PROJECT 0.1 "7.84/win64" 1 0',
+  '  RENDER_STEMS 2',
+  '  MASTERMUTESOLO 1',
+  '  MASTER_VOLUME 0.5 -0.2 -1 -1 1',
+  '  <TRACK {A}',
+  '    MUTESOLO 0 0 0',
+  '    ISBUS 1 1',
+  '    MAINSEND 0 0',
+  '  >',
+  '  <TRACK {B}',
+  '    MUTESOLO 0 0 0',
+  '    ISBUS 2 -1',
+  '    MAINSEND 0 0',
+  '  >',
+  '>', '' }, "\n")
+local m = {}
+for l in bg.prepare(stem, { ["{B}"] = true }):gmatch("[^\n]+") do m[#m + 1] = l end
+assert(m[2] == "  RENDER_STEMS 0" and m[3] == "  MASTERMUTESOLO 0" and m[4] == "  MASTER_VOLUME 1 0 -1 -1 1", "master mix, master at 0 dB, unmuted")
+assert(m[6] == "    MUTESOLO 1 0 0" and m[7] == "    ISBUS 0 0" and m[8] == "    MAINSEND 0 0", "another track: muted, no folder")
+assert(m[11] == "    MUTESOLO 0 0 0" and m[12] == "    ISBUS 0 0" and m[13] == "    MAINSEND 1 0", "the kept one: playing, to the master")
+local plain = table.concat({ '<REAPER_PROJECT', '  RENDER_STEMS 32', '  <TRACK {A}', '    MUTESOLO 0 0 0', '  >', '>', '' }, "\n")
+assert(bg.prepare(plain, {}) == plain, "an item render (RENDER_STEMS 32) keeps its tracks as they are")
 print("ok")

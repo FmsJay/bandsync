@@ -73,6 +73,17 @@ local ok, err = pcall(function()
   check(select(2, mirror.known(pa, oid)) == mirror.track_hash(mirror.track_state(pa, ta), false), "its record now counts the colour")
   local drift = (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(pa))) or 0) + (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(pb))) or 0)
   check(drift == 0, "no \"came out different\" between an auto-coloured machine and one that isn't (" .. drift .. ")")
+  -- 0.36/0.37 kept a machine's own colour where the colour started counting (PC and laptop differed on Bass I for
+  -- good): 0.38 looks again once, and takes the colour from the band's last change, so both end up the same
+  reaper.SetMediaTrackInfo_Value(ta, "I_CUSTOMCOLOR", RED)
+  watch(pa, A, false) -- (A's recolour goes out: the band's colour is RED)
+  local n3 = sent("Laptop")
+  reaper.SetMediaTrackInfo_Value(ta, "I_CUSTOMCOLOR", GREEN) -- (as if this machine had kept a colour of its own)
+  local rv, _, ev3, ko3 = mirror.known(pa, oid)
+  mirror.remember(pa, oid, rv, mirror.track_hash(mirror.track_state(pa, ta), false), ev3, ko3)
+  reaper.SetProjExtState(pa, mirror.CSEC, "colours", "band") -- (as 0.37 noted it)
+  watch(pa, A, false)
+  check(colour(pa) == RED and sent("Laptop") == n3, "a kept colour of its own gives way to the band's, and nothing is sent")
 end)
 mirror.own_colours = real_own
 if not ok then say("ERROR " .. tostring(err)); fails = fails + 1 end

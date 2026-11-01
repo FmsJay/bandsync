@@ -21,6 +21,12 @@ local at, seen_disk = 0, nil
 local function loop()
   if reaper.time_precise() - at < 2 then return reaper.defer(loop) end -- every 2 s is plenty
   at = reaper.time_precise()
+  -- the hidden REAPER that renders prints (lib/bgrender.lua) opens a copy from bandsync-render: nothing to do there
+  for i = 0, 64 do
+    local p, fn = reaper.EnumProjects(i)
+    if not p then break end
+    if (fn or ""):find("bandsync-render", 1, true) then return end
+  end
   pcall(band.sws_colours) -- (SWS auto-colouring off while a band song is in front, back on otherwise)
   -- an update: the new code takes over in place (once the version on disk has held for two looks), as Live sync does;
   -- before 0.21.3 a running Autostart kept its old rules until REAPER restarted

@@ -149,6 +149,7 @@ local drive = require("drive")
 local drive_at, drive_more, drive_said = -math.huge, false, nil
 
 local sizes, last, recording, stopped_at = {}, 0, false, 0
+local paint_at = -math.huge -- when tracks were last coloured for who's working on them
 local last_status, status_json = 0, ""
 local rt_at = 0 -- when Real time mode's sends were last matched to what's armed
 local heal_since, healed_at = nil, -math.huge -- since when a caught-up bandmate's project has differed (mirror.heal)
@@ -407,6 +408,8 @@ local function poll()
     presence.pings(proj, peers)
     local follow = reaper.GetExtState(band.SECTION, "follow " .. tostring(proj))
     if follow ~= "" then presence.follow(proj, peers, follow) end
+    -- tracks in the colour of who's working on them, if this machine wants that (lib/people.lua; shown here only)
+    if now - paint_at > 1 then paint_at = now; require("people").paint(proj, cfg, peers, who.tracks) end
   end
 
   -- status receipt for the Status window: written when it changes, else every 15 s as a heartbeat

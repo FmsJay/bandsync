@@ -688,6 +688,16 @@ function sync.print_routed(proj, it, take, dest, out, name)
     end
   end
   track(dest, "B_MUTE", 0); track(dest, "D_VOL", 1); track(dest, "D_PAN", 0)
+  -- every other track muted too (not the folders these two sit in: that would mute them): this "stem" render took
+  -- in whatever else played at the time, a second synth 7 dB over the print (PC, 0.38 test)
+  local keep = {}
+  for _, t in ipairs({ src, dest }) do
+    while t do keep[t] = true; t = reaper.GetParentTrack(t) end
+  end
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local t = reaper.GetTrack(proj, i)
+    if not keep[t] and reaper.GetMediaTrackInfo_Value(t, "B_MUTE") == 0 then track(t, "B_MUTE", 1) end
+  end
   reaper.SetOnlyTrackSelected(dest)
   band.render({ RENDER_SETTINGS = 2, RENDER_BOUNDSFLAG = 0, RENDER_STARTPOS = pos, RENDER_ENDPOS = pos + len, RENDER_SRATE = 0,
     RENDER_CHANNELS = 2, RENDER_TAILFLAG = 0, RENDER_TAILMS = 0, RENDER_ADDTOPROJ = 0 }, -- &2: stems only (the selected track), 0: this time range
@@ -868,7 +878,7 @@ sync.lane_of, sync.track_name = lane_of, track_name
 local function track_props(tr)
   local icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false))
   return string.format("%s|%d|%d|%d|%s|%.2f|%.2f", base_name(select(2, reaper.GetTrackName(tr))), reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
-    reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), band.color_out(reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR")), icon:match("[^/\\]+$") or icon,
+    reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), band.color_out(band.track_colour(tr)), icon:match("[^/\\]+$") or icon,
     20 * math.log(math.max(reaper.GetMediaTrackInfo_Value(tr, "D_VOL"), 1e-9), 10), reaper.GetMediaTrackInfo_Value(tr, "D_PAN"))
 end
 local function track_guid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)) end
@@ -883,7 +893,7 @@ local function apply_track(proj, ev)
       reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", ev.track .. suffix, true)
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", ev.mute or 0)
       reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", ev.solo or 0)
-      reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", band.color_in(ev.color))
+      band.set_track_colour(tr, band.color_in(ev.color))
       reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", ev.icon or "", true)
       if ev.vol then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", ev.vol) end -- the shared mix (0.8+)
       if ev.pan then reaper.SetMediaTrackInfo_Value(tr, "D_PAN", ev.pan) end

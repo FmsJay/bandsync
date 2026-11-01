@@ -84,6 +84,11 @@ Everything below is the detail.
   Only tracks with a plug-in that isn't on everyone's list get one, and only items with a single take. While a
   track plays a wet take, its plug-ins are switched off on that computer only, so the ones that do load there
   don't apply twice (the band still has them on).
+- **Your colour, and who's working where** (Setup > Options): everyone has a colour, their own pick or a default
+  nobody else has, the same on every computer; drawings use it. Each computer chooses how tracks look: **Band's
+  colours**; **Show who's working** (the band's colours, but a track a bandmate is editing or has claimed shows their
+  colour until they're done); or **Whose track** (every track in the colour of whoever is editing it, claimed it, or
+  made it). Only on that computer: the band's own colours are kept aside meanwhile, never sent or lost.
 - **Prints render in the background**: a second, hidden REAPER renders each one from a copy of the song while you
   carry on (a few seconds each, one at a time), and it's added when it's done. Where that doesn't work it renders in
   front as before.

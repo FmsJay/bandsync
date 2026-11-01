@@ -67,6 +67,8 @@ local ok, err = pcall(function()
     did = prints.refresh(pa, it, media, "fxhash", nil, cfg)
   end
   say(string.format("     background print in %.1f s", reaper.time_precise() - t0))
+  local bg_done, bg_failed = require("bgrender").counts()
+  check(bg_done == 1 and bg_failed == 0, string.format("it really rendered in the background (%d done, %d failed: a failed one renders in front)", bg_done, bg_failed))
   local dry, wet = prints.audio_take(it), select(2, prints.takes(it))
   check(did and wet ~= nil and reaper.CountTakes(it) == 2, "the item has its dry and wet takes")
   local wpath = wet and reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(wet), "") or ""
@@ -89,6 +91,29 @@ local ok, err = pcall(function()
   reaper.DeleteExtState(band.SECTION, "midi_plays", false)
   prints.choose(it)
   check(reaper.GetActiveTake(it) == dry and reaper.GetMediaTrackInfo_Value(tr, "I_FXEN") == 1 and band.track_ext(tr, prints.FXEN) == "", "back to Auto: dry again, FX back on")
+  -- a routed MIDI print (notes on one track, the instrument on another) in the background, as in front
+  reaper.InsertTrackInProject(pa, 2, 0); reaper.InsertTrackInProject(pa, 3, 0)
+  local notes, kit = reaper.GetTrack(pa, 2), reaper.GetTrack(pa, 3)
+  reaper.TrackFX_AddByName(kit, "ReaSynth", false, -1)
+  local send = reaper.CreateTrackSend(notes, kit)
+  reaper.SetTrackSendInfo_Value(notes, 0, send, "I_SRCCHAN", -1) -- (MIDI only)
+  local mi = reaper.CreateNewMIDIItemInProj(notes, 0.5, 2.5, false)
+  local mtk = reaper.GetActiveTake(mi)
+  for i = 0, 3 do reaper.MIDI_InsertNote(mtk, false, false, i * 480, i * 480 + 400, 0, 60 + i, 100, true) end
+  reaper.MIDI_Sort(mtk)
+  reaper.GetSetMediaItemInfo_String(mi, "P_EXT:band_oid", "I-JAMES-20261101000000-3", true)
+  local rfg = require("sync").print_routed(pa, mi, mtk, kit, media, "fg-routed")
+  local t1, rdid = reaper.time_precise(), false
+  while not rdid and reaper.time_precise() - t1 < 90 do
+    rdid = prints.refresh(pa, mi, media, "fx", "route", cfg)
+    if not rdid then local w = reaper.time_precise(); while reaper.time_precise() - w < 0.5 do end end
+  end
+  local rwet = select(2, prints.takes(mi))
+  local rpath = rwet and reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(rwet), "") or ""
+  local d2, f2 = require("bgrender").counts()
+  check(rdid and d2 == 2 and f2 == 0, string.format("a routed MIDI print renders in the background too (%.1f s; %d done, %d failed)", reaper.time_precise() - t1, d2, f2))
+  local rp, fp = rpath ~= "" and peak(rpath) or -999, rfg and peak(rfg) or -999
+  check(rp > -60 and math.abs(rp - fp) < 0.1, string.format("and sounds as the in-front one does (%.2f / %.2f dBFS peak)", rp, fp))
   -- SWS auto-colouring: off while a band song is in front, back on elsewhere
   if sws_id > 0 then
     if reaper.GetToggleCommandState(sws_id) ~= 1 then reaper.Main_OnCommand(sws_id, 0) end

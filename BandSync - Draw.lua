@@ -63,15 +63,13 @@ local function load(b) -- every stroke in the room, re-read once a second
   end
   return cache
 end
--- One colour each: the room's people (here now, or who drew) in name order, so every machine agrees. (A colour from
--- a hash of the name gave James and Laptop the same one: laptop, 2026-10-31.)
+-- One colour each: everyone's own (lib/people.lua: picked in Setup > Options, else a default nobody else has), the
+-- same on every machine. (A colour from a hash of the name gave James and Laptop the same one: laptop, 2026-10-31.)
 local function colours(b)
-  local set, names, out = { [cfg.user] = true }, {}, {}
-  for _, s in ipairs(load(b)) do if type(s.user) == "string" then set[s.user] = true end end
-  for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do set[st.user] = true end
-  for n in pairs(set) do names[#names + 1] = n end
-  table.sort(names)
-  for i, n in ipairs(names) do out[n] = PALETTE[(i - 1) % #PALETTE + 1] end
+  local names, out = { cfg.user }, {}
+  for _, s in ipairs(load(b)) do if type(s.user) == "string" then names[#names + 1] = s.user end end
+  for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do names[#names + 1] = st.user end
+  for n, rgb in pairs(require("people").colours(cfg.root, names)) do out[n] = (rgb << 8) | 0xFF end
   return out
 end
 

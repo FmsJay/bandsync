@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.37.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.38.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -597,6 +597,33 @@ end
 -- ---- items, tracks, P_EXT tags --------------------------------------------------------------
 
 function band.track_ext(tr, key) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. key, "", false)) end
+
+-- A track's colour as the band has it (REAPER's native I_CUSTOMCOLOR): a person's colour may be showing in its place
+-- here (lib/people.lua), with the band's waiting in P_EXT:band_colour. Everything that sends, saves or restores a
+-- track's colour goes through these two.
+function band.track_colour(tr)
+  local held = band.track_ext(tr, "band_colour")
+  if held ~= "" then return tonumber(held) or 0 end
+  return reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR")
+end
+function band.set_track_colour(tr, c)
+  if band.track_ext(tr, "band_colour") ~= "" then
+    reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_colour", tostring(math.floor(c)), true)
+  else
+    reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", c)
+  end
+end
+-- Show `c` (native) on a track here only, or (nil) the band's colour again.
+function band.show_colour(tr, c)
+  local held = band.track_ext(tr, "band_colour")
+  if c then
+    if held == "" then reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_colour", tostring(math.floor(reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR"))), true) end
+    if reaper.GetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR") ~= c then reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", c) end
+  elseif held ~= "" then
+    reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_colour", "", true)
+    reaper.SetMediaTrackInfo_Value(tr, "I_CUSTOMCOLOR", tonumber(held) or 0)
+  end
+end
 function band.set_track_ext(tr, key, v) reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. key, v, true) end
 function band.item_ext(it, key) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:" .. key, "", false)) end
 function band.set_item_ext(it, key, v) reaper.GetSetMediaItemInfo_String(it, "P_EXT:" .. key, v, true) end

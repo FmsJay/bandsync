@@ -24,9 +24,13 @@ function bg.on()
   return WIN or reaper.GetOS():find("^OSX") ~= nil or reaper.GetOS():find("^macOS") ~= nil
 end
 
--- The copy, with the plug-ins of every track not in `keep` (REAPER track GUIDs) and the master's switched offline
--- (BYPASS <bypass> <offline> ...). Pure.
-function bg.offline_others(text, keep)
+-- The copy, ready for the second REAPER: the plug-ins of every track not in `keep` (REAPER track GUIDs) and the
+-- master's switched offline (BYPASS <bypass> <offline> ...). A stem of the selected track (RENDER_STEMS 2: a
+-- routed MIDI print, sync.print_routed) finds "Nothing to render!" from the command line (PC, 0.37.0), so that one
+-- renders the master mix instead: every other track muted, no folders (a parent's plug-ins and fader stay out, as
+-- in a stem), the kept tracks sent to the master, the master's fader at 0 dB. Pure.
+function bg.prepare(text, keep)
+  local mix = tonumber(text:match("\n%s*RENDER_STEMS (%d+)")) == 2
   local out, depth, inside, keeping = {}, 0, nil, true
   for raw in text:gmatch("[^\n]*\n?") do
     if raw == "" then break end
@@ -39,6 +43,15 @@ function bg.offline_others(text, keep)
     if (inside == "TRACK" or inside == "MASTERFXLIST") and not keeping then
       line = line:gsub("^(%s*BYPASS %d+ )%d+", "%11")
     end
+    if mix then
+      if depth == 1 then
+        line = line:gsub("^(%s*RENDER_STEMS )%d+", "%10"):gsub("^(%s*MASTER_VOLUME )%S+ %S+", "%11 0"):gsub("^(%s*MASTERMUTESOLO )%d+", "%10")
+      elseif depth == 2 and inside == "TRACK" then
+        line = line:gsub("^(%s*ISBUS )%S+ %S+", "%10 0")
+        if keeping then line = line:gsub("^(%s*MAINSEND )%d+", "%11")
+        else line = line:gsub("^(%s*MUTESOLO )%d+", "%11") end
+      end
+    end
     if s:sub(1, 1) == "<" then depth = depth + 1 elseif s == ">" then depth = depth - 1 end
     if depth == 1 and s == ">" then inside, keeping = nil, true end
     out[#out + 1] = line
@@ -46,10 +59,43 @@ function bg.offline_others(text, keep)
   return table.concat(out)
 end
 
+-- Windows: the second REAPER starts on a Windows desktop of its own (CreateDesktop), so nothing it shows can be seen
+-- or take the keyboard. Started plainly, its scan box, its window (maximised, as REAPER was last left) and the
+-- render box covered the screen for ~1.5 s on every print and took the keys (laptop, 0.37.0): -noactivate and a
+-- hidden .cmd don't stop that. The launcher stays until that REAPER quits (a desktop goes with its last handle),
+-- writes its process id to pid.txt, and tidies empty job folders.
+local LAUNCH = [==[
+param($exe, $job)
+Add-Type @"
+using System; using System.Runtime.InteropServices;
+public static class BandSyncDesk {
+  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct SI { public int cb; public string reserved; public string desktop; public string title;
+    public int x, y, w, h, xc, yc, fill, flags; public short show, reserved2; public IntPtr reserved3, stdin, stdout, stderr; }
+  [StructLayout(LayoutKind.Sequential)] public struct PI { public IntPtr process, thread; public int pid, tid; }
+  [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern IntPtr CreateDesktop(string name, IntPtr device, IntPtr mode, int flags, uint access, IntPtr sa);
+  [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)] public static extern bool CreateProcess(string app, string cmd, IntPtr pa, IntPtr ta, bool inherit, int flags, IntPtr env, string dir, ref SI si, out PI pi);
+}
+"@
+$dir = Split-Path $job
+Get-ChildItem (Split-Path $dir) -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $dir -and -not (Get-ChildItem $_.FullName -Force) } | Remove-Item -ErrorAction SilentlyContinue
+$desk = [BandSyncDesk]::CreateDesktop("BandSyncRender", [IntPtr]::Zero, [IntPtr]::Zero, 0, 0x10000000, [IntPtr]::Zero)
+$si = New-Object BandSyncDesk+SI
+$si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
+$si.desktop = "BandSyncRender"
+$pi = New-Object BandSyncDesk+PI
+$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -renderproject "' + $job + '"'
+# ([NullString]::Value, not $null: PowerShell passes $null to a string parameter as "", and CreateProcess refuses "")
+if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
+  Set-Content (Join-Path $dir "pid.txt") $pi.pid
+  try { Wait-Process -Id $pi.pid -Timeout 600 -ErrorAction SilentlyContinue } catch {}
+} else { Set-Content (Join-Path $dir "pid.txt") "failed" }
+]==]
+
 local function launch(exe, job)
   if WIN then
-    local cmd, vbs = job:gsub("%.rpp$", ".cmd"), TMP .. "/hidden.vbs"
-    band.write_atomic(cmd, string.format('@"%s" -newinst -nosplash -ignoreerrors -noactivate -renderproject "%s"\r\n', exe, job))
+    local cmd, vbs, ps = job:gsub("%.rpp$", ".cmd"), TMP .. "/hidden.vbs", TMP .. "/launch.ps1"
+    if band.read(ps) ~= LAUNCH then band.write_atomic(ps, LAUNCH) end
+    band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s"\r\n', ps, exe, job))
     if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
   else -- shortcut: untried on a Mac; a job that never finishes counts as failed, and prints render in front again
@@ -79,7 +125,7 @@ function bg.start(key, name, keep, render)
   if not ok or not reaper.file_exists(job) then return false, err end
   local set = {}
   for _, g in ipairs(keep) do set[g:upper()] = true end
-  band.write_atomic(job, bg.offline_others(band.read(job), set))
+  band.write_atomic(job, bg.prepare(band.read(job), set))
   launch(exe_path(), job)
   jobs[key] = { name = name, dir = dir, started = reaper.time_precise(), sizes = {} }
   return true
@@ -117,8 +163,16 @@ local function drop(key)
   for _, f in ipairs(band.files(j.dir)) do os.remove(j.dir .. "/" .. f) end
   jobs[key] = nil
 end
+local function launch_failed(j) return (band.read(j.dir .. "/pid.txt") or ""):match("^failed") ~= nil end
+-- A job that's gone wrong: its REAPER (if it's still there, stuck on something nobody can see) is ended.
 local function timed_out(key)
   failed = failed + 1
+  local pid = tonumber((band.read(jobs[key].dir .. "/pid.txt") or ""):match("^%d+"))
+  if pid and WIN then
+    local kill = TMP .. "/kill.cmd"
+    band.write_atomic(kill, "@taskkill /PID " .. pid .. " /T /F\r\n")
+    reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', TMP .. "/hidden.vbs", kill), -1)
+  end
   drop(key)
   band.log("a print didn't render in the background within " .. bg.WAIT .. " s: it renders here instead" ..
     ((failed >= 2 and done == 0) and " (and so will the rest this session)" or ""))
@@ -128,7 +182,7 @@ end
 function bg.busy()
   for key, j in pairs(jobs) do
     if not finished(j) then
-      if reaper.time_precise() - j.started <= bg.WAIT then return true end
+      if reaper.time_precise() - j.started <= bg.WAIT and not launch_failed(j) then return true end
       timed_out(key)
     end
   end
@@ -142,7 +196,7 @@ function bg.claim(key, name, out)
   if not j then return nil end
   local files = finished(j)
   if not files then
-    if reaper.time_precise() - j.started <= bg.WAIT then return nil, "running" end
+    if reaper.time_precise() - j.started <= bg.WAIT and not launch_failed(j) then return nil, "running" end
     timed_out(key)
     return nil, "failed"
   end
@@ -159,5 +213,8 @@ function bg.claim(key, name, out)
   if flac then done = done + 1 end
   return flac, not flac and "failed" or nil
 end
+
+-- Prints done in the background this session, and jobs that failed (tests, Health).
+function bg.counts() return done, failed end
 
 return bg

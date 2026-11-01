@@ -1485,8 +1485,15 @@ end
 -- look (dismissable). The sidebar shows the worst one still open.
 local maint_st, maint_at = nil, -math.huge
 local function maint_rows()
-  if not maint_st or reaper.time_precise() - maint_at > 10 then maint_at, maint_st = reaper.time_precise(), setup.check(cfg, b, proj) end
+  if not maint_st or maint_st.for_proj ~= proj or reaper.time_precise() - maint_at > 10 then -- (another tab's said "Live sync is off" here: laptop, 0.34.9)
+    maint_at, maint_st = reaper.time_precise(), setup.check(cfg, b, proj)
+    maint_st.for_proj = proj
+  end
   local s = maint_st
+  -- (Live sync, read now: a check made while a dialog paused every script, closing a tab, say, kept "Live sync is
+  -- off" up for its 10 s)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
+  s.sync = beat ~= nil and reaper.time_precise() - beat < 5
   local rows = {
     { "audio", s.audio, "red", "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device." },
     { "folder", s.folder, "red", "Shared folder is syncing", "Syncthing isn't running: nothing reaches the band or comes in." },
@@ -2148,7 +2155,8 @@ local function frame()
     -- joining is what most bandmates do, so it leads, with what's waiting in the folder (review D22, 2026-10-31:
     -- "Publish (I'm the host)" came first and read as a role)
     if not start_songs or reaper.time_precise() - start_songs.at > 5 then
-      start_songs = { at = reaper.time_precise(), list = band.songs(cfg) }
+      start_songs = { at = reaper.time_precise(), list = {} } -- (in the chooser's order: worked on last first)
+      for _, r in ipairs(require("chooser").songs(cfg)) do start_songs.list[#start_songs.list + 1] = r.song end
     end
     local list = start_songs.list
     ImGui.TextWrapped(ctx, "This project isn't a band song.")
@@ -2161,7 +2169,7 @@ local function frame()
       ImGui.SetItemTooltip(ctx, "The band's songs arrive in your shared folder (" .. cfg.root .. ") once a bandmate lets you in: " ..
         "their panel shows a 'Let you in' button for your computer. Setup > Health shows whether the folder is connected.")
     else
-      ImGui.TextColored(ctx, GREY, string.format("%d song%s in the band folder, newest: %s", #list, #list == 1 and "" or "s", list[1]))
+      ImGui.TextColored(ctx, GREY, string.format("%d song%s in the band folder, worked on last: %s", #list, #list == 1 and "" or "s", list[1]))
     end
     if ImGui.Button(ctx, "Start a band song from this project") then action("Publish session") end
     ImGui.SameLine(ctx)

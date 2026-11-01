@@ -75,4 +75,11 @@ local ini = bg.profile_ini(table.concat({ "[REAPER]", "splash=1", "midiins=19954
 assert(ini == table.concat({ "[REAPER]", "audiocloseinactive=1", "splash=0", "midiins=0", "midiouts_clock=0", "midiins_x_h=0",
   "csurf_cnt=0", "asio_driver=1", "[other]", "x=1", "" }, "\n"), ini)
 assert(bg.profile_ini("[reaper]\nfoo=1\n") == "[reaper]\naudiocloseinactive=1\nfoo=1\n") -- (the Mac's section is lower case)
+-- printing mustn't leave an undo point on top of the edit: SelectAllMediaItems does, when the part is selected (a step
+-- across passes shows it, which one in-REAPER suite can't: undo points only settle between script passes)
+do
+  local f = assert(io.open("lib/sync.lua", "rb")); local text = f:read("a"); f:close()
+  local body = text:match("function sync%.print_item.-\nend\n")
+  assert(body and not body:find("SelectAllMediaItems", 1, true), "print_item keeps clear of SelectAllMediaItems")
+end
 print("ok")

@@ -191,7 +191,9 @@ for everyone in the room, with a toolbar: **Pen**, **Highlighter** (wide and see
 drawings); a colour (or *Mine*, your own) and a size (S, M, L), which this computer remembers. **Undo** takes away
 your last drawing, **Clear mine** all of yours; Done or Esc stops. Drawings sit on a bar and a track, so they stay
 put however anyone scrolls or zooms. "Show drawings" / "Hide drawings" turns the overlay on and off here (clicks
-always go to REAPER while you're not drawing). The eraser, Undo and Clear mine only touch your own drawings.
+always go to REAPER while you're not drawing). The eraser, Undo and Clear mine only touch your own drawings. The
+toolbar sits at the foot of the arrange view; the mouse wheel still zooms and scrolls while drawing. BandSync's own
+tracks (Real time) can't be drawn on: each computer has its own, so nothing there could reach the band.
 
 **Working at the same time** (each machine's status file carries it, a few seconds behind):
 

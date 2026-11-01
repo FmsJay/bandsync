@@ -599,6 +599,8 @@ function mirror.track_state(proj, tr, local_mix)
   for _, list in ipairs({ mirror.TRACK_MORE, mirror.TRACK_MIX }) do
     for _, kp in ipairs(list) do t[kp[1]] = string.format("%.6g", reaper.GetMediaTrackInfo_Value(tr, kp[2])) end
   end
+  local held = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_fxen", "", false)) -- (lib/prints.lua hold_fx)
+  if held ~= "" then t.fxen = string.format("%.6g", tonumber(held) or 1) end
   -- (the track above, so new tracks land in the same order)
   t.after = ""
   for i = math.floor(reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")) - 2, 0, -1 do -- (the nearest mirrored one above)
@@ -626,8 +628,11 @@ function mirror.set_track_state(proj, tr, t, local_mix)
     if l < (tonumber(t.lanes) or 0) then reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, v, true) end
     l = l + 1
   end
+  local held = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_fxen", "", false)) ~= ""
   for _, kp in ipairs(mirror.TRACK_MORE) do
-    if tonumber(t[kp[1]]) then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]])) end -- (a sender without it: left)
+    if held and kp[1] == "fxen" and tonumber(t.fxen) then -- (held off here while a wet take plays: the band's goes in its place)
+      reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_fxen", tostring(math.floor(tonumber(t.fxen))), true)
+    elseif tonumber(t[kp[1]]) then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]])) end -- (a sender without it: left)
   end
   if not local_mix then
     if t.vol and t.vol ~= "" then reaper.SetMediaTrackInfo_Value(tr, "D_VOL", tonumber(t.vol)) end
@@ -1249,7 +1254,8 @@ function mirror.watch(proj, cfg, song, room, opts)
       if sent > 0 and reaper.time_precise() - t_send > 0.25 then mirror.unsent[rk], mirror.more = true, true; return end
       -- recorded under a hash this machine no longer makes (before 0.34.4 a Mac hashed plug-in files and colours its
       -- own way): what's here IS the band's version, so it's re-anchored, not sent as a change of ours. Once per record.
-      if rev and h ~= "" and not mirror.anchor_seen[rk .. "\0" .. h] then
+      -- (a track while the colour scheme just changed: always, as switching tabs back and forth meets a record again)
+      if rev and h ~= "" and ((rescheme and o.kind == "track") or not mirror.anchor_seen[rk .. "\0" .. h]) then
         mirror.anchor_seen[rk .. "\0" .. h] = true
         local ev = event_file(room_dir, evid)
         if ev and ev.hash == o.hash then remember(proj, o.oid, rev, o.hash, evid, kord); return end
@@ -1356,7 +1362,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         if may then
           local dest = prints.route(reaper.GetMediaItem_Track(o.ptr)) -- (an instrument on another track: its chain is part of the print)
           local dfx = dest and by_oid["F" .. mirror.track_oid(dest):sub(2)]
-          local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash, dfx and dfx.hash or nil)
+          local ok, did = pcall(prints.refresh, proj, o.ptr, media, fx.hash, dfx and dfx.hash or nil, cfg)
           if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is BandSync's, not theirs)
         end
       end

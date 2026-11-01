@@ -79,6 +79,14 @@ Everything below is the detail.
   instruments when every plug-in it plays through loads here, else the print), **Dry** or **Wet**. That choice
   never changes what anyone else hears. When an instrument on another track doesn't load here, Setup > Health
   names it and says you hear the band's print.
+- **Audio through a plug-in someone lacks** (an amp sim on a guitar, say) gets a wet take the same way: whoever
+  changes the item renders it through the track's plug-ins, and the same Auto / Dry / Wet choice picks which plays.
+  Only tracks with a plug-in that isn't on everyone's list get one, and only items with a single take. While a
+  track plays a wet take, its plug-ins are switched off on that computer only, so the ones that do load there
+  don't apply twice (the band still has them on).
+- **Prints render in the background**: a second, hidden REAPER renders each one from a copy of the song while you
+  carry on (a few seconds each, one at a time), and it's added when it's done. Where that doesn't work it renders in
+  front as before.
 - **Local mixing** (Home): your faders and pan stay yours. Switching it off asks whether to take the band's
   mix or send yours.
 - Songs published with BandSync before 0.30 are left alone: publish them again to sync them.
@@ -399,9 +407,11 @@ tracks twice.
 - Plug-in chains change only while the transport is stopped (replacing a chain reloads its plug-ins), and a
   plug-in a bandmate doesn't have stays in their copy as offline, its settings kept (see Plugins: translations).
 - Prints render through the item's track (not parent folders or sends) and only on a machine where all of that
-  track's plug-ins load; rendering shows REAPER's render window for a moment (REAPER has no background render).
-- Track colours travel, unless SWS auto-colouring is switched on on that computer (Extensions > Auto Color/Icon/Layout):
-  then its colours are its own, so they aren't sent and its rules don't recolour the band's tracks elsewhere. Automation items arrive as items of their own (pooled ones aren't pooled on the other side).
+  track's plug-ins load; they leave out the item's own volume and fades (the item applies them to whichever take
+  plays). The hidden REAPER that renders them puts its copy in REAPER's recent-projects list until you next quit.
+- Track colours travel. SWS auto-colouring (Extensions > Auto Color/Icon/Layout) is switched off while a band song
+  is in front, since its rules would recolour the band's tracks, and back on when another project is; a computer
+  where it stays on (an older BandSync) keeps its colours to itself. Automation items arrive as items of their own (pooled ones aren't pooled on the other side).
 - Sends to and from a track that only exists on your machine (Real time, live views) stay yours; hardware
   outputs, record arm, inputs and monitoring stay yours too.
 - Not synced, on purpose: render, metronome and recording settings, and the master fader (each person's own).

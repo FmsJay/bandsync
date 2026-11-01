@@ -570,7 +570,8 @@ local function selection(proj)
 end
 
 -- Render item `it` (its active take, which must be selected alone) to <out>/<name>.flac (+ .opus).
-local function render_item(it, take, out, name, wet, tail)
+-- `bare`: without the item's own volume and fades (a wet take: the item applies them to whichever take plays).
+local function render_item(it, take, out, name, wet, tail, bare)
   local tr = reaper.GetMediaItem_Track(it)
   local nch = reaper.GetMediaSourceNumChannels(reaper.GetMediaItemTake_Source(take))
   do
@@ -590,7 +591,18 @@ local function render_item(it, take, out, name, wet, tail)
     reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 0)
     reaper.SetMediaItemInfo_Value(it, "B_MUTE", 0)
     if lane then reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. lane, 1) end
-    if not wet then reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", 0) end
+    if not wet then reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", 0)
+    else -- (the band's FX button, if it's held off here while a wet take plays: lib/prints.lua hold_fx)
+      local held = band.track_ext(tr, "band_fxen")
+      if held ~= "" then reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", tonumber(held) or 1) end
+    end
+    local item_was = {}
+    if bare then
+      for _, k in ipairs({ "D_VOL", "D_FADEINLEN", "D_FADEOUTLEN", "D_FADEINLEN_AUTO", "D_FADEOUTLEN_AUTO" }) do
+        item_was[k] = reaper.GetMediaItemInfo_Value(it, k)
+        reaper.SetMediaItemInfo_Value(it, k, k == "D_VOL" and 1 or 0)
+      end
+    end
     -- the track's fader and pan aren't printed: they travel as the shared mix (track events), so moving a fader
     -- never re-renders anything, and everyone's mirror track carries the same setting
     reaper.SetMediaTrackInfo_Value(tr, "D_VOL", 1)
@@ -609,6 +621,7 @@ local function render_item(it, take, out, name, wet, tail)
     for _, k in ipairs(keys) do reaper.SetMediaTrackInfo_Value(tr, k, saved[k]) end
     for r, m in pairs(receives) do reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", m) end
     reaper.SetMediaItemInfo_Value(it, "B_MUTE", imute)
+    for k, v in pairs(item_was) do reaper.SetMediaItemInfo_Value(it, k, v) end
     if lane then set_lanes_playing(tr, playing) end
     return out .. "/" .. name
   end
@@ -616,12 +629,12 @@ end
 
 -- Print one take through its track (wet) to <out>/<name>.flac, leaving selection and the playing take as they
 -- were. Returns the .flac path, or nil. Active tab only. (Solo edit keeps wet prints beside dry recordings.)
-function sync.print_item(proj, it, take, out, name, tail, dry) -- (dry: the take's own plug-ins only, not its track's)
+function sync.print_item(proj, it, take, out, name, tail, dry, bare) -- (dry: the take's own plug-ins only, not its track's)
   local sel, playing = selection(proj), reaper.GetActiveTake(it)
   reaper.SetActiveTake(take)
   reaper.SelectAllMediaItems(proj, false)
   reaper.SetMediaItemSelected(it, true)
-  local path = render_item(it, take, out, name, not dry, tail) .. ".flac"
+  local path = render_item(it, take, out, name, not dry, tail, bare) .. ".flac"
   reaper.SetActiveTake(playing)
   reaper.SelectAllMediaItems(proj, false)
   for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaItem*") then reaper.SetMediaItemSelected(s, true) end end

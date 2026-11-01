@@ -51,8 +51,13 @@ one: prints.route) is printed through that track: a one-track stem over the item
 inputs and items and the source track's other items muted for the render (sync.print_routed). The instrument
 track's chain is part of the print's source hash, so changing it prints again; Health names a routed instrument
 that doesn't load here (an offline plug-in counts as an instrument by its "VSTi:"-style name). Audio gets a print
-only for Melodyne and other ARA edits (the editable take is dry there, the print wet); an audio track with a
-plug-in someone lacks has no print yet.
+for Melodyne and other ARA edits (the editable take is dry there, the print wet), and (0.37) for a one-take audio
+item on a track with a plug-in that isn't on everyone's list (prints.lacking): dry is the recording, wet the print
+through the track. Prints leave the item's own volume and fades out (the item applies them to the take that plays).
+While a track plays a wet take its FX button is held off on that machine (prints.hold_fx; mirror reads the band's
+setting from P_EXT:band_fxen), so plug-ins that load there don't apply twice. Prints render in a second, hidden
+REAPER (lib/bgrender.lua: a saved copy, set up as the render in front would be, with the other tracks' plug-ins
+offline, rendered with -renderproject) and are picked up by a later pass; where that fails they render in front.
 
 ## History
 

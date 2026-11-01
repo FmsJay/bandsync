@@ -637,7 +637,7 @@ local function updated()
   return ready
 end
 -- an error anywhere in a tick (a malformed cue from someone's machine, say) is logged, and Live sync carries on
-local said_at = -math.huge
+local said_at, sws_at = -math.huge, -math.huge
 tick = function()
   -- (the tab may have just been closed: check before asking about it, or REAPER stops us with an error box)
   if reaper.ValidatePtr2(0, proj, "ReaProject*") and reaper.GetPlayStateEx(proj) & 4 == 0 and updated() then
@@ -648,6 +648,7 @@ tick = function()
     BANDSYNC_LIVE_PROJ = proj
     return dofile(dir .. "/BandSync - Live sync.lua")
   end
+  if reaper.time_precise() - sws_at > 1 then sws_at = reaper.time_precise(); pcall(band.sws_colours) end -- (lib/band.lua)
   local ok, go = pcall(tick_body)
   if not ok then
     if reaper.time_precise() - said_at > 30 then said_at = reaper.time_precise(); band.log("live sync error: " .. tostring(go)) end

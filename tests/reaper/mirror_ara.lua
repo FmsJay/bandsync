@@ -19,6 +19,7 @@ local function pass(p, cfg) reaper.SelectProjectInstance(p); local n = 0; for _ 
 local function recv(p, cfg) reaper.SelectProjectInstance(p); local n = 0; for _ = 1, 3 do n = n + sync.receive(p, cfg, song, room, yes) end; return n end
 local front = reaper.EnumProjects(-1)
 local pa, pb
+reaper.SetExtState("BandSync", "bg render", "off", false) -- (prints in front here: tests/reaper/audio_prints.lua covers the background)
 local ok, err = pcall(function()
   reaper.Main_OnCommand(40859, 0); pa = reaper.EnumProjects(-1)
   reaper.Main_OnCommand(40859, 0); pb = reaper.EnumProjects(-1)
@@ -83,4 +84,5 @@ for _, p in pairs({ pa, pb }) do
   end
 end
 if front and reaper.ValidatePtr2(0, front, "ReaProject*") then reaper.SelectProjectInstance(front) end
+reaper.DeleteExtState("BandSync", "bg render", false)
 return (fails == 0 and "ALL PASS" or fails .. " FAILED") .. "\n" .. table.concat(out, "\n")

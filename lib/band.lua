@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.36.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.37.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -315,6 +315,24 @@ function band.color_in(c)
   return (c & ~0xFFFFFF) | reaper.ColorToNative(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF)
 end
 
+-- SWS auto track colouring is off while a band song is in front (James, 2026-11-01): its rules recolour every
+-- track, so a machine with it on could neither send the band's colours nor keep them. It goes back on when another
+-- project comes to the front (Live sync and Autostart both look). "sws colour off": BandSync switched it off, so
+-- BandSync switches it back (and only then: someone who has it off themselves keeps it off).
+function band.sws_colours()
+  local id = reaper.NamedCommandLookup and reaper.NamedCommandLookup("_SWSAUTOCOLOR_ENABLE") or 0
+  if id <= 0 then return end
+  local front = band.binding(reaper.EnumProjects(-1)) ~= nil
+  local on, ours = reaper.GetToggleCommandState(id) == 1, reaper.GetExtState(band.SECTION, "sws colour off") ~= ""
+  if front and on then
+    reaper.Main_OnCommand(id, 0)
+    reaper.SetExtState(band.SECTION, "sws colour off", "1", true)
+  elseif not front and ours then
+    if not on then reaper.Main_OnCommand(id, 0) end
+    reaper.DeleteExtState(band.SECTION, "sws colour off", true)
+  end
+end
+
 -- ---- bands: each band is its own shared folder (docs/bands-design.md) ----------------------------------------
 -- <root>/_band/band.json says which band a folder is: { name, id = its Syncthing folder id, drive = its Google Drive
 -- folder's name }. A folder without one is the first band BandSync had: id "bandsync", Drive folder "BandSync".
@@ -538,7 +556,13 @@ function band.render(n, s)
   for _, k in ipairs(RENDER_S) do saved_s[k] = select(2, reaper.GetSetProjectInfo_String(0, k, "", false)) end
   for k, v in pairs(n) do reaper.GetSetProjectInfo(0, k, v, true) end
   for k, v in pairs(s) do reaper.GetSetProjectInfo_String(0, k, v, true) end
-  reaper.Main_OnCommand(42230, 0) -- File: Render project, most recent settings, auto-close dialog
+  local job = band.render_job -- (lib/bgrender.lua: a copy set up for this render, rendered by a second REAPER)
+  if job then
+    reaper.GetSetProjectInfo_String(0, "RENDER_FILE", job.dir, true)
+    reaper.Main_SaveProjectEx(0, job.copy, 0) -- (0: a copy; the project keeps its own file)
+  else
+    reaper.Main_OnCommand(42230, 0) -- File: Render project, most recent settings, auto-close dialog
+  end
   for k, v in pairs(saved_n) do reaper.GetSetProjectInfo(0, k, v, true) end
   for k, v in pairs(saved_s) do reaper.GetSetProjectInfo_String(0, k, v, true) end
 end

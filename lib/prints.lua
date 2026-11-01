@@ -112,17 +112,119 @@ function prints.mode() local m = reaper.GetExtState(band.SECTION, "midi_plays");
 -- Make the item play what this machine chose.
 function prints.choose(it)
   local midi, print = prints.takes(it)
-  if print and not midi then -- an ARA take: editable only where it was edited (see prints.ARA)
-    local ara = prints.ara_take(it)
-    local want = ara and take_ext(ara, prints.HERE) == take_ext(print, prints.KEY) and ara or print
+  local ara = print and not midi and prints.ara_take(it)
+  if ara then -- an ARA take: editable only where it was edited (see prints.ARA)
+    local want = take_ext(ara, prints.HERE) == take_ext(print, prints.KEY) and ara or print
     if reaper.GetActiveTake(it) ~= want then reaper.SetActiveTake(want); reaper.UpdateItemInProject(it) end
     return
   end
-  if not (midi and print) then return end
+  local dry = midi or (print and prints.audio_take(it))
+  if not (dry and print) then return end
   local mode = prints.mode()
-  local want = mode == "sound" and print or mode == "notes" and midi
-    or (prints.track_plays(reaper.GetMediaItem_Track(it)) and midi or print)
+  local tr = reaper.GetMediaItem_Track(it)
+  local want = mode == "sound" and print or mode == "notes" and dry or (prints.track_plays(tr) and dry or print)
   if reaper.GetActiveTake(it) ~= want then reaper.SetActiveTake(want); reaper.UpdateItemInProject(it) end
+  prints.hold_fx(tr)
+end
+
+-- A wet take already went through its track's plug-ins: played through them again, the ones that load here would
+-- apply twice (a missing amp sim passes the print through, the reverb after it doesn't). So while an item on the
+-- track plays its wet take, the track's FX are switched off here (its FX button), and back on once none does.
+-- Only here: mirror reads the band's setting from prints.FXEN while it's held. (ARA prints have only the take's
+-- own plug-ins in them: their track's still apply.)
+prints.FXEN = "band_fxen" -- (on a track, this machine only: the FX button as the band has it, while held off here)
+function prints.hold_fx(tr)
+  local wet = false
+  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    local x = reaper.GetTrackMediaItem(tr, i)
+    local tk = reaper.GetActiveTake(x)
+    if tk and take_ext(tk, prints.KEY) ~= "" and not prints.ara_take(x) then wet = true; break end
+  end
+  local held = band.track_ext(tr, prints.FXEN)
+  if wet and held == "" then
+    reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. prints.FXEN, tostring(math.floor(reaper.GetMediaTrackInfo_Value(tr, "I_FXEN"))), true)
+    reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", 0)
+  elseif not wet and held ~= "" then
+    reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:" .. prints.FXEN, "", true)
+    reaper.SetMediaTrackInfo_Value(tr, "I_FXEN", tonumber(held) or 1)
+  end
+end
+
+-- Audio (0.37): the take a wet print stands in for, on an audio item whose track has a plug-in someone in the band
+-- lacks: its one take that isn't the print (an item with several takes gets none). nil for MIDI and ARA items.
+function prints.audio_take(it)
+  local dry, n = nil, 0
+  for k = 0, reaper.CountTakes(it) - 1 do
+    local tk = reaper.GetTake(it, k)
+    if tk and take_ext(tk, prints.KEY) == "" then
+      if reaper.TakeIsMIDI(tk) then return nil end
+      dry, n = tk, n + 1
+    end
+  end
+  if n ~= 1 or prints.ara_take(it) then return nil end
+  return dry
+end
+
+-- Whether a track has a plug-in someone in the band doesn't have (everyone's published list, lib/plugins.lua; by
+-- its own name, not one it was renamed to). Looked up once a minute.
+local common = { at = -math.huge }
+function prints.lacking(tr, cfg)
+  if not cfg then return false end
+  local plugins = require("plugins")
+  if reaper.time_precise() - common.at > 60 then
+    local ok, set, members = pcall(plugins.band, cfg)
+    common.at, common.set, common.n = reaper.time_precise(), ok and set or nil, ok and #members or 0
+  end
+  if not common.set or common.n < 2 then return false end
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+    local ok, name = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_name")
+    if not ok or name == "" then name = select(2, reaper.TrackFX_GetFXName(tr, i)) end
+    if not common.set[plugins.key(name)] then return true end
+  end
+  return false
+end
+
+-- What an audio print is made from: the recording, how the take plays it and its own plug-ins, the item's length,
+-- and the band's plug-in chain on its track (`fx_hash`). Not the item's volume and fades: prints leave those out,
+-- and the item applies them to whichever take plays.
+function prints.audio_source(it, tk, fx_hash)
+  local f = { (reaper.GetMediaSourceFileName(reaper.GetMediaItemTake_Source(tk), ""):match("[^/\\]*$")) }
+  f[#f + 1] = string.format("%.6f", reaper.GetMediaItemInfo_Value(it, "D_LENGTH"))
+  for _, k in ipairs({ "D_STARTOFFS", "D_PLAYRATE", "D_PITCH", "D_VOL", "D_PAN", "I_CHANMODE", "B_PPITCH" }) do
+    f[#f + 1] = string.format("%.6f", reaper.GetMediaItemTakeInfo_Value(tk, k))
+  end
+  for i = 0, reaper.TakeFX_GetCount(tk) - 1 do f[#f + 1] = select(2, reaper.TakeFX_GetFXName(tk, i, "")) end
+  return require("mirror").hash(table.concat(f, "|") .. "|" .. (fx_hash or ""))
+end
+
+-- Render a print: in the background where that works (lib/bgrender.lua: nil while it renders, and a later pass
+-- picks it up), else here and now. `render()` renders it in front and returns its path; `tracks`: what it goes through.
+function prints.render(oid, name, out, tracks, render)
+  local bg = require("bgrender")
+  if bg.on() then
+    local path, state = bg.claim(oid, name, out)
+    if path then return path end
+    if state == "running" then return nil end
+    if state ~= "failed" then
+      if bg.busy() then return nil end
+      local keep = {}
+      for _, t in ipairs(tracks) do keep[#keep + 1] = reaper.GetTrackGUID(t) end
+      if bg.start(oid, name, keep, render) then return nil end
+    end
+  end
+  return render()
+end
+
+-- The print goes in as the item's wet take (replacing an older one), the playing take left as it was.
+local function attach(it, print, dry, path, h)
+  local was = reaper.GetActiveTake(it)
+  local ptk = print or reaper.AddTakeToMediaItem(it)
+  reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))
+  reaper.SetMediaItemTakeInfo_Value(ptk, "D_STARTOFFS", 0)
+  label_takes(dry, ptk)
+  reaper.GetSetMediaItemTakeInfo_String(ptk, "P_EXT:" .. prints.KEY, h, true)
+  if was then reaper.SetActiveTake(was) end
+  return ptk
 end
 
 -- Melodyne and the other ARA plug-ins on an audio take: their edits live in the project, outside the item, so a
@@ -174,13 +276,11 @@ local function refresh_ara(proj, it, media_dir)
   if print and take_ext(print, prints.KEY) == h then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
   reaper.RecursiveCreateDirectory(media_dir, 0)
-  local path = require("sync").print_item(proj, it, ara, media_dir, print_name(oid, h), nil, true)
+  local name = print_name(oid, h)
+  local path = prints.render(oid, name, media_dir, { reaper.GetMediaItem_Track(it) },
+    function() return require("sync").print_item(proj, it, ara, media_dir, name, nil, true, true) end)
   if not path then return false end
-  local ptk = print or reaper.AddTakeToMediaItem(it)
-  reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))
-  reaper.SetMediaItemTakeInfo_Value(ptk, "D_STARTOFFS", 0)
-  label_takes(ara, ptk)
-  reaper.GetSetMediaItemTakeInfo_String(ptk, "P_EXT:" .. prints.KEY, h, true)
+  attach(it, print, ara, path, h)
   reaper.GetSetMediaItemTakeInfo_String(ara, "P_EXT:" .. prints.HERE, h, true)
   prints.choose(it)
   reaper.UpdateItemInProject(it)
@@ -192,28 +292,30 @@ end
 -- An audio take with Melodyne (or another ARA plug-in) gets its print the same way (see prints.ARA). A track that
 -- plays an instrument on another track (prints.route) prints through that track (sync.print_routed), and that
 -- track's chain (`route_hash`) is part of what the print is made from.
-function prints.refresh(proj, it, media_dir, fx_hash, route_hash)
+-- An audio item gets one too when its track has a plug-in someone in the band lacks (`cfg`: whose band). Prints
+-- render in the background where that works (prints.render), so this returns true on the pass that picks one up.
+function prints.refresh(proj, it, media_dir, fx_hash, route_hash, cfg)
   local midi, print = prints.takes(it)
-  if not midi then return refresh_ara(proj, it, media_dir) end
   local tr = reaper.GetMediaItem_Track(it)
-  local dest = prints.route(tr)
+  local audio = not midi and prints.audio_take(it)
+  if not midi and not audio then return refresh_ara(proj, it, media_dir) end
+  local dest = midi and prints.route(tr)
   if (reaper.TrackFX_GetCount(tr) == 0 and not dest) or not prints.track_plays(tr) then return false end
-  local h = prints.source(it, midi, (fx_hash or "") .. (dest and ("\0" .. (route_hash or "")) or ""))
+  if audio and not prints.lacking(tr, cfg) then return false end
+  local dry = midi or audio
+  local h = midi and prints.source(it, midi, (fx_hash or "") .. (dest and ("\0" .. (route_hash or "")) or "")) or prints.audio_source(it, audio, fx_hash)
   if print and take_ext(print, prints.KEY) == h then return false end
   local oid = select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false))
   local name = print_name(oid, h)
   reaper.RecursiveCreateDirectory(media_dir, 0)
   local sync = require("sync")
-  local path = dest and sync.print_routed(proj, it, midi, dest, media_dir, name) or (not dest and sync.print_item(proj, it, midi, media_dir, name, nil))
+  local path = prints.render(oid, name, media_dir, dest and { tr, dest } or { tr }, function()
+    if dest then return sync.print_routed(proj, it, midi, dest, media_dir, name) end
+    return sync.print_item(proj, it, dry, media_dir, name, nil, false, true)
+  end)
   if not path then return false end
   if dest then prints.midi_only(tr, dest) end
-  local was = reaper.GetActiveTake(it)
-  local ptk = print or reaper.AddTakeToMediaItem(it)
-  reaper.SetMediaItemTake_Source(ptk, reaper.PCM_Source_CreateFromFile(path))
-  reaper.SetMediaItemTakeInfo_Value(ptk, "D_STARTOFFS", 0)
-  label_takes(midi, ptk)
-  reaper.GetSetMediaItemTakeInfo_String(ptk, "P_EXT:" .. prints.KEY, h, true)
-  if was then reaper.SetActiveTake(was) end
+  attach(it, print, dry, path, h)
   prints.choose(it)
   reaper.UpdateItemInProject(it)
   return true

@@ -24,6 +24,7 @@ local function peak(tk)
   reaper.DestroyAudioAccessor(acc)
   return best
 end
+reaper.SetExtState("BandSync", "bg render", "off", false) -- (prints in front here: tests/reaper/audio_prints.lua covers the background)
 local ok, err = pcall(function()
   for i = 0, 2 do reaper.InsertTrackInProject(p, i, 0) end
   local notes, other, kit = reaper.GetTrack(p, 0), reaper.GetTrack(p, 1), reaper.GetTrack(p, 2)
@@ -91,4 +92,5 @@ if reaper.ValidatePtr2(0, p, "ReaProject*") then
   reaper.Main_OnCommand(40860, 0)
 end
 if front and reaper.ValidatePtr2(0, front, "ReaProject*") then reaper.SelectProjectInstance(front) end
+reaper.DeleteExtState("BandSync", "bg render", false)
 return (fails == 0 and "ALL PASS" or (fails .. " FAILED")) .. "\n" .. table.concat(out, "\n")

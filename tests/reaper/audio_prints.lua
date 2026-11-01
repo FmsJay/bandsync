@@ -57,6 +57,8 @@ local ok, err = pcall(function()
   reaper.UpdateArrange()
   check(prints.audio_take(it) ~= nil and prints.lacking(tr, cfg) and not prints.lacking(plain, cfg), "the guitar track needs a print (the Mac lacks its plug-in), the other doesn't")
   -- the print renders in the background: the first call only starts it
+  local ini_text = band.read(reaper.get_ini_file())
+  local ini_size = band.size(reaper.get_ini_file())
   local t0 = reaper.time_precise()
   local did = prints.refresh(pa, it, media, "fxhash", nil, cfg)
   local first = reaper.time_precise() - t0
@@ -67,6 +69,15 @@ local ok, err = pcall(function()
     did = prints.refresh(pa, it, media, "fxhash", nil, cfg)
   end
   say(string.format("     background print in %.1f s", reaper.time_precise() - t0))
+  do -- the render profile (0.40): its own reaper.ini, plug-ins but no extensions, this REAPER's settings untouched
+    local P = require("bgrender").PROFILE
+    local pini, w = "", reaper.time_precise() -- (the render REAPER rewrites it as it quits: read it once that's done)
+    repeat pini = band.read(P .. "/reaper.ini") or "" until pini:find("csurf_cnt=", 1, true) and reaper.time_precise() - w > 2 or reaper.time_precise() - w > 10
+    check(pini:find("csurf_cnt=0", 1, true) and not pini:find("\nmidiins=[1-9]") and pini:lower():find("[recent]", 1, true) and pini:lower():find("job.rpp", 1, true), "the render REAPER had its own settings: no MIDI or surfaces, its jobs in its own Recent projects")
+    local up = band.subdirs(P .. "/UserPlugins")
+    check(#band.files(P .. "/UserPlugins") == 0 and (#up == 0 or (#up == 1 and up[1] == "FX")), "and its plug-ins without REAPER's extensions (" .. table.concat(up, ",") .. ")")
+    check(band.size(reaper.get_ini_file()) == ini_size and band.read(reaper.get_ini_file()) == ini_text, "this REAPER's reaper.ini wasn't rewritten by it")
+  end
   local bg_done, bg_failed = require("bgrender").counts()
   check(bg_done == 1 and bg_failed == 0, string.format("it really rendered in the background (%d done, %d failed: a failed one renders in front)", bg_done, bg_failed))
   local dry, wet = prints.audio_take(it), select(2, prints.takes(it))

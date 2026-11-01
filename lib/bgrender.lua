@@ -76,7 +76,7 @@ end
 -- hidden .cmd don't stop that. The launcher stays until that REAPER quits (a desktop goes with its last handle),
 -- writes its process id to pid.txt, and tidies empty job folders.
 local LAUNCH = [==[
-param($exe, $job)
+param($exe, $job, $res, $profile)
 Add-Type @"
 using System; using System.Runtime.InteropServices;
 public static class BandSyncDesk {
@@ -88,13 +88,21 @@ public static class BandSyncDesk {
 }
 "@
 $dir = Split-Path $job
+# the render profile's links (bg.profile): this REAPER's Effects and Data, and its plug-ins (UserPlugins\FX) only
+foreach ($d in "Effects", "Data") {
+  $l = Join-Path $profile $d
+  if (-not (Test-Path $l) -and (Test-Path (Join-Path $res $d))) { New-Item -ItemType Junction -Path $l -Target (Join-Path $res $d) | Out-Null }
+}
+New-Item -ItemType Directory -Force (Join-Path $profile "UserPlugins") | Out-Null
+$fx = Join-Path $profile "UserPlugins\FX"
+if (-not (Test-Path $fx) -and (Test-Path (Join-Path $res "UserPlugins\FX"))) { New-Item -ItemType Junction -Path $fx -Target (Join-Path $res "UserPlugins\FX") | Out-Null }
 Get-ChildItem (Split-Path $dir) -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $dir -and -not (Get-ChildItem $_.FullName -Force) } | Remove-Item -ErrorAction SilentlyContinue
 $desk = [BandSyncDesk]::CreateDesktop("BandSyncRender", [IntPtr]::Zero, [IntPtr]::Zero, 0, 0x10000000, [IntPtr]::Zero)
 $si = New-Object BandSyncDesk+SI
 $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
 $si.desktop = "BandSyncRender"
 $pi = New-Object BandSyncDesk+PI
-$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -renderproject "' + $job + '"'
+$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "' + (Join-Path $profile "reaper.ini") + '" -renderproject "' + $job + '"'
 $env:BANDSYNC_RENDER = "1" # (inherited: Scripts/__startup.lua's guard skips the person's startup scripts in it)
 # ([NullString]::Value, not $null: PowerShell passes $null to a string parameter as "", and CreateProcess refuses "")
 if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
@@ -103,17 +111,65 @@ if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Va
 } else { Set-Content (Join-Path $dir "pid.txt") "failed" }
 ]==]
 
+-- ---- the render profile (0.40) ------------------------------------------------------------------------------------
+-- The second REAPER runs with a settings folder of its own (-cfgfile, James, 2026-11-01): links to this REAPER's
+-- Effects and Data and to its plug-ins (UserPlugins/FX), but none of its extensions: started plainly, the second REAPER
+-- loaded all of them, ReaLearn, ReaBlink (Ableton Link), MCU Live, Komplete Kontrol..., and opened the MIDI devices
+-- (PC, 0.39.3). Copies of the plug-in lists (no scan: an empty folder rescanned everything and hung past 60 s) and the
+-- licence, and a reaper.ini of its own, which it writes instead of this REAPER's (it rewrote it on quitting, and put
+-- each job in Recent projects). The launcher makes the links; the files are refreshed here every time.
+local PROFILE = TMP .. "/profile"
+local COPY = { "^reaper%-vstplugins.*%.ini$", "^reaper%-vstshells.*%.ini$", "^reaper%-clap.*%.ini$", "^reaper%-auplugins.*%.ini$",
+  "^reaper%-jsfx%.ini$", "^reaper%-reginfo2%.ini$" }
+-- This REAPER's reaper.ini for the render profile: no MIDI devices in or out, no control surfaces (the web interface's
+-- port too), no splash, no recent or last project, the audio device closed while it's in the background. Pure.
+function bg.profile_ini(text)
+  local out = {}
+  for raw in (text or ""):gmatch("[^\r\n]+") do
+    local line = raw
+    local k = line:match("^([%w_]+)=")
+    if k and (k:match("^midiins") or k:match("^midiouts")) and line:match("=%-?%d+$") then line = k .. "=0"
+    elseif k == "csurf_cnt" then line = "csurf_cnt=0"
+    elseif k and k:match("^csurf_%d+$") then line = nil
+    elseif k == "splash" or k == "splash2" then line = k .. "=0"
+    elseif k and (k:match("^recent%d+$") or k == "lastproject" or k == "lastprojuiref") then line = nil
+    elseif k == "audiocloseinactive" then line = nil end
+    if line then
+      out[#out + 1] = line
+      if line == "[REAPER]" then out[#out + 1] = "audiocloseinactive=1" end
+    end
+  end
+  return table.concat(out, "\n") .. "\n"
+end
+local function profile()
+  local res = reaper.GetResourcePath():gsub("\\", "/")
+  reaper.RecursiveCreateDirectory(PROFILE, 0)
+  for _, f in ipairs(band.files(res)) do
+    for _, pat in ipairs(COPY) do
+      if f:lower():match(pat) then band.copy_atomic(res .. "/" .. f, PROFILE .. "/" .. f); break end
+    end
+  end
+  band.write_atomic(PROFILE .. "/reaper.ini", bg.profile_ini(band.read(reaper.get_ini_file())))
+  return res
+end
+bg.PROFILE = PROFILE
+
 local function launch(exe, job)
+  local res = profile()
   if WIN then
     local cmd, vbs, ps = job:gsub("%.rpp$", ".cmd"), TMP .. "/hidden.vbs", TMP .. "/launch.ps1"
     if band.read(ps) ~= LAUNCH then band.write_atomic(ps, LAUNCH) end
-    band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s"\r\n', ps, exe, job))
+    band.write_atomic(cmd, string.format('@powershell -NoProfile -ExecutionPolicy Bypass -File "%s" "%s" "%s" "%s" "%s"\r\n', ps, exe, job, res, PROFILE))
     if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
     reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, cmd), -1)
   else -- a Mac (only when switched on: bg.on): tried on 0.39.1, renders in ~1 s but shows a window and takes the keys
     local sh = job:gsub("%.rpp$", ".sh")
     band.write_atomic(sh, string.format("find '%s' -mindepth 1 -maxdepth 1 -type d -empty -delete 2>/dev/null\n" .. -- (claimed jobs' empty folders)
-      "BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -renderproject '%s' >/dev/null 2>&1 &\n", TMP, exe, job))
+      "P='%s'; R='%s'\n" .. -- (the render profile's links, as on Windows)
+      "for d in Effects Data; do [ -e \"$P/$d\" ] || [ ! -d \"$R/$d\" ] || ln -s \"$R/$d\" \"$P/$d\"; done\n" ..
+      "mkdir -p \"$P/UserPlugins\"; [ -e \"$P/UserPlugins/FX\" ] || [ ! -d \"$R/UserPlugins/FX\" ] || ln -s \"$R/UserPlugins/FX\" \"$P/UserPlugins/FX\"\n" ..
+      "BANDSYNC_RENDER=1 nohup '%s' -newinst -nosplash -ignoreerrors -noactivate -cfgfile \"$P/reaper.ini\" -renderproject '%s' >/dev/null 2>&1 &\n",
+      TMP, PROFILE, res, exe, job))
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
   end
 end

@@ -91,7 +91,7 @@ Everything below is the detail.
   made it). Only on that computer: the band's own colours are kept aside meanwhile, never sent or lost.
 - **Prints render in the background**: a second, hidden REAPER renders each one from a copy of the song while you
   carry on (a few seconds each, one at a time), and it's added when it's done; on Windows it runs on a desktop of its
-  own, so nothing shows or takes the keyboard. Where that doesn't work it renders in front as before; Setup > Options
+  own, so nothing shows or takes the keyboard. It runs with a settings folder of its own (in your temp folder): your plug-ins and effects, but none of REAPER's extensions, MIDI devices or control surfaces, and it never touches your reaper.ini or Recent projects. Where that doesn't work it renders in front as before; Setup > Options
   turns it off. BandSync adds a guard to the top of Scripts/__startup.lua so your own startup scripts don't run in it.
 - **Who prints**: whoever changed a part, when they have every plug-in it plays through. Someone who doesn't is
   covered by a bandmate in the song who does (the first by name), and **Print selected tracks here** (Claims) puts you

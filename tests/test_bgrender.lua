@@ -68,4 +68,10 @@ local ext = table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '    <BANDSYNC', ' 
   '    <OTHER', '      Y 2', '    >', '  >', '>', '' }, "\n")
 assert(bg.prepare(ext, {}) == table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '    <OTHER', '      Y 2', '    >', '  >', '>', '' }, "\n"),
   "BandSync's project state left out of the copy, anyone else's kept")
+-- the render profile's reaper.ini: no MIDI devices, surfaces, splash or recent projects; the device closed while inactive
+local ini = bg.profile_ini(table.concat({ "[REAPER]", "splash=1", "midiins=19954", "midiouts_clock=344388", "midiins_x_h=0",
+  "csurf_cnt=1", "csurf_0=HTTP 0 8080 '' 'index.html' 0 ''", "recent01=C:/a.rpp", "lastproject=C:/a.rpp", "audiocloseinactive=0",
+  "asio_driver=1", "[other]", "x=1" }, "\r\n"))
+assert(ini == table.concat({ "[REAPER]", "audiocloseinactive=1", "splash=0", "midiins=0", "midiouts_clock=0", "midiins_x_h=0",
+  "csurf_cnt=0", "asio_driver=1", "[other]", "x=1", "" }, "\n"), ini)
 print("ok")

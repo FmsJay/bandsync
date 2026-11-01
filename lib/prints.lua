@@ -412,11 +412,13 @@ end
 
 -- Setup > Options: rendering in the background, this machine's choice.
 function prints.options(ctx, ImGui)
-  local on = reaper.GetExtState(band.SECTION, "bg render") ~= "off"
+  local set, default = reaper.GetExtState(band.SECTION, "bg render"), require("bgrender").default_on()
+  local on = set == "on" or (default and set ~= "off")
   local rv, v = ImGui.Checkbox(ctx, "Render wet takes in the background##bgrender", on)
-  if rv then reaper.SetExtState(band.SECTION, "bg render", v and "" or "off", true) end
+  if rv then reaper.SetExtState(band.SECTION, "bg render", v == default and "" or (v and "on" or "off"), true) end
   ImGui.SetItemTooltip(ctx, "On: a hidden second REAPER renders each wet take while you keep working (a few seconds each).\n" ..
-    "Off: REAPER renders them in front, holding up the screen for a moment each time.")
+    "Off: REAPER renders them in front, holding up the screen for a moment each time." ..
+    (default and "" or "\nOff by default on a Mac: the second REAPER there takes the keyboard for a moment each time."))
 end
 
 -- ---- takes become lanes (0.39) -----------------------------------------------------------------------------------

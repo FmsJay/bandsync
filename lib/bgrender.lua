@@ -18,11 +18,15 @@ local jobs = {} -- name -> { dir, started, sizes, at }
 local done, failed = 0, 0
 
 -- Whether prints go to the background here (ExtState "bg render" = "off" turns it off for good).
+-- On a Mac only when switched on: a second REAPER there takes the keyboard for ~0.7 s, shows a "Scanning VST
+-- plugins" box and a second Dock icon, and `open -j -g` was worse (Mac, 0.39.0): there's no hidden desktop to put it on.
 function bg.on()
-  if reaper.GetExtState(band.SECTION, "bg render") == "off" then return false end
+  local set = reaper.GetExtState(band.SECTION, "bg render")
+  if set == "off" or (not WIN and set ~= "on") then return false end
   if failed >= 2 and done == 0 then return false end
   return WIN or reaper.GetOS():find("^OSX") ~= nil or reaper.GetOS():find("^macOS") ~= nil
 end
+function bg.default_on() return WIN end
 
 -- The copy, ready for the second REAPER: the plug-ins of every track not in `keep` (REAPER track GUIDs) and the
 -- master's switched offline (BYPASS <bypass> <offline> ...). A stem of the selected track (RENDER_STEMS 2: a
@@ -112,11 +116,14 @@ local function launch(exe, job)
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
   end
 end
+-- (on a Mac GetExePath() is the folder holding REAPER.app, "/Applications": Mac, 0.39.0)
 local function exe_path()
   local d = reaper.GetExePath():gsub("\\", "/")
   if WIN then return d .. "/reaper.exe" end
-  if d:match("%.app$") then return d .. "/Contents/MacOS/REAPER" end
-  return d .. "/REAPER"
+  for _, p in ipairs({ d .. "/Contents/MacOS/REAPER", d .. "/REAPER.app/Contents/MacOS/REAPER", d .. "/REAPER64.app/Contents/MacOS/REAPER", d .. "/REAPER" }) do
+    if reaper.file_exists(p) then return p end
+  end
+  return d .. "/REAPER.app/Contents/MacOS/REAPER"
 end
 
 -- Render in the background, one print per item (`key`) at a time: `render(dir)` sets the project up and calls

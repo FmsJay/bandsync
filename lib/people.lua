@@ -130,11 +130,16 @@ function people.options(ctx, ImGui, cfg)
   local list = {}
   for _, c in ipairs(people.PALETTE) do list[#list + 1] = c end
   for _, c in ipairs({ 0xE0E0E0, 0x8A6BFF, 0x3DFF8A, 0xFFE05A }) do list[#list + 1] = c end
+  local others = {} -- (a colour someone else shows in can't be picked: picking it moved their default, Mac 0.39.0)
+  for u, c in pairs(people.colours(cfg.root, { cfg.user })) do if u ~= cfg.user then others[c] = u end end
   for i, c in ipairs(list) do
     if i > 1 then ImGui.SameLine(ctx) end
     ImGui.PushID(ctx, i)
     local size = c == mine and 26 or 20 -- (yours: the bigger one)
+    ImGui.BeginDisabled(ctx, others[c] ~= nil)
     if ImGui.ColorButton(ctx, "##colour", (c << 8) | 0xFF, ImGui.ColorEditFlags_NoTooltip, size, size) then people.pick(cfg, c) end
+    ImGui.EndDisabled(ctx)
+    if others[c] then ImGui.SetItemTooltip(ctx, others[c] .. "'s") end
     ImGui.PopID(ctx)
   end
   ImGui.SameLine(ctx)

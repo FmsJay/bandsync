@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.42.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.42.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -65,13 +65,19 @@ function band.start_live(dir)
     end
     local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
     local beat = cmd > 0 and tonumber(reaper.GetExtState(band.SECTION, "live cmd " .. cmd))
-    if cmd > 0 and not (beat and reaper.time_precise() - beat < 5) then reaper.Main_OnCommand(cmd, 0); return true end
+    -- (its toggle says whether that one's running: the beat alone goes stale behind any dialog, such as Publish's song name,
+    -- and running a script that's already running does nothing, so the new tab stayed "Sync off": PC and laptop, 0.42.2)
+    if cmd > 0 and not (beat and reaper.time_precise() - beat < 5) and reaper.GetToggleCommandState(cmd) ~= 1 then
+      reaper.Main_OnCommand(cmd, 0)
+      return true
+    end
   end
   return false
 end
 -- What BandSync did, for the panel's Activity list (the last 80 lines, this REAPER session). It no longer opens the
--- ReaScript console, which popped up in front on every send and read like an error (Mac, 2026-10-28); the console
--- still gets the line when it's already open (with js_ReaScriptAPI, which can tell).
+-- ReaScript console, which popped up in front on every send and read like an error (Mac, 2026-10-28). Nor does it copy
+-- a line there when the console is open: finding that out searched every window, 0.38 s a line, which froze REAPER on
+-- every change the band sent (PC, 0.42.2). Setup > Console shows them.
 band.LOG_KEY, band.LOG_MAX = "activity", 80
 function band.log(text)
   local lines = {}
@@ -79,9 +85,6 @@ function band.log(text)
   lines[#lines + 1] = os.date("%H:%M ") .. tostring(text):gsub("\n", " ")
   while #lines > band.LOG_MAX do table.remove(lines, 1) end
   reaper.SetExtState(band.SECTION, band.LOG_KEY, table.concat(lines, "\n"), false)
-  if reaper.JS_Window_Find and reaper.JS_Window_Find("ReaScript console output", true) then
-    reaper.ShowConsoleMsg("[bandsync] " .. text .. "\n")
-  end
 end
 -- The Activity lines, newest first.
 function band.activity()
@@ -561,7 +564,11 @@ function band.render(n, s)
     reaper.GetSetProjectInfo_String(0, "RENDER_FILE", job.dir, true)
     reaper.Main_SaveProjectEx(0, job.copy, 0) -- (0: a copy; the project keeps its own file)
   else
+    -- (a print that clips left the render window open until someone clicked it: Mac, 0.42.2. 4: it closes regardless.)
+    local keep = reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("renderclosewhendone", -1)
+    if keep and keep >= 0 then reaper.SNM_SetIntConfigVar("renderclosewhendone", 4) end
     reaper.Main_OnCommand(42230, 0) -- File: Render project, most recent settings, auto-close dialog
+    if keep and keep >= 0 then reaper.SNM_SetIntConfigVar("renderclosewhendone", keep) end
   end
   for k, v in pairs(saved_n) do reaper.GetSetProjectInfo(0, k, v, true) end
   for k, v in pairs(saved_s) do reaper.GetSetProjectInfo_String(0, k, v, true) end

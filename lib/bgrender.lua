@@ -114,12 +114,13 @@ $si = New-Object BandSyncDesk+SI
 $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
 $si.desktop = "BandSyncRender"
 $pi = New-Object BandSyncDesk+PI
-$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "' + (Join-Path $profile $ini) + '" -renderproject "' + $job + '"'
+$cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "' + (Join-Path $profile $ini) + '" "' + $job + '"'
 $env:BANDSYNC_RENDER = "1" # (inherited: Scripts/__startup.lua's guard skips the person's startup scripts in it)
 # ([NullString]::Value, not $null: PowerShell passes $null to a string parameter as "", and CreateProcess refuses "")
 if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
   Set-Content (Join-Path $dir "pid.txt") $pi.pid
   try { Wait-Process -Id $pi.pid -Timeout 600 -ErrorAction SilentlyContinue } catch {}
+  if (Test-Path $dir) { Set-Content (Join-Path $dir "done.txt") "1" }
 } else { Set-Content (Join-Path $dir "pid.txt") "failed" }
 ]==]
 
@@ -145,14 +146,85 @@ function bg.profile_ini(text)
     elseif k and k:match("^csurf_%d+$") then line = nil
     elseif k == "splash" or k == "splash2" then line = k .. "=0"
     elseif k and (k:match("^recent%d+$") or k == "lastproject" or k == "lastprojuiref") then line = nil
-    elseif k == "audiocloseinactive" then line = nil end
+    elseif k == "audiocloseinactive" or k == "renderclosewhendone" then line = nil end
     if line then
       out[#out + 1] = line
-      if line:upper() == "[REAPER]" then out[#out + 1] = "audiocloseinactive=1" end -- (the Mac writes [reaper]: Mac, 0.40.2)
+      -- (the Mac writes [reaper]: Mac, 0.40.2) (4: the render window closes whatever came out, a print that clips too,
+      -- where nobody could click it: Mac, 0.42.2)
+      if line:upper() == "[REAPER]" then out[#out + 1] = "audiocloseinactive=1"; out[#out + 1] = "renderclosewhendone=4" end
     end
   end
   return table.concat(out, "\n") .. "\n"
 end
+-- What the second REAPER does: its resource folder is the profile, so this is the __startup.lua it runs. -renderproject
+-- renders the moment the project has loaded, and an instrument that loads its samples in the background isn't ready:
+-- Superior Drummer's print came out almost silent, 17 KB against 541 KB in front, with no error (PC, 2026-11-01). So it
+-- renders, and again, until two renders in a row come out about the same size, then keeps the last. A plug-in with nothing
+-- to load costs one extra render. (Not the same bytes: some plug-ins never repeat exactly. Serum differed by 3%.)
+bg.PASSES, bg.PASS_WAIT, bg.PASS_SAME = 10, 3, 0.10
+local function pass_script()
+  return string.format([==[
+-- BandSync's background render (written by lib/bgrender.lua; only the hidden REAPER runs this)
+if not os.getenv("BANDSYNC_RENDER") then return end
+local PASSES, WAIT, SAME = %d, %d, %.2f
+local function flac_size(dir)
+  for i = 0, 99 do
+    local f = reaper.EnumerateFiles(dir, i)
+    if not f then return 0 end
+    if f:lower():match("%%.flac$") then
+      local h = io.open(dir .. "/" .. f, "rb")
+      if h then local n = h:seek("end"); h:close(); return n end
+    end
+  end
+  return 0
+end
+local function clear(dir, into)
+  local names = {}
+  for i = 0, 99 do
+    local f = reaper.EnumerateFiles(dir, i)
+    if not f then break end
+    names[#names + 1] = f
+  end
+  for _, f in ipairs(names) do
+    if into then os.rename(dir .. "/" .. f, into .. "/" .. f) else os.remove(dir .. "/" .. f) end
+  end
+  os.remove(dir)
+end
+local started = reaper.time_precise()
+local proj, dir, pass, last, at
+local function step()
+  if not dir then
+    local p, path = reaper.EnumProjects(-1)
+    if path and path:find("job.rpp", 1, true) then proj, dir = p, path:match("^(.*)[/\\]")
+    elseif reaper.time_precise() - started > 60 then return reaper.Main_OnCommand(40004, 0) end
+    return reaper.defer(step)
+  end
+  if at and reaper.time_precise() < at then return reaper.defer(step) end
+  pass = (pass or 0) + 1
+  local out = dir .. "/pass" .. pass
+  reaper.RecursiveCreateDirectory(out, 0)
+  reaper.GetSetProjectInfo_String(proj, "RENDER_FILE", out, true)
+  reaper.Main_OnCommand(42230, 0) -- File: Render project, most recent settings, auto-close dialog
+  local size = flac_size(out)
+  local same = last and last.size > 0 and math.abs(size - last.size) <= SAME * math.max(size, last.size)
+    or last and last.size == size
+  if same or pass >= PASSES then
+    if last then clear(last.dir) end
+    clear(out, dir)
+    local h = io.open(dir .. "/passes.txt", "w") -- (its print is ready, whether or not anything stops it quitting)
+    if h then h:write(pass, "\n"); h:close() end
+    reaper.Main_SaveProject(proj, false)
+    return reaper.Main_OnCommand(40004, 0) -- File: Quit REAPER
+  end
+  if last then clear(last.dir) end
+  last = { dir = out, size = size }
+  at = reaper.time_precise() + (pass == 1 and 0 or WAIT)
+  reaper.defer(step)
+end
+reaper.defer(step)
+]==], bg.PASSES, bg.PASS_WAIT, bg.PASS_SAME)
+end
+
 -- A second REAPER rewrites its settings as it quits. One starting at that moment read half of them, lost its plug-in
 -- folders, and began scanning the default one where nobody could see, holding its place until the time limit (PC, three
 -- at once, 2026-11-01). So each job gets a reaper.ini of its own (a read-only one stops REAPER at a "Configuration Write
@@ -178,6 +250,9 @@ local function profile()
     for _, f in ipairs(stale) do band.write_atomic(PROFILE .. "/" .. f, want[f]) end
     read_only(true)
   end
+  reaper.RecursiveCreateDirectory(PROFILE .. "/Scripts", 0)
+  local script = pass_script()
+  if band.read(PROFILE .. "/Scripts/__startup.lua") ~= script then band.write_atomic(PROFILE .. "/Scripts/__startup.lua", script) end
   return res
 end
 bg.PROFILE = PROFILE
@@ -197,6 +272,8 @@ if [ -n "$H" ]; then
   W="$(stat -f '%m %z' "$X" "$H/bandsync-hide.dylib" "$H/bandsync-launch" | tr '\n' ' ')"
   mkdir -p "$C"
   find "$C/build.lock" -maxdepth 0 -mmin +5 -exec rmdir {} + 2>/dev/null
+  # (the copy or a helper gone or emptied, as well as out of date: Mac, 0.42.2)
+  [ -x "$A/Contents/MacOS/$B" ] && [ -s "$C/bandsync-hide.dylib" ] && [ -x "$C/bandsync-launch" ] || rm -f "$C/built"
   if [ "$(cat "$C/built" 2>/dev/null)" != "$W" ] && mkdir "$C/build.lock" 2>/dev/null; then
     rm -rf "$A" "$C/built"
     ditto "$S" "$A" && plutil -replace LSBackgroundOnly -bool YES "$A/Contents/Info.plist" && codesign --force --deep -s - "$A" &&
@@ -207,9 +284,9 @@ if [ -n "$H" ]; then
   n=0
   while [ "$(cat "$C/built" 2>/dev/null)" != "$W" ] && [ -d "$C/build.lock" ] && [ "$n" -lt 240 ]; do sleep 0.5; n=$((n+1)); done
   if [ "$(cat "$C/built" 2>/dev/null)" != "$W" ]; then echo failed > "$D/pid.txt"; exit 1; fi
-  nohup "$C/bandsync-launch" "$C/bandsync-hide.dylib" "$A/Contents/MacOS/$B" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "$P/@INI@" -renderproject "$J" >/dev/null 2>&1 &
+  nohup "$C/bandsync-launch" "$C/bandsync-hide.dylib" "$A/Contents/MacOS/$B" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "$P/@INI@" "$J" >/dev/null 2>&1 &
 else
-  nohup "$X" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "$P/@INI@" -renderproject "$J" >/dev/null 2>&1 &
+  nohup "$X" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "$P/@INI@" "$J" >/dev/null 2>&1 &
 fi
 p=$!
 echo "$p" > "$D/pid.txt"
@@ -223,8 +300,9 @@ function bg.mac_script(t)
 end
 
 local function launch(exe, job)
-  -- (not rewritten under a REAPER that may be reading it: with a job out, the copies from that job's start stand)
-  local res = next(jobs) and reaper.GetResourcePath():gsub("\\", "/") or profile()
+  -- (each time: only what's changed or gone is rewritten. A profile a temp clean-up took came back with a job out as
+  -- settings and no plug-in lists, and that REAPER scanned every plug-in until its time ran out: laptop, 0.42.2)
+  local res = profile()
   ini_slot = ini_slot % 12 + 1 -- (a few, in turn: never one a REAPER that's just finished may still be writing)
   local ini = "job" .. ini_slot .. ".ini"
   reaper.RecursiveCreateDirectory(PROFILE, 0)
@@ -290,7 +368,7 @@ local function finished(j)
     end
     return files
   end
-  if reaper.file_exists(j.dir .. "/done.txt") then return files end
+  if reaper.file_exists(j.dir .. "/done.txt") or reaper.file_exists(j.dir .. "/passes.txt") then return files end
   return nil
 end
 local function drop(key)
@@ -300,7 +378,9 @@ local function drop(key)
 end
 local function launch_failed(j)
   if (band.read(j.dir .. "/pid.txt") or ""):match("^failed") then return true end
-  return not WIN and reaper.file_exists(j.dir .. "/done.txt") and not finished(j) -- (it quit with no print)
+  -- (it quit with no print, or its folder's gone: known now, not at the time limit, with newer edits waiting: laptop, 0.42.2)
+  if not reaper.file_exists(j.dir .. "/job.rpp") and not finished(j) then return true end
+  return reaper.file_exists(j.dir .. "/done.txt") and not finished(j)
 end
 -- End a job's REAPER, if it's still there. -> whether that could be asked (once its process id is known).
 local function end_job(j)
@@ -312,13 +392,24 @@ local function end_job(j)
   reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', TMP .. "/hidden.vbs", kill), -1)
   return true
 end
--- A job that's gone wrong: its REAPER (if it's still there, stuck on something nobody can see) is ended.
+-- A job that's gone wrong: its REAPER (if it's still there, stuck on something nobody can see) is ended. One that never
+-- started renders in front instead. One that ran and never finished doesn't: it's a plug-in asking something nobody can
+-- see, and in front it held this REAPER on that same question, and on every render after it (UAD with no hardware: Mac,
+-- 0.42.2). That part goes without a new print until it changes again. -> "failed" or "stuck".
+bg.stuck = {} -- print name -> true (this session)
 local function timed_out(key)
-  failed = failed + 1
-  end_job(jobs[key])
+  local j = jobs[key]
+  local never = launch_failed(j)
+  end_job(j)
   drop(key)
-  band.log("a print didn't render in the background within " .. bg.WAIT .. " s: it renders here instead" ..
-    ((failed >= 2 and done == 0) and " (and so will the rest this session)" or ""))
+  if never then
+    failed = failed + 1
+    band.log("a print stopped in the background before it finished: it renders here instead" .. ((failed >= 2 and done == 0) and " (and so will the rest this session)" or ""))
+    return "failed"
+  end
+  bg.stuck[j.name] = true
+  band.log("a wet take took over " .. bg.WAIT .. " s to render and was stopped: a plug-in may be waiting for an answer (a licence, missing hardware). Bandmates keep the last one until that part changes")
+  return "stuck"
 end
 
 -- Whether another render has to wait: each is a whole REAPER, so bg.MAX at most, and starting one (saving the project's
@@ -349,9 +440,9 @@ function bg.claim(key, name, out)
   local files = finished(j)
   if not files then
     if reaper.time_precise() - j.started <= bg.WAIT and not launch_failed(j) then return nil, "running" end
-    timed_out(key)
-    return nil, "failed"
+    return nil, timed_out(key)
   end
+  end_job(j) -- (its print is done: if a question stops it quitting, it mustn't stay on, unseen)
   if j.name ~= name then drop(key); return nil end
   reaper.RecursiveCreateDirectory(out, 0)
   local flac

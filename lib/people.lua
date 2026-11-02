@@ -132,8 +132,13 @@ function people.options(ctx, ImGui, cfg)
   for _, c in ipairs({ 0xE0E0E0, 0x8A6BFF, 0x3DFF8A, 0xFFE05A }) do list[#list + 1] = c end
   local others = {} -- (a colour someone else shows in can't be picked: picking it moved their default, Mac 0.39.0)
   for u, c in pairs(people.colours(cfg.root, { cfg.user })) do if u ~= cfg.user then others[c] = u end end
+  -- (on the same row while it fits: in a narrow column the last ones were cut off, with no way to reach them)
+  local function next_to(width)
+    ImGui.SameLine(ctx)
+    if ImGui.GetContentRegionAvail(ctx) < width then ImGui.NewLine(ctx) end
+  end
   for i, c in ipairs(list) do
-    if i > 1 then ImGui.SameLine(ctx) end
+    if i > 1 then next_to(30) end
     ImGui.PushID(ctx, i)
     local size = c == mine and 26 or 20 -- (yours: the bigger one)
     ImGui.BeginDisabled(ctx, others[c] ~= nil)
@@ -142,16 +147,16 @@ function people.options(ctx, ImGui, cfg)
     if others[c] then ImGui.SetItemTooltip(ctx, others[c] .. "'s") end
     ImGui.PopID(ctx)
   end
-  ImGui.SameLine(ctx)
+  next_to(30)
   local rv, picked = ImGui.ColorEdit3(ctx, "##own", mine, ImGui.ColorEditFlags_NoInputs)
   if rv and picked ~= mine then people.pick(cfg, picked) end
   ImGui.SetItemTooltip(ctx, "Any colour of your own")
-  ImGui.SameLine(ctx)
+  next_to(70)
   if ImGui.SmallButton(ctx, "Default##colour") then people.pick(cfg, nil) end
   ImGui.TextDisabled(ctx, "Everyone sees you in it: your drawings, and tracks you're working on where they show that.")
   ImGui.SeparatorText(ctx, "Track colours here")
   for _, m in ipairs(people.MODES) do
-    if m[1] ~= "band" then ImGui.SameLine(ctx) end
+    if m[1] ~= "band" then next_to(ImGui.CalcTextSize(ctx, m[2]) + 40) end
     if ImGui.RadioButton(ctx, m[2] .. "##trackcolours", people.mode() == m[1]) then reaper.SetExtState(band.SECTION, "track colours", m[1], true) end
     ImGui.SetItemTooltip(ctx, m[3] .. " Only on this computer: nobody else's colours change.")
   end

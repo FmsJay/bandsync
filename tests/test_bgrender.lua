@@ -72,9 +72,9 @@ assert(bg.prepare(ext, {}) == table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '
 local ini = bg.profile_ini(table.concat({ "[REAPER]", "splash=1", "midiins=19954", "midiouts_clock=344388", "midiins_x_h=0",
   "csurf_cnt=1", "csurf_0=HTTP 0 8080 '' 'index.html' 0 ''", "recent01=C:/a.rpp", "lastproject=C:/a.rpp", "audiocloseinactive=0",
   "asio_driver=1", "[other]", "x=1" }, "\r\n"))
-assert(ini == table.concat({ "[REAPER]", "audiocloseinactive=1", "splash=0", "midiins=0", "midiouts_clock=0", "midiins_x_h=0",
+assert(ini == table.concat({ "[REAPER]", "audiocloseinactive=1", "renderclosewhendone=4", "splash=0", "midiins=0", "midiouts_clock=0", "midiins_x_h=0",
   "csurf_cnt=0", "asio_driver=1", "[other]", "x=1", "" }, "\n"), ini)
-assert(bg.profile_ini("[reaper]\nfoo=1\n") == "[reaper]\naudiocloseinactive=1\nfoo=1\n") -- (the Mac's section is lower case)
+assert(bg.profile_ini("[reaper]\nfoo=1\n") == "[reaper]\naudiocloseinactive=1\nrenderclosewhendone=4\nfoo=1\n") -- (the Mac's section is lower case)
 -- printing mustn't leave an undo point on top of the edit: SelectAllMediaItems does, when the part is selected (a step
 -- across passes shows it, which one in-REAPER suite can't: undo points only settle between script passes)
 do
@@ -92,4 +92,5 @@ local plain = bg.mac_script({ tmp = "/t", profile = "/p", res = "/r", exe = "/x"
 assert(plain:find("H=''", 1, true), "no helpers: REAPER itself")
 assert(bg.mac_script({ tmp = "/t", profile = "/p", res = "/it's", exe = "/x", ini = "job1.ini", job = "/j" }):find([[R='/it'\''s']], 1, true), "a quote in a path")
 assert(bg.helpers() == nil, "Windows has no helpers")
+assert(bg.profile_ini("[REAPER]\nrenderclosewhendone=0\n"):find("renderclosewhendone=4\n", 1, true) and not bg.profile_ini("[REAPER]\nrenderclosewhendone=0\n"):find("=0", 1, true), "the hidden render window closes on its own")
 print("ok")

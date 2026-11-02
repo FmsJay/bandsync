@@ -150,6 +150,21 @@ function mirror.fx_differing(a, b)
   end
   return names
 end
+-- Do two chains say the same thing? Each plug-in's saved data is lines of base64, and REAPER re-encodes it on a machine
+-- without the plug-in: the same bytes in different pieces (a Mac's GGD chain read differently on the PC and the laptop,
+-- so the fingerprints stayed apart for good: 0.42.2). Pure.
+function mirror.fx_same(a, b)
+  if a == b then return true end
+  local fxfiles = require("fxfiles")
+  local function bytes(chain)
+    local out = {}
+    for _, l in ipairs(chain_lines(chain)) do
+      out[#out + 1] = (l:match("^[A-Za-z0-9+/]+=*$") and #l >= 8) and fxfiles.unbase64(l) or ("\0" .. l .. "\0")
+    end
+    return table.concat(out)
+  end
+  return bytes(a) == bytes(b)
+end
 function mirror.restless_load()
   if mirror.restless_loaded or not (reaper and reaper.GetExtState) then return end
   mirror.restless_loaded = true
@@ -879,11 +894,26 @@ end
 
 -- Media an item uses from outside the room's media folder is copied in (once) so the band has it. Returns the
 -- chunk with paths rewritten to the copies.
-function mirror.share_media(chunk, media_dir)
+function mirror.share_media(chunk, media_dir, it)
   reaper.RecursiveCreateDirectory(media_dir, 0)
   local room = norm_path(media_dir):match("([^/]+)/media/?$") or "main"
-  return (chunk:gsub('(FILE ")([^"]+)(")', function(a, path, z)
-    if path:find("^{media") then return a .. path .. z end
+  -- (any quote: a name with a " in it is written between ' or `, and REAPER then turns a ` inside it into ', so the
+  -- path no longer names the file and the item's own source has to say. Missed, the item went out with a Mac path nobody
+  -- else has, and REAPER stopped on "Replace missing file" reopening the song: Mac and laptop, 0.42.2)
+  local function actual(path)
+    if reaper.file_exists(path) or not it then return path end
+    for k = 0, reaper.CountTakes(it) - 1 do
+      local tk = reaper.GetTake(it, k)
+      local src = tk and reaper.GetMediaItemTake_Source(tk)
+      local f = src and reaper.GetMediaSourceFileName(src, "") or ""
+      if f:gsub("`", "'") == path then return f end
+    end
+    return path
+  end
+  return (chunk:gsub('FILE (["\'`])(.-)%1', function(q, written)
+    local a, z = "FILE " .. q, q
+    if written:find("^{media") then return a .. written .. z end
+    local path = actual(written)
     local name = path:gsub("\\", "/"):match("[^/]+$") or "media"
     -- (plain characters only: an accented name can reach a Mac decomposed and come back as other bytes than Windows
     -- wrote, and the item then reads as different on each machine)
@@ -894,8 +924,8 @@ function mirror.share_media(chunk, media_dir)
       if not ok then mirror.copy_failed = tostring(err) end -- (watch holds the item back and says so: mirror.local_files)
     end
     -- (only once the copy is really there: pointing at a copy that was never made left everyone waiting for it)
-    if reaper.file_exists(dst) then return a .. "{media:" .. room .. "}/" .. copy .. z end
-    return a .. path .. z
+    if reaper.file_exists(dst) then return 'FILE "{media:' .. room .. "}/" .. copy .. '"' end
+    return a .. written .. z
   end))
 end
 
@@ -1099,7 +1129,10 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     local skip = ev.track == mirror.MASTER and mirror.live_fx(tr) or {}
     for g in select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local_fx", "", false)):gmatch("({[^}]+})for=") do skip[g] = true end
     mirror.fx_knobs[tostring(proj) .. ev.oid] = nil -- (its knobs are the band's now: the next look notes them)
-    return true, mirror.fx_hash(mirror.fxchain(after, skip) or "")
+    local here = mirror.fxchain(after, skip) or ""
+    local h = mirror.fx_hash(here)
+    if ev.hash and h ~= ev.hash and type(ev.state) == "string" and mirror.fx_same(here, ev.state) then h = ev.hash end
+    return true, h
   elseif kind == "env" or kind == "recv" or kind == "misc" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
@@ -1249,6 +1282,7 @@ end
 mirror.said = mirror.said or {} -- (things said once per session, not every pass)
 mirror.fx_seen = mirror.fx_seen or {} -- oid -> { hash, since }: a plug-in chain goes out once it has settled
 mirror.fx_knobs = mirror.fx_knobs or {} -- oid -> its knobs when it last went out or landed (chains with a restless plug-in)
+mirror.fx_alias = mirror.fx_alias or {} -- chain hash and event id -> the event's hash, if the two are the same bytes (else false)
 
 -- Where a recording this person wasn't allowed to add goes (kept, never deleted): a track of their own, not sent.
 local function keep_track(proj, name)
@@ -1395,6 +1429,21 @@ function mirror.watch(proj, cfg, song, room, opts)
           remember(proj, o.oid, rev, o.hash, evid, kord); return
         end
       end
+      -- a chain whose hash differs from its event's only as this machine re-encoded it: the band's hash stands (once per
+      -- chain text and event), so everyone's fingerprint agrees and nothing re-prints
+      if o.kind == "fx" and rev and evid and evid ~= "" then
+        local key = o.hash .. "\0" .. evid
+        local a = mirror.fx_alias[key]
+        if a == nil then
+          local ev = event_file(room_dir, evid)
+          a = ev and ev.hash and ev.hash ~= o.hash and type(ev.state) == "string" and mirror.fx_same(o.state, ev.state) and ev.hash or false
+          mirror.fx_alias[key] = a
+        end
+        if a then
+          o.hash = a
+          if h ~= a then remember(proj, o.oid, rev, a, evid, kord); h = a end
+        end
+      end
       -- a chain with a restless plug-in: the hash can't see its knobs move, so they're looked at here
       local knobs_moved, knobs
       if o.kind == "fx" and h == o.hash and mirror.restless_in(o.state) then
@@ -1477,7 +1526,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         local state = o.state
         if o.kind == "item" then
           mirror.copy_failed = nil
-          local shared = mirror.share_media(state, media)
+          local shared = mirror.share_media(state, media, o.ptr)
           if mirror.copy_failed then -- (its audio didn't reach the band's folder: sent, it'd point at a file only we have)
             return say_once("copy" .. o.oid, string.format("couldn't copy the audio of an item on %s into the band's folder (%s): it goes out once it can",
               name ~= "" and name or "an unnamed track", mirror.copy_failed))
@@ -1503,6 +1552,12 @@ function mirror.watch(proj, cfg, song, room, opts)
         sent = sent + 1
         if o.kind == "track" and o.ptr then claim_new(o, rev, name) end
       else
+        -- only its place in the list differs: a track above it went (a bandmate's, say, joining late, or one that's coming
+        -- back), and nobody changed this one, so it isn't news ("Track Mac Audio ... put back": laptop, 0.42.2)
+        if o.kind == "track" and last and type(last.state) == "table"
+            and mirror.track_line(o.state, opts.local_mix) == mirror.track_line(last.state, opts.local_mix) then
+          return put_back(o, rev, evid, { name = name })
+        end
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
         -- whose it is, and what would let you: "or take control" told the driver to take control (laptop, round 2)
         local owner_of = sync.owner_of
@@ -1519,7 +1574,7 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- MIDI prints: an item whose newest change is this person's gets a fresh print once its notes, length or the
   -- band's plug-in chain on its track changed (it goes out on the next pass). Only theirs, so two machines never take
   -- turns re-printing one item. Rendering needs this tab in front and the transport stopped; two per pass at most.
-  if reaper.EnumProjects(-1) == proj and not playing and not mirror.more then -- (prints wait until a burst has gone)
+  if reaper.EnumProjects(-1) == proj and not playing and not mirror.more and not opts.hold then -- (prints wait until a burst has gone, and Hold is off)
     local prints, made = require("prints"), 0
     prints.watch_ara(proj) -- (a Melodyne window closed: that take gets a new print below)
     -- takes become lanes, by whoever owns them (their newest change, or not sent yet)
@@ -1584,6 +1639,13 @@ function mirror.watch(proj, cfg, song, room, opts)
       else gone[#gone + 1] = { oid = oid, rev = rev, evid = evid } end
     end
   end
+  -- tracks first: a bandmate's track deleted here came back without its items, which had nowhere to land yet, and that
+  -- machine stayed different until the owner next changed them (laptop, 0.42.2)
+  local function gone_rank(g) return g.oid:sub(1, 1) == "T" and 1 or 2 end
+  table.sort(gone, function(a, b)
+    if gone_rank(a) ~= gone_rank(b) then return gone_rank(a) < gone_rank(b) end
+    return a.oid < b.oid
+  end)
   for _, g in ipairs(gone) do
     if sent > 0 and reaper.time_precise() - t_send > 0.25 then mirror.more = true; break end -- (the rest next pass, as above)
     local ok, err = pcall(function()
@@ -1881,6 +1943,20 @@ function mirror.post_into(cfg, song, from, to, list, here)
     n = n + 1
   end
   return n
+end
+
+-- Of these revisions, those this person may make in `to` by that room's claims and driver; and how many they may not.
+-- ("Send selected" took a bandmate's claimed item into main with nothing to stop it: laptop, 0.42.2)
+function mirror.allowed_into(cfg, song, to, list, session)
+  local sync = require("sync")
+  local can, who = sync.authority(cfg, song, to, session)
+  local keep, refused = {}, 0
+  for _, ev in ipairs(list) do
+    local t = ev.obj == "track" and ev.oid or ev.track
+    if can(cfg.user, ev.name or "", ev.pos) or sync.maker_may(t, cfg.user, ev.name or "", ev.pos, who.mode) then keep[#keep + 1] = ev
+    else refused = refused + 1 end
+  end
+  return keep, refused
 end
 
 -- The selected items here (and any track of theirs the other room hasn't got), as revisions to send to `to`.

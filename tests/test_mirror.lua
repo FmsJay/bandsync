@@ -64,6 +64,12 @@ do
   assert(mirror.fx_hash(chain("x", "y")) ~= mirror.fx_hash(chain("x", "w")), "another plug-in's still does")
   assert(mirror.restless_in(chain("x", "y"))[1] == "VST3: Disperser (Kilohearts)", "named on the chain")
   mirror.restless = {}
+  -- the same bytes in different base64 pieces are the same chain; different bytes aren't
+  local ab = '<VST "x" y 0 "" 1\nAAECAwQFBgc=\nCAkKCwwNDg8=\n>\n'
+  local one = '<VST "x" y 0 "" 1\nAAECAwQFBgcICQoLDA0ODw==\n>\n'
+  local other = '<VST "x" y 0 "" 1\nAAECAwQFBgcICQoLDA0OAA==\n>\n'
+  assert(mirror.fx_same(ab, ab) and mirror.fx_same(ab, one), "re-encoded: the same")
+  assert(not mirror.fx_same(ab, other), "different bytes: not the same")
 end
 -- which notes are selected and which lanes the MIDI editor shows are each person's: opening the editor isn't a change
 local picked = "<ITEM\n<SOURCE MIDI\nHASDATA 1 960 QN\nCCINTERP 32\nVELLANE 64 100 0 0 1\ne 0 90 3c 60\nem 240 80 3c 00\nx 0 90 3e 60 0 0 0\n<x 0 0\n>\nE 0 90 40 60\n>\n>\n"

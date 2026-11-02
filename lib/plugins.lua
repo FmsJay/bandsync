@@ -12,7 +12,7 @@ plugins.FOLDER = "BandSync (everyone has)"
 -- on any OS. Pure.
 function plugins.key(name)
   local n = (name or ""):gsub("^%w+:%s*", "")
-  n = n:gsub("%s*%(%d+%->%d+ch%)$", ""):gsub("%s*%(%d+ out%)$", ""):gsub("%s*%(x64%)$", ""):gsub("%s*%(x86%)$", "")
+  n = n:gsub("%s*%(%d+%->%d+ch%)$", ""):gsub("%s*%(%d+ch%)$", ""):gsub("%s*%(%d+ out%)$", ""):gsub("%s*%(x64%)$", ""):gsub("%s*%(x86%)$", "")
   return n:lower()
 end
 

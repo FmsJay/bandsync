@@ -94,8 +94,11 @@ end
 function prints.fx_here(tr, i)
   if reaper.TrackFX_GetOffline(tr, i) then return false end
   local _, kind = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_type")
-  if kind ~= "JS" then return true end
-  local _, ident = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_ident") -- (relative to Effects: "ReaTeam JSFX/Synth/x.jsfx")
+  local _, ident = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_ident") -- (a JSFX's is relative to Effects: "ReaTeam JSFX/Synth/x.jsfx")
+  -- a VST or AU that isn't installed doesn't read as offline either: no file behind it, and only REAPER's own three
+  -- knobs (bypass, wet, delta). Taken as loaded, its notes printed silent, and in Auto they played silent where the
+  -- print should have (laptop and PC, 0.42.2)
+  if kind ~= "JS" then return (ident or "") ~= "" or reaper.TrackFX_GetNumParams(tr, i) > 3 end
   ident = (ident or ""):gsub("\\", "/")
   return ident == "" or reaper.file_exists(reaper.GetResourcePath() .. "/Effects/" .. ident) or reaper.file_exists(ident)
 end
@@ -284,9 +287,10 @@ function prints.render(oid, name, out, tracks, render)
   end
   local bg = require("bgrender")
   if bg.on() then
+    if bg.stuck[name] then return nil end
     local path, state = bg.claim(oid, name, out)
     if path then return path end
-    if state == "running" then return nil end
+    if state == "running" or state == "stuck" then return nil end
     if state ~= "failed" then
       if not my_turn(oid, name) or bg.busy() then return nil end
       queue[oid] = nil

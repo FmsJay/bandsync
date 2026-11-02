@@ -341,7 +341,14 @@ local function refresh()
     -- (open: no banner; "x and nil or y" can't say that in Lua, it gives y)
     if who.mode == "driver" then banner_text = "View only: " .. view.driver .. " is driving. Your changes are put back (recording still goes out)."
     elseif who.mode ~= "open" then
-      banner_text = mine > 0 and (view.driver .. " is driving: you can change what you've claimed.")
+      -- (tracks you made and nobody has claimed are yours to change too, so "view only" wasn't true: sync.maker_may)
+      local made = false
+      for i = 0, reaper.CountTracks(proj) - 1 do
+        local tr = reaper.GetTrack(proj, i)
+        local name = sync.base_name(select(2, reaper.GetTrackName(tr)))
+        made = made or (not who.tracks[name:lower()] and require("mirror").is_creator(require("mirror").track_oid(tr), cfg.user))
+      end
+      banner_text = (mine > 0 or made) and (view.driver .. " is driving: you can change what you've claimed or made.")
         or ("View only: " .. view.driver .. " is driving. Claim a track (BandSync, Home) to edit it.")
     end
   end
@@ -1434,10 +1441,15 @@ local function rooms_actions()
   ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Send selected to " .. parent) then
     local list = require("mirror").selected(proj, cfg, b.song, b.room, parent)
-    if #list == 0 then band.msg("Select the items to send first (they go to '" .. parent .. "' as they are here).")
+    local chosen = #list
+    local refused
+    list, refused = require("mirror").allowed_into(cfg, b.song, parent, list, view.session)
+    if chosen == 0 then band.msg("Select the items to send first (they go to '" .. parent .. "' as they are here).")
+    elseif #list == 0 then band.msg("None of those are yours to change in '" .. parent .. "': someone has claimed them, or " .. parent .. "'s driver owns them. Claim them there first.")
     elseif reaper.MB(string.format("Send the %d selected item(s) to '%s', as they are here? (Any of their tracks '%s' doesn't have yet go too.)",
         #list, parent, parent), "BandSync", 4) == 6 then
-      band.log(string.format("sent %d change(s) from '%s' to '%s'", require("mirror").post_into(cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent)), b.room, parent))
+      band.log(string.format("sent %d change(s) from '%s' to '%s'%s", require("mirror").post_into(cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent)), b.room, parent,
+        refused > 0 and string.format(" (%d not yours to change there, left out)", refused) or ""))
     end
   end
   ImGui.SetItemTooltip(ctx, "The easy way back: the selected items go to '" .. parent .. "' as they are here (new changes there, so Restore there can undo them).")

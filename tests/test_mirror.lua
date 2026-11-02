@@ -344,6 +344,23 @@ do
   }
   local glue = mirror.plan_undo_moment(G, 3)
   assert(glue["I-1"].id == "a1" and glue["I-2"].id == "a2" and glue["I-9"] == false, "undoing a glue from any of its rows")
+  -- which tracks moved
+  local function moved(old, new, sel)
+    local s = {}
+    for _, x in ipairs(sel or {}) do s[x] = true end
+    local names = {}
+    for x in pairs(mirror.moved_tracks(old, new, s)) do names[#names + 1] = x end
+    table.sort(names)
+    return table.concat(names, ",")
+  end
+  assert(moved({ "a", "b", "c" }, { "a", "b", "c", "n" }) == "", "one added at the end moves nobody")
+  assert(moved({ "a", "b", "c" }, { "a", "n", "b", "c" }) == "", "one added in the middle moves nobody, whatever now sits above b")
+  assert(moved({ "a", "b", "c" }, { "a", "c" }) == "", "one gone moves nobody")
+  assert(moved({ "a", "b", "c", "d" }, { "b", "c", "d", "a" }) == "a", "dragged to the end: only it")
+  assert(moved({ "a", "b", "c", "d" }, { "d", "a", "b", "c" }) == "d", "dragged to the top: only it")
+  assert(moved({ "a", "b" }, { "b", "a" }, { "b" }) == "b", "two swapped: the selected one")
+  assert(moved({ "a", "b" }, { "b", "a" }, { "a" }) == "a", "whichever that is")
+  assert(moved({ "a", "b", "c" }, { "a", "b", "c" }, { "b" }) == "", "selected and not moved")
   local plan = mirror.plan_undo_moment(M, 4)
   assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
 end

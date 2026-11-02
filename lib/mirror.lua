@@ -527,6 +527,41 @@ function mirror.plan_undo(entries, i)
   return { [e.oid] = false }
 end
 
+-- Which tracks moved between two looks at the list (arrays of oids), as a set: those that don't fit the order the rest kept,
+-- longest run first. Tracks added or gone aren't moves, nor is what they shift. `selected` (a set) is what a person drags, so a
+-- swap of two neighbours blames the selected one; it counts if the track above it changed. Pure.
+function mirror.moved_tracks(old, new, selected)
+  local in_old, in_new, moved = {}, {}, {}
+  for _, x in ipairs(old) do in_old[x] = true end
+  for _, x in ipairs(new) do in_new[x] = true end
+  local a, b = {}, {}
+  for _, x in ipairs(old) do if in_new[x] and not selected[x] then a[#a + 1] = x end end
+  for _, x in ipairs(new) do if in_old[x] and not selected[x] then b[#b + 1] = x end end
+  -- (longest common run, table by table: lists are short, and it's only worked out when the order has changed)
+  local len = {}
+  for i = #a + 1, 1, -1 do
+    len[i] = {}
+    for j = #b + 1, 1, -1 do
+      if i > #a or j > #b then len[i][j] = 0
+      elseif a[i] == b[j] then len[i][j] = len[i + 1][j + 1] + 1
+      else len[i][j] = math.max(len[i + 1][j], len[i][j + 1]) end
+    end
+  end
+  local kept, i, j = {}, 1, 1
+  while i <= #a and j <= #b do
+    if a[i] == b[j] then kept[a[i]] = true; i, j = i + 1, j + 1
+    elseif len[i + 1][j] >= len[i][j + 1] then i = i + 1
+    else j = j + 1 end
+  end
+  for _, x in ipairs(a) do if not kept[x] then moved[x] = true end end
+  local above = {}
+  for k, x in ipairs(old) do above[x] = old[k - 1] or "" end
+  for k, x in ipairs(new) do
+    if selected[x] and in_old[x] and above[x] ~= (new[k - 1] or "") then moved[x] = true end
+  end
+  return moved
+end
+
 -- One act that made several changes: a delete that reached a copy in a comp lane, a glue that took three items and made one.
 -- History's indexes of entries[i] and the others on that track from the same person in the same second. Pure.
 -- (Two identical rows, and undoing the newest brought back the copy, not the part: laptop, 0.42.5. A glue's deletes undone
@@ -1425,6 +1460,14 @@ function mirror.watch(proj, cfg, song, room, opts)
   for _, o in ipairs(objs) do if o.kind == "track" then order[#order + 1] = o.oid end end
   order = table.concat(order, ",")
   local moved_here = mirror.order_seen[order_key] ~= nil and mirror.order_seen[order_key] ~= order and not mirror.order_band[order_key]
+  -- (by track, not "the list changed": a track added at the end sent or put back every track whose place differs here: Mac, 0.42.9)
+  local moved_set = {}
+  if moved_here then
+    local function split(text) local t = {}; for x in text:gmatch("[^,]+") do t[#t + 1] = x end; return t end
+    local selected = {}
+    for _, o in ipairs(objs) do if o.kind == "track" and o.ptr and reaper.IsTrackSelected(o.ptr) then selected[o.oid] = true end end
+    moved_set = mirror.moved_tracks(split(mirror.order_seen[order_key]), split(order), selected)
+  end
   -- the first look at a project: which take plays is looked at again. (A part that arrived while the plug-in looked
   -- loaded stayed on silent notes, with its print sitting right there: laptop, 0.42.3)
   if mirror.order_seen[order_key] == nil then
@@ -1526,7 +1569,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       end
       -- only its place differs from the band's, and not by this person's doing: not a change, and the band's hash is
       -- what's recorded, so everyone's fingerprint agrees whatever order their list has ended up in (once per state and event)
-      if o.kind == "track" and rev and h ~= "" and not moved_here and not mirror.reopened[rk] then
+      if o.kind == "track" and rev and h ~= "" and not moved_set[o.oid] and not mirror.reopened[rk] then
         local key = o.hash .. "\0" .. tostring(evid)
         local a = mirror.track_alias[key]
         if a == nil then
@@ -1932,7 +1975,9 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     -- what you removed yourself you may bring back, whoever's claim stands now.
     -- (by who made it, not who touched it last: having restored the Mac's track earlier made it "yours" to remove. Only undoing
     -- that very change of yours may take it away again.)
+    -- (nor what your own going back revived after a bandmate deleted it: forward left a glue's pieces under the glued part: laptop, 0.42.10)
     local theirs_new = not p.t and not mirror.is_creator(p.oid, cfg.user) and not (opts.undoes and last and last.user == cfg.user)
+      and not (last and last.user == cfg.user and last.revived)
     local mine_gone = p.t and last and last.gone and last.user == cfg.user
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
@@ -1955,7 +2000,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
       local ok, nh = mirror.apply(proj, p.t, media, opts.local_mix)
       if ok then
         local ev = { type = "obj", obj = p.t.obj, oid = p.oid, rev = (rev or 0) + 1, state = p.t.state, track = p.t.track, name = name, pos = p.t.pos, restored = p.t.id,
-          undoes = opts.undoes, redoes = opts.redoes }
+          undoes = opts.undoes, redoes = opts.redoes, revived = (last and last.gone and last.user ~= cfg.user) or nil }
         local id = sync.post(cfg, song, room, ev)
         remember(proj, p.oid, ev.rev, nh, id, (ev.time or "") .. cfg.user)
         done = done + 1

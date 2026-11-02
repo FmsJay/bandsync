@@ -687,7 +687,9 @@ local function back_button(i, what, single)
       end
     end
     ImGui.EndDisabled(ctx)
-    ImGui.SetItemTooltip(ctx, e and e.kind == "obj" and ("Undo only this change: " .. describe(e) .. ". Everything else stays; the undo goes to the band as a new change.")
+    local together = #mirror.same_moment(entries, i)
+    ImGui.SetItemTooltip(ctx, e and e.kind == "obj" and ((together > 1 and string.format("Undo this and the %d other change(s) made with it: ", together - 1) or "Undo only this change: ") ..
+      describe(e) .. ". Everything else stays; the undo goes to the band as a new change.")
       or "This kind of change (tempo, a handover, a note) isn't undone on its own: Back to here... puts the whole song back.")
     ImGui.SameLine(ctx, 0, 4)
   end
@@ -844,13 +846,17 @@ local function section_history()
       end
       if open then
         for _, i in ipairs(shown) do
-          ImGui.PushID(ctx, i)
-          back_button(i, string.format("right after %s's change at %s", entries[i].user, local_time(entries[i].time)), true)
-          ImGui.SameLine(ctx)
-          ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))
-          ImGui.SameLine(ctx)
-          ImGui.TextWrapped(ctx, describe(entries[i]))
-          ImGui.PopID(ctx)
+          local moment, first = require("mirror").same_moment(entries, i), true
+          for _, j in ipairs(moment) do if j > i then first = false end end -- (one row for one act, as in the filtered list)
+          if first then
+            ImGui.PushID(ctx, i)
+            back_button(i, string.format("right after %s's change at %s", entries[i].user, local_time(entries[i].time)), true)
+            ImGui.SameLine(ctx)
+            ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))
+            ImGui.SameLine(ctx)
+            ImGui.TextWrapped(ctx, describe(entries[i]) .. (#moment > 1 and string.format(" (%d changes at that moment, undone together)", #moment) or ""))
+            ImGui.PopID(ctx)
+          end
         end
         ImGui.TreePop(ctx)
       end

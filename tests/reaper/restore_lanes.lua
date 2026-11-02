@@ -240,6 +240,69 @@ local ok, err = pcall(function()
     for _ = 1, 3 do watch(pa, A); recv(pb, B); recv(pa, A) end
   end
 
+  -- a track added at the end: only it goes out, though others sit in a different place here than the band's
+  do
+    for _ = 1, 3 do recv(pb, B); recv(pa, A) end
+    reaper.SelectProjectInstance(pb)
+    local x = reaper.GetTrack(pb, reaper.CountTracks(pb) - 1)
+    reaper.SetOnlyTrackSelected(x)
+    check(reaper.ReorderSelectedTracks(0, 0), "the bandmate's list is in another order")
+    mirror.order_band[tostring(pb)] = true -- (as if it landed that way)
+    for _ = 1, 3 do watch(pb, B) end
+    local before = sent("James")
+    reaper.InsertTrackInProject(pb, reaper.CountTracks(pb), 0)
+    local added = reaper.GetTrack(pb, reaper.CountTracks(pb) - 1)
+    reaper.GetSetMediaTrackInfo_String(added, "P_NAME", "Added", true)
+    watch(pb, B); watch(pb, B)
+    check(sent("James") - before == 1, "adding a track sends that track, not the others (" .. (sent("James") - before) .. ")")
+    local list = {}
+    for i = 0, reaper.CountTracks(pb) - 1 do list[#list + 1] = select(2, reaper.GetTrackName(reaper.GetTrack(pb, i))) end
+    check(reaper.GetTrack(pb, 0) == x, "and nothing was moved back: " .. table.concat(list, ", ") .. " (moved: " .. select(2, reaper.GetTrackName(x)) .. ")")
+    reaper.SelectProjectInstance(pb)
+    reaper.DeleteTrack(added)
+    reaper.SetOnlyTrackSelected(x)
+    reaper.ReorderSelectedTracks(reaper.CountTracks(pb), 0)
+    for _ = 1, 3 do watch(pb, B); recv(pa, A); recv(pb, B) end
+  end
+
+  -- forward takes back what going back revived: a bandmate's delete between the two isn't undone for good
+  do
+    reaper.SelectProjectInstance(pb)
+    reaper.InsertTrackInProject(pb, reaper.CountTracks(pb), 0)
+    local th = reaper.GetTrack(pb, reaper.CountTracks(pb) - 1)
+    reaper.GetSetMediaTrackInfo_String(th, "P_NAME", "Theirs", true)
+    local gone_it = reaper.AddMediaItemToTrack(th)
+    reaper.SetMediaItemInfo_Value(gone_it, "D_LENGTH", 2)
+    for _ = 1, 3 do watch(pb, B) end
+    recv(pa, A)
+    local tho, ioid = mirror.track_oid(th), mirror.item_oid(gone_it)
+    hold(1.1)
+    reaper.SelectProjectInstance(pb)
+    reaper.DeleteTrackMediaItem(th, gone_it)
+    for _ = 1, 3 do watch(pb, B) end
+    recv(pa, A)
+    check(mirror.find(pa, "item", ioid) == nil, "the bandmate deleted it, and it's gone here")
+    hold(1.1)
+    local only = function(oid) return oid == ioid end
+    reaper.SelectProjectInstance(pa)
+    local es1 = recall.entries(A, song, room)
+    local gone_at
+    for i, e in ipairs(es1) do if e.oid == ioid and e.gone then gone_at = i end end
+    mirror.revert(pa, A, song, room, mirror.plan_restore(es1, gone_at - 1, only), { can = yes, mode = "claims" })
+    check(mirror.find(pa, "item", ioid) ~= nil, "going back revives it")
+    recv(pb, B)
+    check(mirror.find(pb, "item", ioid) ~= nil, "for the bandmate too")
+    hold(1.1)
+    reaper.SelectProjectInstance(pa)
+    mirror.revert(pa, A, song, room, mirror.plan_restore(es1, #es1, only), { can = yes, mode = "claims" })
+    check(mirror.find(pa, "item", ioid) == nil, "forward takes it away again")
+    recv(pb, B)
+    check(mirror.find(pb, "item", ioid) == nil, "for the bandmate too")
+    reaper.SelectProjectInstance(pb)
+    reaper.DeleteTrack(mirror.find(pb, "track", tho))
+    for _ = 1, 3 do watch(pb, B); recv(pa, A) end
+  end
+
   -- only what plays is printed
   reaper.SelectProjectInstance(pa)
   reaper.TrackFX_AddByName(ta, "ReaSynth", false, -1)

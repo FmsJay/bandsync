@@ -705,6 +705,7 @@ local function back_button(i, what, single)
       end
     elseif pick == whole and reaper.MB("Make the whole project look like it did " .. what .. "?\n\n" ..
         "Everything since then is undone, for everyone. It's a change like any other, so you can come back the same way.", "BandSync", 4) == 6 then
+      if view.driver == cfg.user then sync.restore_timeline(proj, cfg, b.song, b.room, entries, i, view.session) end
       band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_restore(entries, i), opts))
       last, hist_at = 0, 0
     end
@@ -1757,6 +1758,13 @@ local function home_who()
       ImGui.TextDisabled(ctx, p.armed and #p.armed > 0 and ("armed: " .. table.concat(p.armed, ", ")) or "nothing armed")
       if p.version and p.version ~= band.VERSION then ImGui.TextColored(ctx, YELLOW, "BandSync " .. p.version) end
       if p.mirror and view.my_mirror and p.state == "synced" then -- (while changes are still on their way it's bound to differ)
+        if view.driver == cfg.user and p.state ~= "offline" and p.name ~= cfg.user then
+          if ImGui.SmallButton(ctx, "Hand over##" .. p.name) and reaper.MB("Make " .. p.name .. " the driver?", "BandSync", 4) == 6 then
+            sync.hand_over(proj, cfg, b.song, b.room, p.name); last = 0
+          end
+          ImGui.SetItemTooltip(ctx, "Make them the driver: what nobody has claimed then follows them.")
+          ImGui.SameLine(ctx)
+        end
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project as yours")
         elseif not settled_apart(p, view.my_mirror) then ImGui.TextDisabled(ctx, "settling")
         else ImGui.TextColored(ctx, RED, "project differs from yours"); ImGui.SetItemTooltip(ctx, "They have every change, yet their project isn't the same as yours: " ..

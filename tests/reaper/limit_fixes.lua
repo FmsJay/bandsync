@@ -166,6 +166,40 @@ local ok, err = pcall(function()
     check(d == 1 and reaper.GetMediaTrackInfo_Value(tc, "I_FREEMODE") == 2, "taken into lanes though it has a wet take")
     local n_items = reaper.CountTrackMediaItems(tc)
     check(n_items >= 2, "one item per take: " .. n_items)
+    -- comping again elsewhere on the track mustn't silence the rest of it
+    local function playing_lanes()
+      local t = {}
+      for l = 0, reaper.GetMediaTrackInfo_Value(tc, "I_NUMFIXEDLANES") - 1 do
+        if reaper.GetMediaTrackInfo_Value(tc, "C_LANEPLAYS:" .. l) > 0 then t[#t + 1] = l end
+      end
+      return t
+    end
+    local before_lanes = playing_lanes()
+    local lanes0 = reaper.GetMediaTrackInfo_Value(tc, "I_NUMFIXEDLANES")
+    local played = 0
+    for j = 0, reaper.CountTrackMediaItems(tc) - 1 do
+      if reaper.GetMediaItemInfo_Value(reaper.GetTrackMediaItem(tc, j), "I_FIXEDLANE") == before_lanes[1] then played = played + 1 end
+    end
+    local i2 = reaper.CreateNewMIDIItemInProj(tc, 10, 12, false)
+    local a1 = reaper.GetActiveTake(i2)
+    reaper.MIDI_InsertNote(a1, false, false, 0, 400, 0, 62, 110, true); reaper.MIDI_Sort(a1)
+    reaper.SetMediaItemInfo_Value(i2, "I_FIXEDLANE", before_lanes[1])
+    local a2 = reaper.AddTakeToMediaItem(i2)
+    reaper.SetMediaItemTake_Source(a2, reaper.GetMediaItemTake_Source(a1))
+    reaper.SetActiveTake(a2)
+    prints.takes_to_lanes(pa, function() return true end)
+    local after_lanes = playing_lanes()
+    check(#after_lanes == 1 and reaper.GetSetMediaTrackInfo_String(tc, "P_LANENAME:" .. after_lanes[1], "", false) and
+      select(2, reaper.GetSetMediaTrackInfo_String(tc, "P_LANENAME:" .. after_lanes[1], "", false)) == "C1", "comping again: C1 still plays alone: " .. table.concat(after_lanes, ","))
+    local now_played, at10 = 0, false
+    for j = 0, reaper.CountTrackMediaItems(tc) - 1 do
+      local x = reaper.GetTrackMediaItem(tc, j)
+      if after_lanes[1] and reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE") == after_lanes[1] then
+        now_played = now_played + 1
+        if math.abs(reaper.GetMediaItemInfo_Value(x, "D_POSITION") - 10) < 0.01 then at10 = true end
+      end
+    end
+    check(now_played == played + 1 and at10, string.format("and holds the old part and the new one (%d, was %d)", now_played, played))
     reaper.DeleteTrack(tc)
     watch(pa, A); watch(pa, A)
   end
@@ -189,6 +223,38 @@ local ok, err = pcall(function()
     local t5 = reaper.time_precise()
     while reaper.time_precise() - t5 < 1 do watch(pb, B, only_laptop); hold(0.2) end
     check(sent("James") == n5, "and nothing goes out for it")
+  end
+
+  -- going back keeps what a bandmate added since, and what you removed you can bring back
+  do
+    reaper.SelectProjectInstance(pb)
+    reaper.InsertTrackInProject(pb, reaper.CountTracks(pb), 0)
+    local jt = reaper.GetTrack(pb, reaper.CountTracks(pb) - 1)
+    reaper.GetSetMediaTrackInfo_String(jt, "P_NAME", "James new", true)
+    local ji = reaper.CreateNewMIDIItemInProj(jt, 40, 42, false)
+    reaper.MIDI_InsertNote(reaper.GetActiveTake(ji), false, false, 0, 400, 0, 60, 100, true)
+    local can_james = function(u) return u == "Laptop" or u == "James" end
+    watch(pb, B, can_james); watch(pb, B, can_james)
+    recv(pa, A)
+    local toid, ioid = mirror.track_oid(jt), select(2, reaper.GetSetMediaItemInfo_String(ji, "P_EXT:band_oid", "", false))
+    reaper.SelectProjectInstance(pa)
+    local msg = mirror.revert(pa, A, song, room, { [toid] = false, [ioid] = false }, { can = yes, mode = "claims" })
+    check(mirror.find(pa, "track", toid) ~= nil and mirror.find(pa, "item", ioid) ~= nil, "the driver going back keeps a bandmate's new track and item")
+    check(msg:find("kept what bandmates added", 1, true) ~= nil and msg:find("James new", 1, true) ~= nil, "and says so: " .. msg)
+    -- my own, gone by going back, comes back though someone's claim now stands
+    reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
+    local lt = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)
+    reaper.GetSetMediaTrackInfo_String(lt, "P_NAME", "Laptop new", true)
+    watch(pa, A); watch(pa, A)
+    local loid = mirror.track_oid(lt)
+    local _, _, levid = mirror.known(pa, loid)
+    local lev = band.read_json(events .. "/" .. levid .. ".json")
+    mirror.revert(pa, A, song, room, { [loid] = false }, { can = yes, mode = "claims" })
+    check(mirror.find(pa, "track", loid) == nil, "my own new track goes when I go back")
+    local nobody = function() return false end
+    mirror.revert(pa, A, song, room, { [loid] = lev }, { can = nobody, mode = "claims" })
+    check(mirror.find(pa, "track", loid) ~= nil, "and forward brings it back, even if a claim says otherwise now")
+    watch(pa, A); recv(pb, B)
   end
 
   -- Hold my changes renders nothing

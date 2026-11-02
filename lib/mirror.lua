@@ -1856,7 +1856,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     if p.t and p.t.obj == "track" then place(p, 0) elseif not placed[p] then placed[p] = true; sorted[#sorted + 1] = p end
   end
   list = sorted
-  local done, refused = 0, 0
+  local done, refused, kept, kept_names = 0, 0, 0, {}
   reaper.Undo_BeginBlock2(proj)
   for _, p in ipairs(list) do
     local rev, h, evid = mirror.known(proj, p.oid)
@@ -1865,8 +1865,27 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
       local tr = mirror.find(proj, "track", p.t.track)
       if tr then name = select(2, reaper.GetTrackName(tr)) end
     end
+    local last = evid and evid ~= "" and event_file(room_dir, evid) or nil
+    if not p.t and last and name == "" then name = last.name or "" end
+    -- Going back never removes what a bandmate has made since: the driver going back a version took the Mac's new track and
+    -- its 4 items for everyone, and forward couldn't return them, as the Mac's claim on it still stood (laptop, 0.42.5). And
+    -- what you removed yourself you may bring back, whoever's claim stands now.
+    local theirs_new = not p.t and not mirror.is_creator(p.oid, cfg.user) and not (last and last.user == cfg.user)
+    local mine_gone = p.t and last and last.gone and last.user == cfg.user
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
+    elseif theirs_new then
+      kept = kept + 1
+      kept_names[name ~= "" and name or "an unnamed track"] = true
+    elseif mine_gone then
+      local ok, nh = mirror.apply(proj, p.t, media, opts.local_mix)
+      if ok then
+        local ev = { type = "obj", obj = p.t.obj, oid = p.oid, rev = (rev or 0) + 1, state = p.t.state, track = p.t.track, name = name, pos = p.t.pos, restored = p.t.id,
+          undoes = opts.undoes, redoes = opts.redoes }
+        local id = sync.post(cfg, song, room, ev)
+        remember(proj, p.oid, ev.rev, nh, id, (ev.time or "") .. cfg.user)
+        done = done + 1
+      end
     elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or sync.maker_may(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid, cfg.user, name, p.t and p.t.pos or nil, opts.mode)) then
       refused = refused + 1
     elseif p.t then
@@ -1881,7 +1900,8 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     else
       local kind = mirror.KIND[p.oid:sub(1, 1)] or "item"
       mirror.apply(proj, { obj = kind, oid = p.oid, gone = true }, media, opts.local_mix)
-      local gev = { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, base = rev or 0, gone = true, undoes = opts.undoes, redoes = opts.redoes }
+      local gev = { type = "obj", obj = kind, oid = p.oid, rev = (rev or 0) + 1, base = rev or 0, gone = true, undoes = opts.undoes, redoes = opts.redoes,
+        name = last and last.name, track = last and last.track, pos = last and last.pos } -- (named: read later, it said "an unnamed track")
       local id = sync.post(cfg, song, room, gev)
       remember(proj, p.oid, gev.rev, "", id, (gev.time or "") .. cfg.user)
       done = done + 1
@@ -1889,7 +1909,11 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   end
   reaper.Undo_EndBlock2(proj, "BandSync: go back", -1)
   reaper.UpdateArrange()
-  return string.format("%d change(s) brought back and sent to the band%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "")
+  local names = {}
+  for n in pairs(kept_names) do names[#names + 1] = n end
+  table.sort(names)
+  return string.format("%d change(s) brought back and sent to the band%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
+    kept > 0 and string.format(" (kept what bandmates added since: %s)", table.concat(names, ", ")) or "")
 end
 
 -- Local mixing on: each track's record here is redone without its fader and pan.

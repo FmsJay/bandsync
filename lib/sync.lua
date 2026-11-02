@@ -27,7 +27,9 @@ local sync = {
 -- small button says so: with the panel shrunk to that button, it said nothing at all (review, 2026-10-31).
 function sync.put_back(text)
   band.log(text)
-  local n = (tonumber((band.json_decode(reaper.GetExtState(band.SECTION, "put back")) or {}).n) or 0) + 1
+  -- (the count is this song's, lately: another song's flood carried over as "1352 edits undone": laptop, 0.42.5)
+  local old = band.json_decode(reaper.GetExtState(band.SECTION, "put back")) or {}
+  local n = (old.song == sync.current_song and old.at and os.time() - old.at < 600) and (tonumber(old.n) or 0) + 1 or 1
   reaper.SetExtState(band.SECTION, "put back", band.json_encode({ text = text, n = n, at = os.time(), song = sync.current_song }), false)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
   local shown = beat and reaper.time_precise() - beat < 5 and reaper.GetExtState(band.SECTION, "panel minimized") == ""
@@ -608,6 +610,33 @@ local function selection(proj)
   local sel = {}
   for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedMediaItem(proj, i) end
   return sel
+end
+
+-- The tempo map and markers as they were at entries[upto] (the newest change of them by then, else the session's own), for
+-- the whole song going back: they stayed as they were (laptop, 0.42.5). Only the driver's to change. -> whether it changed them.
+function sync.restore_timeline(proj, cfg, song, room, entries, upto, session)
+  local t
+  for i = 1, math.min(upto, #entries) do
+    local e = entries[i]
+    if e.kind == "timeline" and e.tempo then t = e end
+  end
+  t = t or session
+  if not (t and t.tempo) then return false end
+  if band.json_encode({ t.tempo, t.markers or {} }) == sync.timeline_sig(proj) then return false end
+  sync.audio_follow_tempo(proj)
+  band.apply_tempo(proj, t.tempo)
+  band.apply_markers(proj, t.markers or {})
+  sync.post(cfg, song, room, { type = "timeline", tempo = t.tempo, markers = t.markers or {} })
+  sync.setext(proj, band.SECTION, "timeline", sync.timeline_sig(proj))
+  return true
+end
+
+-- Give the driver's seat to a bandmate here: the driver can hand over, not only the other person take it (laptop, 0.42.5).
+function sync.hand_over(proj, cfg, song, room, to)
+  require("recall").save(proj, cfg, song, room, "before " .. to .. " took over from " .. cfg.user)
+  sync.set_driver(cfg, song, room, to)
+  sync.post(cfg, song, room, { type = "driver", from = cfg.user, driver = to })
+  band.log(to .. " is driving '" .. song .. "' now")
 end
 
 -- A track's mix automation (volume, pan, width, mute, after its plug-ins) is off for a print, as its fader is: it travels with

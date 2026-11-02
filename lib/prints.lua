@@ -555,8 +555,44 @@ function prints.takes_to_lanes(proj, mine)
       for _, x in ipairs(picked) do if reaper.ValidatePtr2(proj, x, "MediaItem*") then reaper.SetMediaItemSelected(x, true) end end
       local sel = {}
       for s = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, s) end
+      -- already in lanes: REAPER's explode adds a new comp lane on top that plays alone, holding only the newest part, and
+      -- everything else on the track went silent for everyone, with nothing saying so (laptop, 0.42.5). What it makes goes
+      -- into the lane that was playing, which goes on playing.
+      local in_lanes = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > 1 -- (one lane is the first time: its comp is the only one)
+      local playing = {}
+      if in_lanes then
+        for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
+          if reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l) > 0 then playing[#playing + 1] = l end
+        end
+      end
+      local lanes_before = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")
       reaper.SetOnlyTrackSelected(tr)
       reaper.Main_OnCommand(42636, 0) -- Take: Explode takes on selected tracks to fixed lanes and add comp areas from active takes
+      if in_lanes and #playing > 0 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > lanes_before then
+        local target, comps = playing[1] + 1, {} -- (the lanes moved down one for the new one on top)
+        for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+          local it = reaper.GetTrackMediaItem(tr, j)
+          if reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE") == 0 then comps[#comps + 1] = it end
+        end
+        -- (a take of the part left in that lane moves down out of the way, kept: it's one of the takes)
+        for _, c in ipairs(comps) do
+          local pos = reaper.GetMediaItemInfo_Value(c, "D_POSITION")
+          for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+            local it = reaper.GetTrackMediaItem(tr, j)
+            if reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE") == target and math.abs(reaper.GetMediaItemInfo_Value(it, "D_POSITION") - pos) < 0.001 then
+              reaper.SetMediaItemSelected(it, true)
+            end
+          end
+        end
+        if reaper.CountSelectedMediaItems(proj) > 0 then
+          reaper.Main_OnCommand(42787, 0) -- Track lanes: Move items down to first available lane, add lane if needed
+          for s = reaper.CountSelectedMediaItems(proj) - 1, 0, -1 do reaper.SetMediaItemSelected(reaper.GetSelectedMediaItem(proj, s), false) end
+        end
+        for _, c in ipairs(comps) do reaper.SetMediaItemInfo_Value(c, "I_FIXEDLANE", target) end
+        reaper.Main_OnCommand(42501, 0) -- Track lanes: Delete lane at top of track (including media items): empty now
+        for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l, 0) end
+        for _, l in ipairs(playing) do reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l, 1) end
+      end
       local n = 0 -- (the take lanes come out "1" and unnamed: "Take 1", "Take 2"...; the comp lane stays "C1")
       for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
         local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "", false))

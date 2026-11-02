@@ -234,6 +234,9 @@ end
 -- with a VST take FX hash differently from before, so an update doesn't make everyone send every item again.
 function mirror.item_hash(track, state)
   state = portable(state)
+  -- (on a lane its YPOS is only its share of the track's height, so adding a lane changed every item, and each machine sent
+  -- them all: 500 events a minute on Bass Guitar, laptop and PC, 0.42.7. BANDLANE is what counts)
+  if state:find("BANDLANE", 1, true) then state = state:gsub("YPOS [^\n]*\n", "") end
   if not state:find("<VST", 1, true) then return mirror.hash(track .. "\n" .. state) end
   local lines = {}
   for l in (state .. "\n"):gmatch("(.-)\n") do lines[#lines + 1] = l end
@@ -255,7 +258,7 @@ end
 -- (measured, REAPER 7.83: no @init, even with a changed parameter). Which envelopes show, which is armed and how
 -- tall its lane is stay each person's own. A receive names its source track by oid (REAPER's chunk says its
 -- position); receives from a track that isn't mirrored (Real time, live views) stay as they are on each machine.
-mirror.HV = 5 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
+mirror.HV = 6 -- how object hashes are made: bump it whenever what goes into one changes (events carry it as hv)
 mirror.KIND = { T = "track", F = "fx", E = "env", R = "recv", M = "misc", I = "item" } -- (an oid's first letter)
 mirror.PART = { fx = "the plug-ins", env = "the automation", recv = "the sends", misc = "the groups, lock, input FX or note names" }
 mirror.PARTS = { "F", "E", "R", "M" } -- (what a track oid T-x carries: F-x, E-x, R-x, M-x)
@@ -756,9 +759,21 @@ end
 
 function mirror.set_track_state(proj, tr, t, local_mix)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", t.name or "", true)
+  -- never fewer lanes than its items sit on: REAPER then says those items are on lane 255, and it went out as an edit, and every
+  -- machine grew to 256 lanes (a Back to before the lanes, with items not yet gone: laptop and PC, 0.42.7)
+  local in_use = 0
+  if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 then
+    for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+      local lane = reaper.GetMediaItemInfo_Value(reaper.GetTrackMediaItem(tr, i), "I_FIXEDLANE")
+      if lane < mirror.BAD_LANE then in_use = math.max(in_use, lane + 1) end
+    end
+  end
   for _, kp in ipairs({ { "freemode", "I_FREEMODE" }, { "lanes", "I_NUMFIXEDLANES" }, { "mute", "B_MUTE" },
       { "phase", "B_PHASE" }, { "depth", "I_FOLDERDEPTH" } }) do
-    if t[kp[1]] then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]]) or 0) end
+    local v = t[kp[1]] and (tonumber(t[kp[1]]) or 0)
+    if v and kp[1] == "lanes" then v = math.max(v, in_use) end
+    if v and kp[1] == "freemode" and in_use > 1 then v = 2 end
+    if v then reaper.SetMediaTrackInfo_Value(tr, kp[2], v) end
   end
   if t.color and not t.autocolour then require("band").set_track_colour(tr, require("band").color_in(t.color)) end
   reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", t.icon or "", true)
@@ -787,13 +802,22 @@ function mirror.set_track_state(proj, tr, t, local_mix)
   end
 end
 
+-- A lane number that makes sense: REAPER reads 255 for an item on a lane the track has lost. Pure.
+mirror.BAD_LANE = 200
+function mirror.clean_lane(lane, lanes)
+  lane, lanes = math.floor(tonumber(lane) or 0), math.floor(tonumber(lanes) or 1)
+  if lane >= mirror.BAD_LANE then return 0 end
+  return lanes > 0 and math.min(lane, lanes - 1) or lane
+end
+
 -- An item's travelling state: its normalized chunk, plus its lane (REAPER keeps an item's fixed lane out of the
 -- item's chunk, so it gets a line of its own).
 function mirror.item_state(it, media_dir)
   local _, chunk = reaper.GetItemStateChunk(it, "", false)
   local st = mirror.memo("i\0" .. media_dir .. "\0" .. chunk, function() return mirror.tokenize_media(mirror.normalize_item(chunk), media_dir) end)
-  if reaper.GetMediaTrackInfo_Value(reaper.GetMediaItem_Track(it), "I_FREEMODE") == 2 then
-    st = st .. "BANDLANE " .. math.floor(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE")) .. "\n"
+  local tr = reaper.GetMediaItem_Track(it)
+  if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 then
+    st = st .. "BANDLANE " .. mirror.clean_lane(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE"), reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")) .. "\n"
   end
   return st
 end
@@ -1073,7 +1097,7 @@ function mirror.placeholder(tr, oid, state, track_name)
   reaper.SetMediaItemInfo_Value(it, "D_POSITION", tonumber(state:match("\nPOSITION ([%d%.%-e]+)")) or 0)
   reaper.SetMediaItemInfo_Value(it, "D_LENGTH", tonumber(state:match("\nLENGTH ([%d%.%-e]+)")) or 1)
   local lane = tonumber(state:match("BANDLANE (%d+)"))
-  if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane) end
+  if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane < mirror.BAD_LANE and lane or 0) end
   reaper.SetMediaItemInfo_Value(it, "I_CUSTOMCOLOR", reaper.ColorToNative(90, 90, 90) | 0x1000000)
   reaper.GetSetMediaItemInfo_String(it, "P_NOTES", "arriving: " .. ((state:match("\nNAME ([^\n]+)") or ""):gsub('^"(.*)"$', "%1")) ..
     " (" .. (track_name or "") .. "), still syncing", true)
@@ -1224,7 +1248,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     reaper.SetItemStateChunk(it, mirror.resolve_media((ev.state:gsub("BANDLANE %d+\n?", "")), media_dir), false)
     reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", oid, true)
     if active and active < reaper.CountTakes(it) then reaper.SetMediaItemInfo_Value(it, "I_CURTAKE", active) end
-    if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane) end
+    if lane then reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", lane < mirror.BAD_LANE and lane or 0) end -- (events from 0.42.7 hold 255)
     require("prints").choose(it) -- notes or the print, as this machine chose (never part of what travels)
     reaper.SetMediaItemSelected(it, sel)
     reaper.UpdateItemInProject(it)

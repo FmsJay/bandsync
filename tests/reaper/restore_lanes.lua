@@ -113,6 +113,73 @@ local ok, err = pcall(function()
   check(sync.restore_timeline(pa, A, song, room, {}, 0, { tempo = now, first_timeline = { tempo = first } }), "Back from before any tempo change restores the first map")
   check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pa, 0) - 77) > 1, "the tempo's back")
 
+  -- fewer lanes than its items sit on: the count holds, and nothing reads as lane 255
+  reaper.SelectProjectInstance(pa)
+  local st = { name = "Laned", lanes = 1, freemode = 2, plays = "1", lanenames = "C1" }
+  mirror.set_track_state(pa, ta, st, false)
+  check(reaper.GetMediaTrackInfo_Value(ta, "I_NUMFIXEDLANES") == 3, "a track keeps the lanes its items sit on (" .. reaper.GetMediaTrackInfo_Value(ta, "I_NUMFIXEDLANES") .. ")")
+  local worst = 0
+  for i = 0, reaper.CountTrackMediaItems(ta) - 1 do worst = math.max(worst, reaper.GetMediaItemInfo_Value(reaper.GetTrackMediaItem(ta, i), "I_FIXEDLANE")) end
+  check(worst <= 2, "and they stay on them (" .. worst .. ")")
+  mirror.set_track_state(pa, ta, band.json_decode(band.json_encode(mirror.track_state(pa, ta, false))), false)
+  for i = 0, 2 do reaper.GetSetMediaTrackInfo_String(ta, "P_LANENAME:" .. i, ({ "C1", "Take 1", "Take 2" })[i + 1], true); reaper.SetMediaTrackInfo_Value(ta, "C_LANEPLAYS:" .. i, i == 0 and 1 or 0) end
+  for _ = 1, 3 do watch(pa, A); recv(pb, B); watch(pb, B); recv(pa, A) end
+
+  -- a new lane changes the track, not every item on it
+  local items_sent = function()
+    local n = 0
+    for _, f in ipairs(band.files(events, ".json")) do
+      local e = band.read_json(events .. "/" .. f)
+      if e and e.obj == "item" then n = n + 1 end
+    end
+    return n
+  end
+  local before_lane = items_sent()
+  reaper.SelectProjectInstance(pa)
+  reaper.SetMediaTrackInfo_Value(ta, "I_NUMFIXEDLANES", 4)
+  reaper.GetSetMediaTrackInfo_String(ta, "P_LANENAME:3", "Take 3", true)
+  for _ = 1, 3 do watch(pa, A); recv(pb, B); watch(pb, B); recv(pa, A) end
+  check(items_sent() == before_lane, "adding a lane sends no item (" .. (items_sent() - before_lane) .. ")")
+  check(mirror.clean_lane(255, 4) == 0 and mirror.clean_lane(9, 4) == 3 and mirror.clean_lane(2, 4) == 2, "a lane number that makes no sense isn't sent")
+
+  -- a comp on a track in lanes: a take from an old version with three prints, and the part it was played over
+  reaper.SelectProjectInstance(pa)
+  reaper.InsertTrackInProject(pa, 2, 0)
+  local cp = reaper.GetTrack(pa, 2)
+  reaper.GetSetMediaTrackInfo_String(cp, "P_NAME", "Comped", true)
+  reaper.SetMediaTrackInfo_Value(cp, "I_FREEMODE", 2)
+  reaper.SetMediaTrackInfo_Value(cp, "I_NUMFIXEDLANES", 2)
+  local function part(at, name, wet_too)
+    local x = reaper.AddMediaItemToTrack(cp)
+    reaper.SetMediaItemInfo_Value(x, "D_POSITION", at); reaper.SetMediaItemInfo_Value(x, "D_LENGTH", 2)
+    for k = 1, wet_too do
+      reaper.GetSetMediaItemTakeInfo_String(reaper.AddTakeToMediaItem(x), "P_NAME", name .. " dry " .. k, true)
+      local w = reaper.AddTakeToMediaItem(x)
+      reaper.GetSetMediaItemTakeInfo_String(w, "P_NAME", name .. " wet " .. k, true)
+      reaper.GetSetMediaItemTakeInfo_String(w, "P_EXT:" .. prints.KEY, "key" .. k, true)
+    end
+    return x
+  end
+  local under, spare = part(50, "under", 1), part(70, "elsewhere", 1)
+  local over = part(50, "over", 3)
+  reaper.SetMediaItemInfo_Value(part(100, "pass", 1), "I_FIXEDLANE", 1) -- (a lane exists once it holds an item)
+  reaper.SetMediaTrackInfo_Value(cp, "C_LANEPLAYS:0", 1)
+  reaper.SetMediaTrackInfo_Value(cp, "C_LANEPLAYS:1", 0)
+  prints.takes_to_lanes(pa, function() return true end)
+  local count, wet_left, names = reaper.CountTrackMediaItems(cp), 0, {}
+  for i = 0, count - 1 do
+    local x = reaper.GetTrackMediaItem(cp, i)
+    for k = 0, reaper.CountTakes(x) - 1 do names[#names + 1] = select(2, reaper.GetSetMediaItemTakeInfo_String(reaper.GetTake(x, k), "P_NAME", "", false)) end
+  end
+  table.sort(names)
+  local joined = table.concat(names, ",")
+  check(count == 6 and not joined:find("over wet", 1, true), "three real passes make three parts, none of them a print: " .. joined)
+  check(reaper.GetMediaItemInfo_Value(over, "I_FIXEDLANE") == 0, "the part played stays on the playing lane")
+  check(reaper.GetMediaItemInfo_Value(under, "I_FIXEDLANE") ~= 0, "the part it was played over moves out of the way")
+  check(reaper.GetMediaItemInfo_Value(spare, "I_FIXEDLANE") == 0, "one elsewhere on the lane stays")
+  check(select(2, prints.takes(spare)) ~= nil, "and keeps its print")
+  reaper.DeleteTrack(cp)
+
   -- only what plays is printed
   reaper.SelectProjectInstance(pa)
   reaper.TrackFX_AddByName(ta, "ReaSynth", false, -1)

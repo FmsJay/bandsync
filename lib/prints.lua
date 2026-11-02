@@ -532,6 +532,14 @@ end
 -- a track holding a wet take (or an ARA one) waits, as exploding would split print from item. Returns tracks done.
 -- A track already in lanes: each item with several takes keeps the one playing, in the lane that plays, and each other take
 -- becomes its own item on a new lane at the bottom.
+local function real_takes(it)
+  local real = 0
+  for k = 0, reaper.CountTakes(it) - 1 do
+    local tk = reaper.GetTake(it, k)
+    if tk and take_ext(tk, prints.KEY) == "" then real = real + 1 end
+  end
+  return real
+end
 function prints.takes_into_new_lanes(proj, tr, mine)
   local plays = 0
   for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
@@ -540,7 +548,15 @@ function prints.takes_into_new_lanes(proj, tr, mine)
   local items = {}
   for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
     local it = reaper.GetTrackMediaItem(tr, j)
-    if reaper.CountTakes(it) > 1 and mine(it) then items[#items + 1] = it end
+    if real_takes(it) > 1 and mine(it) then items[#items + 1] = it end
+  end
+  local exploding = {}
+  for _, it in ipairs(items) do exploding[it] = true end
+  local function new_lane()
+    local lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")
+    reaper.SetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES", lanes + 1)
+    reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. lanes, 0)
+    return lanes
   end
   local function crop_to_active(it)
     reaper.SetMediaItemSelected(it, true)
@@ -558,14 +574,22 @@ function prints.takes_into_new_lanes(proj, tr, mine)
         reaper.SetItemStateChunk(copy, chunk, false)
         reaper.SetActiveTake(reaper.GetTake(copy, k))
         crop_to_active(copy)
-        local lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")
-        reaper.SetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES", lanes + 1)
-        reaper.SetMediaItemInfo_Value(copy, "I_FIXEDLANE", lanes)
-        reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. lanes, 0)
+        reaper.SetMediaItemInfo_Value(copy, "I_FIXEDLANE", new_lane())
       end
     end
     crop_to_active(it)
     reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", plays)
+    -- (the part it was played over moves out of the way, or both sound: real Bass Guitar, Verse 2, laptop, 0.42.7)
+    local from = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+    local to = from + reaper.GetMediaItemInfo_Value(it, "D_LENGTH")
+    for j = reaper.CountTrackMediaItems(tr) - 1, 0, -1 do
+      local x = reaper.GetTrackMediaItem(tr, j)
+      local x_at = reaper.GetMediaItemInfo_Value(x, "D_POSITION")
+      if x ~= it and not exploding[x] and mine(x) and reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE") == plays
+        and x_at < to and x_at + reaper.GetMediaItemInfo_Value(x, "D_LENGTH") > from then
+        reaper.SetMediaItemInfo_Value(x, "I_FIXEDLANE", new_lane())
+      end
+    end
   end
   reaper.UpdateArrange()
 end
@@ -577,11 +601,7 @@ function prints.takes_to_lanes(proj, mine)
     local want, blocked = false, require("mirror").local_track(tr)
     for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
       local it = reaper.GetTrackMediaItem(tr, j)
-      local real = 0
-      for k = 0, reaper.CountTakes(it) - 1 do
-        local tk = reaper.GetTake(it, k)
-        if tk and take_ext(tk, prints.KEY) == "" then real = real + 1 end
-      end
+      local real = real_takes(it)
       if real > 1 and prints.ara_take(it) then blocked = true end
       if real > 1 and mine(it) then want = true end
     end
@@ -591,10 +611,14 @@ function prints.takes_to_lanes(proj, mine)
       local picked = {}
       for s = 0, reaper.CountSelectedMediaItems(proj) - 1 do picked[#picked + 1] = reaper.GetSelectedMediaItem(proj, s) end
       for _, x in ipairs(picked) do reaper.SetMediaItemSelected(x, false) end
+      local in_lanes = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > 1 -- (one lane is the first time: its comp is th
       for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
         local it = reaper.GetTrackMediaItem(tr, j)
+        -- (in lanes only the items being split: the others kept their prints and bandmates' parts were re-sent. And every wet take:
+        -- one from an old version holds three, and the other two came out as plain parts on lanes of their own)
         local _, wet = prints.takes(it)
-        if wet then
+        if in_lanes and not (real_takes(it) > 1 and mine(it)) then wet = nil end
+        while wet do
           local was = reaper.GetActiveTake(it)
           if was == wet then was = prints.takes(it) end
           reaper.SetActiveTake(wet)
@@ -602,6 +626,7 @@ function prints.takes_to_lanes(proj, mine)
           reaper.Main_OnCommand(40129, 0) -- Take: Delete active take from items
           reaper.SetMediaItemSelected(it, false)
           if was and reaper.ValidatePtr2(proj, was, "MediaItem_Take*") then reaper.SetActiveTake(was) end
+          wet = select(2, prints.takes(it))
         end
       end
       for _, x in ipairs(picked) do if reaper.ValidatePtr2(proj, x, "MediaItem*") then reaper.SetMediaItemSelected(x, true) end end
@@ -611,7 +636,6 @@ function prints.takes_to_lanes(proj, mine)
       -- everything else on the track went silent for everyone, with nothing saying so (laptop, 0.42.5). Moving what it makes
       -- back into the old comp lane loses it (0.42.6). So it isn't used: the take being played stays in the lane that's
       -- playing, and each other take gets a new lane at the bottom.
-      local in_lanes = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > 1 -- (one lane is the first time: its comp is the only one)
       reaper.SetOnlyTrackSelected(tr)
       if in_lanes then prints.takes_into_new_lanes(proj, tr, mine)
       else reaper.Main_OnCommand(42636, 0) end -- Take: Explode takes on selected tracks to fixed lanes and add comp areas from active takes

@@ -524,6 +524,31 @@ function mirror.plan_undo(entries, i)
   return { [e.oid] = false }
 end
 
+-- One act that made several changes alike: a delete that reached a copy in a comp lane, a glue that took three items.
+-- History's indexes of entries[i] and those like it from the same person in the same second. Pure.
+-- (Two identical rows, and undoing the newest brought back the copy, not the part: laptop, 0.42.5)
+function mirror.same_moment(entries, i)
+  local e, out = entries[i], { i }
+  if not (e and e.kind == "obj" and e.oid) then return out end
+  for _, step in ipairs({ -1, 1 }) do
+    local j = i + step
+    while entries[j] and entries[j].time == e.time do
+      local p = entries[j]
+      if p.kind == "obj" and p.oid ~= e.oid and p.user == e.user and p.obj == e.obj and p.name == e.name
+        and (not p.gone) == (not e.gone) and (not p.restored) == (not e.restored) then out[#out + 1] = j end
+      j = j + step
+    end
+  end
+  return out
+end
+function mirror.plan_undo_moment(entries, i)
+  local plan
+  for _, j in ipairs(mirror.same_moment(entries, i)) do
+    for oid, v in pairs(mirror.plan_undo(entries, j) or {}) do plan = plan or {}; plan[oid] = v end
+  end
+  return plan
+end
+
 -- The top bar's Undo / Redo (your own changes only, for everyone). Pure, over History's entries:
 -- last_mine: your newest change not undone yet (undo events carry `undoes`, redo events `redoes`).
 function mirror.last_mine(entries, user)
@@ -634,7 +659,7 @@ mirror.TRACK_MIX = { { "width", "D_WIDTH" }, { "panmode", "I_PANMODE" }, { "dual
 
 function mirror.track_line(t, local_mix, colour)
   local f = { t.name or "", t.parent or "", t.depth or 0, t.mute or 0, "", t.phase or 0, t.icon or "", -- ("": solo is each person's own)
-    t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", t.collapsed or 0, local_mix and "" or (t.vol or ""), local_mix and "" or (t.pan or "") }
+    t.freemode or 0, t.lanes or 0, t.plays or "", t.lanenames or "", 0, local_mix and "" or (t.vol or ""), local_mix and "" or (t.pan or "") }
   for _, kp in ipairs(mirror.TRACK_MORE) do f[#f + 1] = t[kp[1]] or "" end
   for _, kp in ipairs(mirror.TRACK_MIX) do f[#f + 1] = local_mix and "" or (t[kp[1]] or "") end
   if colour == nil then colour = not mirror.own_colours() end
@@ -706,8 +731,7 @@ function mirror.track_state(proj, tr, local_mix)
     depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH"), mute = reaper.GetMediaTrackInfo_Value(tr, "B_MUTE"),
     solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), phase = reaper.GetMediaTrackInfo_Value(tr, "B_PHASE"),
     color = require("band").color_out(require("band").track_colour(tr)), icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false)),
-    autocolour = mirror.own_colours() or nil, freemode = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE"), lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES"),
-    collapsed = reaper.GetMediaTrackInfo_Value(tr, "C_LANESCOLLAPSED") }
+    autocolour = mirror.own_colours() or nil, freemode = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE"), lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") } -- (not lanes collapsed: a view, each person's own. It was put back as a bandmate's edit: Mac, 0.42.5)
   local plays, names = {}, {}
   for l = 0, t.lanes - 1 do
     plays[#plays + 1] = math.floor(reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l))
@@ -733,7 +757,7 @@ end
 function mirror.set_track_state(proj, tr, t, local_mix)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", t.name or "", true)
   for _, kp in ipairs({ { "freemode", "I_FREEMODE" }, { "lanes", "I_NUMFIXEDLANES" }, { "mute", "B_MUTE" },
-      { "phase", "B_PHASE" }, { "collapsed", "C_LANESCOLLAPSED" }, { "depth", "I_FOLDERDEPTH" } }) do
+      { "phase", "B_PHASE" }, { "depth", "I_FOLDERDEPTH" } }) do
     if t[kp[1]] then reaper.SetMediaTrackInfo_Value(tr, kp[2], tonumber(t[kp[1]]) or 0) end
   end
   if t.color and not t.autocolour then require("band").set_track_colour(tr, require("band").color_in(t.color)) end
@@ -1555,7 +1579,12 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
         return put_back(o, rev, evid, { name = perm_name(o, by_oid) })
       end
-      if not rev and o.state == "" and o.kind ~= "track" and o.kind ~= "item" then return end -- (an empty part nobody has sent)
+      -- (an empty part nobody has sent. Nor one gone from the band and just back with its track: its plug-ins were still on
+      -- their way, and "none" went out as this machine's change, taking the Neve from everyone: Mac, 0.42.6)
+      if o.state == "" and o.kind ~= "track" and o.kind ~= "item" then
+        if not rev then return end
+        if h == "" then local ev = event_file(room_dir, evid); if ev and ev.gone then return end end
+      end
       -- plug-ins and automation: only while stopped, once settled (not a whole chain per knob turn, or an envelope per
       -- point drawn)
       if o.kind == "fx" or o.kind == "env" then
@@ -1870,7 +1899,9 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     -- Going back never removes what a bandmate has made since: the driver going back a version took the Mac's new track and
     -- its 4 items for everyone, and forward couldn't return them, as the Mac's claim on it still stood (laptop, 0.42.5). And
     -- what you removed yourself you may bring back, whoever's claim stands now.
-    local theirs_new = not p.t and not mirror.is_creator(p.oid, cfg.user) and not (last and last.user == cfg.user)
+    -- (by who made it, not who touched it last: having restored the Mac's track earlier made it "yours" to remove. Only undoing
+    -- that very change of yours may take it away again.)
+    local theirs_new = not p.t and not mirror.is_creator(p.oid, cfg.user) and not (opts.undoes and last and last.user == cfg.user)
     local mine_gone = p.t and last and last.gone and last.user == cfg.user
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
@@ -1885,6 +1916,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, p.oid, ev.rev, nh, id, (ev.time or "") .. cfg.user)
         done = done + 1
+        p.landed = true
       end
     elseif not (opts.can(cfg.user, name, p.t and p.t.pos or nil) or sync.maker_may(p.t and p.t.obj == "track" and p.oid or (p.t and p.t.track) or p.oid, cfg.user, name, p.t and p.t.pos or nil, opts.mode)) then
       refused = refused + 1
@@ -1896,6 +1928,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
         local id = sync.post(cfg, song, room, ev)
         remember(proj, p.oid, ev.rev, nh, id, (ev.time or "") .. cfg.user)
         done = done + 1
+        p.landed = true
       end
     else
       local kind = mirror.KIND[p.oid:sub(1, 1)] or "item"
@@ -1909,6 +1942,15 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   end
   reaper.Undo_EndBlock2(proj, "BandSync: go back", -1)
   reaper.UpdateArrange()
+  -- a lane takes its name only now its items are in, and they came after the track: forward lost "Take 1", and sent that (Mac, 0.42.5)
+  for _, p in ipairs(list) do
+    local tr = p.landed and p.t.obj == "track" and type(p.t.state) == "table" and mirror.find(proj, "track", p.oid)
+    if tr then
+      mirror.set_track_state(proj, tr, p.t.state, opts.local_mix)
+      local rev, _, evid, ord = mirror.known(proj, p.oid)
+      remember(proj, p.oid, rev, mirror.track_hash(mirror.track_state(proj, tr, opts.local_mix), opts.local_mix), evid, ord)
+    end
+  end
   local names = {}
   for n in pairs(kept_names) do names[#names + 1] = n end
   table.sort(names)
@@ -1962,12 +2004,16 @@ function mirror.root(proj)
     local ok, oid, v = reaper.EnumProjExtState(proj, mirror.SEC, i)
     if not ok then break end
     i = i + 1
-    local h = v:match("^%d+|([^|]*)|")
-    if h and h ~= "" then t[#t + 1] = oid:upper() .. "=" .. h end
+    -- the band's newest change of each thing, not its hash: a plug-in saves its data its own way on each machine, and a
+    -- machine without it re-encodes it, so hashes differ for good with nothing different to hear (Surge, UADx, Superior Drummer:
+    -- Mac, 0.42.6). What came out differently on landing is what "mirror drift" reports.
+    local h, ev = v:match("^%d+|([^|]*)|([^|]*)")
+    if h and h ~= "" then t[#t + 1] = oid:upper() .. "=" .. tostring(ev) end
   end
   table.sort(t)
   return mirror.hash(table.concat(t, "\n"))
 end
+
 
 -- ---- side rooms ------------------------------------------------------------------------------------------
 -- A side room starts as a copy of its parent tab (ids and all), so both share every object's history up to then.

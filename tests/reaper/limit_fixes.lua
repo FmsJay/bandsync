@@ -70,8 +70,23 @@ local ok, err = pcall(function()
   end
   local tracks_sent = table.concat(what, ", "):find("track") or table.concat(what, ", "):find("gone")
   check(not tracks_sent, "and nothing of theirs was deleted or changed by it: " .. table.concat(what, ", "))
+  recv(pa, A) -- (the bandmate printed it again, its chain not back yet: that lands here)
   local rb, ra = mirror.root(pb), mirror.root(pa)
-  check(rb == ra, "both on the same fingerprint")
+  local function differs()
+    local function all(pj)
+      local t, i = {}, 0
+      while true do
+        local ok, oid, v = reaper.EnumProjExtState(pj, mirror.SEC, i)
+        if not ok then return t end
+        i = i + 1; t[oid:upper()] = v
+      end
+    end
+    local x, y, o = all(pb), all(pa), {}
+    for k, v in pairs(x) do if y[k] ~= v then o[#o + 1] = k .. " B=" .. v .. " A=" .. tostring(y[k]) end end
+    for k, v in pairs(y) do if x[k] == nil then o[#o + 1] = k .. " B=nil A=" .. v end end
+    return table.concat(o, "; ")
+  end
+  check(rb == ra, "both on the same fingerprint" .. (rb == ra and "" or ": " .. differs()))
   -- the track under it only moved in the list and back: said once for the track, not for the ones it moved
   check(put_back_n() - pb0 <= 5, "put-back notices stayed about what was deleted (track, item, its parts): " .. (put_back_n() - pb0))
 
@@ -255,6 +270,48 @@ local ok, err = pcall(function()
     mirror.revert(pa, A, song, room, { [loid] = lev }, { can = nobody, mode = "claims" })
     check(mirror.find(pa, "track", loid) ~= nil, "and forward brings it back, even if a claim says otherwise now")
     watch(pa, A); recv(pb, B)
+  end
+
+  -- a track back from being gone, its plug-ins not here yet: "none" isn't a change of this machine's
+  do
+    reaper.SelectProjectInstance(pa)
+    reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
+    local gt = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)
+    reaper.GetSetMediaTrackInfo_String(gt, "P_NAME", "Gone and back", true)
+    reaper.TrackFX_AddByName(gt, "ReaEQ", false, -1)
+    watch(pa, A); hold(3.2); watch(pa, A); watch(pa, A)
+    recv(pb, B)
+    local oid, foid = mirror.track_oid(gt), "F" .. mirror.track_oid(gt):sub(2)
+    check(mirror.find(pb, "track", oid) and reaper.TrackFX_GetCount(mirror.find(pb, "track", oid)) == 1, "the bandmate has the track and its plug-in")
+    local _, _, tev = mirror.known(pa, oid)
+    local tstate = band.read_json(events .. "/" .. tev .. ".json")
+    -- going back takes both; forward brings the track, and its plug-ins haven't landed yet when the bandmate next looks
+    reaper.SelectProjectInstance(pa)
+    mirror.revert(pa, A, song, room, { [oid] = false, [foid] = false }, { can = yes, mode = "claims" })
+    recv(pb, B)
+    check(mirror.find(pb, "track", oid) == nil, "gone for the bandmate")
+    reaper.SelectProjectInstance(pa)
+    mirror.revert(pa, A, song, room, { [oid] = tstate }, { can = yes, mode = "claims" })
+    recv(pb, B)
+    check(mirror.find(pb, "track", oid) ~= nil, "back for the bandmate")
+    for _ = 1, 3 do watch(pb, B, yes); hold(0.1) end
+    local empty = false
+    for _, f in ipairs(band.files(events, ".json")) do
+      if f:sub(1, 6) == "James-" then
+        local e = band.read_json(events .. "/" .. f)
+        if e and e.obj == "fx" and e.state == "" and e.oid == foid then empty = true end
+      end
+    end
+    check(not empty, "no empty chain goes out for a track just back")
+  end
+
+  -- going back the whole song brings the tempo too
+  do
+    reaper.SelectProjectInstance(pa)
+    local was = band.capture_tempo(pa)
+    reaper.SetCurrentBPM(pa, 77, false)
+    local changed = sync.restore_timeline(pa, A, song, room, { { kind = "timeline", tempo = was, markers = {} } }, 1, nil)
+    check(changed and math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pa, 0) - 77) > 1, "the tempo goes back with the whole song")
   end
 
   -- Hold my changes renders nothing

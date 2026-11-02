@@ -18,6 +18,7 @@ local function check(ok, what) if not ok then fails = fails + 1 end; say((ok and
 local front = reaper.EnumProjects(-1)
 reaper.Main_OnCommand(40859, 0); local pa = reaper.EnumProjects(-1)
 reaper.Main_OnCommand(40859, 0); local pb = reaper.EnumProjects(-1)
+for _, p in ipairs({ pa, pb }) do reaper.DeleteExtState("BandSync", "mirror drift " .. tostring(p), false) end -- (a closed tab's address comes back)
 local media = sync.room_dir(A, song, room) .. "/media"
 local function pass_a(can) return mirror.watch(pa, A, song, room, { can = can or yes, mode = "claims" }) end
 local function pass_b(can) return mirror.watch(pb, B, song, room, { can = can or yes, mode = "claims" }) end

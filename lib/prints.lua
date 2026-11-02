@@ -182,12 +182,21 @@ end
 -- Only here: mirror reads the band's setting from prints.FXEN while it's held. (ARA prints have only the take's
 -- own plug-ins in them: their track's still apply.)
 prints.FXEN = "band_fxen" -- (on a track, this machine only: the FX button as the band has it, while held off here)
+local said_print_only = {}
 function prints.hold_fx(tr)
   local wet = false
   for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
     local x = reaper.GetTrackMediaItem(tr, i)
     local tk = reaper.GetActiveTake(x)
-    if tk and take_ext(tk, prints.KEY) ~= "" and not prints.ara_take(x) then wet = true; break end
+    if tk and take_ext(tk, prints.KEY) ~= "" and not prints.ara_take(x) then
+      wet = true
+      -- (a comp made while a pass played its print: the Neve went off for the whole track, with no word: Mac, 0.42.5)
+      if reaper.CountTakes(x) == 1 and not said_print_only[x] then
+        said_print_only[x] = true
+        band.log("a part on " .. select(2, reaper.GetTrackName(tr)) .. " holds only its print, no dry take, which keeps this track's plug-ins off here. If it came from a comp, comp it from the dry take")
+      end
+      break
+    end
   end
   local held = band.track_ext(tr, prints.FXEN)
   if wet and held == "" then
@@ -385,6 +394,9 @@ end
 function prints.refresh(proj, it, media_dir, fx_hash, route_hash, cfg)
   local midi, print = prints.takes(it)
   local tr = reaper.GetMediaItem_Track(it)
+  -- (a pass on a lane nobody hears: printed once it plays. Every pass of a comp was rendered: laptop, 0.42.5)
+  if reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2
+    and reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. math.floor(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE"))) == 0 then return false end
   local audio = not midi and prints.audio_take(it)
   if not midi and not audio then return refresh_ara(proj, it, media_dir) end
   local dest = midi and prints.route(tr)
@@ -518,6 +530,46 @@ end
 -- picked per stretch becomes a comp lane. Wet takes then work on every lane. Per track, only by whoever owns one of
 -- its items' takes (`mine(item)`: their newest change, or not sent yet), so two machines never explode one at once;
 -- a track holding a wet take (or an ARA one) waits, as exploding would split print from item. Returns tracks done.
+-- A track already in lanes: each item with several takes keeps the one playing, in the lane that plays, and each other take
+-- becomes its own item on a new lane at the bottom.
+function prints.takes_into_new_lanes(proj, tr, mine)
+  local plays = 0
+  for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
+    if reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l) > 0 then plays = l; break end
+  end
+  local items = {}
+  for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    local it = reaper.GetTrackMediaItem(tr, j)
+    if reaper.CountTakes(it) > 1 and mine(it) then items[#items + 1] = it end
+  end
+  local function crop_to_active(it)
+    reaper.SetMediaItemSelected(it, true)
+    reaper.Main_OnCommand(40131, 0) -- Take: Crop to active take in items
+    reaper.SetMediaItemSelected(it, false)
+  end
+  for _, it in ipairs(items) do
+    local _, chunk = reaper.GetItemStateChunk(it, "", false)
+    -- (a copy with ids of its own: REAPER makes them new, and mirror takes it as a new item)
+    chunk = chunk:gsub("\n%s*IGUID [^\n]*", ""):gsub("\n%s*GUID [^\n]*", ""):gsub("\n%s*band_oid [^\n]*", ""):gsub("\n%s*band_[%w_]+ [^\n]*", "")
+    local active = reaper.GetActiveTake(it)
+    for k = reaper.CountTakes(it) - 1, 0, -1 do
+      if reaper.GetTake(it, k) ~= active then
+        local copy = reaper.AddMediaItemToTrack(tr)
+        reaper.SetItemStateChunk(copy, chunk, false)
+        reaper.SetActiveTake(reaper.GetTake(copy, k))
+        crop_to_active(copy)
+        local lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")
+        reaper.SetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES", lanes + 1)
+        reaper.SetMediaItemInfo_Value(copy, "I_FIXEDLANE", lanes)
+        reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. lanes, 0)
+      end
+    end
+    crop_to_active(it)
+    reaper.SetMediaItemInfo_Value(it, "I_FIXEDLANE", plays)
+  end
+  reaper.UpdateArrange()
+end
+
 function prints.takes_to_lanes(proj, mine)
   local done = 0
   for i = 0, reaper.CountTracks(proj) - 1 do
@@ -556,44 +608,17 @@ function prints.takes_to_lanes(proj, mine)
       local sel = {}
       for s = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, s) end
       -- already in lanes: REAPER's explode adds a new comp lane on top that plays alone, holding only the newest part, and
-      -- everything else on the track went silent for everyone, with nothing saying so (laptop, 0.42.5). What it makes goes
-      -- into the lane that was playing, which goes on playing.
+      -- everything else on the track went silent for everyone, with nothing saying so (laptop, 0.42.5). Moving what it makes
+      -- back into the old comp lane loses it (0.42.6). So it isn't used: the take being played stays in the lane that's
+      -- playing, and each other take gets a new lane at the bottom.
       local in_lanes = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > 1 -- (one lane is the first time: its comp is the only one)
-      local playing = {}
-      if in_lanes then
-        for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
-          if reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l) > 0 then playing[#playing + 1] = l end
-        end
-      end
-      local lanes_before = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES")
       reaper.SetOnlyTrackSelected(tr)
-      reaper.Main_OnCommand(42636, 0) -- Take: Explode takes on selected tracks to fixed lanes and add comp areas from active takes
-      if in_lanes and #playing > 0 and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") > lanes_before then
-        local target, comps = playing[1] + 1, {} -- (the lanes moved down one for the new one on top)
-        for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-          local it = reaper.GetTrackMediaItem(tr, j)
-          if reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE") == 0 then comps[#comps + 1] = it end
-        end
-        -- (a take of the part left in that lane moves down out of the way, kept: it's one of the takes)
-        for _, c in ipairs(comps) do
-          local pos = reaper.GetMediaItemInfo_Value(c, "D_POSITION")
-          for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
-            local it = reaper.GetTrackMediaItem(tr, j)
-            if reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE") == target and math.abs(reaper.GetMediaItemInfo_Value(it, "D_POSITION") - pos) < 0.001 then
-              reaper.SetMediaItemSelected(it, true)
-            end
-          end
-        end
-        if reaper.CountSelectedMediaItems(proj) > 0 then
-          reaper.Main_OnCommand(42787, 0) -- Track lanes: Move items down to first available lane, add lane if needed
-          for s = reaper.CountSelectedMediaItems(proj) - 1, 0, -1 do reaper.SetMediaItemSelected(reaper.GetSelectedMediaItem(proj, s), false) end
-        end
-        for _, c in ipairs(comps) do reaper.SetMediaItemInfo_Value(c, "I_FIXEDLANE", target) end
-        reaper.Main_OnCommand(42501, 0) -- Track lanes: Delete lane at top of track (including media items): empty now
-        for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l, 0) end
-        for _, l in ipairs(playing) do reaper.SetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l, 1) end
-      end
+      if in_lanes then prints.takes_into_new_lanes(proj, tr, mine)
+      else reaper.Main_OnCommand(42636, 0) end -- Take: Explode takes on selected tracks to fixed lanes and add comp areas from active takes
       local n = 0 -- (the take lanes come out "1" and unnamed: "Take 1", "Take 2"...; the comp lane stays "C1")
+      for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do -- (and carry on from any there already)
+        n = math.max(n, tonumber(select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "", false)):match("^Take (%d+)$")) or 0)
+      end
       for l = 0, reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") - 1 do
         local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "", false))
         if name == "" or name:match("^%d+$") then n = n + 1; reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. l, "Take " .. n, true) end

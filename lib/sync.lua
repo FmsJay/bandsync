@@ -227,7 +227,7 @@ end
 -- tracks" (a claim on the Mac's deleted Scratch Mac stayed listed). Each machine drops its own (a claims file has
 -- one writer), once it has caught up with the band and the track has been missing 30 s: a machine still catching up
 -- may not have every track yet. Someone else's waits for them; the panel doesn't list it meanwhile. Returns how many.
-sync.GONE_WAIT = 30 -- seconds a claimed track must stay missing
+sync.GONE_WAIT = 600 -- seconds a claimed track must stay missing (a whole-song Back takes it for a while: 30 s lost the claim for good when it came back: Mac, 0.42.5)
 local missing_since = {} -- "tracks:<lower name>" -> when it was first missing here
 function sync.drop_gone_claims(proj, cfg, song, room)
   if sync.pending_events(proj, cfg, song, room) ~= 0 or reaper.CountTracks(proj) == 0 then return 0 end
@@ -620,7 +620,8 @@ function sync.restore_timeline(proj, cfg, song, room, entries, upto, session)
     local e = entries[i]
     if e.kind == "timeline" and e.tempo then t = e end
   end
-  t = t or session
+  -- (before the song's first tempo change: the session file only holds the newest map. The Bridge's tempo stayed: laptop, 0.42.6)
+  t = t or (session and session.first_timeline) or session
   if not (t and t.tempo) then return false end
   if band.json_encode({ t.tempo, t.markers or {} }) == sync.timeline_sig(proj) then return false end
   sync.audio_follow_tempo(proj)

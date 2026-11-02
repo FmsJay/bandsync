@@ -101,10 +101,11 @@ local ok, err = pcall(function()
   check(sent("James") == nb, "and doesn't explode or send anything of his own")
   -- a claim on a track that's gone is let go by its owner (once caught up, and missing a while)
   sync.set_claims(A, song, room, { tracks = { "Keys", "Gone Track" }, regions = {}, times = {}, prints = { "Gone Track" } })
+  local gone_wait = sync.GONE_WAIT
   sync.GONE_WAIT = 0
   reaper.SelectProjectInstance(pa)
   sync.drop_gone_claims(pa, A, song, room); sync.drop_gone_claims(pa, A, song, room)
-  sync.GONE_WAIT = 30
+  sync.GONE_WAIT = gone_wait
   local mc = sync.my_claims(A, song, room)
   check(#mc.tracks == 1 and mc.tracks[1] == "Keys" and #mc.prints == 0, "a claim on a track that's gone is dropped, the rest kept (" .. table.concat(mc.tracks, ",") .. ")")
   -- a JSFX that isn't on this machine: REAPER keeps an empty stand-in, not offline (Mac, 0.39.1: a silent print)

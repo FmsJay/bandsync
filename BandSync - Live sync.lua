@@ -247,7 +247,7 @@ local function poll()
     reaper.SetExtState(band.SECTION, "driver_away " .. tostring(proj), driver_away and tostring(driver) or "", false)
   end
   if last_driver and driver ~= last_driver then -- handovers are announced, never silent
-    band.log(driver == cfg.user and "you're driving now" or (tostring(driver) .. " took control" ..
+    band.log(driver == cfg.user and "you're driving now" or (tostring(driver) .. " is driving now" ..
       (last_driver == cfg.user and ": you're no longer driving (what you don't own is view-only)" or "")))
   end
   last_driver = driver
@@ -501,7 +501,7 @@ local function tick_body() -- returns true to keep going
   if sync.tip_at and reaper.time_precise() - sync.tip_at > 6 then sync.tip_at = nil; reaper.TrackCtl_SetToolTip("", 0, 0, true) end
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then -- project closed: stop, and say so
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
-    return band.log("live sync stopped: '" .. b.song .. "' was closed (it starts again by itself when you reopen it)")
+    return band.log("live sync stopped: '" .. b.song .. "'" .. (b.room ~= "main" and (", side room '" .. b.room .. "',") or "") .. " was closed (it starts again by itself when you reopen it)")
   end
   local now_b = band.binding(proj)
   if not now_b or now_b.role ~= b.role or now_b.song ~= b.song then -- became a solo working copy (or unbound): not ours any more

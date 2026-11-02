@@ -317,4 +317,22 @@ assert(mirror.portable(mac) == win, "a Mac's plug-in files and colours read as W
 assert(mirror.portable(win) == win, "Windows' text is left exactly as it was (no hash moves)")
 assert(mirror.portable('<VST "VST: Dexed" Dexed.vst 0 ""\n') == '<VST "VST: Dexed" Dexed.dll 0 ""\n', "a macOS VST2 bundle")
 assert(mirror.fx_hash(mac) == mirror.fx_hash(win) and mirror.item_hash("T", mac) == mirror.item_hash("T", win), "hashes agree")
+
+-- one act, one row: a delete that reached a copy in a comp lane undoes both; another person's, or another second's, doesn't count
+do
+  local M = {
+    { kind = "obj", obj = "item", oid = "I-1", id = "a1", user = "L", time = "T1", rev = 1, name = "Bass" },
+    { kind = "obj", obj = "item", oid = "I-2", id = "a2", user = "L", time = "T1", rev = 1, name = "Bass" },
+    { kind = "obj", obj = "item", oid = "I-1", id = "g1", user = "L", time = "T2", rev = 2, name = "Bass", gone = true },
+    { kind = "obj", obj = "item", oid = "I-2", id = "g2", user = "L", time = "T2", rev = 2, name = "Bass", gone = true },
+    { kind = "obj", obj = "item", oid = "I-3", id = "g3", user = "M", time = "T2", rev = 2, name = "Bass", gone = true },
+    { kind = "obj", obj = "item", oid = "I-4", id = "g4", user = "L", time = "T3", rev = 2, name = "Bass", gone = true },
+    { kind = "note", id = "n", user = "L", time = "T3" },
+  }
+  assert(#mirror.same_moment(M, 3) == 2 and #mirror.same_moment(M, 4) == 2, "the two deletes are one act, whichever row")
+  assert(#mirror.same_moment(M, 5) == 1 and #mirror.same_moment(M, 6) == 1, "not another person's, nor another second's")
+  assert(#mirror.same_moment(M, 7) == 1, "only changes count")
+  local plan = mirror.plan_undo_moment(M, 4)
+  assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
+end
 print("ok")

@@ -683,7 +683,7 @@ local function back_button(i, what, single)
       local whose = #others == 1 and me and "your" or "their"
       if #others == 0 or reaper.MB(table.concat(others, ", ") .. " changed it after this: undoing it takes " .. whose .. " change back too. Undo anyway?",
           "BandSync", 4) == 6 then
-        band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo(entries, i), opts)); hist_at = 0
+        band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo_moment(entries, i), opts)); hist_at = 0
       end
     end
     ImGui.EndDisabled(ctx)
@@ -723,6 +723,9 @@ local function history_filtered(driving)
     local ok = not e.auto and (hf.who == "" or e.user == hf.who) and (not want or (type(want) == "function" and want(e)) or (type(want) == "table" and want[e.kind]))
       and (hf.track == "" or (e.name or e.track or ""):lower() == hf.track:lower())
       and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
+    local moment = ok and require("mirror").same_moment(entries, i) or { i }
+    for _, j in ipairs(moment) do if j > i then ok = false end end -- (one row for one act, on the newest of them)
+    if #moment > 1 then line = line .. string.format(" (%d of them, undone together)", #moment) end
     if ok then
       n = n + 1
       ImGui.PushID(ctx, i)
@@ -1763,7 +1766,6 @@ local function home_who()
             sync.hand_over(proj, cfg, b.song, b.room, p.name); last = 0
           end
           ImGui.SetItemTooltip(ctx, "Make them the driver: what nobody has claimed then follows them.")
-          ImGui.SameLine(ctx)
         end
         if p.mirror == view.my_mirror then ImGui.TextColored(ctx, GREEN, "same project as yours")
         elseif not settled_apart(p, view.my_mirror) then ImGui.TextDisabled(ctx, "settling")

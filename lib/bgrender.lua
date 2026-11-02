@@ -267,6 +267,7 @@ D="${J%/*}"
 for d in Effects Data; do [ -e "$P/$d" ] || [ ! -d "$R/$d" ] || ln -s "$R/$d" "$P/$d"; done
 mkdir -p "$P/UserPlugins"; [ -e "$P/UserPlugins/FX" ] || [ ! -d "$R/UserPlugins/FX" ] || ln -s "$R/UserPlugins/FX" "$P/UserPlugins/FX"
 export BANDSYNC_RENDER=1
+[ -s "$P/reaper-jsfx.ini" ] || { echo failed > "$D/pid.txt"; exit 1; } # (the profile went just now: the next job makes it whole)
 if [ -n "$H" ]; then
   C="$HOME/Library/Caches/BandSync"; A="$C/REAPER-render.app"; S="${X%/Contents/MacOS/*}"; B="${X##*/}"
   W="$(stat -f '%m %z' "$X" "$H/bandsync-hide.dylib" "$H/bandsync-launch" | tr '\n' ' ')"

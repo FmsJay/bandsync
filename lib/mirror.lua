@@ -1060,7 +1060,10 @@ end
 
 -- Apply one revision (an "obj" event) here. Returns true when done, false to try again later (its track or its
 -- media hasn't arrived yet), and the hash now held.
+-- (through JSON, as an event's was: REAPER's 0.0 reads back as 0)
+local function band_json(t) local band = require("band"); return band.json_decode(band.json_encode(t)) end
 function mirror.apply(proj, ev, media_dir, local_mix)
+  if ev.obj == "track" then mirror.order_band[tostring(proj)] = true end
   local kind, oid = ev.obj, ev.oid
   if ev.gone then
     local p = mirror.find(proj, kind == "fx" and "track" or kind, kind == "fx" and ev.track or oid)
@@ -1098,7 +1101,11 @@ function mirror.apply(proj, ev, media_dir, local_mix)
       end
     end
     local t = mirror.track_state(proj, tr, local_mix)
-    return true, mirror.track_hash(t, local_mix)
+    -- (landed, only its place in this machine's list can differ: the band's hash stands, so fingerprints agree, and it isn't
+    -- "came out different". Track order can differ: PC Fight, laptop, 0.42.3)
+    local h = mirror.track_hash(t, local_mix)
+    if ev.hash and h ~= ev.hash and type(ev.state) == "table" and mirror.track_line(band_json(t), local_mix) == mirror.track_line(band_json(ev.state), local_mix) then h = ev.hash end
+    return true, h
   elseif kind == "fx" then
     local tr = mirror.find(proj, "track", ev.track)
     if not tr then return false end
@@ -1283,6 +1290,8 @@ mirror.said = mirror.said or {} -- (things said once per session, not every pass
 mirror.fx_seen = mirror.fx_seen or {} -- oid -> { hash, since }: a plug-in chain goes out once it has settled
 mirror.fx_knobs = mirror.fx_knobs or {} -- oid -> its knobs when it last went out or landed (chains with a restless plug-in)
 mirror.fx_alias = mirror.fx_alias or {} -- chain hash and event id -> the event's hash, if the two are the same bytes (else false)
+mirror.order_seen = mirror.order_seen or {} -- project -> its tracks' order at the last look
+mirror.order_band = mirror.order_band or {} -- project -> a band's track landed since the last look
 
 -- Where a recording this person wasn't allowed to add goes (kept, never deleted): a track of their own, not sent.
 local function keep_track(proj, name)
@@ -1344,6 +1353,21 @@ function mirror.watch(proj, cfg, song, room, opts)
   local objs, by_oid = mirror.scan(proj, cfg.user, media, opts.local_mix)
   local me, sent, back = cfg.user, 0, 0
   mirror.unsettled = false
+  -- Did this person move a track? A track's place is the track above it, so anything that lands above it reads as a change
+  -- of it. Sent, that came back round: a bandmate's track put back moved this one, it went out, and they moved in turn,
+  -- every 2 s for good (laptop, undoing bandmates' new tracks, 0.42.3). So a track that differs only by its place is a
+  -- change only on the look where the list has changed and nothing from the band landed since the last look.
+  local order_key, order = tostring(proj), {}
+  for _, o in ipairs(objs) do if o.kind == "track" then order[#order + 1] = o.oid end end
+  order = table.concat(order, ",")
+  local moved_here = mirror.order_seen[order_key] ~= nil and mirror.order_seen[order_key] ~= order and not mirror.order_band[order_key]
+  -- the first look at a project: which take plays is looked at again. (A part that arrived while the plug-in looked
+  -- loaded stayed on silent notes, with its print sitting right there: laptop, 0.42.3)
+  if mirror.order_seen[order_key] == nil then
+    local prints = require("prints")
+    for _, o in ipairs(objs) do if o.kind == "item" and o.ptr then pcall(prints.choose, o.ptr) end end
+  end
+  mirror.order_seen[order_key], mirror.order_band[order_key] = order, nil
   local playing = reaper.GetPlayStateEx(proj) & 1 == 1
   local mine_prefix = (me:gsub(" ", "_") .. "-"):upper() -- (event ids start with their author's name)
   local function allowed(o, name, pos)
@@ -1427,6 +1451,13 @@ function mirror.watch(proj, cfg, song, room, opts)
             o.hash = mirror.track_hash(o.state, opts.local_mix)
           end
           remember(proj, o.oid, rev, o.hash, evid, kord); return
+        end
+      end
+      if o.kind == "track" and rev and h ~= "" and h ~= o.hash and not moved_here and not mirror.reopened[rk] then
+        local ev = event_file(room_dir, evid)
+        if ev and type(ev.state) == "table" then
+          -- (only its place differs, and not by this person's doing)
+          if mirror.track_line(band_json(ev.state), opts.local_mix) == mirror.track_line(band_json(o.state), opts.local_mix) then o.hash = h end
         end
       end
       -- a chain whose hash differs from its event's only as this machine re-encoded it: the band's hash stands (once per
@@ -1561,7 +1592,9 @@ function mirror.watch(proj, cfg, song, room, opts)
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
         -- whose it is, and what would let you: "or take control" told the driver to take control (laptop, round 2)
         local owner_of = sync.owner_of
-        local who = owner_of and owner_of(ok_before and name or (last.name or ""), ok_before and o.pos or last.pos)
+        local pos = o.pos -- (a plug-in chain has none, and one that's never gone out has no last change: laptop, 0.42.3)
+        if not ok_before and last then pos = last.pos end
+        local who = owner_of and owner_of(ok_before and name or (last.name or ""), pos)
         local how = (who and who ~= me and who ~= sync.driver_name) and ("it's claimed by " .. who .. ": put back (ask them to release it)")
           or (who and who ~= me) and (who .. " drives: put back (claim it, or take control)")
           or "it isn't yours to change right now: put back (claim it, or take control)"

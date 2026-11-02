@@ -154,6 +154,7 @@ local claims_at = -math.huge -- when our claims on gone tracks were last looked 
 local last_status, status_json = 0, ""
 local rt_at = 0 -- when Real time mode's sends were last matched to what's armed
 local heal_since, healed_at = nil, -math.huge -- since when a caught-up bandmate's project has differed (mirror.heal)
+local mirror_took = 0 -- how long the last full look took
 local mirror_cc, mirror_at, mirror_due = -1, -math.huge, false -- the project's change count at the last full look, and when
 -- A file is ready once it exists, is non-empty, and its size held still across two polls.
 local function ready(path)
@@ -270,7 +271,8 @@ local function poll()
     local cc = reaper.GetProjectStateChangeCount(proj)
     -- (not mid-drag: watch would skip it, and the change it skipped mustn't count as seen)
     -- (every second while a print renders in the background: it goes in once done, not up to 10 s later: laptop, 0.40.0)
-    local waiting = now - mirror_at > 1 and (require("bgrender").waiting() or require("prints").waiting() or require("mirror").unsettled) -- (or a part waiting its turn, or a plug-in chain to settle)
+    -- (and no oftener than a look's own time allows: at 2000 items each takes 1 s, which would be REAPER's whole time)
+    local waiting = now - mirror_at > math.max(1, mirror_took * 5) and (require("bgrender").waiting() or require("prints").waiting() or require("mirror").unsettled) -- (or a part waiting its turn, or a plug-in chain to settle)
     if (cc ~= mirror_cc or mirror_due or waiting or now - mirror_at > 10) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
@@ -280,6 +282,7 @@ local function poll()
         held = held, hold = hold, here = here, printers = who.printers })
       if not ok then band.log("mirror sync: " .. tostring(sent))
       elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
+      mirror_took = reaper.time_precise() - now
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
       if hold then -- (how many are waiting, for the panel's "Holding N changes")
         local n, key = 0, tostring(proj)

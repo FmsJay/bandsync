@@ -75,6 +75,35 @@ local ok, err = pcall(function()
   -- the track under it only moved in the list and back: said once for the track, not for the ones it moved
   check(put_back_n() - pb0 <= 5, "put-back notices stayed about what was deleted (track, item, its parts): " .. (put_back_n() - pb0))
 
+  -- tracks moved by a put-back don't go out, and nothing goes round for good
+  do
+    reaper.SelectProjectInstance(pb)
+    reaper.InsertTrackInProject(pb, 1, 0)
+    local mine = reaper.GetTrack(pb, 1)
+    reaper.GetSetMediaTrackInfo_String(mine, "P_NAME", "Mine", true)
+    local can = function(u, name) return u == "Laptop" or name == "Mine" end
+    for _ = 1, 3 do watch(pb, B, can) end
+    -- a bandmate's track moved here: it's put back, which shifts mine
+    reaper.SetOnlyTrackSelected(reaper.GetTrack(pb, 0))
+    reaper.ReorderSelectedTracks(reaper.CountTracks(pb), 0)
+    local n1 = sent("James")
+    for _ = 1, 6 do watch(pb, B, can); hold(0.1) end
+    local n2 = sent("James")
+    for _ = 1, 10 do watch(pb, B, can); hold(0.1) end
+    check(sent("James") == n2, string.format("then it stops: %d sent settling, 0 after", n2 - n1))
+    -- moving my own track myself still goes out
+    reaper.SetOnlyTrackSelected(mine)
+    reaper.ReorderSelectedTracks(reaper.CountTracks(pb), 0)
+    local n3 = sent("James")
+    watch(pb, B, can)
+    check(sent("James") > n3, "moving my own track still goes out")
+    for _ = 1, 3 do watch(pb, B, can) end
+    recv(pa, A)
+    local names = {}
+    for i = 0, reaper.CountTracks(pa) - 1 do names[#names + 1] = select(2, reaper.GetTrackName(reaper.GetTrack(pa, i))) end
+    check(names[#names] == "Mine", "and the bandmate's list follows: " .. table.concat(names, ","))
+  end
+
   -- Hold my changes renders nothing
   reaper.SelectProjectInstance(pa)
   local _, p0 = prints.takes(it)

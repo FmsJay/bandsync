@@ -48,5 +48,15 @@ for i = 0, math.huge do
   if not f then break end
   if f:sub(1, #name) == name then made = f end
 end
+-- (it clipped in every section, and only a measurement showed it: Mac and laptop, 0.42.7. And each machine's master is its own.)
+-- (from the file: RENDER_STATS opens a box asking to enable a preference where it's off, and a fixed-point file holds no peak over 0)
+local src = made and reaper.PCM_Source_CreateFromFile(out .. "/" .. made)
+if src then
+  local adjust = reaper.CalculateNormalization(src, 2, 0, 0, 0) -- (2: peak, to 0 dB: what it would take to reach full scale)
+  reaper.PCM_Source_Destroy(src)
+  if adjust and adjust > 0 and adjust <= 1.001 then
+    band.log("the final mix reaches full scale, so it probably clips. Turn the master down and render again (your master is your own: it doesn't go to the band)")
+  end
+end
 if made then band.log("final mix rendered for the band: " .. out .. "/" .. made)
 else band.msg("The render didn't make a file (cancelled, or File > Render's format couldn't write). Nothing was changed.") end

@@ -527,9 +527,11 @@ function mirror.plan_undo(entries, i)
   return { [e.oid] = false }
 end
 
--- One act that made several changes alike: a delete that reached a copy in a comp lane, a glue that took three items.
--- History's indexes of entries[i] and those like it from the same person in the same second. Pure.
--- (Two identical rows, and undoing the newest brought back the copy, not the part: laptop, 0.42.5)
+-- One act that made several changes: a delete that reached a copy in a comp lane, a glue that took three items and made one.
+-- History's indexes of entries[i] and the others on that track from the same person in the same second. Pure.
+-- (Two identical rows, and undoing the newest brought back the copy, not the part: laptop, 0.42.5. A glue's deletes undone
+-- without its new item left all three playing: laptop, 0.42.8)
+-- shortcut: same second only, so an act that straddles one shows as two rows; a per-act id on events would settle it.
 function mirror.same_moment(entries, i)
   local e, out = entries[i], { i }
   if not (e and e.kind == "obj" and e.oid) then return out end
@@ -538,7 +540,7 @@ function mirror.same_moment(entries, i)
     while entries[j] and entries[j].time == e.time do
       local p = entries[j]
       if p.kind == "obj" and p.oid ~= e.oid and p.user == e.user and p.obj == e.obj and p.name == e.name
-        and (not p.gone) == (not e.gone) and (not p.restored) == (not e.restored) then out[#out + 1] = j end
+        and (not p.restored) == (not e.restored) then out[#out + 1] = j end
       j = j + step
     end
   end
@@ -1605,9 +1607,10 @@ function mirror.watch(proj, cfg, song, room, opts)
       end
       -- (an empty part nobody has sent. Nor one gone from the band and just back with its track: its plug-ins were still on
       -- their way, and "none" went out as this machine's change, taking the Neve from everyone: Mac, 0.42.6)
+      -- (nothing of ours waits then: a burst had marked it, and the band's chain never landed, as it waited for ours: PC, 0.42.9)
       if o.state == "" and o.kind ~= "track" and o.kind ~= "item" then
-        if not rev then return end
-        if h == "" then local ev = event_file(room_dir, evid); if ev and ev.gone then return end end
+        if not rev then mirror.unsent[rk] = nil; return end
+        if h == "" then local ev = event_file(room_dir, evid); if ev and ev.gone then mirror.unsent[rk] = nil; return end end
       end
       -- plug-ins and automation: only while stopped, once settled (not a whole chain per knob turn, or an envelope per
       -- point drawn)
@@ -1711,11 +1714,14 @@ function mirror.watch(proj, cfg, song, room, opts)
   if reaper.EnumProjects(-1) == proj and not playing and not mirror.more and not opts.hold then -- (prints wait until a burst has gone, and Hold is off)
     local prints, made = require("prints"), 0
     prints.watch_ara(proj) -- (a Melodyne window closed: that take gets a new print below)
-    -- takes become lanes, by whoever owns them (their newest change, or not sent yet)
-    prints.takes_to_lanes(proj, function(it)
-      local _, _, k = mirror.known(proj, itm_oid(it))
-      return not k or k == "" or k:upper():sub(1, #mine_prefix) == mine_prefix
-    end)
+    -- takes become lanes, by whoever owns them (their newest change, or not sent yet). Once caught up: an old file reopened
+    -- split its old comps and sent them before the band's newer versions had landed (laptop, 0.42.9)
+    if require("sync").pending_events(proj, cfg, song, room) == 0 then
+      prints.takes_to_lanes(proj, function(it)
+        local _, _, k = mirror.known(proj, itm_oid(it))
+        return not k or k == "" or k:upper():sub(1, #mine_prefix) == mine_prefix
+      end)
+    end
     local here = { [me] = true } -- (bandmates in the song now: who may print in place of whoever changed an item)
     for u in pairs(opts.here or {}) do here[u] = true end
     local keys_of = {} -- track -> the plug-in keys its prints go through

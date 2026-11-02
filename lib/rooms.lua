@@ -36,7 +36,7 @@ function rooms.list(cfg, song)
   local out = {}
   for _, name in ipairs(band.subdirs(band.song_dir(cfg, song) .. "/rooms")) do
     local m = rooms.meta(cfg, song, name) or {}
-    out[#out + 1] = { name = name, parent = m.parent, by = m.by, time = m.time or "" }
+    out[#out + 1] = { name = name, parent = m.parent, by = m.by, time = m.time or "", binned = m.binned }
   end
   table.sort(out, function(a, z)
     if (a.name == "main") ~= (z.name == "main") then return a.name == "main" end
@@ -44,6 +44,15 @@ function rooms.list(cfg, song)
     return (a.time .. a.name) < (z.time .. z.name)
   end)
   return out
+end
+
+-- Binning a side room takes it off the list, nothing more: its folder and history stay, and it can be brought back (laptop,
+-- 0.42.9: no way to get rid of an idea that didn't work). `who`: who binned it, or nil to bring it back.
+function rooms.bin(cfg, song, room, who)
+  local m = rooms.meta(cfg, song, room)
+  if not m then return end
+  m.binned = who
+  band.write_json(sync.room_dir(cfg, song, room) .. "/room.json", m)
 end
 
 -- Who's in a room: { {user, here, me} }. Bandmates from their status receipts (under 45 s old; `here` = it's the

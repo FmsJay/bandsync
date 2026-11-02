@@ -212,6 +212,34 @@ local ok, err = pcall(function()
     for _ = 1, 3 do watch(pa, A) end
   end
 
+  -- behind the band: takes wait to become lanes until it has caught up (an old file reopened sent its old comps)
+  do
+    reaper.SelectProjectInstance(pb)
+    reaper.InsertTrackInProject(pb, reaper.CountTracks(pb), 0)
+    local late = reaper.GetTrack(pb, reaper.CountTracks(pb) - 1)
+    reaper.GetSetMediaTrackInfo_String(late, "P_NAME", "Late", true)
+    local two = reaper.AddMediaItemToTrack(late)
+    reaper.SetMediaItemInfo_Value(two, "D_LENGTH", 2)
+    reaper.GetSetMediaItemTakeInfo_String(reaper.AddTakeToMediaItem(two), "P_NAME", "pass 1", true)
+    reaper.GetSetMediaItemTakeInfo_String(reaper.AddTakeToMediaItem(two), "P_NAME", "pass 2", true)
+    reaper.SelectProjectInstance(pa)
+    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(pa, 0), "B_MUTE", 1)
+    watch(pa, A); watch(pa, A)
+    check(sync.pending_events(pb, B, song, room) > 0, "the bandmate is behind")
+    watch(pb, B)
+    check(reaper.CountTakes(two) == 2, "and its takes wait")
+    recv(pb, B)
+    check(sync.pending_events(pb, B, song, room) == 0, "caught up")
+    for _ = 1, 6 do watch(pb, B); hold(0.1) end
+    check(reaper.CountTrackMediaItems(late) >= 2 and reaper.GetMediaTrackInfo_Value(late, "I_NUMFIXEDLANES") > 1, "then they become lanes (" .. reaper.CountTrackMediaItems(late) .. " items)")
+    reaper.SelectProjectInstance(pb)
+    reaper.DeleteTrack(late)
+    for _ = 1, 2 do watch(pb, B) end
+    reaper.SelectProjectInstance(pa)
+    reaper.SetMediaTrackInfo_Value(reaper.GetTrack(pa, 0), "B_MUTE", 0)
+    for _ = 1, 3 do watch(pa, A); recv(pb, B); recv(pa, A) end
+  end
+
   -- only what plays is printed
   reaper.SelectProjectInstance(pa)
   reaper.TrackFX_AddByName(ta, "ReaSynth", false, -1)

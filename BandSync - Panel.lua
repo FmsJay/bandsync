@@ -725,7 +725,7 @@ local function history_filtered(driving)
       and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
     local moment = ok and require("mirror").same_moment(entries, i) or { i }
     for _, j in ipairs(moment) do if j > i then ok = false end end -- (one row for one act, on the newest of them)
-    if #moment > 1 then line = line .. string.format(" (%d of them, undone together)", #moment) end
+    if #moment > 1 then line = line .. string.format(" (%d changes at that moment, undone together)", #moment) end
     if ok then
       n = n + 1
       ImGui.PushID(ctx, i)
@@ -1340,7 +1340,10 @@ end
 local function refresh_rooms()
   if reaper.time_precise() - room_at < 2 and room_view and room_view.room == b.room then return end
   room_at = reaper.time_precise()
-  room_view = { room = b.room, list = rooms.list(cfg, b.song), people = {}, meta = rooms.meta(cfg, b.song, b.room) }
+  room_view = { room = b.room, list = {}, binned = {}, people = {}, meta = rooms.meta(cfg, b.song, b.room) }
+  for _, r in ipairs(rooms.list(cfg, b.song)) do
+    table.insert((r.binned and r.name ~= b.room) and room_view.binned or room_view.list, r)
+  end
   for _, r in ipairs(room_view.list) do room_view.people[r.name] = rooms.people(cfg, b.song, r.name) end
 end
 
@@ -1373,8 +1376,11 @@ local function section_merge()
   ImGui.BeginDisabled(ctx, not may or #merge.bring == 0)
   if ImGui.Button(ctx, "Bring into " .. parent) and reaper.MB("Bring these changes into '" .. parent .. "'?\n\n" ..
       "They go to everyone there as new changes, so Restore there can undo them.", "BandSync", 4) == 6 then
-    local ok, res = pcall(require("mirror").post_into, cfg, b.song, b.room, parent, merge.bring, rooms.tab(b.song, parent))
-    band.log(ok and string.format("brought %d change(s) from '%s' into '%s'", res, b.room, parent) or ("bringing in failed: " .. tostring(res)))
+    -- (by that room's claims, as Send selected: it took James's claimed Drums into main: laptop, 0.42.9)
+    local list, refused = require("mirror").allowed_into(cfg, b.song, parent, merge.bring, view.session)
+    local ok, res = pcall(require("mirror").post_into, cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent))
+    band.log(ok and string.format("brought %d change(s) from '%s' into '%s'%s", res, b.room, parent, refused > 0 and string.format(" (%d not yours to change there, left out)", refused) or "")
+      or ("bringing in failed: " .. tostring(res)))
     merge = nil
   end
   ImGui.EndDisabled(ctx)
@@ -1414,8 +1420,22 @@ local function rooms_squares()
         else ImGui.TextDisabled(ctx, p.user .. (p.me and " (you)" or "") .. ": tab open") end
       end
       if not here and ImGui.SmallButton(ctx, "Go there") then go_room(r.name) end
+      if r.parent and not here then
+        ImGui.SameLine(ctx)
+        ImGui.BeginDisabled(ctx, #people > 0)
+        if ImGui.SmallButton(ctx, "Bin") and reaper.MB("Take '" .. r.name .. "' off the list for everyone?\n\nNothing is deleted: it can be brought back from this page.", "BandSync", 4) == 6 then
+          rooms.bin(cfg, b.song, r.name, cfg.user); last = 0
+        end
+        ImGui.EndDisabled(ctx)
+        ImGui.SetItemTooltip(ctx, #people > 0 and "Someone has it open: it can be binned once its tabs are closed." or "Takes this idea off the list for everyone. Nothing is deleted.")
+      end
       ImGui.EndChild(ctx)
     end
+  end
+  for _, r in ipairs(room_view.binned) do
+    ImGui.TextDisabled(ctx, "Binned by " .. tostring(r.binned) .. ": " .. r.name)
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Bring back##" .. r.name) then rooms.bin(cfg, b.song, r.name, nil); last = 0 end
   end
 end
 local function rooms_actions()

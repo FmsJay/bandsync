@@ -294,7 +294,9 @@ local ok, err = pcall(function()
     mirror.revert(pa, A, song, room, { [oid] = tstate }, { can = yes, mode = "claims" })
     recv(pb, B)
     check(mirror.find(pb, "track", oid) ~= nil, "back for the bandmate")
+    mirror.unsent[tostring(pb) .. foid] = true -- (as a burst leaves it)
     for _ = 1, 3 do watch(pb, B, yes); hold(0.1) end
+    check(mirror.unsent[tostring(pb) .. foid] == nil, "nothing of ours waits, so the band's chain can land")
     local empty = false
     for _, f in ipairs(band.files(events, ".json")) do
       if f:sub(1, 6) == "James-" then

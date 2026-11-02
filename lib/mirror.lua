@@ -1898,15 +1898,16 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   -- yet and went to the top, out of its folder (laptop, block K)
   local back, placed, sorted = {}, {}, {}
   for _, p in ipairs(list) do if p.t and p.t.obj == "track" then back[p.oid] = p end end
-  local function place(p, depth)
+  local function place(p)
     if placed[p] then return end
+    placed[p] = true -- (before going up: tracks from different times can sit under each other in a ring, and each of 7 went out 73 times,
+    -- 7.5 s with REAPER stopped: laptop, 0.42.8)
     local after = type(p.t.state) == "table" and p.t.state.after or ""
-    if back[after] and depth < 512 then place(back[after], depth + 1) end
-    placed[p] = true
+    if back[after] then place(back[after]) end
     sorted[#sorted + 1] = p
   end
   for _, p in ipairs(list) do
-    if p.t and p.t.obj == "track" then place(p, 0) elseif not placed[p] then placed[p] = true; sorted[#sorted + 1] = p end
+    if p.t and p.t.obj == "track" then place(p) elseif not placed[p] then placed[p] = true; sorted[#sorted + 1] = p end
   end
   list = sorted
   local done, refused, kept, kept_names = 0, 0, 0, {}

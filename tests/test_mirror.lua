@@ -332,6 +332,8 @@ do
   assert(#mirror.same_moment(M, 3) == 2 and #mirror.same_moment(M, 4) == 2, "the two deletes are one act, whichever row")
   assert(#mirror.same_moment(M, 5) == 1 and #mirror.same_moment(M, 6) == 1, "not another person's, nor another second's")
   assert(#mirror.same_moment(M, 7) == 1, "only changes count")
+  assert(mirror.item_hash("T", "YPOS 0 0.1 2\nBANDLANE 1\n") == mirror.item_hash("T", "YPOS 0 0.2 2\nBANDLANE 1\n"), "on a lane YPOS doesn't count")
+  assert(mirror.item_hash("T", "YPOS 0 0.1 2\n") ~= mirror.item_hash("T", "YPOS 0 0.2 2\n"), "free-positioned, it does")
   local plan = mirror.plan_undo_moment(M, 4)
   assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
 end

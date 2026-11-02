@@ -180,6 +180,38 @@ local ok, err = pcall(function()
   check(select(2, prints.takes(spare)) ~= nil, "and keeps its print")
   reaper.DeleteTrack(cp)
 
+  -- tracks whose saved places point at each other: each goes out once
+  do
+    reaper.SelectProjectInstance(pa)
+    local function new_track(name)
+      reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
+      local x = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)
+      reaper.GetSetMediaTrackInfo_String(x, "P_NAME", name, true)
+      return x
+    end
+    local r1, r2 = new_track("Ring 1"), new_track("Ring 2")
+    hold(1.1)
+    for _ = 1, 3 do watch(pa, A) end
+    local o1, o2 = mirror.track_oid(r1), mirror.track_oid(r2)
+    local function newest(oid)
+      local best
+      for _, e in ipairs(recall.entries(A, song, room)) do if e.oid == oid and e.obj == "track" then best = e end end
+      return best
+    end
+    local e1, e2 = band.json_decode(band.json_encode(newest(o1))), band.json_decode(band.json_encode(newest(o2)))
+    e1.state.after, e2.state.after = o2, o1
+    e1.state.name, e2.state.name = "Ring A", "Ring B"
+    e1.id, e2.id = "ring-1", "ring-2"
+    mirror.revert(pa, A, song, room, { [o1] = e1, [o2] = e2 }, { can = yes, mode = "claims" })
+    local n1, n2 = 0, 0
+    for _, e in ipairs(recall.entries(A, song, room)) do
+      if e.restored == "ring-1" then n1 = n1 + 1 elseif e.restored == "ring-2" then n2 = n2 + 1 end
+    end
+    check(n1 == 1 and n2 == 1, string.format("a ring of tracks goes out once each (%d, %d)", n1, n2))
+    reaper.DeleteTrack(r1); reaper.DeleteTrack(r2)
+    for _ = 1, 3 do watch(pa, A) end
+  end
+
   -- only what plays is printed
   reaper.SelectProjectInstance(pa)
   reaper.TrackFX_AddByName(ta, "ReaSynth", false, -1)

@@ -104,6 +104,93 @@ local ok, err = pcall(function()
     check(names[#names] == "Mine", "and the bandmate's list follows: " .. table.concat(names, ","))
   end
 
+  -- plug-ins added to someone else's track, that have never gone out: said once, not every look
+  do
+    reaper.SelectProjectInstance(pb)
+    local other
+    for i = 0, reaper.CountTracks(pb) - 1 do
+      if select(2, reaper.GetTrackName(reaper.GetTrack(pb, i))) == "Three" then other = reaper.GetTrack(pb, i) end
+    end
+    reaper.TrackFX_AddByName(other, "ReaEQ", false, -1)
+    local before = put_back_n()
+    local t0 = reaper.time_precise()
+    while reaper.time_precise() - t0 < 5 do watch(pb, B, only_laptop); hold(0.3) end
+    check(put_back_n() - before <= 1, "a chain that isn't theirs to send is put back or noted once: " .. (put_back_n() - before))
+  end
+
+  -- a track's volume automation isn't baked into its print
+  do
+    reaper.SelectProjectInstance(pa)
+    reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
+    local te = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)
+    reaper.TrackFX_AddByName(te, "ReaSynth", false, -1)
+    local ie = reaper.CreateNewMIDIItemInProj(te, 0, 2, false)
+    local tke = reaper.GetActiveTake(ie)
+    for n = 0, 3 do reaper.MIDI_InsertNote(tke, false, false, n * 480, n * 480 + 400, 0, 60 + n, 110, true) end
+    reaper.MIDI_Sort(tke)
+    local media = sync.room_dir(A, song, room) .. "/media"
+    reaper.RecursiveCreateDirectory(media, 0)
+    local plain = sync.print_item(pa, ie, tke, media, "env-plain", nil, false, true)
+    reaper.SetOnlyTrackSelected(te)
+    reaper.Main_OnCommand(40406, 0) -- Track: Toggle track volume envelope visible
+    local env = reaper.GetTrackEnvelopeByName(te, "Volume")
+    reaper.InsertEnvelopePoint(env, 0, 10, 0, 0, false, true)
+    reaper.InsertEnvelopePoint(env, 3, 10, 0, 0, false, true)
+    reaper.Envelope_SortPoints(env)
+    local _, before_chunk = reaper.GetEnvelopeStateChunk(env, "", false)
+    local withenv = sync.print_item(pa, ie, tke, media, "env-auto", nil, false, true)
+    local _, after_chunk = reaper.GetEnvelopeStateChunk(env, "", false)
+    local a, c = band.size(plain), band.size(withenv)
+    check(a and c and math.abs(a - c) < a * 0.1, string.format("automation stays out of a print (%d and %d bytes)", a or 0, c or 0))
+    check(before_chunk == after_chunk, "and the envelope is as it was")
+    reaper.DeleteTrack(te)
+  end
+
+  -- a comp on a part with a wet take becomes lanes
+  do
+    reaper.SelectProjectInstance(pa)
+    reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
+    local tc = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)
+    reaper.GetSetMediaTrackInfo_String(tc, "P_NAME", "Comp", true)
+    reaper.TrackFX_AddByName(tc, "ReaSynth", false, -1)
+    local ic = reaper.CreateNewMIDIItemInProj(tc, 0, 2, false)
+    local t1 = reaper.GetActiveTake(ic)
+    reaper.MIDI_InsertNote(t1, false, false, 0, 400, 0, 60, 110, true); reaper.MIDI_Sort(t1)
+    watch(pa, A); hold(3.2); watch(pa, A); watch(pa, A); watch(pa, A)
+    local _, wet = prints.takes(ic)
+    check(wet ~= nil, "the part has its wet take")
+    local t2 = reaper.AddTakeToMediaItem(ic)
+    reaper.SetMediaItemTake_Source(t2, reaper.GetMediaItemTake_Source(t1))
+    reaper.SetActiveTake(t2)
+    local d = prints.takes_to_lanes(pa, function() return true end)
+    check(d == 1 and reaper.GetMediaTrackInfo_Value(tc, "I_FREEMODE") == 2, "taken into lanes though it has a wet take")
+    local n_items = reaper.CountTrackMediaItems(tc)
+    check(n_items >= 2, "one item per take: " .. n_items)
+    reaper.DeleteTrack(tc)
+    watch(pa, A); watch(pa, A)
+  end
+
+  -- a part that lands before its plug-ins: its take is chosen again when they do
+  do
+    reaper.SelectProjectInstance(pb)
+    local tr
+    for i = 0, reaper.CountTracks(pb) - 1 do
+      if select(2, reaper.GetTrackName(reaper.GetTrack(pb, i))) == "Two" then tr = reaper.GetTrack(pb, i) end
+    end
+    local it2 = reaper.GetTrackMediaItem(tr, 0)
+    local mid, wet = prints.takes(it2)
+    reaper.SetActiveTake(mid)
+    local oid = "F" .. mirror.track_oid(tr):sub(2)
+    local chain = '<FXCHAIN\nBYPASS 0 0 0\n<VST "VST3i: Nobody Has This (Nobody)" "Nobody Has This.vst3" 0 "" 123456789{ABCDEF0123456789ABCDEF0123456789} ""\nAAAAAAAAAAAA\n>\nWAK 0 0\n>\n'
+    mirror.apply(pb, { obj = "fx", oid = oid, track = mirror.track_oid(tr), state = chain, hash = "abcd1234" }, sync.room_dir(B, song, room) .. "/media", false)
+    check(reaper.GetActiveTake(it2) == wet, "plug-ins it can't load land: the part plays its wet take")
+    local rev0, h0 = mirror.known(pb, oid)
+    local n5 = sent("James")
+    local t5 = reaper.time_precise()
+    while reaper.time_precise() - t5 < 1 do watch(pb, B, only_laptop); hold(0.2) end
+    check(sent("James") == n5, "and nothing goes out for it")
+  end
+
   -- Hold my changes renders nothing
   reaper.SelectProjectInstance(pa)
   local _, p0 = prints.takes(it)

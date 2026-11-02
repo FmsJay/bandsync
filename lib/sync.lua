@@ -28,7 +28,7 @@ local sync = {
 function sync.put_back(text)
   band.log(text)
   local n = (tonumber((band.json_decode(reaper.GetExtState(band.SECTION, "put back")) or {}).n) or 0) + 1
-  reaper.SetExtState(band.SECTION, "put back", band.json_encode({ text = text, n = n, at = os.time() }), false)
+  reaper.SetExtState(band.SECTION, "put back", band.json_encode({ text = text, n = n, at = os.time(), song = sync.current_song }), false)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
   local shown = beat and reaper.time_precise() - beat < 5 and reaper.GetExtState(band.SECTION, "panel minimized") == ""
   if not shown then
@@ -610,6 +610,23 @@ local function selection(proj)
   return sel
 end
 
+-- A track's mix automation (volume, pan, width, mute, after its plug-ins) is off for a print, as its fader is: it travels with
+-- the track, so printed too it applied twice on whoever plays the print (11 dB on Drums: laptop, 0.42.4). -> what puts it back.
+function sync.mix_envelopes_off(tr)
+  local back = {}
+  for _, name in ipairs({ "Volume", "Pan", "Width", "Mute" }) do
+    local env = reaper.GetTrackEnvelopeByName(tr, name)
+    if env then
+      local ok, chunk = reaper.GetEnvelopeStateChunk(env, "", false)
+      if ok and chunk:find("\nACT 1", 1, true) then
+        reaper.SetEnvelopeStateChunk(env, (chunk:gsub("\nACT 1", "\nACT 0", 1)), false)
+        back[#back + 1] = function() reaper.SetEnvelopeStateChunk(env, chunk, false) end
+      end
+    end
+  end
+  return function() for _, f in ipairs(back) do f() end end
+end
+
 -- Render item `it` (its active take, which must be selected alone) to <out>/<name>.flac (+ .opus).
 -- `bare`: without the item's own volume and fades (a wet take: the item applies them to whichever take plays).
 local function render_item(it, take, out, name, wet, tail, bare)
@@ -655,10 +672,12 @@ local function render_item(it, take, out, name, wet, tail, bare)
       receives[r] = reaper.GetTrackSendInfo_Value(tr, -1, r, "B_MUTE")
       reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", 1)
     end
+    local envs_back = sync.mix_envelopes_off(tr)
     band.render({ RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = 0, RENDER_CHANNELS = wet and 2 or math.min(nch, 2),
       RENDER_TAILFLAG = tail and 16 or 0, RENDER_TAILMS = tail and math.floor(tail * 1000) or 0, -- 16: tail for selected items
       RENDER_ADDTOPROJ = 0 }, -- &32: selected media items, through their track
       { RENDER_FILE = out, RENDER_PATTERN = name, RENDER_FORMAT = band.FLAC, RENDER_FORMAT2 = band.OPUS })
+    envs_back()
     for _, k in ipairs(keys) do reaper.SetMediaTrackInfo_Value(tr, k, saved[k]) end
     for r, m in pairs(receives) do reaper.SetTrackSendInfo_Value(tr, -1, r, "B_MUTE", m) end
     reaper.SetMediaItemInfo_Value(it, "B_MUTE", imute)

@@ -43,8 +43,23 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
         return band.msg("'" .. song .. "' (room " .. room .. ") is already open in another tab: switched to it.")
       end
     end
-    if reaper.CountTracks(0) > 0 then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
-    b = { role = "guest", song = song, room = room, root = cfg.root }
+    -- been here before: back into your own project. (It made another from nothing each time, "Sunset Drive - Laptop.rpp" beside
+    -- the host's own, and took every change in again: laptop, 0.42.4.)
+    local here = reaper.GetResourcePath() .. "/BandSync/" .. song .. "/"
+    for _, f in ipairs({ reaper.GetExtState(band.SECTION, "song file " .. song), here .. song .. " - " .. cfg.user .. ".rpp", here .. song .. ".rpp" }) do
+      if room == "main" and f ~= "" and reaper.file_exists(f) then
+        if reaper.CountTracks(0) > 0 or select(2, reaper.EnumProjects(-1)) ~= "" then reaper.Main_OnCommand(40859, 0) end
+        reaper.Main_openProject(f)
+        local ob = band.binding(reaper.EnumProjects(-1))
+        if ob and ob.song == song then
+          band.start_live(dir)
+          return band.log(string.format("opened your project for '%s': the band's changes since come in over the next moments", song))
+        end
+        break
+      end
+    end
+    if reaper.CountTracks(0) > 0 or select(2, reaper.EnumProjects(-1)) ~= "" then reaper.Main_OnCommand(40859, 0) end -- File: New project tab
+    b = { role = s.host == cfg.user and "host" or "guest", song = song, room = room, root = cfg.root }
   end
 
   local proj, projfile = reaper.EnumProjects(-1)
@@ -54,6 +69,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
     reaper.RecursiveCreateDirectory(local_dir, 0)
     reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
+    reaper.SetExtState(band.SECTION, "song file " .. song, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", true)
   end
 
   reaper.Undo_BeginBlock2(proj)

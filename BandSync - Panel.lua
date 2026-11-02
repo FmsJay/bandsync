@@ -524,6 +524,7 @@ local function settled_apart(p, mine)
   if not a or a.key ~= key then a = { key = key, since = reaper.time_precise() }; apart[p.name] = a end
   return reaper.time_precise() - a.since >= 30
 end
+local tabs_at = 0 -- where the page tabs start: the widest the bar beside them has been
 local function section_claims()
   local owned, here = {}, {} -- (a claim on a track that isn't there isn't listed: its owner drops it, sync.drop_gone_claims)
   for i = 0, reaper.CountTracks(proj) - 1 do here[sync.base_name(select(2, reaper.GetTrackName(reaper.GetTrack(proj, i)))):lower()] = true end
@@ -1432,6 +1433,8 @@ local function rooms_actions()
   end
   ImGui.SetItemTooltip(ctx, "A copy of this room as it is now, in its own tab. Bandmates can join it from here.")
   local parent = room_view.meta and room_view.meta.parent
+  if ImGui.Button(ctx, "Open another song") then reaper.SetExtState(band.SECTION, "open_other", "1", false); action("Open session") end
+  ImGui.SameLine(ctx)
   if ImGui.Button(ctx, "Come see") then
     rooms.invite(cfg, b.song, b.room)
     band.log("asked everyone to come and see '" .. b.room .. "'")
@@ -1447,7 +1450,7 @@ local function rooms_actions()
     if chosen == 0 then band.msg("Select the items to send first (they go to '" .. parent .. "' as they are here).")
     elseif #list == 0 then band.msg("None of those are yours to change in '" .. parent .. "': someone has claimed them, or " .. parent .. "'s driver owns them. Claim them there first.")
     elseif reaper.MB(string.format("Send the %d selected item(s) to '%s', as they are here? (Any of their tracks '%s' doesn't have yet go too.)",
-        #list, parent, parent), "BandSync", 4) == 6 then
+        reaper.CountSelectedMediaItems(proj), parent, parent), "BandSync", 4) == 6 then
       band.log(string.format("sent %d change(s) from '%s' to '%s'%s", require("mirror").post_into(cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent)), b.room, parent,
         refused > 0 and string.format(" (%d not yours to change there, left out)", refused) or ""))
     end
@@ -2140,6 +2143,8 @@ local function frame_app()
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
     for i, p in ipairs(PAGES) do
       ImGui.SameLine(ctx, 0, i == 1 and 24 or 2)
+      -- (they stay put: going by the status beside them, they slid when "In sync" became "Receiving 13", under the mouse)
+      if i == 1 then tabs_at = math.max(tabs_at, ImGui.GetCursorPosX(ctx)); ImGui.SetCursorPosX(ctx, tabs_at) end
       ImGui.SetCursorPosY(ctx, y0)
       nav_item(p, ImGui.CalcTextSize(ctx, p[1]) + 28, fh)
     end
@@ -2176,7 +2181,7 @@ local function frame_app()
   if newest and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, 0xBFD3FFFF, newest:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
   section_invites()
   tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
-  tools.put_back_bar(ctx, ImGui) -- (an edit of yours that was undone, and why: stays until dismissed)
+  tools.put_back_bar(ctx, ImGui, b and b.song) -- (an edit of yours that was undone, and why: stays until dismissed)
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
   want = reaper.GetExtState(band.SECTION, "panel do") -- a choice from the radial menu

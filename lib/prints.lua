@@ -530,10 +530,29 @@ function prints.takes_to_lanes(proj, mine)
         local tk = reaper.GetTake(it, k)
         if tk and take_ext(tk, prints.KEY) == "" then real = real + 1 end
       end
-      if real < reaper.CountTakes(it) or (real > 1 and prints.ara_take(it)) then blocked = true end
+      if real > 1 and prints.ara_take(it) then blocked = true end
       if real > 1 and mine(it) then want = true end
     end
     if want and not blocked then
+      -- wet takes go first, or they'd become lanes of their own; the comp's item prints again. (Waiting for a track with no
+      -- wet takes meant any comp on a played part stayed takes, and the takes picked never reached the band: laptop, 0.42.4)
+      local picked = {}
+      for s = 0, reaper.CountSelectedMediaItems(proj) - 1 do picked[#picked + 1] = reaper.GetSelectedMediaItem(proj, s) end
+      for _, x in ipairs(picked) do reaper.SetMediaItemSelected(x, false) end
+      for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
+        local it = reaper.GetTrackMediaItem(tr, j)
+        local _, wet = prints.takes(it)
+        if wet then
+          local was = reaper.GetActiveTake(it)
+          if was == wet then was = prints.takes(it) end
+          reaper.SetActiveTake(wet)
+          reaper.SetMediaItemSelected(it, true)
+          reaper.Main_OnCommand(40129, 0) -- Take: Delete active take from items
+          reaper.SetMediaItemSelected(it, false)
+          if was and reaper.ValidatePtr2(proj, was, "MediaItem_Take*") then reaper.SetActiveTake(was) end
+        end
+      end
+      for _, x in ipairs(picked) do if reaper.ValidatePtr2(proj, x, "MediaItem*") then reaper.SetMediaItemSelected(x, true) end end
       local sel = {}
       for s = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, s) end
       reaper.SetOnlyTrackSelected(tr)

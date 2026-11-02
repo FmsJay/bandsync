@@ -62,6 +62,7 @@ if not b.song then
   reaper.Main_SaveProjectEx(proj, pdir .. "/" .. song .. " (before BandSync).rpp", 0) -- a copy; History offers it back
   reaper.SetProjExtState(proj, band.SECTION, "before_bandsync", pdir .. "/" .. song .. " (before BandSync).rpp")
 end
+reaper.SetExtState(band.SECTION, "song file " .. song, (select(2, reaper.EnumProjects(-1)):gsub("\\", "/")), true)
 reaper.RecursiveCreateDirectory(band.song_dir(cfg, song) .. "/rooms/main/media", 0)
 local version = (old and old.version or 0) + 1
 band.write_json(band.session_path(cfg, song), {
@@ -74,4 +75,4 @@ reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.c
 reaper.Main_SaveProject(proj, false)
 local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if not (beat and reaper.time_precise() - beat < 5) then band.start_live(dir) end
-return band.log(string.format("published '%s': Live sync is sending the project to the band (bandmates join with 'BandSync - Open session')", song))
+return band.log(string.format("published '%s': Live sync is sending the project to the band (bandmates: Setup > Health > Open another song)", song))

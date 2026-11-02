@@ -112,9 +112,11 @@ end
 
 -- Your newest undone edit (sync.put_back), in a yellow bar under the top bar until you dismiss it: the six-second
 -- message line was easy to miss, and the next log line replaced it (review, 2026-10-31).
-function tools.put_back_bar(ctx, ImGui)
+function tools.put_back_bar(ctx, ImGui, song)
   local pb = band.json_decode(reaper.GetExtState(band.SECTION, "put back"))
   if not (pb and pb.text) then return end
+  if pb.song and song and pb.song ~= song then return end -- (another song's, in another tab: laptop, 0.42.4)
+  if pb.at and os.time() - pb.at > 600 then return end -- (old news: it's still in Setup > Console. Mac, 0.42.4)
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xF2BF40FF)
   ImGui.TextWrapped(ctx, "Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or ""))
   ImGui.PopStyleColor(ctx)

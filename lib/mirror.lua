@@ -1138,7 +1138,15 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     mirror.fx_knobs[tostring(proj) .. ev.oid] = nil -- (its knobs are the band's now: the next look notes them)
     local here = mirror.fxchain(after, skip) or ""
     local h = mirror.fx_hash(here)
-    if ev.hash and h ~= ev.hash and type(ev.state) == "string" and mirror.fx_same(here, ev.state) then h = ev.hash end
+    local key = tostring(proj) .. ev.oid
+    -- the band's hash stands, whatever a plug-in that loads here makes of its own saved data: read back, it differs from
+    -- what was sent (Superior Drummer on the laptop), so fingerprints never agreed and whoever claimed the track re-rendered
+    -- every part. What it reads as here, and for a while as it finishes loading, isn't a change.
+    mirror.fx_readback[key], mirror.fx_loading[key], mirror.fx_load_knobs[key] = h, reaper.time_precise() + mirror.FX_LOAD_SECS, mirror.fx_params(tr)
+    if ev.hash then h = ev.hash end
+    -- (a part that arrived before its plug-ins chose its take with nothing missing, and stayed on silent notes: laptop, 0.42.4)
+    local prints = require("prints")
+    for i = 0, reaper.CountTrackMediaItems(tr) - 1 do pcall(prints.choose, reaper.GetTrackMediaItem(tr, i)) end
     return true, h
   elseif kind == "env" or kind == "recv" or kind == "misc" then
     local tr = mirror.find(proj, "track", ev.track)
@@ -1290,6 +1298,12 @@ mirror.said = mirror.said or {} -- (things said once per session, not every pass
 mirror.fx_seen = mirror.fx_seen or {} -- oid -> { hash, since }: a plug-in chain goes out once it has settled
 mirror.fx_knobs = mirror.fx_knobs or {} -- oid -> its knobs when it last went out or landed (chains with a restless plug-in)
 mirror.fx_alias = mirror.fx_alias or {} -- chain hash and event id -> the event's hash, if the two are the same bytes (else false)
+mirror.track_alias = mirror.track_alias or {} -- track hash and event id -> the event's hash, if only the place differs (else false)
+mirror.FX_LOAD_SECS = 60 -- how long after landing or opening a chain's data may change by itself, with its knobs still
+mirror.fx_readback = mirror.fx_readback or {} -- chain -> what its hash reads as here, now the band's has landed
+mirror.fx_loading = mirror.fx_loading or {} -- chain -> until when it may be still loading
+mirror.fx_load_knobs = mirror.fx_load_knobs or {} -- chain -> its knobs at the start of that
+mirror.first_look = mirror.first_look or {} -- project -> until when its chains may be still loading after it opened
 mirror.order_seen = mirror.order_seen or {} -- project -> its tracks' order at the last look
 mirror.order_band = mirror.order_band or {} -- project -> a band's track landed since the last look
 
@@ -1364,8 +1378,12 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- the first look at a project: which take plays is looked at again. (A part that arrived while the plug-in looked
   -- loaded stayed on silent notes, with its print sitting right there: laptop, 0.42.3)
   if mirror.order_seen[order_key] == nil then
+    mirror.first_look[order_key] = reaper.time_precise() + mirror.FX_LOAD_SECS
     local prints = require("prints")
-    for _, o in ipairs(objs) do if o.kind == "item" and o.ptr then pcall(prints.choose, o.ptr) end end
+    for _, o in ipairs(objs) do
+      if o.kind == "item" and o.ptr then pcall(prints.choose, o.ptr)
+      elseif o.kind == "fx" and o.ptr then mirror.fx_load_knobs[order_key .. o.oid] = mirror.fx_params(o.ptr) end
+    end
   end
   mirror.order_seen[order_key], mirror.order_band[order_key] = order, nil
   local playing = reaper.GetPlayStateEx(proj) & 1 == 1
@@ -1398,6 +1416,9 @@ function mirror.watch(proj, cfg, song, room, opts)
       elseif o.kind == "track" and o.ptr then
         reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true)
         why.text = "a new track isn't yours to add: it stays here as yours, not sent to the band (take control to add tracks)"
+      elseif why.text then -- (a part that never went out: said once. Every pass, it pushed all else out of the log: laptop, 0.42.4)
+        say_once("never" .. o.oid, why.text .. " (it stays on this computer)")
+        return
       end
     else
       -- known, but its last change can't be read here (still arriving, or from another room): left as it is
@@ -1453,11 +1474,20 @@ function mirror.watch(proj, cfg, song, room, opts)
           remember(proj, o.oid, rev, o.hash, evid, kord); return
         end
       end
-      if o.kind == "track" and rev and h ~= "" and h ~= o.hash and not moved_here and not mirror.reopened[rk] then
-        local ev = event_file(room_dir, evid)
-        if ev and type(ev.state) == "table" then
-          -- (only its place differs, and not by this person's doing)
-          if mirror.track_line(band_json(ev.state), opts.local_mix) == mirror.track_line(band_json(o.state), opts.local_mix) then o.hash = h end
+      -- only its place differs from the band's, and not by this person's doing: not a change, and the band's hash is
+      -- what's recorded, so everyone's fingerprint agrees whatever order their list has ended up in (once per state and event)
+      if o.kind == "track" and rev and h ~= "" and not moved_here and not mirror.reopened[rk] then
+        local key = o.hash .. "\0" .. tostring(evid)
+        local a = mirror.track_alias[key]
+        if a == nil then
+          local ev = event_file(room_dir, evid)
+          a = ev and ev.hash and type(ev.state) == "table"
+            and mirror.track_line(band_json(ev.state), opts.local_mix) == mirror.track_line(band_json(o.state), opts.local_mix) and ev.hash or false
+          mirror.track_alias[key] = a
+        end
+        if a then
+          o.hash = a
+          if h ~= a then remember(proj, o.oid, rev, a, evid, kord); h = a end
         end
       end
       -- a chain whose hash differs from its event's only as this machine re-encoded it: the band's hash stands (once per
@@ -1473,6 +1503,24 @@ function mirror.watch(proj, cfg, song, room, opts)
         if a then
           o.hash = a
           if h ~= a then remember(proj, o.oid, rev, a, evid, kord); h = a end
+        end
+      end
+      -- this chain reads differently here from what the band has, as a plug-in saves its data its own way, or is still
+      -- loading (knobs still, and only just landed or opened): not a change of ours
+      if o.kind == "fx" and rev and h ~= "" and h ~= o.hash then
+        if mirror.fx_readback[rk] == o.hash then o.hash = h
+        elseif reaper.time_precise() < math.max(mirror.fx_loading[rk] or 0, mirror.first_look[tostring(proj)] or 0) then
+          -- (knobs as they were when it opened or landed, and the band's plug-ins: one added, removed or moved changes those,
+          -- as freezing and unfreezing a track do)
+          local ev = event_file(room_dir, evid)
+          local function names(chain)
+            local t = {}
+            for _, x in ipairs(mirror.plugin_blocks(chain_lines(chain))) do t[#t + 1] = tostring(x.key) end
+            return table.concat(t, "\0")
+          end
+          if ev and type(ev.state) == "string" and names(ev.state) == names(o.state) and mirror.fx_load_knobs[rk] == mirror.fx_params(o.ptr) then
+            mirror.fx_readback[rk] = o.hash; o.hash = h
+          end
         end
       end
       -- a chain with a restless plug-in: the hash can't see its knobs move, so they're looked at here
@@ -1998,6 +2046,7 @@ function mirror.selected(proj, cfg, song, from, to)
   local media = sync.room_dir(cfg, song, from) .. "/media"
   local there = mirror.room_newest(sync.room_dir(cfg, song, to))
   local list, tracks = {}, {}
+  local _, by_oid = mirror.scan(proj, cfg.user, media, false)
   for i = 0, reaper.CountSelectedMediaItems(proj) - 1 do
     local it = reaper.GetSelectedMediaItem(proj, i)
     local tr = reaper.GetMediaItem_Track(it)
@@ -2007,6 +2056,11 @@ function mirror.selected(proj, cfg, song, from, to)
       if not tracks[toid] and not there[toid] then
         tracks[toid] = true
         list[#list + 1] = { obj = "track", oid = toid, state = mirror.track_state(proj, tr), name = name }
+        -- (with its plug-ins, automation, sends and the rest: a new idea arrived in main without its Neve: Mac, 0.42.4)
+        for _, p in ipairs(mirror.PARTS) do
+          local o = by_oid[p .. toid:sub(2)]
+          if o and o.state ~= "" then list[#list + 1] = { obj = o.kind, oid = o.oid, track = toid, state = o.state, name = name } end
+        end
       end
       list[#list + 1] = { obj = "item", oid = ioid, track = toid, state = mirror.item_state(it, media), name = name,
         pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION") }

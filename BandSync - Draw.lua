@@ -9,7 +9,7 @@ local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 if not reaper.APIExists("ImGui_GetBuiltinPath") or not reaper.JS_Window_FindChildByID then
-  return band.msg("Drawing needs ReaImGui and js_ReaScriptAPI (ReaPack: both are in BandSync's installer).")
+  return band.msg("Drawing needs ReaImGui and js_ReaScriptAPI (ReaPack: both are in KitchenSync's installer).")
 end
 package.path = reaper.ImGui_GetBuiltinPath() .. "/?.lua;" .. package.path
 local ImGui = require "imgui" "0.10"
@@ -168,7 +168,7 @@ local function loop()
   local flags = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_NoMove | ImGui.WindowFlags_NoDocking |
     -- (drawing: TopMost, a window of its own above the arrange view, or REAPER's arrange view takes the clicks)
     (drawing and ImGui.WindowFlags_TopMost or (ImGui.WindowFlags_NoInputs | ImGui.WindowFlags_NoBackground | ImGui.WindowFlags_NoFocusOnAppearing))
-  theme.push(ctx, ImGui)
+  theme.follow(); theme.push(ctx, ImGui)
   ImGui.PushFont(ctx, ui_font, 14)
   local visible = ImGui.Begin(ctx, "BandSync drawings", nil, flags)
   if visible then
@@ -267,7 +267,7 @@ local function loop()
         if pressed and here then
           local p = to_song(L, px, py)
           if tool == "text" and p then
-            local ok, words = reaper.GetUserInputs("BandSync: text on the tracks", 1, "Text (everyone sees it),extrawidth=200", "")
+            local ok, words = reaper.GetUserInputs("KitchenSync: text on the tracks", 1, "Text (everyone sees it),extrawidth=200", "")
             if ok and words:match("%S") then save({ kind = "text", points = { p }, text = words, color = mine, size = size }) end
           elseif tool == "erase" then -- the nearest of your own drawings within a few pixels (on its lines, or on its words)
             local ex, ey = ImGui.PointConvertNative(ctx, px, py, false)
@@ -312,7 +312,7 @@ local function loop()
       if ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) or keys:byte(28) == 1 then reaper.DeleteExtState(band.SECTION, "draw on", false) end -- (Esc)
       -- the bar, at the foot of the arrange view (at the top it covered drawings on the first track), on a dark backing
       -- so it reads over any item. Each button also reads the OS's click, as the drawing does: the overlay can miss its own.
-      if bar_ext then ImGui.DrawList_AddRectFilled(dl, bar_ext[1], bar_ext[2], bar_ext[3], bar_ext[4], 0x1B1D20E6, 6) end
+      if bar_ext then ImGui.DrawList_AddRectFilled(dl, bar_ext[1], bar_ext[2], bar_ext[3], bar_ext[4], theme.BAR, 6) end
       local fh = ImGui.GetFrameHeightWithSpacing(ctx)
       local _, wh = ImGui.GetWindowSize(ctx)
       local at_top = pick("bar", "bottom") == "top" -- (wherever it is it covers a track: Top/Bottom moves it)
@@ -388,7 +388,7 @@ local function loop()
       ImGui.SetItemTooltip(ctx, "Move this bar to the " .. (at_top and "foot" or "top") .. " of the tracks (it covers whatever's under it).")
       ImGui.SameLine(ctx, 0, 12)
       ImGui.AlignTextToFramePadding(ctx)
-      ImGui.Text(ctx, why == "local" and "That's one of BandSync's own tracks: draw on a group track." or ({ pen = "Drag to draw.",
+      ImGui.Text(ctx, why == "local" and "That's one of KitchenSync's own tracks: draw on a group track." or ({ pen = "Drag to draw.",
         marker = "Drag to highlight.", line = "Drag from one end to the other.", arrow = "Drag from the tail to the point.",
         box = "Drag from corner to corner.", text = "Click where the words go.", erase = "Click one of your drawings to take it away." })[tool] or "")
       grew()

@@ -76,14 +76,19 @@ end
 local function delete_mine(ctx, ImGui, cfg, e)
   if e.user ~= cfg.user then return end
   ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx, "x") and reaper.MB("Delete this for everyone?", "BandSync", 4) == 6 then os.remove(e.file); cache = nil end
+  if ImGui.SmallButton(ctx, "x") and reaper.MB("Delete this for everyone?", "KitchenSync", 4) == 6 then os.remove(e.file); cache = nil end
   ImGui.SetItemTooltip(ctx, "Delete yours (for everyone).")
 end
 
 function chat.draw(ctx, ImGui, cfg, b)
   if not b or not b.song then return ImGui.TextDisabled(ctx, "Open a group project to chat about it.") end
+  -- next to the last thing, or on a new line when `w` more won't fit (the Everyone box ran off the right of the panel)
+  local function fits(w, gap)
+    ImGui.SameLine(ctx, 0, gap or 8)
+    if ImGui.GetContentRegionAvail(ctx) < w then ImGui.NewLine(ctx) end
+  end
   for i, sc in ipairs(SCOPES) do
-    if i > 1 then ImGui.SameLine(ctx) end
+    if i > 1 then fits(ImGui.CalcTextSize(ctx, sc[2]) + 36) end
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
   ImGui.SetItemTooltip(ctx, "Who sees it: everyone in this room, everyone on this project, or the whole group (every project).")
@@ -93,8 +98,11 @@ function chat.draw(ctx, ImGui, cfg, b)
     local root = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or ""
     local running = reaper.time_precise() - (tonumber(reaper.GetExtState(band.SECTION, "draw alive")) or -60) < 3
     local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
-    ImGui.SameLine(ctx, 0, 24)
-    if drawing then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x4C8DF6FF); ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x4C8DF6FF) end
+    fits(70, 24)
+    if drawing then
+      local accent = require("theme").ACCENT
+      ImGui.PushStyleColor(ctx, ImGui.Col_Button, accent); ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, accent); ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xFFFFFFFF)
+    end
     if ImGui.SmallButton(ctx, "Draw") then
       if drawing then reaper.DeleteExtState(band.SECTION, "draw on", false)
       else
@@ -103,10 +111,10 @@ function chat.draw(ctx, ImGui, cfg, b)
         band.start_draw(root)
       end
     end
-    if drawing then ImGui.PopStyleColor(ctx, 2) end
+    if drawing then ImGui.PopStyleColor(ctx, 3) end
     ImGui.SetItemTooltip(ctx, drawing and "Stop drawing (or Done on the bar, or Esc)." or "Draw on the tracks for everyone in this room: the tools show at the foot of the tracks.\n" ..
       "A drawing stays on its bar and track however anyone scrolls or zooms.")
-    ImGui.SameLine(ctx)
+    fits(130)
     if ImGui.SmallButton(ctx, running and "Hide drawings" or "Show drawings") then
       if running then
         reaper.SetExtState(band.SECTION, "draw hidden", "1", true)
@@ -131,7 +139,7 @@ function chat.draw(ctx, ImGui, cfg, b)
       if not seen[st.user] then seen[st.user] = true; names[#names + 1] = st.user end
     end
     table.sort(names)
-    if ImGui.GetContentRegionAvail(ctx) > 180 then ImGui.SameLine(ctx, 0, 24) end
+    fits(150, 24)
     ImGui.SetNextItemWidth(ctx, 150)
     if ImGui.BeginCombo(ctx, "##only", only == "" and "Everyone" or only) then
       if ImGui.Selectable(ctx, "Everyone", only == "") then reaper.DeleteExtState(band.SECTION, "show only", false) end
@@ -196,7 +204,7 @@ function chat.draw(ctx, ImGui, cfg, b)
         if ImGui.SmallButton(ctx, "Open") then
           -- a bandmate typed this: web links open in the browser; anything else (a file, a program) is shown first
           local web = l.url:match("^https?://") ~= nil
-          if web or reaper.MB("Open this? It isn't a web link:\n\n" .. l.url, "BandSync", 4) == 6 then
+          if web or reaper.MB("Open this? It isn't a web link:\n\n" .. l.url, "KitchenSync", 4) == 6 then
             if reaper.CF_ShellExecute then reaper.CF_ShellExecute(l.url)
             elseif reaper.GetOS():find("^Win") then os.execute('start "" "' .. l.url:gsub('"', "") .. '"')
             -- (single quotes: inside double ones the shell still runs $(...) and `...` from a link someone typed)

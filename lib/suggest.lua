@@ -220,7 +220,7 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
     end
     ImGui.SetItemTooltip(ctx, "Your tracks stay as they are. " .. tostring(h.from) .. " keeps a copy of anything new on a track of their own.")
     ImGui.SameLine(ctx)
-    ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xF2BF40FF)
+    ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
     ImGui.TextWrapped(ctx, string.format("%s's edit touches your parts: %s", tostring(h.from), suggest.words(h)))
     ImGui.PopStyleColor(ctx)
     ImGui.PopID(ctx)

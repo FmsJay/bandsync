@@ -38,7 +38,7 @@ local function draw()
   local cols = { 14, 170, 290, 400, 500, 620 }
   local y = 72
   if view.newer then
-    text(14, 62, string.format("BandSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["syncing"])
+    text(14, 62, string.format("KitchenSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["syncing"])
     y = 92
   end
   for i, h in ipairs({ "Collaborator", "State", "Last seen", "Has", "Missing yours", "Version" }) do text(cols[i], y, h, dim) end
@@ -58,7 +58,7 @@ local function draw()
 end
 
 local mx, my = reaper.GetMousePosition() -- open by the mouse (down-left of it), not over REAPER's menu bar
-gfx.init("BandSync status", 720, 300, 0, math.max(0, mx - 360), my + 40)
+gfx.init("KitchenSync status", 720, 300, 0, math.max(0, mx - 360), my + 40)
 local last = 0
 local function loop()
   local ch = gfx.getchar()

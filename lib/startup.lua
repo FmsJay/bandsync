@@ -19,6 +19,9 @@ end
 
 -- Tabs as of the last look: at quit they may be closing already.
 local known = {}
+-- The plan is kept on disk all the time, not only at quit: after a crash REAPER reopened the tabs itself, with its boxes up until
+-- someone answered and the song catching up a little at a time behind them (PC, 2026-11-03: nearly 2 minutes against 20 s).
+local kept, kept_was
 function startup.note()
   local tabs, front = {}, reaper.EnumProjects(-1)
   for i = 0, 512 do
@@ -27,6 +30,19 @@ function startup.note()
     if fn ~= "" then tabs[#tabs + 1] = { path = fn, band = band.binding(p) ~= nil or nil, front = p == front or nil } end
   end
   known = tabs
+  if not usable() then return end
+  local sig = band.json_encode(tabs)
+  if sig == kept then return end
+  kept = sig
+  if startup.plan(tabs) then
+    kept_was = kept_was or reaper.SNM_GetIntConfigVar("loadlastproj", 1)
+    band.write_json(FILE, { tabs = tabs, loadlastproj = kept_was })
+    set_open_mode(startup.no_open(kept_was))
+  elseif kept_was then -- (no band song open any more: as you had it)
+    set_open_mode(kept_was)
+    kept_was = nil
+    os.remove(FILE)
+  end
 end
 
 -- What to do at the next start, or nil: only a session with a band song in it is opened from here. Pure.

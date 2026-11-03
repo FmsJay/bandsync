@@ -37,5 +37,5 @@ if kb then
 end
 for _, p in ipairs(gone) do reaper.AddRemoveReaScript(false, 0, p, false) end
 for n, name in ipairs(scripts) do reaper.AddRemoveReaScript(true, 0, dir .. "/" .. name, n == #scripts) end
-band.msg(string.format("BandSync %s runs from %s, so updates arrive with that folder.\n\n%d BandSync actions are registered, including any new ones.%s",
+band.msg(string.format("KitchenSync %s runs from %s, so updates arrive with that folder.\n\n%d KitchenSync actions are registered, including any new ones.%s",
   band.VERSION, band.norm(dir), #scripts, #gone > 0 and ("\nRemoved " .. #gone .. " action(s) for scripts that no longer exist.") or ""))

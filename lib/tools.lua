@@ -73,7 +73,7 @@ function tools.render_guard()
   local text = band.read(startup_path()) or ""
   if text:find(GUARD_A, 1, true) then return true end
   reaper.RecursiveCreateDirectory(reaper.GetResourcePath() .. "/Scripts", 0)
-  return pcall(band.write_atomic, startup_path(), GUARD_A .. " (the hidden REAPER that renders BandSync's wet takes stops here)\n" ..
+  return pcall(band.write_atomic, startup_path(), GUARD_A .. " (the hidden REAPER that renders KitchenSync's wet takes stops here)\n" ..
     "if os.getenv(\"BANDSYNC_RENDER\") then return end\n" .. GUARD_Z .. "\n" .. text)
 end
 
@@ -87,9 +87,7 @@ function tools.join_requests(ctx, ImGui, b)
   local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}
   for _, d in ipairs(type(asking) == "table" and asking or {}) do
     if type(d) == "table" and d.id and not skip[d.id] then
-      ImGui.TextColored(ctx, 0xF2BF40FF, string.format("%s's computer wants to join %s.", tostring(d.name), d.band or binfo.name))
-      ImGui.SetItemTooltip(ctx, string.format("Syncthing device %s, from %s.", d.id:sub(1, 7), tostring(d.address)))
-      ImGui.SameLine(ctx)
+      -- (buttons first: the words pushed them off a narrow panel)
       if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id .. (d.folder or "")) then
         local services = require("services")
         local ok, why
@@ -106,6 +104,11 @@ function tools.join_requests(ctx, ImGui, b)
         reaper.SetExtState(band.SECTION, "join skipped", band.json_encode(skip), false)
       end
       ImGui.SetItemTooltip(ctx, "Hide this request (until REAPER restarts). Nothing is shared with it.")
+      ImGui.SameLine(ctx)
+      ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
+      ImGui.TextWrapped(ctx, string.format("%s's computer wants to join %s.", tostring(d.name), d.band or binfo.name))
+      ImGui.PopStyleColor(ctx)
+      ImGui.SetItemTooltip(ctx, string.format("Syncthing device %s, from %s.", d.id:sub(1, 7), tostring(d.address)))
     end
   end
 end
@@ -150,7 +153,7 @@ function tools.put_back_bar(ctx, ImGui, song)
   if ImGui.SmallButton(ctx, "OK##putback") then reaper.DeleteExtState(band.SECTION, "put back", false) end -- (first: a panel docked short showed the text, and no way to dismiss it)
   ImGui.SetItemTooltip(ctx, "Hide this. Every undone edit is also in Setup > Log.")
   ImGui.SameLine(ctx)
-  ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xF2BF40FF)
+  ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
   ImGui.TextWrapped(ctx, "Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or ""))
   ImGui.PopStyleColor(ctx)
 end

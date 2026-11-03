@@ -28,7 +28,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     local m = rooms.meta(cfg, song, room)
     if m and m.parent then -- a side room is a copy of the room it came from: made from your tab of that room
       local from = rooms.tab(song, m.parent)
-      if not from then return band.msg("'" .. room .. "' is a side room of '" .. m.parent .. "'. Open '" .. m.parent .. "' first, then go there from Rooms in the BandSync panel.") end
+      if not from then return band.msg("'" .. room .. "' is a side room of '" .. m.parent .. "'. Open '" .. m.parent .. "' first, then go there from Rooms in the KitchenSync panel.") end
       local p, why = rooms.open(from, cfg, band.binding(from), room)
       if not p then return band.msg(why) end
       band.start_live(dir) -- (the tab in front: the room's)
@@ -115,7 +115,7 @@ end
 if b then return open_song(b.song) end
 if #band.songs(cfg) == 0 then -- (the first thing a new bandmate sees: say what has to happen, not just that nothing's here)
   return band.msg("Nothing from the group has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
-    "Ask the host to open REAPER: their BandSync panel shows a \"Let you in\" button for your computer. The group's " ..
+    "Ask the host to open REAPER: their KitchenSync panel shows a \"Let you in\" button for your computer. The group's " ..
     "projects appear here once the folder syncs (Setup > Health shows whether it's connected).")
 end
 -- straight into the main room: side rooms are made and visited from the panel's Rooms page

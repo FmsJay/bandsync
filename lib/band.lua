@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.43.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.45.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -33,7 +33,7 @@ local warned = {}
 function band.check_version(theirs, what, quiet)
   if theirs and band.compare_versions(theirs, band.VERSION) > 0 and not warned[theirs] then
     warned[theirs] = true
-    local text = string.format("%s was made with BandSync %s; you have %s. Run 'BandSync - Update' so everyone stays compatible.",
+    local text = string.format("%s was made with KitchenSync %s; you have %s. Run 'BandSync - Update' so everyone stays compatible.",
       what, theirs, band.VERSION)
     if quiet then band.log(text) else band.msg(text) end
   end
@@ -45,7 +45,7 @@ function band.clean(s) return (s:gsub("[^%w%-_ ]", ""):match("^%s*(.-)%s*$")) en
 local function norm(p) return (p:gsub("\\", "/"):gsub("/+$", "")) end
 band.norm = norm
 
-function band.msg(text) reaper.MB(text, "BandSync", 0) end
+function band.msg(text) reaper.MB(text, "KitchenSync", 0) end
 
 -- Start Live sync for the tab in front. REAPER runs a script action once at a time (Live sync sets
 -- set_action_options(2): triggered again while running, it quietly does nothing), so each further session tab
@@ -209,10 +209,10 @@ function band.settings(force)
   local user = reaper.GetExtState(band.SECTION, "user")
   if force or root == "" or user == "" then
     if root == "" and reaper.JS_Dialog_BrowseForFolder then
-      local ok, picked = reaper.JS_Dialog_BrowseForFolder("BandSync: pick the shared (Syncthing) folder", "")
+      local ok, picked = reaper.JS_Dialog_BrowseForFolder("KitchenSync: pick the shared (Syncthing) folder", "")
       if ok == 1 then root = picked end
     end
-    local ok, csv = reaper.GetUserInputs("BandSync settings", 2,
+    local ok, csv = reaper.GetUserInputs("KitchenSync settings", 2,
       "Shared folder (Syncthing),Your name,separator=|,extrawidth=250", root .. "|" .. user)
     if not ok then return nil end
     root, user = csv:match("^(.-)|(.*)$")

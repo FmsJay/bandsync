@@ -17,7 +17,7 @@ local cfg = band.settings()
 if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("This project isn't a BandSync session yet: publish (host) or open (guest) one first.") end
+if not b then return band.msg("This project isn't a KitchenSync session yet: publish (host) or open (guest) one first.") end
 if reaper.set_action_options then reaper.set_action_options(1) end -- the shortcut again closes it
 
 local live = require("live")
@@ -106,7 +106,7 @@ local function loop()
       centered(dl, cx + math.cos(mid) * m, cy + math.sin(mid) * m, s[1], s[3] and TEXT or MUTED)
     end
     ImGui.DrawList_AddCircleFilled(dl, cx, cy, r - 4, 0x1B1D20F5) -- the hole: says whose session this is
-    centered(dl, cx, cy, "BandSync\n" .. b.song .. "\nEsc closes", MUTED)
+    centered(dl, cx, cy, "KitchenSync\n" .. b.song .. "\nEsc closes", MUTED)
     local s = SLICES[hot]
     local tip = s and s[2] or "Point at a slice to see what it does; click it to do it."
     ImGui.DrawList_AddRectFilled(dl, wx + 4, wy + 2 * (R + PAD) + 4, wx + W - 4, wy + H - 4, 0x1B1D20F5, 8)

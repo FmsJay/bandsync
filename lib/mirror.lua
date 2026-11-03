@@ -1735,6 +1735,10 @@ function mirror.watch(proj, cfg, song, room, opts)
       elseif o.kind == "track" and o.ptr then
         reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true)
         why.text = "a new track isn't yours to add: it stays here as yours, not sent to the group (take control to add tracks)"
+      elseif o.kind == "misc" then
+        -- a group or lock put on someone's track: nothing here is worth keeping, and left on, your VCA went on moving their track on
+        -- this computer alone (what you hear and render differs from everyone else). If they accept, it lands as theirs.
+        if not mirror.apply(proj, { obj = "misc", oid = o.oid, track = o.track, state = "" }, media, opts.local_mix) then return end -- (waits for this tab to come to the front)
       elseif why.text then -- (a part that never went out: said once. Every pass, it pushed all else out of the log: laptop, 0.42.4)
         say_once("never" .. o.oid, why.text .. " (it stays on this computer)")
         return
@@ -1916,7 +1920,7 @@ function mirror.watch(proj, cfg, song, room, opts)
             if n.flips >= mirror.RESTLESS_FLIPS and now - n.began >= mirror.RESTLESS_SECS then
               local names = mirror.fx_differing(f.text, o.state)
               if mirror.restless_add(names) then
-                band.log(table.concat(names, ", ") .. " keeps changing its saved data by itself: BandSync goes by its knobs from now on")
+                band.log(table.concat(names, ", ") .. " keeps changing its saved data by itself: KitchenSync goes by its knobs from now on")
                 o.hash = mirror.fx_hash(o.state)
                 knobs = mirror.fx_params(o.ptr)
                 mirror.fx_knobs[rk] = knobs
@@ -2244,6 +2248,24 @@ end
 
 -- Carry out a History plan (plan_restore / plan_undo) here and send it to the band as new revisions, so a restore
 -- is itself a change that can be undone. Objects this person may not change are left (counted). Returns a summary.
+-- A deleted item being brought back whose very place on its lane is taken by the same thing under another id. Undoing a pass makes
+-- REAPER rebuild its comp piece as a new item, so the comp lane's own row, undone after, played a second copy on top (Mac 0.42.27, PC 0.45).
+function mirror.sits_there(proj, ev)
+  if ev.obj ~= "item" or type(ev.state) ~= "string" or mirror.find(proj, "item", ev.oid) then return false end
+  local lane, pos, len = tonumber(ev.state:match("BANDLANE (%d+)")), tonumber(ev.state:match("POSITION ([%d%.%-e]+)")), tonumber(ev.state:match("LENGTH ([%d%.%-e]+)"))
+  local tr = ev.track and mirror.find(proj, "track", ev.track)
+  if not (tr and lane and pos and len) then return false end
+  local name = ev.state:match('NAME "([^"\n]*)"') or ev.state:match("NAME ([^\n]*)")
+  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
+    local it = reaper.GetTrackMediaItem(tr, i)
+    local take = reaper.GetActiveTake(it)
+    if reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE") == lane and math.abs(reaper.GetMediaItemInfo_Value(it, "D_POSITION") - pos) < 1e-6
+      and math.abs(reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - len) < 1e-6
+      and (not name or (take and select(2, reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)) == name)) then return true end
+  end
+  return false
+end
+
 function mirror.revert(proj, cfg, song, room, plan, opts)
   local sync = require("sync")
   local room_dir = sync.room_dir(cfg, song, room)
@@ -2273,7 +2295,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     if p.t and p.t.obj == "track" then place(p) elseif not placed[p] then placed[p] = true; sorted[#sorted + 1] = p end
   end
   list = sorted
-  local done, refused, kept, kept_names = 0, 0, 0, {}
+  local done, refused, kept, kept_names, there = 0, 0, 0, {}, 0
   reaper.Undo_BeginBlock2(proj)
   for _, p in ipairs(list) do
     local rev, h, evid = mirror.known(proj, p.oid)
@@ -2296,6 +2318,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     local mine_gone = p.t and last and last.gone and last.user == cfg.user
     if not p.t and (h or "") == "" then -- gone then, gone now
     elseif p.t and evid == p.t.id then -- already that revision
+    elseif p.t and not opts.exact and mirror.sits_there(proj, p.t) then there = there + 1
     elseif theirs_new then
       kept = kept + 1
       kept_names[name ~= "" and name or "an unnamed track"] = true
@@ -2345,6 +2368,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   local names = {}
   for n in pairs(kept_names) do names[#names + 1] = n end
   table.sort(names)
+  if done == 0 and there > 0 and refused == 0 and kept == 0 then return "it's already back: REAPER rebuilt it from its pass, so nothing changed" end
   return string.format("%d change(s) brought back and sent to the group%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
     kept > 0 and string.format(" (kept what collaborators added since: %s)", table.concat(names, ", ")) or "")
 end

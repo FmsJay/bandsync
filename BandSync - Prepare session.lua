@@ -26,7 +26,7 @@ local GREY, GREEN = 0x8C8C8CFF, 0x59CC73FF
 local function loop()
   ImGui.SetNextWindowSize(ctx, 620, 460, ImGui.Cond_FirstUseEver)
   ImGui.SetNextWindowBgAlpha(ctx, 1) -- opaque: the arrange view showing through made it hard to read
-  local shown, open = ImGui.Begin(ctx, "Prepare this project for BandSync###bandsync_prep", true)
+  local shown, open = ImGui.Begin(ctx, "Prepare this project for KitchenSync###bandsync_prep", true)
   local close = false
   if shown then
     if not reaper.ValidatePtr2(0, proj, "ReaProject*") then close = true
@@ -37,10 +37,10 @@ local function loop()
       ImGui.TextWrapped(ctx, "Undo (Ctrl+Z; Cmd+Z on a Mac) takes back the project changes; converted files' originals are in 'BandSync originals'.")
       if ImGui.Button(ctx, "Close") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then close = true end
     elseif #rows == 0 then
-      ImGui.TextColored(ctx, GREEN, "Nothing to do: this project is ready for BandSync.")
+      ImGui.TextColored(ctx, GREEN, "Nothing to do: this project is ready for KitchenSync.")
       if ImGui.Button(ctx, "Close") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then close = true end
     else
-      ImGui.TextWrapped(ctx, "What this project needs for BandSync. Untick anything you'd rather keep, then Continue: a backup copy of the project is saved first.")
+      ImGui.TextWrapped(ctx, "What this project needs for KitchenSync. Untick anything you'd rather keep, then Continue: a backup copy of the project is saved first.")
       ImGui.Spacing(ctx)
       if ImGui.BeginChild(ctx, "rows", 0, -40) then
         for i, r in ipairs(rows) do

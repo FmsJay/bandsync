@@ -162,7 +162,7 @@ end
 -- Returns the new vst_chunk, or nil + why.
 function sonobus.join_state(b64, info)
   local c = unpack_chunk(b64)
-  if not c then return nil, "not a SonoBus state BandSync understands" end
+  if not c then return nil, "not a SonoBus state KitchenSync understands" end
   local rec = child(c.tree, "RecentConnections")
   if not rec then
     rec = { type = "RecentConnections", props = {}, children = {} }
@@ -211,7 +211,7 @@ local function channel_group(start)
 end
 function sonobus.set_outputs(b64, outs)
   local c = unpack_chunk(b64)
-  if not c then return nil, "not a SonoBus state BandSync understands" end
+  if not c then return nil, "not a SonoBus state KitchenSync understands" end
   local map = child(c.tree, "PeerStateCacheMap")
   if not map then
     map = { type = "PeerStateCacheMap", props = {}, children = {} }

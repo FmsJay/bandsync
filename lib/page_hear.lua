@@ -31,7 +31,7 @@ function page.person(ctx, ImGui, proj, name)
   if on then
     if ImGui.SmallButton(ctx, "hear##" .. name) then hear.set_on(proj, name, false) end
   else
-    ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xE06C6CFF)
+    ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").RED)
     if ImGui.SmallButton(ctx, "muted##" .. name) then hear.set_on(proj, name, true) end
     ImGui.PopStyleColor(ctx)
   end
@@ -83,12 +83,12 @@ function page.realtime(ctx, ImGui, proj)
     local label = d and string.format("Measure again (%d ms)", d) or "Measure their delay"
     beside(label)
     if ImGui.SmallButton(ctx, label) then run("Measure guest delay") end
-    ImGui.SetItemTooltip(ctx, "They clap along to 8 clicks; BandSync times where the claps land. Measure right before you record:\n" ..
+    ImGui.SetItemTooltip(ctx, "They clap along to 8 clicks; KitchenSync times where the claps land. Measure right before you record:\n" ..
       "the delay through SonoBus drifts as it adjusts its buffers (tested over Wi-Fi: 426-555 ms within two minutes).")
     if d then
       beside("Line up their takes")
       if ImGui.SmallButton(ctx, "Line up their takes") then
-        local _, name = reaper.GetUserInputs("BandSync: the guest's takes", 1, "Guest's name (their track)", ext(proj, "guest name"))
+        local _, name = reaper.GetUserInputs("KitchenSync: the guest's takes", 1, "Guest's name (their track)", ext(proj, "guest name"))
         if _ then
           reaper.SetProjExtState(proj, band.SECTION, "guest name", name)
           local n, label = guest.line_up(proj, name)

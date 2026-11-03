@@ -193,7 +193,7 @@ function chooser.open(cfg, opts, done)
   local function loop()
     ImGui.SetNextWindowSize(ctx, 680, 440, ImGui.Cond_FirstUseEver)
     ImGui.SetNextWindowBgAlpha(ctx, 1) -- opaque: the arrange view showing through made it hard to read
-    theme.push(ctx, ImGui, true)
+    theme.follow(); theme.push(ctx, ImGui, true)
     ImGui.PushFont(ctx, ui_font, 15)
     local shown, open = ImGui.Begin(ctx, (opts.title or "Choose a project") .. "###bandsync_chooser", true)
     local result -- { song, room } when chosen, false when cancelled
@@ -256,13 +256,13 @@ function chooser.open(cfg, opts, done)
         local clicked = ImGui.InvisibleButton(ctx, id, w, h)
         local hovered = ImGui.IsItemHovered(ctx)
         local dl = ImGui.GetWindowDrawList(ctx)
-        ImGui.DrawList_AddRectFilled(dl, x, y, x + w, y + h, selected and 0x34415AFF or hovered and 0x33373DFF or theme.CARD, 10)
+        ImGui.DrawList_AddRectFilled(dl, x, y, x + w, y + h, selected and theme.SELECTED or hovered and theme.BUTTON_HOVER or theme.CARD, 10)
         local cx = x + w / 2
         if is_folder then
           ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 12, cx - 4, y + 22, 0xC99A3EFF, 3)
           ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 16, cx + 20, y + 44, 0xE0B050FF, 4)
         else
-          ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 12, cx + 20, y + 44, 0x3B4049FF, 4)
+          ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 12, cx + 20, y + 44, theme.FRAME, 4)
           for i, bar in ipairs({ 8, 16, 11, 20, 13, 7 }) do
             local bx = cx - 20 + i * 40 / 7
             ImGui.DrawList_AddLine(dl, bx, y + 28 - bar / 2, bx, y + 28 + bar / 2, theme.ACCENT, 2)
@@ -274,7 +274,7 @@ function chooser.open(cfg, opts, done)
           if shortened ~= text then shortened = shortened:sub(1, math.max(1, #shortened - 2)) .. ".." end
           ImGui.DrawList_AddText(dl, cx - ImGui.CalcTextSize(ctx, shortened) / 2, at, col, shortened)
         end
-        words(label, 0xE6E8EBFF, y + 52)
+        words(label, theme.TEXT, y + 52)
         words(sub, theme.MUTED, y + 72)
         if hovered and ImGui.CalcTextSize(ctx, label) > w - 12 then ImGui.SetItemTooltip(ctx, label) end
         return clicked, hovered and ImGui.IsMouseDoubleClicked(ctx, 0)
@@ -395,7 +395,7 @@ function chooser.open(cfg, opts, done)
       end
       -- before you join: how big it is, and the plug-ins it uses that this machine doesn't have
       local pv = sel and chooser.preview(cfg, sel.song, room)
-      if pv then ImGui.TextColored(ctx, #pv.missing > 0 and 0xE0B050FF or 0x8D939BFF, pv.text) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
+      if pv then ImGui.TextColored(ctx, #pv.missing > 0 and theme.YELLOW or theme.MUTED, pv.text) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
       if pv and #pv.missing > 0 then ImGui.SetItemTooltip(ctx, "Missing here:\n" .. table.concat(pv.missing, "\n") ..
         "\n\nTheir tracks open with the plug-in offline (settings kept). The Plugins page can set a translation.") end
       local pick_room = (opts.rooms == "new" and band.clean(new_room) ~= "") and band.clean(new_room) or room

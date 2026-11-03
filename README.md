@@ -1,4 +1,6 @@
-# BandSync
+# KitchenSync
+
+(A working title, on screen only so far. It began as BandSync, and the script files, folders, the ReaPack package and this repository still carry that name.)
 
 Record and arrange together in REAPER from different cities, as if you were all working in one project.
 Everyone in a room holds the same project: every track, item, lane, MIDI part, plug-in chain, automation
@@ -190,7 +192,8 @@ By hand:
 - **Wet takes in a burst**: a part is rendered once it has held still for 3 seconds, up to three at once, whichever
   changed longest ago first, so a part you're still editing doesn't hold up the others and doesn't render every step.
   A render of a version that's gone is ended. Going back to a version already printed needs no render and doesn't wait.
-- **Minimize** (top bar, or closing the panel) shrinks it to a small button over REAPER. Click it and the panel opens where it was, floating or docked. Drag it and it stays there, pinned to REAPER's window; right-click to lock it.
+- **Minimize** (top bar, or closing the panel) shrinks it to a small square over REAPER: its edge is green while sync runs, red when it doesn't, and a count in the corner says what's waiting (hover for the words). Click it and the panel opens where it was, floating or docked. Drag it and it stays there, pinned to REAPER's window; right-click to lock it, close the panel or remove the square.
+- **Themes**: Setup > Options > Look: Dark, Light, Midnight or Warm, per computer.
 - **Pages**: **Home** (Who's here with *Take control*, Real time mode, who changes what, Local mixing, claims),
   **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **Restore**,
   **Plugins** and **Setup** (Health, Console, Options, Updates). A red or yellow dot on Setup means Health has
@@ -199,9 +202,6 @@ By hand:
   says how to set it once). Right-click *Dock* to arm drag-to-dock (it turns green); otherwise dragging the
   window only docks while you hold Shift, so moving it never docks it by accident. Docked short and wide, each
   page lays out in columns.
-- **The pill**: closing the panel leaves a small button over REAPER (Live, who drives, new chat). Click it to
-  bring the panel back where it was; right-click to close BandSync's panel or remove the button (Setup > Options
-  brings it back).
 - The floating window resizes from every edge and corner. Every control explains itself on hover.
 
 **BandSync - Radial menu** pops a ring of everyday moves around the mouse. Give it a key or mouse button in the
@@ -270,9 +270,9 @@ Restore (its own page):
 
 - Every change in the room, newest first, grouped by who made it; filters by person, kind (items, tracks,
   plug-ins, deletes, things brought back, tempo, handovers...), track or words.
-- Each change has **Undo** (only that change; everything after it stays) and **Back to here...**: the tracks
-  selected in REAPER (their items and plug-ins), or the whole project (the driver), back to that moment. Every
-  restore goes to the group as new changes, so it can be undone the same way.
+- Click a change for what you can do with it: **Undo this change** (everything after it stays), **Restore selected
+  tracks to here** (their items and plug-ins), **Restore whole project to here** (the driver), or **Open in side room**,
+  to check it's the right moment first. Every restore goes to the group as new changes, so it can be undone the same way.
 - **Saved versions** (every handover, or *Save this version*), and *Open it as it was before BandSync* (the copy Publish
   kept). **Render current mix** puts the whole project's mix, as your master has it, in the shared folder's `<Song>/mixes/` for everyone, and on Drive. **Back up** keeps the project as it stands: a saved version kept for good, and the project on Drive.
 - **Old history is trimmed**: once a day, at the end of a session, the room's driver takes away changes older than
@@ -368,7 +368,7 @@ With Real time mode on:
 ### Rooms: side rooms, and bringing work back
 
 - **Create side room**: a copy of the room you're in, as it is now, in a new tab, to try things without changing the
-  room. Squares show each room and who's in it; **Go there** to join one; **Come see** asks everyone over.
+  room. Squares show each room and who's in it; click one to go there; **Come see** asks everyone over.
 - **Send selected to main**: the selected items (and any track of theirs main hasn't got) go to main as they are
   here.
 - **Bring into main**: everything this room changed since it was made goes to main, except what main has also

@@ -35,7 +35,7 @@ function sync.put_back(text)
   local shown = beat and reaper.time_precise() - beat < 5 and reaper.GetExtState(band.SECTION, "panel minimized") == ""
   if not shown then
     local x, y = reaper.GetMousePosition()
-    reaper.TrackCtl_SetToolTip("BandSync: " .. text, x + 14, y + 14, true)
+    reaper.TrackCtl_SetToolTip("KitchenSync: " .. text, x + 14, y + 14, true)
     sync.tip_at = reaper.time_precise() -- (Live sync takes it away after a few seconds: REAPER leaves it up)
   end
 end
@@ -1224,7 +1224,7 @@ function sync.receive(proj, cfg, song, room, can)
         sync.unreadable[id] = sync.unreadable[id] or reaper.time_precise()
         if reaper.time_precise() - sync.unreadable[id] > 120 then
           setext(proj, sync.APPLIED, id, "1")
-          band.log("skipped a file in the group's folder that BandSync can't read (" .. f .. ")")
+          band.log("skipped a file in the group's folder that KitchenSync can't read (" .. f .. ")")
         end
       end
       if good then
@@ -1291,7 +1291,7 @@ function sync.receive(proj, cfg, song, room, can)
     if obj and not (type(ev.oid) == "string" and (ev.obj == "item" or ev.obj == "track" or require("mirror").PART[ev.obj]) and type(ev.rev) == "number"
         and (ev.gone or ev.state ~= nil) and (ev.name == nil or type(ev.name) == "string") and (ev.pos == nil or type(ev.pos) == "number")) then
       setext(proj, sync.APPLIED, ev.id, "1") -- malformed (a newer or damaged file): skipped, once, without stopping the rest
-      band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync can't read (" .. tostring(ev.id) .. ")")
+      band.log("skipped a change from " .. tostring(ev.user) .. " that KitchenSync can't read (" .. tostring(ev.id) .. ")")
     elseif (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) or (obj and latest[ev.oid] ~= ev) then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
     elseif ev.user == cfg.user and not obj then
@@ -1318,7 +1318,7 @@ function sync.receive(proj, cfg, song, room, can)
       if not ok then
         sync.failed[ev.id] = (sync.failed[ev.id] or 0) + 1
         if not obj or sync.failed[ev.id] >= 5 then
-          band.log("skipped a change from " .. tostring(ev.user) .. " that BandSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
+          band.log("skipped a change from " .. tostring(ev.user) .. " that KitchenSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
           setext(proj, sync.APPLIED, ev.id, "1")
         end
       elseif res then
@@ -1473,15 +1473,16 @@ function sync.preload(proj, cfg, song, room)
   local mirror = require("mirror")
   local can, who = sync.authority(cfg, song, room, s)
   sync.driver_name, sync.room_mode = who.driver, who.mode
-  local t0, total = reaper.time_precise(), 0
+  local t0, total, was_title = reaper.time_precise(), 0, nil
   reaper.PreventUIRefresh(1)
   local ok, err = pcall(function()
     mirror.watch(proj, cfg, song, room, { can = can, mode = who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" })
     -- (REAPER can't draw while this runs, and a plug-in's load can't be cut short: 206 changes took 54 s on the laptop. So its title
-    -- bar says what's happening. REAPER puts its own title back by itself.)
+    -- bar says what's happening. Put back after: REAPER only redoes its own title when something changes, and it sat there saying this.)
+    was_title = reaper.JS_Window_GetTitle and reaper.JS_Window_GetTitle(reaper.GetMainHwnd())
     local function say()
       if reaper.JS_Window_SetTitle then
-        reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), string.format("BandSync: getting %s ready, %d change(s) to go...", song, sync.pending_events(proj, cfg, song, room)))
+        reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), string.format("KitchenSync: getting %s ready, %d change(s) to go...", song, sync.pending_events(proj, cfg, song, room)))
       end
     end
     while reaper.time_precise() - t0 < sync.PRELOAD_SECS do
@@ -1493,6 +1494,7 @@ function sync.preload(proj, cfg, song, room)
   end)
   reaper.PreventUIRefresh(-1)
   reaper.UpdateArrange()
+  if was_title and reaper.JS_Window_SetTitle then reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), was_title) end
   if not ok then band.log("getting '" .. song .. "' ready: " .. tostring(err)) end
   if total > 0 then band.log(string.format("'%s' is ready: %d change(s) from the group came in as it opened (%.1f s)", song, total, reaper.time_precise() - t0)) end
   -- (saved, so next time it opens from here. A file 27 hours old took 3034 changes in again on the Mac: 0.42.27)

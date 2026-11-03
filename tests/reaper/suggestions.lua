@@ -268,6 +268,16 @@ local ok, err = pcall(function()
     reaper.GetSetTrackGroupMembership(vca, "VOLUME_VCA_LEAD", 1, 1)
     reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 1, 1)
     sync_all(); sync_all()
+    -- (Keys is Mac's: it goes back here and Mac is asked. Accepted, it's in the group for everyone)
+    check(reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 0, 0) & 1 == 0, "waiting for Mac, Keys isn't in the group here")
+    suggest.flush()
+    reaper.SelectProjectInstance(pb)
+    for _, x in ipairs(select(1, suggest.rows(room_dir, "Mac"))) do
+      suggest.accept(pb, B, room_dir, x, function(name, pos) return can()("Mac", name, pos) end, false)
+      suggest.answer(room_dir, x, "Mac", "accepted", { left = 0 })
+    end
+    sync_all(); sync_all()
+    check(reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 0, 0) & 1 == 1, "accepted, Keys follows the VCA here too")
     local before = reaper.GetMediaTrackInfo_Value(tkeys, "D_VOL")
     local asked = #(select(1, suggest.rows(room_dir, "Mac"))) -- (putting Mac's Keys in the group was a change to Keys: that one's Mac's to accept)
     say("  after joining the group: " .. asked .. " line(s) for Mac; Keys follows " .. reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 0, 0))
@@ -312,6 +322,19 @@ local ok, err = pcall(function()
         say("    now  " .. mirror.track_line(c.state) .. "|" .. tostring(c.state.after)); say("    band " .. mirror.track_line(last.state) .. "|" .. tostring(last.state.after))
       end
     end
+  end
+  do -- putting Mac's track in your VCA group: it goes to them, and doesn't stay here moving their track on this computer alone
+    local keys = track_named(pa, "Keys")
+    local bit = 1 << 20 -- (a group nothing else here uses)
+    reaper.GetSetTrackGroupMembership(keys, "VOLUME_VCA_FOLLOW", bit, bit)
+    local asked = #(select(1, suggest.rows(room_dir, "Mac")))
+    pass_a(); suggest.flush()
+    check(reaper.GetSetTrackGroupMembership(keys, "VOLUME_VCA_FOLLOW", 0, 0) & bit == 0, "Keys doesn't stay in James's VCA group")
+    local rows = select(1, suggest.rows(room_dir, "Mac"))
+    check(#rows == asked + 1, "Mac is asked about it")
+    for _, h in ipairs(rows) do suggest.answer(room_dir, h, "Mac", "declined") end
+    pass_a()
+    check(reaper.GetSetTrackGroupMembership(keys, "VOLUME_VCA_FOLLOW", 0, 0) & bit == 0, "declined, it's still out of the group")
   end
   check(#(select(1, suggest.rows(room_dir, "Mac"))) == 0, "copying Keys asks Mac nothing")
   local dup = track_named(pa, "Keys (James's copy)")

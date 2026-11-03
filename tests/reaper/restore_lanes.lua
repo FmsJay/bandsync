@@ -316,6 +316,74 @@ local ok, err = pcall(function()
     for _ = 1, 3 do watch(pb, B); recv(pa, A) end
   end
 
+  -- a pass that feeds a comp: deleting it takes the comp piece too, as two rows. Undoing the pass, REAPER rebuilds the piece as a new
+  -- item; the leftover comp row then has nothing to add, where it played a second copy on top (Mac 0.42.27)
+  do
+    reaper.SelectProjectInstance(pa)
+    reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
+    local lab = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)
+    reaper.GetSetMediaTrackInfo_String(lab, "P_NAME", "Comp Lab", true)
+    local whole = reaper.CreateNewMIDIItemInProj(lab, 30, 50, false)
+    reaper.GetSetMediaItemTakeInfo_String(reaper.GetActiveTake(whole), "P_NAME", "pass 1", true)
+    for k = 2, 3 do reaper.GetSetMediaItemTakeInfo_String(reaper.AddTakeToMediaItem(whole), "P_NAME", "pass " .. k, true) end
+    local mid = reaper.SplitMediaItem(whole, 36)
+    local tail = reaper.SplitMediaItem(mid, 44)
+    reaper.SetActiveTake(reaper.GetTake(whole, 0)); reaper.SetActiveTake(reaper.GetTake(mid, 1)); reaper.SetActiveTake(reaper.GetTake(tail, 2))
+    reaper.SetOnlyTrackSelected(lab)
+    reaper.Main_OnCommand(42636, 0) -- (takes to lanes, with comp areas: the same link a comp made by hand has)
+    for _ = 1, 4 do watch(pa, A); hold(0.2) end
+    recv(pb, B)
+    local on_lane = function(p, lane, at)
+      local t, n = find(p, "Comp Lab"), 0
+      for i = 0, reaper.CountTrackMediaItems(t) - 1 do
+        local x = reaper.GetTrackMediaItem(t, i)
+        if reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE") == lane and reaper.GetMediaItemInfo_Value(x, "D_POSITION") == at then n = n + 1 end
+      end
+      return n
+    end
+    local sorted = function()
+      local es = recall.entries(A, song, room)
+      table.sort(es, function(a, x) return (a.time .. a.id) < (x.time .. x.id) end)
+      return es
+    end
+    check(on_lane(pa, 0, 36) == 1 and on_lane(pa, 2, 36) == 1, "a comp: the piece on C1, its pass on lane 2")
+    hold(1.2)
+    reaper.SelectProjectInstance(pa)
+    reaper.SelectAllMediaItems(pa, false)
+    for i = 0, reaper.CountTrackMediaItems(lab) - 1 do
+      local x = reaper.GetTrackMediaItem(lab, i)
+      if reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE") == 2 and reaper.GetMediaItemInfo_Value(x, "D_POSITION") == 36 then reaper.SetMediaItemSelected(x, true) end
+    end
+    reaper.Main_OnCommand(40006, 0)
+    for _ = 1, 3 do watch(pa, A); hold(0.2) end
+    recv(pb, B)
+    check(on_lane(pa, 0, 36) == 0 and on_lane(pa, 2, 36) == 0, "deleting the pass takes its comp piece")
+    local es = sorted()
+    local pass_row, comp_row
+    for i = #es, 1, -1 do
+      if es[i].gone and es[i].obj == "item" and not pass_row or (es[i].gone and es[i].obj == "item" and not comp_row) then
+        local l = mirror.entry_lane(es, i)
+        if l == 0 and not comp_row then comp_row = i elseif l == 2 and not pass_row then pass_row = i end
+      end
+    end
+    check(pass_row and comp_row, "as two rows")
+    hold(1.2)
+    reaper.SelectProjectInstance(pa)
+    mirror.revert(pa, A, song, room, mirror.plan_undo_moment(es, pass_row), { can = yes, mode = "claims" })
+    for _ = 1, 4 do watch(pa, A); hold(0.6) end
+    recv(pb, B)
+    check(on_lane(pa, 2, 36) == 1 and on_lane(pa, 0, 36) == 1, "undoing the pass brings back both")
+    hold(1.2)
+    reaper.SelectProjectInstance(pa)
+    local said = mirror.revert(pa, A, song, room, mirror.plan_undo_moment(sorted(), comp_row), { can = yes, mode = "claims" })
+    for _ = 1, 4 do watch(pa, A); hold(0.3) end
+    recv(pb, B)
+    check(on_lane(pa, 0, 36) == 1 and on_lane(pb, 0, 36) == 1, "undoing the leftover comp row adds no second copy: " .. tostring(said))
+    reaper.SelectProjectInstance(pa)
+    reaper.DeleteTrack(lab)
+    for _ = 1, 3 do watch(pa, A); recv(pb, B); recv(pa, A) end
+  end
+
   -- only what plays is printed
   reaper.SelectProjectInstance(pa)
   reaper.TrackFX_AddByName(ta, "ReaSynth", false, -1)

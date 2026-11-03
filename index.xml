@@ -7879,6 +7879,68 @@
         <source file="lib/mac/bandsync-hide.dylib" platform="darwin">https://github.com/FmsJay/bandsync/raw/v0.46.4/lib/mac/bandsync-hide.dylib</source>
         <source file="lib/mac/bandsync-launch" platform="darwin">https://github.com/FmsJay/bandsync/raw/v0.46.4/lib/mac/bandsync-launch</source>
       </version>
+      <version name="0.46.5" author="James" time="2026-11-03T19:18:16Z">
+        <changelog>A part too hot for a print is limited at -0.3 dB where it clipped at full scale, and the final mix too. A take name REAPER changes on opening isn't sent as a change. The radial menu stays on the screen. Suggestion buttons wait a moment after the list changes, so a moving row can't take a click.</changelog>
+        <source main="main" file="BandSync - Autostart.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Autostart.lua</source>
+        <source main="main" file="BandSync - Calibrate latency.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Calibrate%20latency.lua</source>
+        <source main="main" file="BandSync - Classic panel.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Classic%20panel.lua</source>
+        <source main="main" file="BandSync - Draw.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Draw.lua</source>
+        <source main="main" file="BandSync - Final mix.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Final%20mix.lua</source>
+        <source main="main" file="BandSync - Live sync.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Live%20sync.lua</source>
+        <source main="main" file="BandSync - Measure guest delay.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Measure%20guest%20delay.lua</source>
+        <source main="main" file="BandSync - Open session.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Open%20session.lua</source>
+        <source main="main" file="BandSync - Panel.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Panel.lua</source>
+        <source main="main" file="BandSync - Prepare session.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Prepare%20session.lua</source>
+        <source main="main" file="BandSync - Publish session.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Publish%20session.lua</source>
+        <source main="main" file="BandSync - Radial menu.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Radial%20menu.lua</source>
+        <source main="main" file="BandSync - Redo.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Redo.lua</source>
+        <source main="main" file="BandSync - Settings.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Settings.lua</source>
+        <source main="main" file="BandSync - Status.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Status.lua</source>
+        <source main="main" file="BandSync - Take control.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Take%20control.lua</source>
+        <source main="main" file="BandSync - Undo.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Undo.lua</source>
+        <source main="main" file="BandSync - Update.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/BandSync%20-%20Update.lua</source>
+        <source file="lib/band.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/band.lua</source>
+        <source file="lib/bgrender.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/bgrender.lua</source>
+        <source file="lib/chooser.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/chooser.lua</source>
+        <source file="lib/drive.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/drive.lua</source>
+        <source file="lib/drummap.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/drummap.lua</source>
+        <source file="lib/fxfiles.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/fxfiles.lua</source>
+        <source file="lib/guest.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/guest.lua</source>
+        <source file="lib/hear.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/hear.lua</source>
+        <source file="lib/json.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/json.lua</source>
+        <source file="lib/live.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/live.lua</source>
+        <source file="lib/livemidi.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/livemidi.lua</source>
+        <source file="lib/midiview.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/midiview.lua</source>
+        <source file="lib/mirror.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/mirror.lua</source>
+        <source file="lib/mixlayer.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/mixlayer.lua</source>
+        <source file="lib/page_chat.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/page_chat.lua</source>
+        <source file="lib/page_hear.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/page_hear.lua</source>
+        <source file="lib/page_plugins.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/page_plugins.lua</source>
+        <source file="lib/people.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/people.lua</source>
+        <source file="lib/plugins.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/plugins.lua</source>
+        <source file="lib/prep.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/prep.lua</source>
+        <source file="lib/presence.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/presence.lua</source>
+        <source file="lib/prints.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/prints.lua</source>
+        <source file="lib/recall.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/recall.lua</source>
+        <source file="lib/removal.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/removal.lua</source>
+        <source file="lib/rooms.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/rooms.lua</source>
+        <source file="lib/services.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/services.lua</source>
+        <source file="lib/sessionfile.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/sessionfile.lua</source>
+        <source file="lib/setup.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/setup.lua</source>
+        <source file="lib/songsync.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/songsync.lua</source>
+        <source file="lib/sonobus.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/sonobus.lua</source>
+        <source file="lib/startup.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/startup.lua</source>
+        <source file="lib/status.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/status.lua</source>
+        <source file="lib/suggest.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/suggest.lua</source>
+        <source file="lib/sync.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/sync.lua</source>
+        <source file="lib/theme.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/theme.lua</source>
+        <source file="lib/together.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/together.lua</source>
+        <source file="lib/tools.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/tools.lua</source>
+        <source file="lib/trim.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/trim.lua</source>
+        <source file="lib/undo.lua">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/undo.lua</source>
+        <source file="lib/mac/bandsync-hide.dylib" platform="darwin">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/mac/bandsync-hide.dylib</source>
+        <source file="lib/mac/bandsync-launch" platform="darwin">https://github.com/FmsJay/bandsync/raw/v0.46.5/lib/mac/bandsync-launch</source>
+      </version>
     </reapack>
   </category>
 </index>

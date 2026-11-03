@@ -66,6 +66,14 @@ local A0 = -math.pi / 2 - STEP / 2 -- slice 1 sits at the top
 
 local ctx = ImGui.CreateContext("BandSync radial")
 local mx, my = ImGui.PointConvertNative(ctx, reaper.GetMousePosition())
+do -- on the screen the mouse is on, all of it: opened near the top it was cut off above (Mac, 0.45.0)
+  local nx, ny = reaper.GetMousePosition()
+  local l, t, rt, b = reaper.my_getViewport(0, 0, 0, 0, nx, ny, nx, ny, true)
+  local x1, y1 = ImGui.PointConvertNative(ctx, l, t)
+  local x2, y2 = ImGui.PointConvertNative(ctx, rt, b)
+  mx = math.max(math.min(x1, x2) + W / 2, math.min(mx, math.max(x1, x2) - W / 2))
+  my = math.max(math.min(y1, y2) + R + PAD, math.min(my, math.max(y1, y2) - H + R + PAD))
+end
 local FLAGS = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_NoBackground | ImGui.WindowFlags_NoDocking |
   ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_NoMove | ImGui.WindowFlags_TopMost
 local frame, run = 0, nil

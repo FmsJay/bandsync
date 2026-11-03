@@ -430,4 +430,9 @@ do -- a state read here has floats, one from a bandmate's event can have whole n
   assert(not mirror.same_line(here, { name = "Keys 2", depth = 0 }, false), "other names differ")
   mirror.own_colours = real_own
 end
+do -- a label a print adds, which REAPER takes off a comp piece on opening, isn't a change; anything else is
+  assert(mirror.same_but_labels('POSITION 1\nNAME "dry - pass 2"\nNAME "wet - pass 2"', 'POSITION 1\nNAME "pass 2"\nNAME "pass 2"'), "only the labels")
+  assert(not mirror.same_but_labels('POSITION 1\nNAME "dry - pass 2"', 'POSITION 2\nNAME "pass 2"'), "moved too")
+  assert(not mirror.same_but_labels('NAME "dry - pass 2"', 'NAME "pass 3"'), "another name")
+end
 print("ok")

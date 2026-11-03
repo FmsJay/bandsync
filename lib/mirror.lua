@@ -1949,6 +1949,9 @@ function mirror.watch(proj, cfg, song, room, opts)
           holder, o.kind == "track" and ("track " .. (name ~= "" and name or "(unnamed)")) or ((o.kind == "item" and "that item" or mirror.PART[o.kind]) .. " on " .. (name ~= "" and name or "an unnamed track"))) })
       end
       local last = rev and event_file(room_dir, evid) or nil
+      if o.kind == "item" and last and type(last.state) == "string" and type(o.state) == "string" and mirror.same_but_labels(o.state, last.state) then
+        return remember(proj, o.oid, rev, last.hash or o.hash, evid, kord) -- (the event's hash: fingerprints stay the same as everyone's)
+      end
       -- allowed where it is now, and where it was (moving an item off a claimed track, or renaming a claimed track,
       -- mustn't slip past the claim)
       -- (a wet take BandSync just made: whoever is to print it may send it, whatever the claims: prints.printer)
@@ -2255,6 +2258,14 @@ end
 
 -- Carry out a History plan (plan_restore / plan_undo) here and send it to the band as new revisions, so a restore
 -- is itself a change that can be undone. Objects this person may not change are left (counted). Returns a summary.
+-- Whether two states of an item differ only in what a print adds to a take's name. REAPER gives a comp piece its source pass's take name
+-- as a project opens, so one whose piece is printed and whose pass isn't went from "dry - x" to "x" and out as a change, from just opening
+-- (Mac, 0.45.0). Pure.
+function mirror.same_but_labels(x, y)
+  local function plain(s) return (s:gsub('NAME "dry %- ', 'NAME "'):gsub('NAME "wet %- ', 'NAME "')) end
+  return plain(x) == plain(y)
+end
+
 -- A deleted item being brought back whose very place on its lane is taken by the same thing under another id. Undoing a pass makes
 -- REAPER rebuild its comp piece as a new item, so the comp lane's own row, undone after, played a second copy on top (Mac 0.42.27, PC 0.45).
 function mirror.sits_there(proj, ev)

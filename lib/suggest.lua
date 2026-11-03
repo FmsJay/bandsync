@@ -201,6 +201,14 @@ end
 function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
   local band = require("band")
   local mine, waiting = suggest.rows(room_dir, cfg.user)
+  -- Just after the list changes, its buttons wait a moment: rows come and go, and the next row's Accept slid under a mouse aimed at
+  -- another row's (Mac, 0.45.0).
+  local sig = {}
+  for _, h in ipairs(mine) do sig[#sig + 1] = h.id end
+  for _, h in ipairs(waiting) do sig[#sig + 1] = h.id end
+  sig = table.concat(sig, ",")
+  if sig ~= suggest.bar_sig then suggest.bar_sig, suggest.bar_at = sig, reaper.time_precise() end
+  ImGui.BeginDisabled(ctx, reaper.time_precise() - suggest.bar_at < 0.6)
   for _, h in ipairs(mine) do
     ImGui.PushID(ctx, h.id)
     if ImGui.SmallButton(ctx, "Accept") then
@@ -233,6 +241,7 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
     ImGui.TextWrapped(ctx, string.format("Waiting on %s: %s", tostring(h.owner), suggest.words(h)))
     ImGui.PopID(ctx)
   end
+  ImGui.EndDisabled(ctx)
   if suggest.note and #mine > 0 then ImGui.TextWrapped(ctx, suggest.note) end
 end
 

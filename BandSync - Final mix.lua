@@ -21,7 +21,7 @@ local name = band.clean(string.format("%s %s %s", b.song, os.date("%Y-%m-%d %H%M
 
 local saved = {}
 for _, k in ipairs({ "RENDER_FILE", "RENDER_PATTERN" }) do saved[k] = select(2, reaper.GetSetProjectInfo_String(proj, k, "", false)) end
-for _, k in ipairs({ "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_ADDTOPROJ" }) do saved[k] = reaper.GetSetProjectInfo(proj, k, 0, false) end
+for _, k in ipairs({ "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_ADDTOPROJ", "RENDER_NORMALIZE", "RENDER_BRICKWALL" }) do saved[k] = reaper.GetSetProjectInfo(proj, k, 0, false) end
 local muted = {}
 for i = 0, reaper.CountTracks(proj) - 1 do
   local tr = reaper.GetTrack(proj, i)
@@ -35,6 +35,7 @@ reaper.GetSetProjectInfo_String(proj, "RENDER_PATTERN", name, true)
 reaper.GetSetProjectInfo(proj, "RENDER_SETTINGS", 0, true) -- the master mix
 reaper.GetSetProjectInfo(proj, "RENDER_BOUNDSFLAG", 1, true) -- the entire project
 reaper.GetSetProjectInfo(proj, "RENDER_ADDTOPROJ", 0, true)
+for k, v in pairs(band.LIMIT) do reaper.GetSetProjectInfo(proj, k, v, true) end -- (over full scale it's limited, not clipped: lib/band.lua)
 reaper.Main_OnCommand(42230, 0) -- File: Render project, using the most recent render settings, auto-close render dialog
 
 -- (the render blocks: Live sync's loop hasn't run since the mutes, so they never reach the band)
@@ -55,8 +56,8 @@ local src = made and reaper.PCM_Source_CreateFromFile(out .. "/" .. made)
 if src then
   local adjust = reaper.CalculateNormalization(src, 2, 0, 0, 0) -- (2: peak, to 0 dB: what it would take to reach full scale)
   reaper.PCM_Source_Destroy(src)
-  if adjust and adjust > 0 and adjust <= 1.001 then
-    band.log("the mix reaches full scale, so it probably clips. Turn the master down and render again (your master is your own: it doesn't go to the group)")
+  if adjust and adjust > 0 and adjust <= 1 / band.LIMIT.RENDER_BRICKWALL + 0.002 then -- (at the limiter's ceiling: it's been working)
+    band.log("the mix went over full scale, and a safety limiter caught it so it doesn't clip. For a cleaner mix, turn the master down and render again (your master is your own: it doesn't go to the group)")
   end
 end
 if made then

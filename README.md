@@ -194,6 +194,7 @@ By hand:
   A render of a version that's gone is ended. Going back to a version already printed needs no render and doesn't wait.
 - **Minimize** (top bar, or closing the panel) shrinks it to a small square over REAPER: its edge is green while sync runs, red when it doesn't, and a count in the corner says what's waiting (hover for the words). Click it and the panel opens where it was, floating or docked. Drag it and it stays there, pinned to REAPER's window; right-click to lock it, close the panel or remove the square.
 - **Themes**: Setup > Options > Look: Dark, Light, Midnight or Warm, per computer.
+- **Nothing clips in a render**: prints and the final mix go through REAPER's render limiter at -0.3 dB. Only what goes over is touched, and timing stays as it was. It stops a clip, not a mix that's too hot: the final mix says so when the limiter was working.
 - **Removing someone**: the driver or the song's host has **Remove** on their card in Who's here. You get a minute to change your mind (**Keep them**), then every computer in the group stops syncing with theirs, each on its own as it comes online. Their claims go free, and what they made stays in the songs and on Restore. They keep the copy they already have, and the group's Google Drive folder is yours to take them off. Invite them again to bring them back.
 - **Pages**: **Home** (Who's here with *Take control*, Real time mode, who changes what, Local mixing, claims),
   **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **Restore**,

@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.46.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.46.5", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -551,17 +551,24 @@ end
 -- ---- rendering ------------------------------------------------------------------------------
 
 local RENDER_N = { "RENDER_TAILMS", "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_STARTPOS", "RENDER_ENDPOS", "RENDER_SRATE",
-  "RENDER_CHANNELS", "RENDER_TAILFLAG", "RENDER_ADDTOPROJ" }
+  "RENDER_CHANNELS", "RENDER_TAILFLAG", "RENDER_ADDTOPROJ", "RENDER_NORMALIZE", "RENDER_BRICKWALL" }
 local RENDER_S = { "RENDER_FILE", "RENDER_PATTERN", "RENDER_FORMAT", "RENDER_FORMAT2" }
 -- Sink configs read back from REAPER 7.83 and patched: FLAC 24-bit level 5 ("calf", int bits, int level);
 -- Opus 64 kbps per channel ("SggO", float kbps/ch, then REAPER's defaults).
 band.FLAC, band.OPUS = "Y2FsZhgAAAAFAAAA", "U2dnTwAAgEIACgAAAAAAAAA="
+
+-- REAPER's render limiter: only what goes over is touched, and timing stays as it was (measured, a part 18 dB over: same length, same
+-- first sample). FLAC can't hold anything over full scale, so a hot part was clipped for good in its print, on everyone's machine: 9 of
+-- Sunset Drive's 287 prints sat at exactly 0 dB (2026-11-03). 64: limit on, and nothing else (a project's own normalizing stayed on for prints).
+-- RENDER_BRICKWALL is a gain, not dB: 0.966 is -0.3 dB.
+band.LIMIT = { RENDER_NORMALIZE = 64, RENDER_BRICKWALL = 0.966 }
 
 -- Render the active project with temporary settings, then put the user's render settings back.
 function band.render(n, s)
   local saved_n, saved_s = {}, {}
   for _, k in ipairs(RENDER_N) do saved_n[k] = reaper.GetSetProjectInfo(0, k, 0, false) end
   for _, k in ipairs(RENDER_S) do saved_s[k] = select(2, reaper.GetSetProjectInfo_String(0, k, "", false)) end
+  for k, v in pairs(band.LIMIT) do reaper.GetSetProjectInfo(0, k, v, true) end
   for k, v in pairs(n) do reaper.GetSetProjectInfo(0, k, v, true) end
   for k, v in pairs(s) do reaper.GetSetProjectInfo_String(0, k, v, true) end
   local job = band.render_job -- (lib/bgrender.lua: a copy set up for this render, rendered by a second REAPER)

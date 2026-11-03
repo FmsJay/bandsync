@@ -218,7 +218,7 @@ function prep.to_flac(proj, file, dest_dir)
   reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", sr, true)
   reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
   local okr, err = pcall(band.render, { RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = sr, RENDER_CHANNELS = nch, RENDER_TAILFLAG = 0,
-    RENDER_ADDTOPROJ = 0, RENDER_DITHER = 0, RENDER_NORMALIZE = 0 },
+    RENDER_ADDTOPROJ = 0, RENDER_DITHER = 0 },
     { RENDER_FILE = dest_dir, RENDER_PATTERN = name, RENDER_FORMAT = band.FLAC, RENDER_FORMAT2 = "" })
   reaper.DeleteTrack(tr) -- the temporary track never stays behind
   reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", was_sr, true)

@@ -631,7 +631,9 @@ function sync.restore_timeline(proj, cfg, song, room, entries, upto, session, fr
   -- (before the song's first tempo change: the session file only holds the newest map. The Bridge's tempo stayed: laptop, 0.42.6)
   t = t or (session and session.first_timeline) or session
   if not (t and t.tempo) then return false end
-  if band.json_encode({ t.tempo, t.markers or {} }) == sync.timeline_sig(proj) then return false end
+  -- (the signature's first two parts: it holds the project's settings too, so this never matched, and every restore sent a timeline)
+  local now = band.json_decode(sync.timeline_sig(proj))
+  if type(now) == "table" and band.json_encode({ t.tempo, t.markers or {} }) == band.json_encode({ now[1], now[2] }) then return false end
   sync.audio_follow_tempo(proj)
   band.apply_tempo(proj, t.tempo)
   band.apply_markers(proj, t.markers or {})

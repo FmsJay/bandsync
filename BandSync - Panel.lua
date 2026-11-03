@@ -795,12 +795,13 @@ local function history_filtered(driving)
   for i = #entries, 1, -1 do
     local e = entries[i]
     local line = describe(e)
+    local lane = require("mirror").lane_words(entries, i) -- (in the search too: "lane" found nothing though every row said it: Mac, 0.45.0)
     local ok = not e.auto and (hf.who == "" or e.user == hf.who) and (not want or (type(want) == "function" and want(e)) or (type(want) == "table" and want[e.kind]))
       and (hf.track == "" or (e.name or e.track or ""):lower() == hf.track:lower())
-      and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
+      and (text == "" or (line .. lane .. " " .. tostring(e.user)):lower():find(text, 1, true))
     local moment = ok and require("mirror").same_moment(entries, i) or { i }
     for _, j in ipairs(moment) do if j > i then ok = false end end -- (one row for one act, on the newest of them)
-    if ok then line = line .. require("mirror").lane_words(entries, i) end
+    if ok then line = line .. lane end
     if #moment > 1 then line = line .. string.format(" (%d changes at that moment, undone together)", #moment) end
     if ok then
       n = n + 1
@@ -910,11 +911,12 @@ local function section_history()
       local open = ImGui.TreeNodeEx(ctx, "g", head, ImGui.TreeNodeFlags_SpanAvailWidth)
       if not open then -- what it was about, wrapped under the line that opens it
         ImGui.Indent(ctx)
-        ImGui.TextDisabled(ctx, describe(entries[shown[1]]) .. (n > 1 and string.format("  (+%d more)", n - 1) or ""))
+        ImGui.TextDisabled(ctx, describe(entries[shown[#shown]]) .. (n > 1 and string.format("  (+%d more)", n - 1) or ""))
         ImGui.Unindent(ctx)
       end
       if open then
-        for _, i in ipairs(shown) do
+        for k = #shown, 1, -1 do -- (newest first, as the page says: opened, a group read the other way, and the wrong moment got restored)
+          local i = shown[k]
           local moment, first = require("mirror").same_moment(entries, i), true
           for _, j in ipairs(moment) do if j > i then first = false end end -- (one row for one act, as in the filtered list)
           if first then
@@ -2345,13 +2347,22 @@ local function frame_app()
   end
   ImGui.SetCursorPos(ctx, 16, y0 + fh + 8)
   -- what BandSync just did, under the bar for a few seconds (actions used to report only to the Console)
-  local newest = band.activity()[1]
+  local log = band.activity()
+  local newest = log[1]
   if newest ~= tools.toast_newest then
+    local before = tools.toast_newest
     tools.toast_newest = newest
-    -- (a routine count doesn't push out what's being said: a first comp's warning lasted an instant, Mac 0.42.27)
+    -- (a routine count doesn't push out what's being said: a first comp's warning lasted an instant, Mac 0.42.27. Both can arrive
+    -- between two frames, the count on top, so this looks through all that's new: Mac, 0.45.0)
+    local routine = function(l) return l:find("change(s) went to the group", 1, true) end
+    local say = newest
+    for _, l in ipairs(log) do
+      if l == before then break end
+      if not routine(l) then say = l; break end
+    end
     local saying = tools.toast_at and reaper.time_precise() - tools.toast_at < 6
-    if not (saying and newest and newest:find("change(s) went to the group", 1, true)) then
-      tools.toast_line, tools.toast_at = newest, tools.toast_seen and reaper.time_precise() or -math.huge
+    if not (saying and say and routine(say)) then
+      tools.toast_line, tools.toast_at = say, tools.toast_seen and reaper.time_precise() or -math.huge
     end
   end
   tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)

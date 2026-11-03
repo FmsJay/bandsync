@@ -2262,13 +2262,19 @@ function mirror.sits_there(proj, ev)
   local lane, pos, len = tonumber(ev.state:match("BANDLANE (%d+)")), tonumber(ev.state:match("POSITION ([%d%.%-e]+)")), tonumber(ev.state:match("LENGTH ([%d%.%-e]+)"))
   local tr = ev.track and mirror.find(proj, "track", ev.track)
   if not (tr and lane and pos and len) then return false end
+  -- (by name without what a print adds: the same pass reads "x", "dry - x" or "wet - x" by whether it's been printed yet: Mac, 0.45.0)
+  local function plain(n) return (n:gsub("^dry %- ", ""):gsub("^wet %- ", "")) end
   local name = ev.state:match('NAME "([^"\n]*)"') or ev.state:match("NAME ([^\n]*)")
   for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
     local it = reaper.GetTrackMediaItem(tr, i)
-    local take = reaper.GetActiveTake(it)
     if reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE") == lane and math.abs(reaper.GetMediaItemInfo_Value(it, "D_POSITION") - pos) < 1e-6
-      and math.abs(reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - len) < 1e-6
-      and (not name or (take and select(2, reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)) == name)) then return true end
+      and math.abs(reaper.GetMediaItemInfo_Value(it, "D_LENGTH") - len) < 1e-6 then
+      if not name then return true end
+      for k = 0, reaper.CountTakes(it) - 1 do
+        local take = reaper.GetTake(it, k)
+        if take and plain(select(2, reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false))) == plain(name) then return true end
+      end
+    end
   end
   return false
 end

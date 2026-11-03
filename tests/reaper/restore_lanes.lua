@@ -389,6 +389,15 @@ local ok, err = pcall(function()
     for _ = 1, 4 do watch(pa, A); hold(0.6) end
     recv(pb, B)
     check(on_lane(pa, 2, 36) == 1 and on_lane(pa, 0, 36) == 1, "undoing the pass brings back both")
+    -- (the rebuilt piece printed since: its take now reads "dry - pass 2", as on a real song. The Mac's test found the plain name didn't match)
+    for i = 0, reaper.CountTrackMediaItems(lab) - 1 do
+      local x = reaper.GetTrackMediaItem(lab, i)
+      if reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE") == 0 and reaper.GetMediaItemInfo_Value(x, "D_POSITION") == 36 then
+        local tk = reaper.GetActiveTake(x)
+        reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", "dry - " .. select(2, reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", "", false)), true)
+      end
+    end
+    for _ = 1, 2 do watch(pa, A); hold(0.3) end
     hold(1.2)
     reaper.SelectProjectInstance(pa)
     local said = mirror.revert(pa, A, song, room, mirror.plan_undo_moment(sorted(), comp_row), { can = yes, mode = "claims" })

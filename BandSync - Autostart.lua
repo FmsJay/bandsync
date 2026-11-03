@@ -96,8 +96,8 @@ local function loop()
       elseif proj == front and n.n < 3 and reaper.time_precise() - n.at > 30 then
         n.at, n.n = reaper.time_precise(), n.n + 1
         band.log("starting Live sync again for " .. fn)
-        if not band.start_live(dir) then band.log("Live sync has no free slot for " .. fn .. ": close some KitchenSync tabs (17 at most run at once)") end
-        if n.n == 3 then band.log("Live sync didn't stay running for " .. fn .. " after 3 tries: press Start in the KitchenSync panel") end
+        if not band.start_live(dir) then band.log("Live sync has no free slot for " .. fn .. ": close some StudioSync tabs (17 at most run at once)") end
+        if n.n == 3 then band.log("Live sync didn't stay running for " .. fn .. " after 3 tries: press Start in the StudioSync panel") end
       end
     end
   end

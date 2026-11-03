@@ -1,9 +1,9 @@
 #!/bin/bash
-# BandSync setup for macOS: installs and sets up everything BandSync needs, skipping whatever is already there.
+# StudioSync setup for macOS: installs and sets up everything StudioSync needs, skipping whatever is already there.
 # Run it with "Install BandSync (Mac).command" (right-click > Open the first time), or in Terminal:
 #   curl -fsSL "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/install_mac.sh?$(date +%s)" | bash
 # (the ?<time>: GitHub's cache handed out the previous installer for minutes after a release, 2026-10-31)
-# REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), BandSync's scripts (through ReaPack), SonoBus + Tailscale
+# REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), SonoBus + Tailscale
 # (hearing each other) and Google Drive for desktop (the band's copy). Every app comes from its official source.
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
@@ -30,8 +30,8 @@ ask()  { local a; read -e -r -p "$1${2:+ [$2]} " a </dev/tty; echo "${a:-${2:-}}
 plain() { printf '%s' "$1" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null | LC_ALL=C tr -cd 'A-Za-z0-9 _-'; } # "CHILIØ" -> "CHILIO"
 yes()  { case "$1" in [yY]*) return 0;; *) return 1;; esac; }
 
-say "BandSync setup"
-echo "This installs what BandSync needs and sets it up. It asks a few questions first (unless they were given up"
+say "StudioSync setup"
+echo "This installs what StudioSync needs and sets it up. It asks a few questions first (unless they were given up"
 echo "front); macOS asks for your password to install some apps, and to allow a few things (all explained as they"
 echo "come). Nothing already installed is changed."
 echo
@@ -49,14 +49,14 @@ done
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
 if [ -n "${BS_HOSTING:-}" ]; then HOSTING="$BS_HOSTING" # (the old way of saying "I'm the first")
 elif [ -n "${BS_HOST_ID:-}" ]; then HOSTING=n # (an invitation: someone is set up, and that's their ID)
-elif yes "$(ask "Is someone in the band already set up with BandSync? (y/n)" y)"; then HOSTING=n
+elif yes "$(ask "Is someone in the band already set up with StudioSync? (y/n)" y)"; then HOSTING=n
 else HOSTING=y; fi
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
 ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if ! yes "$HOSTING"; then
   echo "$HOST_ID" | grep -Eq "$ID_RE" || {
     say "Their Syncthing device ID is 8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567 (63 characters)."
-    say "Easiest: they press 'Invite a bandmate' in their BandSync panel and send you the line it copies (it has the ID"
+    say "Easiest: they press 'Invite a bandmate' in their StudioSync panel and send you the line it copies (it has the ID"
     say "in it). Or they find it in Syncthing: Actions > Show ID. Copy all of it and paste it here."
   }
   until echo "$HOST_ID" | grep -Eq "$ID_RE"; do
@@ -408,11 +408,11 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
   if pgrep -x REAPER >/dev/null && grep -q "BandSync autostart" "$RES/Scripts/__startup.lua" 2>/dev/null; then
     mkdir -p "$RES/BandSync"; printf '%s' "$HELPER" > "$REQ"
     for i in $(seq 1 20); do [ -f "$REQ" ] || { HANDED=1; break; }; sleep 1; done
-    rm -f "$REQ" # not picked up (an older BandSync, or a window holding REAPER): asked the other way below
+    rm -f "$REQ" # not picked up (an older StudioSync, or a window holding REAPER): asked the other way below
   fi
   if [ -z "$HANDED" ]; then
     if pgrep -x REAPER >/dev/null; then
-      say "REAPER is about to run BandSync's setup step. First close any ReaPack window in REAPER (like its"
+      say "REAPER is about to run StudioSync's setup step. First close any ReaPack window in REAPER (like its"
       say "'Transaction report'): one left open makes REAPER quit. Then press Return."
       read -r </dev/tty
     fi
@@ -422,12 +422,12 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
   for i in $(seq 1 360); do
     [ -f "$HDIR/bandsync_setup_result.json" ] && break
     if [ $i -gt 15 ] && ! pgrep -x REAPER >/dev/null; then GONE=1; break; fi
-    [ $i -eq 30 ] && say "Waiting for BandSync to arrive through ReaPack. If REAPER shows ReaPack's report window, close it."
+    [ $i -eq 30 ] && say "Waiting for StudioSync to arrive through ReaPack. If REAPER shows ReaPack's report window, close it."
     sleep 1
   done
   [ -f "$HDIR/bandsync_setup_result.json" ]
 }
-say "Setting up BandSync inside REAPER (REAPER opens; on a first start it scans your plug-ins, which can take a while) ..."
+say "Setting up StudioSync inside REAPER (REAPER opens; on a first start it scans your plug-ins, which can take a while) ..."
 say "macOS may ask to let REAPER use the microphone: click Allow, or your takes record silence."
 if request "${BS_SCRIPTS:-reapack}"; then
   if grep -q '"ok": *false' "$HDIR/bandsync_setup_result.json"; then warn "REAPER setup step had problems:"; cat "$HDIR/bandsync_setup_result.json"
@@ -436,18 +436,18 @@ elif [ -n "$GONE" ]; then warn "REAPER closed unexpectedly during setup. Open RE
 else warn "REAPER didn't run the setup step. Open REAPER, then run this again."; exit 1; fi
 count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/bandsync_setup_result.json" | grep -o '[0-9]*$')"
 bver="$(grep -o '"version": *"[^"]*"' "$HDIR/bandsync_setup_result.json" | sed 's/.*"\([^"]*\)"$/\1/')"
-[ "${count:-0}" -ge 5 ] && ok "BandSync ${bver:-} installed: $count actions (the BandSync panel opens in REAPER)" || warn "BandSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages"
+[ "${count:-0}" -ge 5 ] && ok "StudioSync ${bver:-} installed: $count actions (the StudioSync panel opens in REAPER)" || warn "StudioSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages"
 
 # ---------- 5. what's left for a human ----------
 echo
 say "Done. What's left (these need you):"
 if yes "$HOSTING"; then
-  echo "  - To bring in a bandmate: BandSync panel > Invite a bandmate, and send them what it copies (their installer is"
+  echo "  - To bring in a bandmate: StudioSync panel > Invite a bandmate, and send them what it copies (their installer is"
   echo "    then already paired with you). When they've run it, the panel shows 'Let them in': press it."
   echo "    (Your Syncthing device ID, if they ask for it:  $MY_ID)"
 else
   if [ -z "${CONNECTED:-}" ]; then
-    echo "  - Tell the bandmate whose ID you used: their BandSync panel shows 'Let $USERNAME_BS in' (or they add your"
+    echo "  - Tell the bandmate whose ID you used: their StudioSync panel shows 'Let $USERNAME_BS in' (or they add your"
     echo "    Syncthing ID by hand: $MY_ID). The shared folder then arrives by itself."
   fi
 fi
@@ -467,8 +467,8 @@ elif yes "$SOLO" && [ -z "${DRIVE_OK:-}" ]; then
   echo "    Organize > Add shortcut > My Drive."
 fi
 if yes "$HOSTING"; then
-  echo "  - In REAPER, open your song's project: the BandSync panel offers 'Start a band song from this project'."
+  echo "  - In REAPER, open your song's project: the StudioSync panel offers 'Start a band song from this project'."
 else
-  echo "  - In REAPER, the BandSync panel offers 'Join the band's song' once your bandmate has let you in: the band's"
+  echo "  - In REAPER, the StudioSync panel offers 'Join the band's song' once your bandmate has let you in: the band's"
   echo "    songs arrive by themselves, and the panel lists them."
 fi

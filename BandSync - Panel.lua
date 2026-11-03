@@ -149,11 +149,11 @@ local function logo(s)
   ImGui.DrawList_AddQuadFilled(dl, x, y + s * 0.82, x + w, y + s * 0.82, x + w * 0.8, y + s, x + w * 0.2, y + s, steel) -- the other sink
   ImGui.Dummy(ctx, w, s)
 end
--- The wordmark: KitchenSync, its "y" in the accent colour, standing in for the "i" of "Sink" too.
+-- The wordmark: StudioSync, its "y" in the accent colour.
 local function wordmark(size)
   ImGui.PushFont(ctx, nil, size)
   local y = ImGui.GetCursorPosY(ctx) -- (each piece on the same baseline: SameLine goes back to the line's top)
-  ImGui.Text(ctx, "KitchenS")
+  ImGui.Text(ctx, "StudioS")
   ImGui.SameLine(ctx, 0, 0)
   ImGui.SetCursorPosY(ctx, y)
   ImGui.TextColored(ctx, ACCENT, "y")
@@ -177,7 +177,7 @@ local function place_window(how)
   if how == "Dock" or how == "Undock" then dock_req = how == "Dock" and -1 or 0; return end -- (asked for from a script)
   local sw, sh = how:match("^size (%d+) (%d+)$") -- (likewise)
   if sw and win_rect then place_req = { win_rect[1], win_rect[2], tonumber(sw), tonumber(sh) }; return end
-  local h = reaper.JS_Window_Find and reaper.JS_Window_Find("KitchenSync", true)
+  local h = reaper.JS_Window_Find and reaper.JS_Window_Find("StudioSync", true)
   if not h then return band.msg("Placing the window needs js_ReaScriptAPI (ReaPack: 'js_ReaScriptAPI').") end
   local _, l, t, r, btm = reaper.JS_Window_GetRect(h)
   -- moving the system window from outside only stretches what ReaImGui drew: ReaImGui sizes its windows itself, so
@@ -227,7 +227,7 @@ end
 -- Tooltips for controls that don't set their own, by label (a control's own tooltip, set after it, wins).
 local TIPS = {
   ["Start"] = "Start Live sync in this tab: your takes and changes go out, the group's come in.",
-  ["Update"] = "Get the newest KitchenSync through ReaPack.",
+  ["Update"] = "Get the newest StudioSync through ReaPack.",
   ["Let in"] = "Add this machine to the group folder.",
   ["Take control"] = "Become the driver: your deletes, moves and lane choices reach everyone (except where someone has claimed).",
   ["Take control now"] = "The driver isn't here: carry on as the driver (they can take it back when they return).",
@@ -252,7 +252,7 @@ local TIPS = {
   ["Check out"] = "Take a working copy to edit while the others are offline.",
   ["##soloroot"] = "Where Solo edit keeps its versions (usually the shared Google Drive folder).",
   ["Clear"] = "Empty this activity list.",
-  ["Open the full console"] = "REAPER's script console, with everything KitchenSync has said.",
+  ["Open the full console"] = "REAPER's script console, with everything StudioSync has said.",
   ["start from"] = "Where everyone starts: the edit cursor or a region.",
   ["count-in bars"] = "Bars of count-in before the start point.",
   ["Play together"] = "Everyone running Live sync starts playing from the same point at the same moment (5 s after you click).",
@@ -272,7 +272,7 @@ local TIPS = {
   ["Join the group's project"] = "Open a project someone in the group started, in its own tab.",
   ["Prepare this project first"] = "A checklist for a busy project before starting a project from it (shows what it would change first).",
   ["Switch to the new look"] = "The app layout with a sidebar of pages.",
-  ["Settings"] = "KitchenSync's settings: your name, the shared folder, how takes land.",
+  ["Settings"] = "StudioSync's settings: your name, the shared folder, how takes land.",
   ["Calibrate latency"] = "Measure how late recordings land (needs a cable from an output to an input).",
   ["Open another project"] = "Open another group project in a new tab.",
   ["Prepare this project"] = "A checklist for a busy project (shows what it would change first).",
@@ -339,7 +339,7 @@ local function refresh()
         made = made or (not who.tracks[name:lower()] and require("mirror").is_creator(require("mirror").track_oid(tr), cfg.user))
       end
       banner_text = (mine > 0 or made) and (view.driver .. " is driving: you can change what you've claimed or made.")
-        or ("View only: " .. view.driver .. " is driving. Claim a track (KitchenSync, Home) to edit it.")
+        or ("View only: " .. view.driver .. " is driving. Claim a track (StudioSync, Home) to edit it.")
     end
   end
   points = recall.list(cfg, b.song, b.room)
@@ -405,7 +405,7 @@ local function section_sync()
   end
   if not tools.autostart_on() and not tools.autostart_tried then -- always on: BandSync projects start Live sync with REAPER
     tools.autostart_tried = true
-    if not tools.set_autostart(true, dir) then band.log("couldn't add KitchenSync to Scripts/__startup.lua: Live sync won't start with REAPER") end
+    if not tools.set_autostart(true, dir) then band.log("couldn't add StudioSync to Scripts/__startup.lua: Live sync won't start with REAPER") end
   end
   local hold = select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= ""
   local changed, v = check("Hold my changes (try things; they go out once, when you switch this off)", hold)
@@ -416,9 +416,9 @@ local function section_sync()
     -- already on disk (an update, or a bandmate's folder install)? Then only this running panel is old
     local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
     if disk == view.newer then
-      ImGui.TextColored(ctx, YELLOW, "KitchenSync " .. disk .. " is installed: close and reopen this panel to use it.")
+      ImGui.TextColored(ctx, YELLOW, "StudioSync " .. disk .. " is installed: close and reopen this panel to use it.")
     else
-      ImGui.TextColored(ctx, YELLOW, "KitchenSync " .. view.newer .. " is in use here; you have " .. band.VERSION .. ".")
+      ImGui.TextColored(ctx, YELLOW, "StudioSync " .. view.newer .. " is in use here; you have " .. band.VERSION .. ".")
       ImGui.SameLine(ctx)
       if ImGui.SmallButton(ctx, "Update##banner") then action("Update") end -- "##": same label as More's Update, its own ID
     end
@@ -583,9 +583,9 @@ function ui.remove_button(p)
   if ImGui.SmallButton(ctx, "Remove##" .. p.user) and reaper.MB("Take " .. p.user .. " out of " .. tostring(view.group) .. "?\n\n" ..
       "Within a few minutes every computer in the group stops syncing with theirs. Their claims go free. What they made stays in the songs and on Restore.\n\n" ..
       "They keep the copy they already have: that can't be taken back. If they also have the group's Google Drive folder, remove them there too.\n\n" ..
-      "You have a minute to change your mind, and you can invite them again later.", "KitchenSync", 4) == 6 then
+      "You have a minute to change your mind, and you can invite them again later.", "StudioSync", 4) == 6 then
     local ok, why = removal.remove(cfg.root, p.user, cfg.user)
-    if ok then band.log(p.user .. " leaves the group in a minute: Keep them on their card stops it") else reaper.MB(why, "KitchenSync", 0) end
+    if ok then band.log(p.user .. " leaves the group in a minute: Keep them on their card stops it") else reaper.MB(why, "StudioSync", 0) end
   end
   ImGui.SetItemTooltip(ctx, "Take them out of the group: every computer stops syncing with theirs.")
 end
@@ -632,7 +632,7 @@ local function section_claims(with_list)
     end
     for who_ in pairs(away) do
       if ImGui.SmallButton(ctx, "Release " .. who_ .. "'s claims##rel" .. who_) and reaper.MB(who_ .. " isn't here. Release everything " .. who_ ..
-          " has claimed, so it follows you (the driver) again? They're told when they're back, and can claim again.", "KitchenSync", 4) == 6 then
+          " has claimed, so it follows you (the driver) again? They're told when they're back, and can claim again.", "StudioSync", 4) == 6 then
         sync.release_claims(cfg, b.song, b.room, who_)
         band.log("released " .. who_ .. "'s claims: what they had follows the driver now")
       end
@@ -666,7 +666,7 @@ local function section_claims(with_list)
     "Everyone sees it as a region named [claimed: you].")
   next_to("Release all claims")
   if ImGui.Button(ctx, "Release all claims") and reaper.MB("Release all your claims (tracks, regions and time)? Everything you claimed follows the driver again.",
-      "KitchenSync", 4) == 6 then
+      "StudioSync", 4) == 6 then
     local c = sync.my_claims(cfg, b.song, b.room) or {} -- (printing duties stay: "Stop printing them" lets those go)
     sync.set_claims(cfg, b.song, b.room, { tracks = {}, regions = {}, times = {}, prints = c.prints })
   end
@@ -719,7 +719,7 @@ local function back_button(i, what, single)
       if me then table.insert(others, 1, "You") end -- (it named you in the third person: laptop 0.34.4)
       local whose = #others == 1 and me and "your" or "their"
       if #others == 0 or reaper.MB(table.concat(others, ", ") .. " changed it after this: undoing it takes " .. whose .. " change back too. Undo anyway?",
-          "KitchenSync", 4) == 6 then
+          "StudioSync", 4) == 6 then
         band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_undo_moment(entries, i), opts)); hist_at = 0
       end
     end
@@ -733,7 +733,7 @@ local function back_button(i, what, single)
   if ImGui.SmallButton(ctx, "Restore selected tracks to here") then
     local scope = mirror.selection_scope(proj)
     if not scope then band.msg("Select the tracks to put back first (click their names in REAPER).")
-    elseif reaper.MB("Put the selected tracks (their items and plug-ins) back to how they were " .. what .. "?\n\nEverything else stays as it is now.", "KitchenSync", 4) == 6 then
+    elseif reaper.MB("Put the selected tracks (their items and plug-ins) back to how they were " .. what .. "?\n\nEverything else stays as it is now.", "StudioSync", 4) == 6 then
       band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_restore(entries, i, scope), opts)); hist_at = 0
     end
   end
@@ -742,7 +742,7 @@ local function back_button(i, what, single)
   local driving = view.driver == cfg.user
   ImGui.BeginDisabled(ctx, not driving)
   if ImGui.SmallButton(ctx, "Restore whole project to here") and reaper.MB("Make the whole project look like it did " .. what .. "?\n\n" ..
-      "Everything since then is undone, for everyone. It's a change like any other, so you can come back the same way.", "KitchenSync", 4) == 6 then
+      "Everything since then is undone, for everyone. It's a change like any other, so you can come back the same way.", "StudioSync", 4) == 6 then
     sync.restore_timeline(proj, cfg, b.song, b.room, entries, i, view.session)
     band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_restore(entries, i), opts))
     last, hist_at = 0, 0
@@ -825,7 +825,7 @@ local function section_recall()
   end
   if ImGui.SmallButton(ctx, "Render current mix") then action("Final mix") end
   ImGui.SetItemTooltip(ctx, "Renders the whole project as your master has it (in your File > Render format) into the shared folder's mixes/ for everyone, and to Google Drive if you use it.\n" ..
-    "Everyone's parts are in it, yours too. Only tracks that stay on this computer ('yours, not sent', KitchenSync's helpers) are left out. Nothing is added to the project.")
+    "Everyone's parts are in it, yours too. Only tracks that stay on this computer ('yours, not sent', StudioSync's helpers) are left out. Nothing is added to the project.")
   ImGui.SameLine(ctx, 0, 4)
   if ImGui.SmallButton(ctx, "Back up") then recall.back_up(proj, cfg, b); last = 0 end
   ImGui.SetItemTooltip(ctx, "Keeps the project as it stands now: a saved version here that's never trimmed, and the project on Google Drive if you use it. No audio is rendered.")
@@ -1192,7 +1192,7 @@ local function section_setup()
     { st.sync, "Live sync is running", "Live sync is off" },
     { st.sonobus, "SonoBus is ready on the master track (Real time)", "SonoBus isn't on the master track" },
     { st.server, "Play along server address is set", b.role == "host" and "Play along server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Play along server address" },
-    { st.keys, require("undo").key_name() .. " never rolls back a collaborator's work", require("undo").key_name() .. " can roll back a collaborator's work: not set to KitchenSync's Undo yet" },
+    { st.keys, require("undo").key_name() .. " never rolls back a collaborator's work", require("undo").key_name() .. " can roll back a collaborator's work: not set to StudioSync's Undo yet" },
     { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency)" },
   }
   if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder on Play)" }) end
@@ -1439,7 +1439,7 @@ local function look_merge(parent)
   local m = room_view.meta or {}
   local mirror = require("mirror")
   local since = m.time
-  if not since then merge = { why = "This room has no start time (made with an older KitchenSync)." }; return end
+  if not since then merge = { why = "This room has no start time (made with an older StudioSync)." }; return end
   local bring, clash = mirror.plan_bring(mirror.room_newest(sync.room_dir(cfg, b.song, b.room), since),
     mirror.room_newest(sync.room_dir(cfg, b.song, parent), since))
   merge = { bring = bring, clash = clash, parent = parent }
@@ -1460,7 +1460,7 @@ local function section_merge()
   local may = driver == cfg.user
   ImGui.BeginDisabled(ctx, not may or #merge.bring == 0)
   if ImGui.Button(ctx, "Bring into " .. parent) and reaper.MB("Bring these changes into '" .. parent .. "'?\n\n" ..
-      "They go to everyone there as new changes, so Restore there can undo them.", "KitchenSync", 4) == 6 then
+      "They go to everyone there as new changes, so Restore there can undo them.", "StudioSync", 4) == 6 then
     -- (by that room's claims, as Send selected: it took James's claimed Drums into main: laptop, 0.42.9)
     local list, refused = require("mirror").allowed_into(cfg, b.song, parent, merge.bring, view.session)
     local ok, res = pcall(require("mirror").post_into, cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent))
@@ -1535,7 +1535,7 @@ local function rooms_squares()
       end
       if r.parent and not here then
         ImGui.BeginDisabled(ctx, #people > 0)
-        if ImGui.SmallButton(ctx, "Archive") and reaper.MB("Take '" .. r.name .. "' off the list for everyone?\n\nNothing is deleted: it can be brought back from this page.", "KitchenSync", 4) == 6 then
+        if ImGui.SmallButton(ctx, "Archive") and reaper.MB("Take '" .. r.name .. "' off the list for everyone?\n\nNothing is deleted: it can be brought back from this page.", "StudioSync", 4) == 6 then
           rooms.bin(cfg, b.song, r.name, cfg.user); last = 0
         end
         ImGui.EndDisabled(ctx)
@@ -1585,7 +1585,7 @@ local function rooms_actions()
     if chosen == 0 then band.msg("Select the items to send first (they go to '" .. parent .. "' as they are here).")
     elseif #list == 0 then band.msg("None of those are yours to change in '" .. parent .. "': someone has claimed them, or " .. parent .. "'s driver owns them. Claim them there first.")
     elseif reaper.MB(string.format("Send the %d selected item(s) to '%s', as they are here? (Any of their tracks '%s' doesn't have yet go too.)",
-        reaper.CountSelectedMediaItems(proj), parent, parent), "KitchenSync", 4) == 6 then
+        reaper.CountSelectedMediaItems(proj), parent, parent), "StudioSync", 4) == 6 then
       band.log(string.format("sent %d change(s) from '%s' to '%s'%s", require("mirror").post_into(cfg, b.song, b.room, parent, list, rooms.tab(b.song, parent)), b.room, parent,
         refused > 0 and string.format(" (%d not yours to change there, left out)", refused) or ""))
     end
@@ -1716,13 +1716,17 @@ local function maint_rows()
     (function() -- (only the classic look had this: a Mac bandmate never saw it. Mac, 0.42.27)
       local undo = require("undo")
       return { "keys", #undo.keys_left(dir) == 0, "yellow", undo.key_name() .. " never rolls back a collaborator's work",
-        undo.key_name() .. " can roll back a collaborator's work: it isn't set to KitchenSync's Undo yet." }
+        undo.key_name() .. " can roll back a collaborator's work: it isn't set to StudioSync's Undo yet." }
     end)(),
     { "latency", s.latency, "yellow", "Recording latency checked", s.latency_ms and
       string.format("Recordings land %.1f ms off: fix the input offset and calibrate again.", s.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency below)." },
   }
   if b.role == "host" then table.insert(rows, 6, { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running (set its folder on the Play page)." }) end
-  if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "KitchenSync " .. view.newer .. " is in use in the group; you have " .. band.VERSION .. ": press Update below." } end
+  -- (a Mac showed its items OFFLINE while another app was in front, and nothing said why: 0.45.0)
+  if reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("offlineinact", 0) ~= 0 then
+    rows[#rows + 1] = { "offline when inactive", false, "yellow", "", "REAPER takes your media offline whenever another app is in front, so parts show OFFLINE then: turn off 'Set media items offline when application is not active' in Preferences > Media." }
+  end
+  if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "StudioSync " .. view.newer .. " is in use in the group; you have " .. band.VERSION .. ": press Update below." } end
   local dmiss = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").missing
   if dmiss then rows[#rows + 1] = { "drive", false, "yellow", "", "Google Drive: no shared BandSync folder in " .. dmiss .. " (at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive)." } end
   for _, m in ipairs(s.routed or {}) do
@@ -1845,7 +1849,7 @@ local function home_who()
   ImGui.BeginDisabled(ctx, not my_id)
   if ImGui.SmallButton(ctx, "Invite a collaborator") then
     ImGui.SetClipboardText(ctx, services.invite_text(my_id, band.info(cfg.root)))
-    band.log("an invitation is on your clipboard: paste it to your collaborator (a message, an email). It installs KitchenSync " ..
+    band.log("an invitation is on your clipboard: paste it to your collaborator (a message, an email). It installs StudioSync " ..
       "already paired with this computer; then press 'Let them in' here when they're done.")
   end
   ImGui.EndDisabled(ctx)
@@ -1869,7 +1873,7 @@ local function home_who()
       ImGui.SameLine(ctx, 0, 4)
       ImGui.Text(ctx, p.name)
       ImGui.SetItemTooltip(ctx, p.state .. (p.armed and #p.armed > 0 and (", armed: " .. table.concat(p.armed, ", ")) or ", nothing armed") ..
-        (p.version and p.version ~= band.VERSION and (", KitchenSync " .. p.version) or ""))
+        (p.version and p.version ~= band.VERSION and (", StudioSync " .. p.version) or ""))
       if p.recording then ImGui.SameLine(ctx, 0, 6); pill("recording", RED) elseif p.driving then ImGui.SameLine(ctx, 0, 6); pill("driving", YELLOW) end
       if p.state == "syncing" then ImGui.SameLine(ctx, 0, 6); ImGui.TextColored(ctx, YELLOW, "getting changes") end -- (the bar just says "Sending")
       if p.mirror and view.my_mirror and p.state == "synced" then -- (as on the cards: the docked list said nothing, match or not)
@@ -1903,10 +1907,10 @@ local function home_who()
       elseif p.playing and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 4); pill("playing", ACCENT, 0xFFFFFFFF) end
       if p.driving then ImGui.SameLine(ctx, 0, 4); pill("driving", YELLOW); ImGui.SetItemTooltip(ctx, "What nobody has claimed follows them.") end
       ImGui.TextDisabled(ctx, p.armed and #p.armed > 0 and ("armed: " .. table.concat(p.armed, ", ")) or "nothing armed")
-      if p.version and p.version ~= band.VERSION then ImGui.TextColored(ctx, YELLOW, "KitchenSync " .. p.version) end
+      if p.version and p.version ~= band.VERSION then ImGui.TextColored(ctx, YELLOW, "StudioSync " .. p.version) end
       if p.mirror and view.my_mirror and p.state == "synced" then -- (while changes are still on their way it's bound to differ)
         if view.driver == cfg.user and p.state ~= "offline" and p.name ~= cfg.user then
-          if ImGui.SmallButton(ctx, "Hand over##" .. p.name) and reaper.MB("Make " .. p.name .. " the driver?", "KitchenSync", 4) == 6 then
+          if ImGui.SmallButton(ctx, "Hand over##" .. p.name) and reaper.MB("Make " .. p.name .. " the driver?", "StudioSync", 4) == 6 then
             sync.hand_over(proj, cfg, b.song, b.room, p.name); last = 0
           end
           ImGui.SetItemTooltip(ctx, "Make them the driver: what nobody has claimed then follows them.")
@@ -2032,7 +2036,7 @@ local function settings_more()
     ImGui.Text(ctx, "You're " .. cfg.user)
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Change name") then
-      local ok, name = reaper.GetUserInputs("KitchenSync: your name", 1, "Your name (collaborators see it),extrawidth=120", cfg.user)
+      local ok, name = reaper.GetUserInputs("StudioSync: your name", 1, "Your name (collaborators see it),extrawidth=120", cfg.user)
       name = ok and band.clean(name) or ""
       if name ~= "" and name ~= cfg.user then
         reaper.SetExtState(band.SECTION, "user", name, true)
@@ -2040,7 +2044,7 @@ local function settings_more()
         cfg.user = name
       end
     end
-    ImGui.SetItemTooltip(ctx, "Your name in KitchenSync, everywhere (Who's here, claims, who drives). Your tracks stay yours, and\n" ..
+    ImGui.SetItemTooltip(ctx, "Your name in StudioSync, everywhere (Who's here, claims, who drives). Your tracks stay yours, and\n" ..
       "the group's machines learn the new name. Changes you made before keep the old one in Restore.")
     section_drums()
     card_end()
@@ -2096,7 +2100,7 @@ local function page_setup()
       end
     end
     if ImGui.Button(ctx, "Start a group") then
-      local ok, name = reaper.GetUserInputs("KitchenSync: start a group", 1, "Group name,extrawidth=120", "")
+      local ok, name = reaper.GetUserInputs("StudioSync: start a group", 1, "Group name,extrawidth=120", "")
       if ok and name ~= "" then
         local root, why = require("services").new_band(cfg, name)
         if root then
@@ -2129,7 +2133,7 @@ end, 360 }, { settings_drive, 360 }, { function()
         if wanted[s] and s ~= (b and b.song) then
           if ImGui.SmallButton(ctx, "Stop downloading##ss" .. s) and reaper.MB("Stop downloading '" .. s .. "' to this computer?\n\n" ..
               "Its files stay here (remove them yourself to free the space), and it comes back in full when you open it again. " ..
-              "Nothing changes for the group.", "KitchenSync", 4) == 6 then ss.drop(cfg, s) end
+              "Nothing changes for the group.", "StudioSync", 4) == 6 then ss.drop(cfg, s) end
           ImGui.SameLine(ctx)
           ImGui.Text(ctx, s)
         end
@@ -2421,6 +2425,9 @@ local function frame_app()
     ImGui.SameLine(ctx, 0, 0)
   end
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
+  -- (rows coming or going above it move the page under the mouse: its buttons wait a moment too, or a Remove or Restore could take a click aimed elsewhere)
+  local settling = require("suggest").settling()
+  ImGui.BeginDisabled(ctx, settling)
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
     ImGui.PushTextWrapPos(ctx, 0) -- text wraps to the page, whatever its width
     if page == "Home" then page_home()
@@ -2437,6 +2444,7 @@ local function frame_app()
     ImGui.PopTextWrapPos(ctx)
     ImGui.EndChild(ctx)
   end
+  ImGui.EndDisabled(ctx)
   ImGui.PopStyleVar(ctx)
 end
 
@@ -2452,8 +2460,8 @@ local function frame()
   if app then ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 10); ImGui.Indent(ctx, 16) end -- (the app window has no padding of its own)
   if err then
     ImGui.TextColored(ctx, RED, "Something went wrong in the panel: " .. err)
-    if ImGui.SmallButton(ctx, "Copy it") then ImGui.SetClipboardText(ctx, "KitchenSync " .. band.VERSION .. ": " .. err) end
-    ImGui.SetItemTooltip(ctx, "Copy the message, to send it to whoever looks after KitchenSync.")
+    if ImGui.SmallButton(ctx, "Copy it") then ImGui.SetClipboardText(ctx, "StudioSync " .. band.VERSION .. ": " .. err) end
+    ImGui.SetItemTooltip(ctx, "Copy the message, to send it to whoever looks after StudioSync.")
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Try again") then err, last = nil, 0 end
     return
@@ -2631,7 +2639,7 @@ local function pill_window()
     ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_NoFocusOnAppearing | ImGui.WindowFlags_NoNav
   if ImGui.Begin(ctx, "BandSync pill", nil, f) then
     local x, y = ImGui.GetCursorScreenPos(ctx)
-    local words = "KitchenSync  ·  " .. (live_on and "Sync on" or "Sync off") .. (view and view.driver and ("  ·  " .. (view.driver == cfg.user and "you drive" or (view.driver .. " drives"))) or "") ..
+    local words = "StudioSync  ·  " .. (live_on and "Sync on" or "Sync off") .. (view and view.driver and ("  ·  " .. (view.driver == cfg.user and "you drive" or (view.driver .. " drives"))) or "") ..
       (unread > 0 and string.format("  ·  %d new message%s", unread, unread == 1 and "" or "s") or "")
     local waiting = unread
     local pb = band.json_decode(reaper.GetExtState(band.SECTION, "put back"))
@@ -2691,7 +2699,7 @@ end
 
 local function loop()
   if updated() or reload_now then -- reload in place: relaunching itself as an action is ignored (or asks to terminate instances)
-    band.log("the panel reloaded for KitchenSync " .. tostring(seen_disk))
+    band.log("the panel reloaded for StudioSync " .. tostring(seen_disk))
     restarting = true
     for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
     return dofile(dir .. "/BandSync - Panel.lua")
@@ -2724,7 +2732,7 @@ local function loop()
   local minimized = reaper.GetExtState(band.SECTION, "panel minimized") ~= ""
   local visible, open = false, true
   if minimized then open = pill_window()
-  else visible, open = ImGui.Begin(ctx, "KitchenSync###BandSync", true, flags) end
+  else visible, open = ImGui.Begin(ctx, "StudioSync###BandSync", true, flags) end
   if visible then
     local wx, wy = ImGui.GetWindowPos(ctx)
     local ww, wh = ImGui.GetWindowSize(ctx)
@@ -2740,18 +2748,18 @@ local function loop()
       -- on the first docked frame it isn't yet, and it moved the Mixer's docker instead
       -- (ReaImGui's own word for where it is: on a Mac the window JS_Window_Find hands back isn't always one DockIsChildOfDock
       -- takes, and that threw: Mac, 0.42.27)
-      local me = ImGui.GetWindowDockID(ctx) == ~dock_side.docker and reaper.JS_Window_Find and reaper.JS_Window_Find("KitchenSync", true)
+      local me = ImGui.GetWindowDockID(ctx) == ~dock_side.docker and reaper.JS_Window_Find and reaper.JS_Window_Find("StudioSync", true)
       if me then
         pcall(reaper.JS_Window_SetFocus, me)
         -- (no asking whether the focus took: on a Mac it never reads as ours, and this ended with nothing said. move_docker looks afterwards
         -- and puts back whatever else moved: Mac, 0.45.0)
         local where = dock_side.action == 41599 and "left" or "right"
         if require("tools").move_docker(dock_side.docker, where == "left" and 1 or 3) then
-          band.msg("KitchenSync is docked at the " .. where .. " of REAPER.\n\nREAPER opens a new docker there very narrow, " ..
+          band.msg("StudioSync is docked at the " .. where .. " of REAPER.\n\nREAPER opens a new docker there very narrow, " ..
             "and a script can't widen it: drag its inner edge across. REAPER remembers the width after that.")
         else
-          band.msg("REAPER wouldn't move KitchenSync's docker to the " .. where .. ", so the panel is at the bottom and everything else is where it was.\n\n" ..
-            "To try by hand: right-click the 'KitchenSync' tab at the foot of the docker, and look for the docker's position there.")
+          band.msg("REAPER wouldn't move StudioSync's docker to the " .. where .. ", so the panel is at the bottom and everything else is where it was.\n\n" ..
+            "To try by hand: right-click the 'StudioSync' tab at the foot of the docker, and look for the docker's position there.")
         end
         dock_side = nil
       elseif reaper.time_precise() - dock_side.since > 3 then

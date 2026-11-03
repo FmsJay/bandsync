@@ -9,7 +9,7 @@ local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
 if not reaper.APIExists("ImGui_GetBuiltinPath") or not reaper.JS_Window_FindChildByID then
-  return band.msg("Drawing needs ReaImGui and js_ReaScriptAPI (ReaPack: both are in KitchenSync's installer).")
+  return band.msg("Drawing needs ReaImGui and js_ReaScriptAPI (ReaPack: both are in StudioSync's installer).")
 end
 package.path = reaper.ImGui_GetBuiltinPath() .. "/?.lua;" .. package.path
 local ImGui = require "imgui" "0.10"
@@ -267,7 +267,7 @@ local function loop()
         if pressed and here then
           local p = to_song(L, px, py)
           if tool == "text" and p then
-            local ok, words = reaper.GetUserInputs("KitchenSync: text on the tracks", 1, "Text (everyone sees it),extrawidth=200", "")
+            local ok, words = reaper.GetUserInputs("StudioSync: text on the tracks", 1, "Text (everyone sees it),extrawidth=200", "")
             if ok and words:match("%S") then save({ kind = "text", points = { p }, text = words, color = mine, size = size }) end
           elseif tool == "erase" then -- the nearest of your own drawings within a few pixels (on its lines, or on its words)
             local ex, ey = ImGui.PointConvertNative(ctx, px, py, false)
@@ -388,7 +388,7 @@ local function loop()
       ImGui.SetItemTooltip(ctx, "Move this bar to the " .. (at_top and "foot" or "top") .. " of the tracks (it covers whatever's under it).")
       ImGui.SameLine(ctx, 0, 12)
       ImGui.AlignTextToFramePadding(ctx)
-      ImGui.Text(ctx, why == "local" and "That's one of KitchenSync's own tracks: draw on a group track." or ({ pen = "Drag to draw.",
+      ImGui.Text(ctx, why == "local" and "That's one of StudioSync's own tracks: draw on a group track." or ({ pen = "Drag to draw.",
         marker = "Drag to highlight.", line = "Drag from one end to the other.", arrow = "Drag from the tail to the point.",
         box = "Drag from corner to corner.", text = "Click where the words go.", erase = "Click one of your drawings to take it away." })[tool] or "")
       grew()

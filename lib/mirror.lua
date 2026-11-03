@@ -1935,7 +1935,7 @@ function mirror.watch(proj, cfg, song, room, opts)
             if n.flips >= mirror.RESTLESS_FLIPS and now - n.began >= mirror.RESTLESS_SECS then
               local names = mirror.fx_differing(f.text, o.state)
               if mirror.restless_add(names) then
-                band.log(table.concat(names, ", ") .. " keeps changing its saved data by itself: KitchenSync goes by its knobs from now on")
+                band.log(table.concat(names, ", ") .. " keeps changing its saved data by itself: StudioSync goes by its knobs from now on")
                 o.hash = mirror.fx_hash(o.state)
                 knobs = mirror.fx_params(o.ptr)
                 mirror.fx_knobs[rk] = knobs

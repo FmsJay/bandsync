@@ -8,11 +8,11 @@ local band = require("band")
 local SR, CLICKS, LEN = 48000, { 1.0, 1.5, 2.0 }, 3.0
 
 if reaper.GetPlayState() ~= 0 then return band.msg("Stop playback first.") end
-local ok, ch = reaper.GetUserInputs("KitchenSync: latency calibration", 1, "Loopback input channel (1, 2, ...),extrawidth=40", "1")
+local ok, ch = reaper.GetUserInputs("StudioSync: latency calibration", 1, "Loopback input channel (1, 2, ...),extrawidth=40", "1")
 ch = ok and tonumber(ch)
 if not ch then return end
 if reaper.MB("Connect a cable from your interface's OUTPUT 1 to INPUT " .. ch .. ".\nTurn speakers/headphones down: three clicks will play.\n\nReady?",
-    "KitchenSync", 1) ~= 1 then return end
+    "StudioSync", 1) ~= 1 then return end
 
 -- a 3 s mono WAV with one full-scale sample at each click time
 local work = reaper.GetResourcePath() .. "/BandSync/calibration"

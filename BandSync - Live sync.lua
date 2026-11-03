@@ -244,7 +244,7 @@ local function poll()
   local driver_away = not alone and driver and driver ~= cfg.user
   if driver_away then for _, o in ipairs(others) do if o == driver then driver_away = false end end end
   if driver_away ~= sync.driver_away then
-    if driver_away then band.log(tostring(driver) .. " is driving but isn't here: anyone can Take control (KitchenSync panel) to carry on") end
+    if driver_away then band.log(tostring(driver) .. " is driving but isn't here: anyone can Take control (StudioSync panel) to carry on") end
     sync.driver_away = driver_away
     reaper.SetExtState(band.SECTION, "driver_away " .. tostring(proj), driver_away and tostring(driver) or "", false)
   end
@@ -261,7 +261,7 @@ local function poll()
   -- before the band's changes come in, so an edit still unsent is never overwritten unseen
   sync.local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
   if not (s and s.sync == "mirror") then -- made with the older take sync: left alone until it's published again
-    if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older KitchenSync: publish it again (BandSync - Publish session) to sync it") end
+    if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older StudioSync: publish it again (BandSync - Publish session) to sync it") end
   else
     if not hold then
       local tok, terr = pcall(sync.watch_timeline, proj, cfg, b.song, b.room, my_can) -- (before the items: a tempo change moves them)
@@ -639,7 +639,7 @@ local function tick_body() -- returns true to keep going
   local redo = reaper.Undo_CanRedo2(proj)
   if redo and redo:find("^BandSync") then -- you just undid one of BandSync's changes: keep undoing if you like
     undo_since = undo_since or now
-    if not undo_said then undo_said = true; band.log("you undid a KitchenSync change: Live sync waits 30 s (or until you do something else) so you can keep undoing") end
+    if not undo_said then undo_said = true; band.log("you undid a StudioSync change: Live sync waits 30 s (or until you do something else) so you can keep undoing") end
   else
     undo_since, undo_said = nil, nil
   end
@@ -674,7 +674,7 @@ local said_at, sws_at = -math.huge, -math.huge
 tick = function()
   -- (the tab may have just been closed: check before asking about it, or REAPER stops us with an error box)
   if reaper.ValidatePtr2(0, proj, "ReaProject*") and reaper.GetPlayStateEx(proj) & 4 == 0 and updated() then
-    band.log("live sync for '" .. b.song .. "' reloaded for KitchenSync " .. tostring(seen_disk))
+    band.log("live sync for '" .. b.song .. "' reloaded for StudioSync " .. tostring(seen_disk))
     reloaded = true
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
     for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end

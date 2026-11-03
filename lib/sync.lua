@@ -35,7 +35,7 @@ function sync.put_back(text)
   local shown = beat and reaper.time_precise() - beat < 5 and reaper.GetExtState(band.SECTION, "panel minimized") == ""
   if not shown then
     local x, y = reaper.GetMousePosition()
-    reaper.TrackCtl_SetToolTip("KitchenSync: " .. text, x + 14, y + 14, true)
+    reaper.TrackCtl_SetToolTip("StudioSync: " .. text, x + 14, y + 14, true)
     sync.tip_at = reaper.time_precise() -- (Live sync takes it away after a few seconds: REAPER leaves it up)
   end
 end
@@ -1234,7 +1234,7 @@ function sync.receive(proj, cfg, song, room, can)
         sync.unreadable[id] = sync.unreadable[id] or reaper.time_precise()
         if reaper.time_precise() - sync.unreadable[id] > 120 then
           setext(proj, sync.APPLIED, id, "1")
-          band.log("skipped a file in the group's folder that KitchenSync can't read (" .. f .. ")")
+          band.log("skipped a file in the group's folder that StudioSync can't read (" .. f .. ")")
         end
       end
       if good then
@@ -1301,7 +1301,7 @@ function sync.receive(proj, cfg, song, room, can)
     if obj and not (type(ev.oid) == "string" and (ev.obj == "item" or ev.obj == "track" or require("mirror").PART[ev.obj]) and type(ev.rev) == "number"
         and (ev.gone or ev.state ~= nil) and (ev.name == nil or type(ev.name) == "string") and (ev.pos == nil or type(ev.pos) == "number")) then
       setext(proj, sync.APPLIED, ev.id, "1") -- malformed (a newer or damaged file): skipped, once, without stopping the rest
-      band.log("skipped a change from " .. tostring(ev.user) .. " that KitchenSync can't read (" .. tostring(ev.id) .. ")")
+      band.log("skipped a change from " .. tostring(ev.user) .. " that StudioSync can't read (" .. tostring(ev.id) .. ")")
     elseif (ev.type == "plays" and newest[ev.track or ""] ~= ev.id) or superseded(proj, ev) or (obj and latest[ev.oid] ~= ev) then
       setext(proj, sync.APPLIED, ev.id, "1") -- superseded
     elseif ev.user == cfg.user and not obj then
@@ -1328,7 +1328,7 @@ function sync.receive(proj, cfg, song, room, can)
       if not ok then
         sync.failed[ev.id] = (sync.failed[ev.id] or 0) + 1
         if not obj or sync.failed[ev.id] >= 5 then
-          band.log("skipped a change from " .. tostring(ev.user) .. " that KitchenSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
+          band.log("skipped a change from " .. tostring(ev.user) .. " that StudioSync couldn't apply (" .. tostring(ev.type) .. "): " .. tostring(res))
           setext(proj, sync.APPLIED, ev.id, "1")
         end
       elseif res then
@@ -1492,7 +1492,7 @@ function sync.preload(proj, cfg, song, room)
     was_title = reaper.JS_Window_GetTitle and reaper.JS_Window_GetTitle(reaper.GetMainHwnd())
     local function say()
       if reaper.JS_Window_SetTitle then
-        reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), string.format("KitchenSync: getting %s ready, %d change(s) to go...", song, sync.pending_events(proj, cfg, song, room)))
+        reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), string.format("StudioSync: getting %s ready, %d change(s) to go...", song, sync.pending_events(proj, cfg, song, room)))
       end
     end
     while reaper.time_precise() - t0 < sync.PRELOAD_SECS do

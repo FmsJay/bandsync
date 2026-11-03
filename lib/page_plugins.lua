@@ -117,7 +117,7 @@ function pp.draw(ctx, ImGui, proj, cfg)
       if ImGui.SmallButton(ctx, t and "Change" or "Set") then picking, filter, found, open_now = u, "", nil, true end
       if t then
         ImGui.SameLine(ctx)
-        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the group's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "KitchenSync", 4) == 6 then
+        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the group's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "StudioSync", 4) == 6 then
           os.remove(tfile(cfg, u.key))
           require("band").log("removed the translation for " .. (u.name:gsub("^%w+:%s*", "")))
         end

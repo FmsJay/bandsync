@@ -14,7 +14,7 @@ if not rt or not sm or reaper.TrackFX_GetOffline(sm, si) then
 end
 if reaper.GetPlayStateEx(proj) ~= 0 then return band.msg("Stop playback first, then measure.") end
 if reaper.MB("Tell your guest: they'll hear a bar of count-in (higher clicks), then 8 clicks. Clap along with the 8, " ..
-  "on the beat, as if playing.\n\nReady?", "KitchenSync: measure the guest's delay", 1) ~= 1 then return end
+  "on the beat, as if playing.\n\nReady?", "StudioSync: measure the guest's delay", 1) ~= 1 then return end
 
 -- (put back exactly as it was afterwards: arms, the Real time follow, the edit cursor)
 local arms, side, cursor = {}, select(2, reaper.GetProjExtState(proj, band.SECTION, "side")), reaper.GetCursorPositionEx(proj)

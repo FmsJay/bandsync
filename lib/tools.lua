@@ -73,7 +73,7 @@ function tools.render_guard()
   local text = band.read(startup_path()) or ""
   if text:find(GUARD_A, 1, true) then return true end
   reaper.RecursiveCreateDirectory(reaper.GetResourcePath() .. "/Scripts", 0)
-  return pcall(band.write_atomic, startup_path(), GUARD_A .. " (the hidden REAPER that renders KitchenSync's wet takes stops here)\n" ..
+  return pcall(band.write_atomic, startup_path(), GUARD_A .. " (the hidden REAPER that renders StudioSync's wet takes stops here)\n" ..
     "if os.getenv(\"BANDSYNC_RENDER\") then return end\n" .. GUARD_Z .. "\n" .. text)
 end
 
@@ -103,11 +103,14 @@ function tools.join_requests(ctx, ImGui, b)
       if ImGui.SmallButton(ctx, "Not my collaborator##" .. d.id) then
         skip[d.id] = true
         reaper.SetExtState(band.SECTION, "join skipped", band.json_encode(skip), false)
+        require("services").dismiss_pending(d.id) -- (only hidden, it came back at every restart)
       end
-      ImGui.SetItemTooltip(ctx, "Hide this request (until REAPER restarts). Nothing is shared with it.")
+      ImGui.SetItemTooltip(ctx, "Dismiss this request. Nothing is shared with it. It only comes back if that computer asks again.")
       ImGui.SameLine(ctx)
       ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
-      ImGui.TextWrapped(ctx, string.format("%s's computer wants to join %s.", tostring(d.name), d.band or binfo.name))
+      local out = require("removal").who_was(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id)
+      ImGui.TextWrapped(ctx, out and string.format("%s was taken out of %s, and their computer is still asking. Leave it unless you've invited them back.", out, d.band or binfo.name)
+        or string.format("%s's computer wants to join %s.", tostring(d.name), d.band or binfo.name))
       ImGui.PopStyleColor(ctx)
       ImGui.SetItemTooltip(ctx, string.format("Syncthing device %s, from %s.", d.id:sub(1, 7), tostring(d.address)))
     end

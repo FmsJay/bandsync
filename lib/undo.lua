@@ -70,7 +70,7 @@ function undo.bind_keys(dir)
   local list = {}
   for _, k in ipairs(left) do list[#list + 1] = string.format("%d. %s in %s: press %s, then OK", #list + 1, k.what, k.where, k.what == "Undo" and z or z:gsub("%+Z", "+Shift+Z")) end
   if #left == 0 or reaper.MB("REAPER's own box opens " .. #left .. " time(s), one after the other. If it says the key is in use, choose to replace it:\n\n" .. table.concat(list, "\n") ..
-      "\n\nOutside group projects these keys do what they always did.", "KitchenSync", 1) ~= 1 then return end
+      "\n\nOutside group projects these keys do what they always did.", "StudioSync", 1) ~= 1 then return end
   for _, k in ipairs(left) do
     if not reaper.DoActionShortcutDialog(reaper.GetMainHwnd(), reaper.SectionFromUniqueID(k.section), k.id, -1) then break end
   end
@@ -93,7 +93,7 @@ function undo.step(proj, cfg, b, redo, opts)
   local others = mirror.later_by_others(all, i)
   if opts.ask or #others > 0 then
     if reaper.MB(what:sub(1, 1):upper() .. what:sub(2) .. "?\n\nIt goes to everyone." .. (#others > 0 and ("\n\n" .. table.concat(others, ", ") ..
-        " changed it after that: their change to it goes back too.") or ""), "KitchenSync", 4) ~= 6 then return nil end
+        " changed it after that: their change to it goes back too.") or ""), "StudioSync", 4) ~= 6 then return nil end
   end
   local can, who = sync.authority(cfg, b.song, b.room, band.read_json(band.session_path(cfg, b.song)))
   local o = { can = can, mode = who and who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" }

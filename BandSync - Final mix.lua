@@ -10,7 +10,7 @@ package.path = dir .. "/lib/?.lua;" .. package.path
 local band, mirror = require("band"), require("mirror")
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("This project isn't a group project: open the group's project first (KitchenSync panel).") end
+if not b then return band.msg("This project isn't a group project: open the group's project first (StudioSync panel).") end
 local cfg = band.settings()
 if not cfg then return end
 if reaper.GetPlayStateEx(proj) & 4 == 4 then return band.msg("Stop recording first.") end

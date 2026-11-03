@@ -23,8 +23,8 @@ if not b.song then
     elseif r.todo ~= nil and r.on and r.key ~= "autostart" then todo[#todo + 1] = "  - " .. r.title end
   end
   if #todo > 0 then
-    if reaper.MB("This project needs preparing for KitchenSync first:\n\n" .. table.concat(todo, "\n") ..
-        "\n\nOK opens the checklist (you choose what changes). Publish again when it's done.", "KitchenSync", 1) == 1 then
+    if reaper.MB("This project needs preparing for StudioSync first:\n\n" .. table.concat(todo, "\n") ..
+        "\n\nOK opens the checklist (you choose what changes). Publish again when it's done.", "StudioSync", 1) == 1 then
       local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Prepare session.lua", true)
       if id > 0 then reaper.Main_OnCommand(id, 0) end
     end
@@ -35,7 +35,7 @@ end
 local projname = reaper.GetProjectName(proj)
 local suggested = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 local old_for = function(song) return band.read_json(band.session_path(cfg, song)) end
-local ok, name = reaper.GetUserInputs("KitchenSync: publish", 1, "Project name,extrawidth=150", suggested)
+local ok, name = reaper.GetUserInputs("StudioSync: publish", 1, "Project name,extrawidth=150", suggested)
 if not ok then return end
 local song = band.clean(name)
 if song == "" then return band.msg("Give the project a name.") end
@@ -46,7 +46,7 @@ if old and old.host ~= cfg.user and b.song ~= song then
     "Pick another name, or join theirs with 'BandSync - Open session'.")
 end
 if old and b.song ~= song and reaper.MB("You already published a project called '" .. song .. "' from another project.\n\n" ..
-    "Publish this project under that name instead (the group then follows this one)?", "KitchenSync", 4) ~= 6 then
+    "Publish this project under that name instead (the group then follows this one)?", "StudioSync", 4) ~= 6 then
   return
 end
 -- an untitled project takes the song's name and is saved first; either way a copy as it was before BandSync is kept

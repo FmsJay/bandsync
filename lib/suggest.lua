@@ -198,6 +198,9 @@ function suggest.notices(proj, cfg, room_dir)
 end
 
 -- The lines at the top of the panel. Buttons first, on the line itself: a panel docked short shows one line of this (James's PC).
+-- Whether the rows just changed, so what's under them has just moved.
+function suggest.settling() return suggest.bar_at ~= nil and reaper.time_precise() - suggest.bar_at < 0.6 end
+
 function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
   local band = require("band")
   local mine, waiting = suggest.rows(room_dir, cfg.user)
@@ -208,7 +211,7 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
   for _, h in ipairs(waiting) do sig[#sig + 1] = h.id end
   sig = table.concat(sig, ",")
   if sig ~= suggest.bar_sig then suggest.bar_sig, suggest.bar_at = sig, reaper.time_precise() end
-  ImGui.BeginDisabled(ctx, reaper.time_precise() - suggest.bar_at < 0.6)
+  ImGui.BeginDisabled(ctx, suggest.settling())
   for _, h in ipairs(mine) do
     ImGui.PushID(ctx, h.id)
     if ImGui.SmallButton(ctx, "Accept") then

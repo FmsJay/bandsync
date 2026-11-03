@@ -76,7 +76,7 @@ end
 local function delete_mine(ctx, ImGui, cfg, e)
   if e.user ~= cfg.user then return end
   ImGui.SameLine(ctx)
-  if ImGui.SmallButton(ctx, "x") and reaper.MB("Delete this for everyone?", "KitchenSync", 4) == 6 then os.remove(e.file); cache = nil end
+  if ImGui.SmallButton(ctx, "x") and reaper.MB("Delete this for everyone?", "StudioSync", 4) == 6 then os.remove(e.file); cache = nil end
   ImGui.SetItemTooltip(ctx, "Delete yours (for everyone).")
 end
 
@@ -204,7 +204,7 @@ function chat.draw(ctx, ImGui, cfg, b)
         if ImGui.SmallButton(ctx, "Open") then
           -- a bandmate typed this: web links open in the browser; anything else (a file, a program) is shown first
           local web = l.url:match("^https?://") ~= nil
-          if web or reaper.MB("Open this? It isn't a web link:\n\n" .. l.url, "KitchenSync", 4) == 6 then
+          if web or reaper.MB("Open this? It isn't a web link:\n\n" .. l.url, "StudioSync", 4) == 6 then
             if reaper.CF_ShellExecute then reaper.CF_ShellExecute(l.url)
             elseif reaper.GetOS():find("^Win") then os.execute('start "" "' .. l.url:gsub('"', "") .. '"')
             -- (single quotes: inside double ones the shell still runs $(...) and `...` from a link someone typed)

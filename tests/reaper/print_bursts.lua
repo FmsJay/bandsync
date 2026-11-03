@@ -146,7 +146,18 @@ local ok, err = pcall(function()
   prints.SETTLE = 0
   nudge(items[3], 72)
   watch()
-  hold(2.5) -- (its REAPER has started and said its process id)
+  -- (until its REAPER has started and said its process id: a fixed wait failed now and then on a busy machine)
+  local function has_pid()
+    local i = 0
+    while true do
+      local d = reaper.EnumerateSubdirectories(TMP, i)
+      if not d then return false end
+      if d:find(mirror.item_oid(items[3]), 1, true) and tonumber((band.read(TMP .. "/" .. d .. "/pid.txt") or ""):match("^%d+")) then return true end
+      i = i + 1
+    end
+  end
+  local waited = reaper.time_precise()
+  while not has_pid() and reaper.time_precise() - waited < 20 do hold(0.25) end
   nudge(items[3], 73)
   watch()
   local _, _, cancelled1 = bg.counts()

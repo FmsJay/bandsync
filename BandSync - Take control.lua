@@ -40,7 +40,7 @@ if #c.problems == 0 then
   if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ")" ..
       (away and ", but isn't here.\n\nTake control so the session can carry on? " or ".\n\nTake control? Tell them first: ") ..
       "from now on your deletes, moves and lane choices reach everyone (except on tracks or regions someone owns)." ..
-      (away and " They can take it back when they return." or ""), "KitchenSync", 4) ~= 6 then return end
+      (away and " They can take it back when they return." or ""), "StudioSync", 4) ~= 6 then return end
   return handover()
 end
 -- (named choices, not Yes/No/Cancel: review, 2026-10-31)
@@ -62,6 +62,6 @@ local function wait()
   c = status.handover_check(cfg, b, proj)
   if #c.problems == 0 then return handover() end
   if last - started < 120 then return reaper.defer(wait) end
-  if reaper.MB("Still not in sync after 2 minutes:\n" .. describe(c) .. "\n\nTake control anyway?", "KitchenSync", 4) == 6 then handover() end
+  if reaper.MB("Still not in sync after 2 minutes:\n" .. describe(c) .. "\n\nTake control anyway?", "StudioSync", 4) == 6 then handover() end
 end
 reaper.defer(wait)

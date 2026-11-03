@@ -110,7 +110,7 @@ function prep.scan(proj, cfg, b)
       if #dup > 0 then parts[#parts + 1] = #dup .. " duplicate-named track" .. (#dup > 1 and "s" or "") end
       return parts
     end)(), " and "),
-      "KitchenSync puts each part on the track with the same name, so two tracks called the same thing get each other's takes. " ..
+      "StudioSync puts each part on the track with the same name, so two tracks called the same thing get each other's takes. " ..
       "Unnamed tracks take their first clip's name; duplicates get a number (Guitar 2).", #blank + #dup, { blank = blank, dup = dup })
   end
   if #generic > 0 then
@@ -175,7 +175,7 @@ function prep.scan(proj, cfg, b)
 
   -- ripple editing moves other people's parts, which BandSync then puts back
   if reaper.GetToggleCommandStateEx(0, 41990) == 1 or reaper.GetToggleCommandStateEx(0, 41991) == 1 then
-    add("ripple", "Turn ripple editing off", "Ripple editing moves the clips after an edit, including collaborators', which KitchenSync puts back: it fights you.", 1, true)
+    add("ripple", "Turn ripple editing off", "Ripple editing moves the clips after an edit, including collaborators', which StudioSync puts back: it fights you.", 1, true)
   end
 
   -- BandSync's own setup

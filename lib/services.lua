@@ -177,6 +177,13 @@ function services.pending_devices()
   return list
 end
 
+-- Syncthing forgets a machine that asked: it's only listed again if it asks again. In the background.
+function services.dismiss_pending(id)
+  if not services.is_device_id(id) then return end
+  local cmd = st_api("/rest/cluster/pending/devices?device=" .. id, "DELETE")
+  if cmd then background("st-dismiss", cmd, 0) end
+end
+
 -- This machine's Syncthing device ID, or nil (Syncthing not running, or no answer yet: a background check).
 function services.my_device_id()
   local st = services.syncthing_path()
@@ -193,14 +200,14 @@ function services.invite_text(id, info)
   info = info or { id = "bandsync", name = "the group" }
   local base = "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/"
   local q1 = function(s) return "'" .. tostring(s):gsub("'", "") .. "'" end -- (band names are plain: band.clean)
-  return "Join " .. info.name .. " on KitchenSync. Paste ONE of these:\n\n" ..
+  return "Join " .. info.name .. " on StudioSync. Paste ONE of these:\n\n" ..
     "Mac (in Terminal):\n" ..
     'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " BS_BAND_ID=" .. info.id ..
     " BS_BAND_NAME=" .. q1(info.name) .. " bash\n\n" ..
     "Windows (in PowerShell):\n" ..
     '$f="$env:TEMP\\bandsync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
     "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. " -BandId " .. info.id .. " -BandName " .. q1(info.name) .. "\n\n" ..
-    "When it's done, tell me: I let you in from my KitchenSync panel."
+    "When it's done, tell me: I let you in from my StudioSync panel."
 end
 
 -- A bandmate already known here offering a band's folder: someone in one of your bands joining another of them (an

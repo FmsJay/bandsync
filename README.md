@@ -1,6 +1,6 @@
-# KitchenSync
+# StudioSync
 
-(A working title, on screen only so far. It began as BandSync, and the script files, folders, the ReaPack package and this repository still carry that name.)
+(It began as BandSync, and the script files, folders, the ReaPack package and this repository still carry that name for now.)
 
 Record and arrange together in REAPER from different cities, as if you were all working in one project.
 Everyone in a room holds the same project: every track, item, lane, MIDI part, plug-in chain, automation

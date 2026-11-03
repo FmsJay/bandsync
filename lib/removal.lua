@@ -52,12 +52,16 @@ end
 
 function removal.remove(root, user, by)
   local id = removal.device_of(root, user)
-  if not id then return nil, user .. "'s computer hasn't said which one it is yet: it does once it has KitchenSync 0.46. Until then, remove it in Syncthing's own window." end
+  if not id then return nil, user .. "'s computer hasn't said which one it is yet: it does once it has StudioSync 0.46. Until then, remove it in Syncthing's own window." end
   reaper.RecursiveCreateDirectory(marks(root), 0)
   band.write_json(marks(root) .. "/" .. file_name(user), { user = user, device = id, by = by, at = os.time() })
   return true
 end
 function removal.keep(root, user) os.remove(marks(root) .. "/" .. file_name(user)) end
+-- Who a mark says this computer belongs to, if it's been taken out of the group. (Its Syncthing keeps asking: that isn't someone new.)
+function removal.who_was(root, device)
+  for _, m in ipairs(all_marks(root)) do if m.device == device then return m.user end end
+end
 -- A computer let in again: whatever mark names it is over.
 function removal.let_in(root, device)
   for _, m in ipairs(all_marks(root)) do if m.device == device then removal.keep(root, m.user) end end

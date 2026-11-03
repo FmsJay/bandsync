@@ -370,6 +370,23 @@ do
   assert(moved({ "a", "b" }, { "b", "a" }, { "b" }) == "b", "two swapped: the selected one")
   assert(moved({ "a", "b" }, { "b", "a" }, { "a" }) == "a", "whichever that is")
   assert(moved({ "a", "b", "c" }, { "a", "b", "c" }, { "b" }) == "", "selected and not moved")
+  -- by lane: a pass and its copies in the comp are separate acts; a glue on one lane is one
+  local function on(lane) return "<ITEM\nBANDLANE " .. lane .. "\n" end
+  local L = {
+    { kind = "obj", obj = "item", oid = "I-P", id = "a", user = "M", time = "T1", rev = 1, name = "Lead", state = on(3) },
+    { kind = "obj", obj = "item", oid = "I-C", id = "b", user = "M", time = "T1", rev = 1, name = "Lead", state = on(0) },
+    { kind = "obj", obj = "item", oid = "I-D", id = "c", user = "M", time = "T1", rev = 1, name = "Lead", state = on(0) },
+    { kind = "obj", obj = "item", oid = "I-P", id = "gp", user = "M", time = "T2", rev = 2, name = "Lead", gone = true },
+    { kind = "obj", obj = "item", oid = "I-C", id = "gc", user = "M", time = "T2", rev = 2, name = "Lead", gone = true },
+    { kind = "obj", obj = "item", oid = "I-D", id = "gd", user = "M", time = "T2", rev = 2, name = "Lead", gone = true },
+    { kind = "obj", obj = "item", oid = "I-N", id = "n", user = "M", time = "T2", rev = 1, name = "Lead", state = on(0) },
+  }
+  assert(mirror.entry_lane(L, 1) == 3 and mirror.entry_lane(L, 4) == 3, "a delete sits on the lane its item had last")
+  assert(#mirror.same_moment(L, 4) == 1, "the pass is its own row")
+  assert(#mirror.same_moment(L, 5) == 3, "its two copies and what was made on that lane are one act")
+  local copies = mirror.plan_undo_moment(L, 5)
+  assert(copies["I-P"] == nil and copies["I-C"].id == "b" and copies["I-D"].id == "c" and copies["I-N"] == false, "and undoing them leaves the pass alone")
+  assert(mirror.plan_undo_moment(L, 4)["I-P"].id == "a" and mirror.plan_undo_moment(L, 4)["I-C"] == nil, "undoing the pass leaves the comp alone")
   local plan = mirror.plan_undo_moment(M, 4)
   assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
 end

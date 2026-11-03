@@ -562,10 +562,27 @@ function mirror.moved_tracks(old, new, selected)
   return moved
 end
 
--- One act that made several changes: a delete that reached a copy in a comp lane, a glue that took three items and made one.
--- History's indexes of entries[i] and the others on that track from the same person in the same second. Pure.
--- (Two identical rows, and undoing the newest brought back the copy, not the part: laptop, 0.42.5. A glue's deletes undone
--- without its new item left all three playing: laptop, 0.42.8)
+-- Which lane entries[i]'s item sat on, or nil (not on a lane). A delete holds no state, so it's the one its item had last.
+-- Kept on the entry: lists call this for every row they draw. Pure.
+function mirror.entry_lane(entries, i)
+  local e = entries[i]
+  if e.lane_seen == nil then
+    local from = e
+    for j = i - 1, 1, -1 do
+      if type(from.state) == "string" then break end
+      if not e.gone then break end
+      if entries[j].oid == e.oid then from = entries[j] end
+    end
+    e.lane_seen = type(from.state) == "string" and tonumber(from.state:match("BANDLANE (%d+)")) or false
+  end
+  return e.lane_seen or nil
+end
+
+-- One act that made several changes on one lane: a glue that took three items and made one, a delete of parts picked together.
+-- History's indexes of entries[i] and the others on that lane from the same person in the same second. Pure.
+-- (A glue's deletes undone without its new item left all three playing: laptop, 0.42.8. But not across lanes: deleting a pass
+-- also deletes its copies in the comp, and undoing them together put old copies over newer comp pieces: Mac, 0.42.10. So those
+-- are rows of their own, each naming its lane: mirror.lane_words.)
 -- shortcut: same second only, so an act that straddles one shows as two rows; a per-act id on events would settle it.
 function mirror.same_moment(entries, i)
   local e, out = entries[i], { i }
@@ -575,11 +592,26 @@ function mirror.same_moment(entries, i)
     while entries[j] and entries[j].time == e.time do
       local p = entries[j]
       if p.kind == "obj" and p.oid ~= e.oid and p.user == e.user and p.obj == e.obj and p.name == e.name
-        and (not p.restored) == (not e.restored) then out[#out + 1] = j end
+        and (not p.restored) == (not e.restored) and mirror.entry_lane(entries, j) == mirror.entry_lane(entries, i) then out[#out + 1] = j end
       j = j + step
     end
   end
   return out
+end
+-- " (lane Take 2)" for a row about an item on a lane of a track with several here, else "". By the lane's name now.
+-- shortcut: a lane added or removed since can shift the number it was on, so an old row may name its neighbour; storing the name on the event would settle it.
+function mirror.lane_words(proj, entries, i)
+  local e, lane = entries[i], mirror.entry_lane(entries, i)
+  if not lane or not e.track then return "" end
+  if e.lane_words_seen == nil then
+    local tr = mirror.find(proj, "track", e.track)
+    if tr and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") < 2 then e.lane_words_seen = ""
+    else
+      local name = tr and select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, "", false)) or ""
+      e.lane_words_seen = string.format(" (lane %s)", name ~= "" and name or tostring(lane + 1))
+    end
+  end
+  return e.lane_words_seen
 end
 function mirror.plan_undo_moment(entries, i)
   local plan

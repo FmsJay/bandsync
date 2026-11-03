@@ -316,6 +316,17 @@ local ok, err = pcall(function()
     for _ = 1, 3 do watch(pb, B); recv(pa, A) end
   end
 
+  -- rows name their lane
+  do
+    local on_lane = reaper.GetTrackMediaItem(ta, 0)
+    local lane = reaper.GetMediaItemInfo_Value(on_lane, "I_FIXEDLANE")
+    local name = select(2, reaper.GetSetMediaTrackInfo_String(ta, "P_LANENAME:" .. math.floor(lane), "", false))
+    local es = { { kind = "obj", obj = "item", oid = "I-X", track = mirror.track_oid(ta), state = "BANDLANE " .. math.floor(lane) .. "\n" } }
+    check(mirror.lane_words(pa, es, 1) == " (lane " .. (name ~= "" and name or tostring(math.floor(lane) + 1)) .. ")", "a row names its lane: " .. mirror.lane_words(pa, es, 1))
+    local plain = { { kind = "obj", obj = "item", oid = "I-Y", track = mirror.track_oid(ta), state = "<ITEM\n" } }
+    check(mirror.lane_words(pa, plain, 1) == "", "an item on no lane says nothing")
+  end
+
   -- only what plays is printed
   reaper.SelectProjectInstance(pa)
   reaper.TrackFX_AddByName(ta, "ReaSynth", false, -1)

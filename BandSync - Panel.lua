@@ -1112,7 +1112,10 @@ local function section_activity()
 end
 
 local function section_setup()
-  if reaper.time_precise() - setup_at > 5 then setup_at, st = reaper.time_precise(), setup.check(cfg, b, proj) end -- tasklist is slow
+  if reaper.time_precise() - setup_at > 5 then
+    setup_at, st = reaper.time_precise(), setup.check(cfg, b, proj) -- tasklist is slow
+    st.keys = #require("undo").keys_left(dir) == 0
+  end
   local rows = {
     { st.audio, "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device" },
     { st.folder, "Shared folder is syncing", "Syncthing isn't running" },
@@ -1121,6 +1124,7 @@ local function section_setup()
     { st.sync, "Live sync is running", "Live sync is off" },
     { st.sonobus, "SonoBus is ready on the master track (Real time)", "SonoBus isn't on the master track" },
     { st.server, "Play along server address is set", b.role == "host" and "Play along server address not set (needs Tailscale signed in)" or "Waiting for the host to set the Play along server address" },
+    { st.keys, require("undo").key_name() .. " never rolls back a bandmate's work", require("undo").key_name() .. " can roll back a bandmate's work: not set to BandSync's Undo yet" },
     { st.latency, "Recording latency checked", st.latency_ms and string.format("Recordings land %.1f ms off: fix the input offset and calibrate again", st.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency)" },
   }
   if b.role == "host" then table.insert(rows, 7, { st.ninjam, "NINJAM server is running here", "NINJAM server isn't running (set its folder on Play)" }) end
@@ -1136,6 +1140,11 @@ local function section_setup()
         local notes = setup.all(cfg, b, proj, st, function() band.start_live(dir) end)
         setup_at, live_server = 0, nil -- re-check, and re-read the server address it may have filled in
         if #notes > 0 then band.log("Set up: " .. table.concat(notes, "; ")) end
+      end
+      if not st.keys then
+        ImGui.SameLine(ctx)
+        if ImGui.Button(ctx, "Set " .. require("undo").key_name()) then require("undo").bind_keys(dir); setup_at = 0 end
+        ImGui.SetItemTooltip(ctx, "With your own edit on top of REAPER's undo list it undoes that, as ever. With a bandmate's change on top, it undoes your own last change, not theirs.")
       end
       ImGui.SetItemTooltip(ctx, "Starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in the Play along server address and starts the NINJAM server. The rest needs you: a cable, a sign-in or a share.")
     end

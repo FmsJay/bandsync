@@ -606,6 +606,7 @@ function prints.takes_to_lanes(proj, mine)
       if real > 1 and mine(it) then want = true end
     end
     if want and not blocked then
+      reaper.Undo_BeginBlock2(proj) -- (one point, named BandSync's: Ctrl+Z on "Crop to active take" brought the takes back, to split again)
       -- wet takes go first, or they'd become lanes of their own; the comp's item prints again. (Waiting for a track with no
       -- wet takes meant any comp on a played part stayed takes, and the takes picked never reached the band: laptop, 0.42.4)
       local picked = {}
@@ -649,6 +650,7 @@ function prints.takes_to_lanes(proj, mine)
       end
       reaper.SetTrackSelected(tr, false)
       for _, s in ipairs(sel) do if reaper.ValidatePtr2(proj, s, "MediaTrack*") then reaper.SetTrackSelected(s, true) end end
+      reaper.Undo_EndBlock2(proj, "BandSync: takes became lanes", -1)
       band.log("the takes on " .. select(2, reaper.GetTrackName(tr)) .. " became lanes (the takes you picked stay the comp)")
       done = done + 1
     end

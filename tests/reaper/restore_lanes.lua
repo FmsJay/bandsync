@@ -258,6 +258,19 @@ local ok, err = pcall(function()
     local list = {}
     for i = 0, reaper.CountTracks(pb) - 1 do list[#list + 1] = select(2, reaper.GetTrackName(reaper.GetTrack(pb, i))) end
     check(reaper.GetTrack(pb, 0) == x, "and nothing was moved back: " .. table.concat(list, ", ") .. " (moved: " .. select(2, reaper.GetTrackName(x)) .. ")")
+    -- a track Back restored carries no hash: its place differing here isn't a change either
+    local xo, newest_x = mirror.track_oid(x), nil
+    for _, e in ipairs(recall.entries(A, song, room)) do if e.oid == xo and e.obj == "track" and not e.gone then newest_x = e end end
+    reaper.SelectProjectInstance(pa)
+    mirror.revert(pa, A, song, room, { [xo] = newest_x }, { can = yes, mode = "claims" })
+    recv(pb, B)
+    reaper.SelectProjectInstance(pb)
+    reaper.SetOnlyTrackSelected(x)
+    reaper.ReorderSelectedTracks(0, 0)
+    mirror.order_band[tostring(pb)] = true
+    local before_alias = sent("James")
+    for _ = 1, 3 do watch(pb, B) end
+    check(sent("James") == before_alias, "a restored track in another place here sends nothing (" .. (sent("James") - before_alias) .. ")")
     reaper.SelectProjectInstance(pb)
     reaper.DeleteTrack(added)
     reaper.SetOnlyTrackSelected(x)

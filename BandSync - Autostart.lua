@@ -18,6 +18,7 @@ end
 local REQUEST = reaper.GetResourcePath() .. "/BandSync/install-request"
 local tried = {} -- project key -> when we last started it (don't hammer a Live sync that refuses to run)
 local at, seen_disk = 0, nil
+local keys_set = false
 local function loop()
   if reaper.time_precise() - at < 2 then return reaper.defer(loop) end -- every 2 s is plenty
   at = reaper.time_precise()
@@ -26,6 +27,11 @@ local function loop()
     local p, fn = reaper.EnumProjects(i)
     if not p then break end
     if (fn or ""):find("bandsync-render", 1, true) then return end
+  end
+  if not keys_set then -- (Ctrl+Z never rolls back a bandmate's work: lib/undo.lua. Not in the hidden renderer, above)
+    keys_set = true
+    pcall(require("undo").auto_keys, dir)
+    reaper.atexit(function() pcall(require("undo").auto_keys, dir) end)
   end
   pcall(band.sws_colours) -- (SWS auto-colouring off while a band song is in front, back on otherwise)
   -- an update: the new code takes over in place (once the version on disk has held for two looks), as Live sync does;

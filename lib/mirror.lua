@@ -619,7 +619,7 @@ function mirror.last_undo(entries, user)
     if e.kind == "obj" and e.user == user then
       if e.redoes then redone[e.redoes] = true
       elseif e.undoes and not redone[e.id] then return i
-      elseif not e.restored then return nil end -- a new change since: nothing to redo
+      elseif not e.restored and not e.auto then return nil end -- a new change since: nothing to redo (a print BandSync refreshed isn't one)
     end
   end
 end
@@ -1574,8 +1574,9 @@ function mirror.watch(proj, cfg, song, room, opts)
         local a = mirror.track_alias[key]
         if a == nil then
           local ev = event_file(room_dir, evid)
-          a = ev and ev.hash and type(ev.state) == "table"
-            and mirror.track_line(band_json(ev.state), opts.local_mix) == mirror.track_line(band_json(o.state), opts.local_mix) and ev.hash or false
+          -- (a track Back restored has no hash on its event: it went out on every machine whose list differs: PC, 0.42.11)
+          a = ev and type(ev.state) == "table"
+            and mirror.track_line(band_json(ev.state), opts.local_mix) == mirror.track_line(band_json(o.state), opts.local_mix) and (ev.hash or h) or false
           mirror.track_alias[key] = a
         end
         if a then

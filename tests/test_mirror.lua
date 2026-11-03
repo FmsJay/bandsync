@@ -344,6 +344,15 @@ do
   }
   local glue = mirror.plan_undo_moment(G, 3)
   assert(glue["I-1"].id == "a1" and glue["I-2"].id == "a2" and glue["I-9"] == false, "undoing a glue from any of its rows")
+  -- a print finishing after an undo leaves it redoable; a real change doesn't
+  local R = {
+    { kind = "obj", oid = "I-1", id = "c", user = "L", rev = 1 },
+    { kind = "obj", oid = "I-1", id = "u", user = "L", rev = 2, undoes = "c", restored = "x" },
+    { kind = "obj", oid = "I-2", id = "p", user = "L", rev = 2, auto = true },
+  }
+  assert(mirror.last_undo(R, "L") == 2, "a print after the undo: still redoable")
+  R[4] = { kind = "obj", oid = "I-2", id = "n", user = "L", rev = 3 }
+  assert(mirror.last_undo(R, "L") == nil, "a new change after it: nothing to redo")
   -- which tracks moved
   local function moved(old, new, sel)
     local s = {}

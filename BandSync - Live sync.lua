@@ -294,6 +294,11 @@ local function poll()
     end
   end
 
+  do -- (a suggestion arrived or was answered: lib/suggest.lua)
+    local nok, nerr = pcall(require("suggest").notices, proj, cfg, sync.room_dir(cfg, b.song, b.room))
+    if not nok then band.log("suggestions: " .. tostring(nerr)) end
+  end
+
   -- the host's project gathers the rooms bandmates record into (BandSync before side rooms), never a side room:
   -- that's its own tab, brought in when someone chooses to (lib/rooms.lua)
   local rooms = { b.room }

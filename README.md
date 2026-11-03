@@ -70,7 +70,8 @@ Everything below is the detail.
     track group names, the timebase, the ruler lanes and which lane each marker or region sits in.
   - What the band changes comes in, the newest version of each object winning on every machine alike.
   - A change you may not make (the driver's, or someone's claim) is put back, Ctrl+drag copies included, with the
-    reason in the panel's banner (or a tooltip by the mouse when the panel is closed).
+    reason in the panel's banner (or a tooltip by the mouse when the panel is closed). If it's someone's claim, what
+    you did goes to them as a suggestion (see Claims).
   - Never touches a track while you record on it.
 - **MIDI** travels as notes. Whoever changes a MIDI part also renders a print (its sound, through their
   instrument), kept as the item's second take: "dry" is the notes, "wet" the print. A MIDI track that plays an
@@ -250,6 +251,16 @@ Who may change what:
   the tempo map, markers and project settings too; a clash goes to whoever changed it more: docs/clashes.md).
 - **Claims**: *Claim selected tracks*, *Claim region at cursor* or *Claim time selection* (shown to everyone as a
   `[claimed: you]` region). A track claim beats a time claim, which beats a region claim, which beats the driver.
+- **Suggestions**: an edit that reaches someone's claim (a section copied or moved across the song, say) goes out for
+  what's yours, and the claimed parts go back. What you did to them reaches their owner as one line at the top of the
+  panel, *Accept* or *Decline*; you see *Waiting on ...*, and can *Withdraw*. Accepted, it lands as the owner's own change,
+  so the claim never moves, and their undo key takes it back. Anything new stays on your own "(yours, not sent)" track until
+  then. A part they've changed since is left as it is. Plug-in changes aren't suggested: a plug-in can change its own
+  data, which would ask its owner about nothing.
+- **Tempo**: the driver's, or anyone's in *Anyone*. The parts it moves aren't anyone's edit, whoever claimed them.
+- **Buses, folders and the master**: a change to one still goes through under the usual rules, and says whose claimed parts it affects.
+  One holding someone's claimed part can't be deleted: it comes back, and says why.
+- **A copy of someone's claimed track** goes out as yours, as "Keys (James's copy)", and says whose it was. The original isn't touched.
 - **What you see is what the band has**: anything you change that isn't yours to change is put back at once,
   with the reason. Recording on a track you may change always goes out. **Hold my changes** keeps your changes
   here until you switch it off; then they go out together.

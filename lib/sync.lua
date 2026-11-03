@@ -1050,6 +1050,7 @@ function sync.apply(proj, ev, dir, root, can, me)
     return true
   end
   if ev.type == "timeline" then -- REAPER moves the items for the new map, as it would for a local change
+    require("mirror").tempo_changed(proj)
     sync.audio_follow_tempo(proj)
     band.apply_tempo(proj, ev.tempo or {})
     band.apply_project(proj, ev.project) -- (title, notes, group names, timebase, ruler lanes: from 0.31.1; before the markers that sit in them)
@@ -1156,6 +1157,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
   local sig, seen = timeline_sig(proj), ext(proj, band.SECTION, "timeline")
   if seen ~= sig and seen ~= "" and (band.json_decode(seen) or {})[4] ~= 2 then seen = "" end -- (noted in an older format: a first look)
   if seen ~= sig then
+    require("mirror").tempo_changed(proj)
     if seen ~= "" then
       if can(me, nil, nil) then -- the song's timeline is the driver's
         local tempo, markers = band.capture_tempo(proj), band.capture_markers(proj)
@@ -1322,6 +1324,7 @@ function sync.receive(proj, cfg, song, room, can)
       elseif res then
         setext(proj, sync.APPLIED, ev.id, "1")
         stamp(proj, ev)
+        if type(ev.note) == "string" and ev.user ~= cfg.user and iso_age(ev.time) < 3600 then band.log(ev.note) end -- (a copy's credit, a bus: mirror.watch)
         if reaper.time_precise() - t0 > 0.25 then budget_out, sync.backlog = true, true end
         local theirs = ev.user ~= cfg.user -- (your own changes come back too: they aren't "from the band")
         if theirs then applied = applied + 1 end

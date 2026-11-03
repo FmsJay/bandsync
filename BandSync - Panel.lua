@@ -1621,6 +1621,11 @@ local function maint_rows()
         "REAPER versions differ (you " .. mine .. "; " .. table.concat(other, ", ") .. "). Something made in a newer REAPER can come out " ..
         "different in an older one: the same version everywhere is safest." }
     end)(),
+    (function() -- (only the classic look had this: a Mac bandmate never saw it. Mac, 0.42.27)
+      local undo = require("undo")
+      return { "keys", #undo.keys_left(dir) == 0, "yellow", undo.key_name() .. " never rolls back a bandmate's work",
+        undo.key_name() .. " can roll back a bandmate's work: it isn't set to BandSync's Undo yet." }
+    end)(),
     { "latency", s.latency, "yellow", "Recording latency checked", s.latency_ms and
       string.format("Recordings land %.1f ms off: fix the input offset and calibrate again.", s.latency_ms) or "Recording latency not checked yet (needs a cable: Calibrate latency below)." },
   }
@@ -1673,6 +1678,11 @@ local function maint_health()
         dot(ok and GREEN or (r[3] == "red" and RED or r[3] == "grey" and GREY or YELLOW))
         ImGui.SameLine(ctx)
         ImGui.TextWrapped(ctx, ok and r[4] or r[5])
+        if not ok and r[1] == "keys" then
+          if ImGui.SmallButton(ctx, "Set " .. require("undo").key_name()) then require("undo").bind_keys(dir); maint_at = 0 end
+          ImGui.SetItemTooltip(ctx, "With your own edit on top of REAPER's undo list it undoes that, as ever. With a bandmate's change on top, it undoes your own last change, not theirs.")
+          ImGui.SameLine(ctx)
+        end
         if not ok and r[3] == "yellow" then
           if ImGui.SmallButton(ctx, "Dismiss") then
             gone[r[1]] = true
@@ -2231,6 +2241,9 @@ local function frame_app()
   section_invites()
   tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
   tools.put_back_bar(ctx, ImGui, b and b.song) -- (an edit of yours that was undone, and why: stays until dismissed)
+  if b and can then -- (an edit touching a claim: lib/suggest.lua)
+    require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
+  end
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
   want = reaper.GetExtState(band.SECTION, "panel do") -- a choice from the radial menu
@@ -2472,6 +2485,10 @@ local function pill_window()
       (unread > 0 and string.format("  ·  %d new message%s", unread, unread == 1 and "" or "s") or "")
     local pb = band.json_decode(reaper.GetExtState(band.SECTION, "put back"))
     if pb and pb.text then label = label .. string.format("  ·  %d edit%s undone", pb.n or 1, (pb.n or 1) == 1 and "" or "s") end
+    if b then
+      local asks = #require("suggest").rows(sync.room_dir(cfg, b.song, b.room), cfg.user)
+      if asks > 0 then label = label .. string.format("  ·  %d suggestion%s", asks, asks == 1 and "" or "s") end
+    end
     if ImGui.SmallButton(ctx, label .. "##pill") then reaper.DeleteExtState(band.SECTION, "panel minimized", false) end
     ImGui.SetItemTooltip(ctx, pb and pb.text and ("Undone: " .. pb.text .. "\nOpen the panel to see it (right-click for more).")
       or "Open the BandSync panel (right-click for more). Drag the pill's edge to move it.")
@@ -2529,9 +2546,11 @@ local function loop()
     if dock_side then
       -- the action moves whichever docker has the focus, so only once this window is really in its new one, and has the focus:
       -- on the first docked frame it isn't yet, and it moved the Mixer's docker instead
-      local me = reaper.JS_Window_Find and reaper.JS_Window_Find("BandSync", true)
-      if me and reaper.DockIsChildOfDock(me) == dock_side.docker then
-        reaper.JS_Window_SetFocus(me)
+      -- (ReaImGui's own word for where it is: on a Mac the window JS_Window_Find hands back isn't always one DockIsChildOfDock
+      -- takes, and that threw: Mac, 0.42.27)
+      local me = ImGui.GetWindowDockID(ctx) == ~dock_side.docker and reaper.JS_Window_Find and reaper.JS_Window_Find("BandSync", true)
+      if me then
+        pcall(reaper.JS_Window_SetFocus, me)
         if reaper.JS_Window_GetFocus() == me then
           reaper.Main_OnCommand(dock_side.action, 0)
           band.msg("BandSync is docked at the " .. (dock_side.action == 41599 and "left" or "right") .. " of REAPER.\n\nREAPER opens a new docker there very narrow, " ..

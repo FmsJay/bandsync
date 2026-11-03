@@ -773,6 +773,52 @@ function mirror.track_line(t, local_mix, colour)
   return table.concat(f, "|")
 end
 
+-- What runs through each track: its folder's tracks and what it receives, and what runs through those. Tracks with
+-- nothing running through them aren't listed. Pure. tracks: { { oid, parent, recv } } (recv: its R- part).
+function mirror.feeders(tracks)
+  local direct = {}
+  local function add(to, from) direct[to] = direct[to] or {}; direct[to][#direct[to] + 1] = from end
+  for _, t in ipairs(tracks) do
+    if (t.parent or "") ~= "" then add(t.parent, t.oid) end
+    for src in (t.recv or ""):gmatch("AUXRECV (%S+)") do add(t.oid, src) end
+  end
+  local all = {}
+  for oid in pairs(direct) do
+    local seen, list = { [oid] = true }, {}
+    local function walk(x)
+      for _, f in ipairs(direct[x] or {}) do
+        if not seen[f] then seen[f] = true; list[#list + 1] = f; walk(f) end
+      end
+    end
+    walk(oid)
+    all[oid] = list
+  end
+  return all
+end
+
+-- "Mac's Keys, Guitar and Bee's Bass" from { { owner, name } }, in a fixed order. Pure.
+function mirror.whose(list)
+  local by, owners = {}, {}
+  for _, x in ipairs(list) do
+    if not by[x[1]] then by[x[1]] = {}; owners[#owners + 1] = x[1] end
+    by[x[1]][#by[x[1]] + 1] = x[2]
+  end
+  table.sort(owners)
+  local out = {}
+  for _, o in ipairs(owners) do table.sort(by[o]); out[#out + 1] = o .. "'s " .. table.concat(by[o], ", ") end
+  return table.concat(out, " and ")
+end
+
+-- An item without what a tempo change moves: where it sits, how long, and how fast. Pure.
+local TEMPO_MOVES = { POSITION = true, LENGTH = true, PLAYRATE = true, SOFFS = true, SNAPOFFS = true, FADEIN = true, FADEOUT = true }
+function mirror.sans_tempo(state)
+  local out = {}
+  for line in (state or ""):gmatch("[^\n]+") do
+    if not TEMPO_MOVES[line:match("^%s*(%S+)") or ""] then out[#out + 1] = line end
+  end
+  return table.concat(out, "\n")
+end
+
 -- ---- REAPER side ------------------------------------------------------------------------------------------
 -- Everything below talks to REAPER. Kept per project: SEC "<oid>" = "rev|hash|event id" (the newest revision
 -- this machine holds, and the event it came in, which is what a put-back re-applies).
@@ -953,7 +999,11 @@ local function settle_ids(proj, list, kind, user, set_oid)
     end
   end
   for k, x in ipairs(list) do
-    if x.oid == "" or keeper[x.oid] ~= k then x.oid = mirror.new_oid(kind, user); set_oid(x.ptr, x.oid) end
+    if x.oid == "" or keeper[x.oid] ~= k then
+      -- (a track's copy says what it's a copy of, on the track: whichever script looks first gives it its oid. mirror.watch)
+      if kind == "T" and x.oid ~= "" then reaper.GetSetMediaTrackInfo_String(x.ptr, "P_EXT:band_copy_of", x.oid, true) end
+      x.oid = mirror.new_oid(kind, user); set_oid(x.ptr, x.oid)
+    end
     if select(2, reaper.GetProjExtState(proj, mirror.GSEC, x.oid)) ~= x.guid then reaper.SetProjExtState(proj, mirror.GSEC, x.oid, x.guid) end
     if c and c.guid[x.guid] ~= x.oid then c.guid[x.guid], c.dirty = x.oid, true end
     if x.restored then
@@ -1456,6 +1506,11 @@ mirror.fx_load_knobs = mirror.fx_load_knobs or {} -- chain -> its knobs at the s
 mirror.first_look = mirror.first_look or {} -- project -> until when its chains may be still loading after it opened
 mirror.order_seen = mirror.order_seen or {} -- project -> its tracks' order at the last look
 mirror.order_band = mirror.order_band or {} -- project -> a band's track landed since the last look
+mirror.holds = mirror.holds or {} -- project -> track oid -> { what runs through it }, as of the last look
+mirror.bus_said = mirror.bus_said or {} -- track oid -> when "that changes how X sounds" was last said
+mirror.tempo_until = mirror.tempo_until or {} -- project -> until when items may be moving for a tempo change
+mirror.TEMPO_SECS = 15
+function mirror.tempo_changed(proj) mirror.tempo_until[tostring(proj)] = reaper.time_precise() + mirror.TEMPO_SECS end
 
 -- Where a recording this person wasn't allowed to add goes (kept, never deleted): a track of their own, not sent.
 local function keep_track(proj, name)
@@ -1517,6 +1572,96 @@ function mirror.watch(proj, cfg, song, room, opts)
   local objs, by_oid = mirror.scan(proj, cfg.user, media, opts.local_mix)
   local me, sent, back = cfg.user, 0, 0
   mirror.unsettled = false
+  local suggest = require("suggest")
+  -- { owner, name } for the tracks in `oids` (by name, as of `names`) that someone else has claimed, out of this person's reach
+  local function others_claims(oids, names)
+    local list = {}
+    for _, oid in ipairs(oids) do
+      local name = names(oid)
+      if name and name ~= "" and sync.is_claimed and sync.is_claimed(name) and not opts.can(me, name) then
+        list[#list + 1] = { sync.owner_of(name), name }
+      end
+    end
+    return list
+  end
+  -- A folder or bus holding a bandmate's claimed part isn't deleted (James, 2026-11-02): their part would lose its routing
+  -- with no say of theirs. Before anything else is looked at: its folder's tracks read as changed now, and would go out.
+  local kept_back, holds = {}, mirror.holds[tostring(proj)] or {}
+  for oid, held in pairs(holds) do
+    local rev, h = mirror.known(proj, oid)
+    if not by_oid[oid] and rev and h ~= "" and not opts.hold then
+      local theirs = others_claims(held.oids, function(x) return held.names[x] end)
+      if #theirs > 0 then
+        if reaper.EnumProjects(-1) ~= proj or reaper.GetPlayStateEx(proj) ~= 0 then return 0, 0 end -- (a chain only comes back in front, stopped)
+        -- (REAPER's Remove tracks takes a folder's tracks with it, so they come back too, parts and all. One still here only
+        -- needs its folder setting back)
+        local function bring(x)
+          local _, _, evid, order = mirror.known(proj, x)
+          local ev = event_file(room_dir, evid)
+          if ev and not ev.gone then
+            local ok, hash = mirror.apply(proj, ev, media, opts.local_mix)
+            if ok then remember(proj, x, ev.rev, hash, ev.id, order) end
+          end
+        end
+        local tracks = { oid, table.unpack(held.oids) }
+        for _, x in ipairs(tracks) do
+          local was_gone = not by_oid[x]
+          bring(x)
+          if was_gone then
+            kept_back[x] = true
+            for _, p in ipairs(mirror.PARTS) do bring(p .. x:sub(2)) end
+          end
+        end
+        sync.put_back(string.format("%s holds %s: it's back, as deleting it would take them out of it. Ask them to move out of it first",
+          held.name ~= "" and held.name or "That track", mirror.whose(theirs)))
+        back = back + 1
+      end
+    end
+  end
+  if next(kept_back) then objs, by_oid = mirror.scan(proj, me, media, opts.local_mix) end
+  -- A copy of a part someone else has claimed goes out as yours, under a name of its own, and says whose it was: claims go by
+  -- name, so as a second "Keys" it would be theirs, and refused.
+  local credit = {}
+  for _, o in ipairs(objs) do
+    local from = o.kind == "track" and select(2, reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_copy_of", "", false)) or ""
+    if from ~= "" and not opts.hold then
+      reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_copy_of", "", true)
+      local name = o.state.name
+      if opts.mode ~= "driver" and sync.is_claimed and sync.is_claimed(name) and not opts.can(me, name) then
+        local who, label, n = sync.owner_of(name), name .. " (" .. me .. "'s copy)", 1
+        local function taken(x)
+          for _, t in ipairs(objs) do if t.kind == "track" and t ~= o and t.state.name == x then return true end end
+        end
+        while taken(label) do n = n + 1; label = string.format("%s (%s's copy %d)", name, me, n) end
+        reaper.GetSetMediaTrackInfo_String(o.ptr, "P_NAME", label, true)
+        o.state.name = label
+        o.hash = mirror.track_hash(o.state, opts.local_mix)
+        credit[o.oid] = string.format("%s copied %s's %s as '%s'. The original isn't touched", me, who, name, label)
+        band.log(credit[o.oid])
+      end
+    end
+  end
+  -- Says so when what changes on a bus, a folder or the master changes how a bandmate's claimed part sounds. Nothing's
+  -- refused for that: the part itself isn't touched. Once a minute per track at most, or a fader dragged about says it each time.
+  local function bus_note(o, name, last)
+    local at = o.kind == "track" and o.oid or o.track
+    local what = o.kind == "fx" and "the plug-ins on" or o.kind == "env" and "the automation on"
+    if o.kind == "track" and last and type(last.state) == "table" then
+      for _, f in ipairs({ "vol", "pan", "mute", "fxen", "phase", "width" }) do
+        if tostring(o.state[f]) ~= tostring(last.state[f]) then what = "the fader, pan or mute of" end
+      end
+    end
+    if not what or reaper.time_precise() - (mirror.bus_said[at] or -60) < 60 then return nil end
+    local oids
+    if at == mirror.MASTER then
+      oids = {}
+      for _, t in ipairs(objs) do if t.kind == "track" then oids[#oids + 1] = t.oid end end
+    else oids = (holds[at] or {}).oids or {} end
+    local theirs = others_claims(oids, function(x) return by_oid[x] and by_oid[x].state.name end)
+    if #theirs == 0 then return nil end
+    mirror.bus_said[at] = reaper.time_precise()
+    return string.format("%s changed %s %s: that changes how %s sound", me, what, at == mirror.MASTER and "the master" or name, mirror.whose(theirs))
+  end
   -- Did this person move a track? A track's place is the track above it, so anything that lands above it reads as a change
   -- of it. Sent, that came back round: a bandmate's track put back moved this one, it went out, and they moved in turn,
   -- every 2 s for good (laptop, undoing bandmates' new tracks, 0.42.3). So a track that differs only by its place is a
@@ -1570,7 +1715,8 @@ function mirror.watch(proj, cfg, song, room, opts)
       local where = (why.name or "") ~= "" and why.name or "an unnamed track"
       if o.kind == "item" and o.ptr then
         reaper.MoveMediaItemToTrack(o.ptr, keep_track(proj, why.name or ""))
-        why.text = "a new item on " .. where .. " isn't yours to add: it's kept here on '" .. where .. " (yours, not sent)', not sent to the band (claim the track, or take control)"
+        why.text = "a new item on " .. where .. " isn't yours to add: it's kept here on '" .. where .. " (yours, not sent)', " ..
+          (why.to and ("and suggested to " .. why.to) or "not sent to the band (claim the track, or take control)")
       elseif o.kind == "track" and o.ptr then
         reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true)
         why.text = "a new track isn't yours to add: it stays here as yours, not sent to the band (take control to add tracks)"
@@ -1596,6 +1742,20 @@ function mirror.watch(proj, cfg, song, room, opts)
     reaper.GetSetMediaTrackInfo_String(o.ptr, k, "", true)
     if opts.mode == "driver" or me == sync.driver_name or (sync.is_claimed and sync.is_claimed(name)) then return end
     if sync.claim_tracks(cfg, song, room, { name }) then band.log("you made track " .. name .. ": it's claimed for you (Claims card: release it to share it)") end
+  end
+  -- What was refused goes to whoever claimed it, as a suggestion, if it's a claim that refused it. -> true when it went.
+  local function propose(o, rev, who, claim_name, pos, name, gone)
+    if o.kind == "fx" or not who or who == me or opts.mode == "driver" or not (sync.is_claimed and sync.is_claimed(claim_name, pos)) then return false end
+    local c = { obj = o.kind, oid = o.oid, rev = rev or 0, track = o.track, name = name, pos = pos, gone = gone or nil }
+    if not gone then
+      c.state = o.state
+      if o.kind == "item" then
+        mirror.copy_failed = nil
+        c.state = mirror.share_media(o.state, media, o.ptr)
+        if mirror.copy_failed then return false end
+      end
+    end
+    return suggest.add(room_dir, me, who, c)
   end
   local seen = {}
   -- a burst (hundreds of items moved at once) goes out a quarter second a pass, the rest on the next passes, which
@@ -1800,6 +1960,8 @@ function mirror.watch(proj, cfg, song, room, opts)
           end
         end
         if mirror.auto[tostring(proj) .. o.oid] then ev.auto, mirror.auto[tostring(proj) .. o.oid] = true, nil end
+        ev.note = credit[o.oid] or bus_note(o, name, last) -- (said on every machine as it lands: sync.receive)
+        if ev.note and not credit[o.oid] then band.log(ev.note) end
         if o.kind == "fx" then
           ev.files = require("fxfiles").share(state, media) -- (samples, IRs, models it loads)
           ev.restless = mirror.restless_in(state)
@@ -1818,16 +1980,33 @@ function mirror.watch(proj, cfg, song, room, opts)
             and mirror.track_line(o.state, opts.local_mix) == mirror.track_line(last.state, opts.local_mix) then
           return put_back(o, rev, evid, { name = name })
         end
+        -- the tempo changed and REAPER moved this with it: nobody's edit. It's where it should be, and whoever may change it sends
+        -- it. (Put back, a bandmate's part sat at its old time, out of step with the new tempo, until theirs arrived.)
+        if last and reaper.time_precise() < (mirror.tempo_until[tostring(proj)] or 0) and (o.kind == "env"
+            or o.kind == "item" and type(last.state) == "string" and mirror.sans_tempo(o.state) == mirror.sans_tempo(last.state)) then
+          mirror.unsent[rk] = nil
+          return remember(proj, o.oid, rev, o.hash, evid, kord)
+        end
+        -- only how its folder closes differs, in the same folder: a track added or copied after it did that, and nobody changed
+        -- this one. Nothing to ask its owner about (a copy of Keys asked Mac about Keys)
+        if o.kind == "track" and last and type(last.state) == "table" then
+          local x, y = band_json(o.state), band_json(last.state)
+          x.depth, y.depth = 0, 0
+          if mirror.track_line(x, opts.local_mix) == mirror.track_line(y, opts.local_mix) then return put_back(o, rev, evid, { name = name }) end
+        end
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
         -- whose it is, and what would let you: "or take control" told the driver to take control (laptop, round 2)
         local owner_of = sync.owner_of
         local pos = o.pos -- (a plug-in chain has none, and one that's never gone out has no last change: laptop, 0.42.3)
         if not ok_before and last then pos = last.pos end
         local who = owner_of and owner_of(ok_before and name or (last.name or ""), pos)
-        local how = (who and who ~= me and who ~= sync.driver_name) and ("it's claimed by " .. who .. ": put back (ask them to release it)")
+        -- (someone's claim: what was done to it goes to them to accept. lib/suggest.lua)
+        local to = propose(o, rev, who, ok_before and name or (last and last.name or ""), pos, name)
+        local how = to and ("it's claimed by " .. who .. ": put back, and suggested to them")
+          or (who and who ~= me and who ~= sync.driver_name) and ("it's claimed by " .. who .. ": put back (ask them to release it)")
           or (who and who ~= me) and (who .. " drives: put back (claim it, or take control)")
           or "it isn't yours to change right now: put back (claim it, or take control)"
-        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), text = string.format("%s: %s",
+        put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), to = to and who or nil, text = string.format("%s: %s",
           o.kind == "track" and ("Track " .. where) or ((o.kind == "item" and "That item" or mirror.PART[o.kind]:gsub("^%l", string.upper)) .. " on " .. where), how) })
       end
     end)
@@ -1928,7 +2107,9 @@ function mirror.watch(proj, cfg, song, room, opts)
       local o = { kind = last.obj or (g.oid:sub(1, 1) == "T" and "track" or "item"), oid = g.oid, track = last.track, state = last.state }
       local name = last.name or ""
       local _, th, tev = mirror.known(proj, o.track or "")
-      if mirror.PART[o.kind] then -- (its track went: the track's own deletion covers it)
+      if kept_back[o.track or ""] then -- (on a folder or bus that was refused above: it comes back with it)
+        put_back(o, g.rev, g.evid, { name = name })
+      elseif mirror.PART[o.kind] then -- (its track went: the track's own deletion covers it)
         remember(proj, g.oid, (g.rev or 0) + 1, "", g.evid)
       elseif o.kind == "item" and th == "" and (tev or ""):upper():sub(1, #mine_prefix) ~= mine_prefix
           and not mirror.find(proj, "track", o.track) then
@@ -1942,9 +2123,16 @@ function mirror.watch(proj, cfg, song, room, opts)
         remember(proj, g.oid, ev.rev, "", id, (ev.time or "") .. me) -- (with its order: a racing edit is settled alike everywhere)
         mirror.unsent[tostring(proj) .. g.oid] = nil
         sent = sent + 1
+        if o.kind == "track" and holds[g.oid] then -- (nobody else's: it goes, and is said)
+          local names = {}
+          for _, x in ipairs(holds[g.oid].oids) do if holds[g.oid].names[x] then names[#names + 1] = holds[g.oid].names[x] end end
+          band.log(string.format("you deleted %s, which held %s: they aren't in it any more", name ~= "" and name or "a track", table.concat(names, ", ")))
+        end
       else
-        put_back(o, g.rev, g.evid, { name = name, text = string.format("%s on %s isn't yours to delete: it's back",
-          o.kind == "track" and "that track" or "that item", name ~= "" and name or "an unnamed track") })
+        local who = sync.owner_of and sync.owner_of(name, last.pos)
+        local to = propose(o, g.rev, who, name, last.pos, name, true)
+        put_back(o, g.rev, g.evid, { name = name, text = string.format("%s on %s isn't yours to delete: it's back%s",
+          o.kind == "track" and "that track" or "that item", name ~= "" and name or "an unnamed track", to and (", and suggested to " .. who) or "") })
       end
     end)
     if not ok then say_once("err" .. g.oid, "mirror sync skipped " .. g.oid .. ": " .. tostring(err)) end
@@ -1952,6 +2140,23 @@ function mirror.watch(proj, cfg, song, room, opts)
   mirror.save_ids(proj)
   if rescheme and not mirror.more then reaper.SetProjExtState(proj, mirror.CSEC, "colours", scheme) end
   mirror.summary(proj, cfg, room_dir, objs, media)
+  suggest.flush()
+  do -- (what each track holds, for the next look: a deleted track's can't be read any more)
+    local list, names = {}, {}
+    for _, o in ipairs(objs) do
+      if o.kind == "track" then
+        names[o.oid] = o.state.name
+        list[#list + 1] = { oid = o.oid, parent = o.state.parent, recv = by_oid["R" .. o.oid:sub(2)] and by_oid["R" .. o.oid:sub(2)].state }
+      end
+    end
+    local now = {}
+    for oid, oids in pairs(mirror.feeders(list)) do
+      local held = {}
+      for _, x in ipairs(oids) do held[x] = names[x] end
+      now[oid] = { oids = oids, names = held, name = names[oid] or "" }
+    end
+    mirror.holds[tostring(proj)] = now
+  end
   return sent, back
 end
 

@@ -262,7 +262,7 @@ Restore (its own page):
   selected in REAPER (their items and plug-ins), or the whole song (the driver), back to that moment. Every
   restore goes to the band as new changes, so it can be undone the same way.
 - **Saved versions** (every handover, or *Save this version*), and *Open it as it was before BandSync* (the copy Publish
-  kept). **Render the final mix** puts the whole song's mix in the shared folder's `<Song>/mixes/` for everyone.
+  kept). **Render current mix** puts the whole song's mix, as your master has it, in the shared folder's `<Song>/mixes/` for everyone, and on Drive. **Back up** keeps the song as it stands: a saved version kept for good, and the project on Drive.
 - **Old history is trimmed**: once a day, at the end of a session, the room's driver takes away changes older than
   30 days that nothing needs. Each thing's newest change stays, so does everything a major saved version (end of
   session, "yours before…", or one you saved by hand) needs to restore exactly; only the snapshots before a

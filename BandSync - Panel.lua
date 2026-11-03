@@ -762,9 +762,12 @@ local function section_recall()
     label = ""
     last = 0
   end
-  if ImGui.SmallButton(ctx, "Render the final mix") then action("Final mix") end
-  ImGui.SetItemTooltip(ctx, "Renders the whole song's mix (in your File > Render format) into the shared folder's mixes/ for everyone.\n" ..
+  if ImGui.SmallButton(ctx, "Render current mix") then action("Final mix") end
+  ImGui.SetItemTooltip(ctx, "Renders the whole song as your master has it (in your File > Render format) into the shared folder's mixes/ for everyone, and to Google Drive if you use it.\n" ..
     "Your own tracks and BandSync's helper tracks are left out; nothing is added to the project.")
+  ImGui.SameLine(ctx, 0, 4)
+  if ImGui.SmallButton(ctx, "Back up") then recall.back_up(proj, cfg, b); last = 0 end
+  ImGui.SetItemTooltip(ctx, "Keeps the song as it stands now: a saved version here that's never trimmed, and the project on Google Drive if you use it. No audio is rendered.")
   local driving = view.driver == cfg.user
   -- (docked, the list takes the column's height instead of a short box inside it)
   if ImGui.BeginChild(ctx, "points", 0, wide and math.max(110, select(2, ImGui.GetContentRegionAvail(ctx)) - 4) or 110, ImGui.ChildFlags_Borders) then

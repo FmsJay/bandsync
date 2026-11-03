@@ -65,6 +65,17 @@ end
 recall.capture = capture
 
 -- `keep`: kept for good (end of session): "Empty old trash" never removes the audio it needs.
+-- The song as it stands, on purpose: a saved version kept for good, and the project on Drive where there is one (lib/sessionfile.lua).
+function recall.back_up(proj, cfg, b)
+  recall.save(proj, cfg, b.song, b.room, "backup by " .. cfg.user, true)
+  band.log("backed up: a saved version, kept for good (Restore > Saved versions)")
+  local droot = require("drive").root(cfg)
+  if droot then
+    local ok, file, why = pcall(require("sessionfile").export, proj, cfg, b, droot, sync.room_dir(cfg, b.song, b.room))
+    band.log(ok and file and ("project saved to Google Drive: " .. file:match("[^/]+$")) or ("couldn't save the project to Drive: " .. tostring(ok and why or file)))
+  end
+end
+
 function recall.save(proj, cfg, song, room, label, keep)
   local st = capture(proj)
   st.label, st.by, st.time, st.keep = label, cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ"), keep or nil

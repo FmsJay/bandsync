@@ -33,6 +33,16 @@ function sessionfile.map_files(text, map)
 end
 
 local function exists(p) return reaper.file_exists(p) end
+-- Without opening it: a file on Google Drive took 0.6 s to open, and a project holds dozens, so a backup stopped REAPER for 46 s
+-- and Live sync looked dead. Only for files that have been there a while: one just written can read wrong, so band.size's own
+-- check of a write stays as it is.
+local function settled_size(p)
+  if reaper.JS_File_Stat then
+    local status, size = reaper.JS_File_Stat(p)
+    if status == 0 then return math.floor(size) end
+  end
+  return band.size(p)
+end
 
 -- A project's text as a plain project: SonoBus / ReaNINJAM out of every plug-in chain (master, tracks, input FX:
 -- they carry this machine's identity, and opening the file elsewhere warned about ReaNINJAM), and BandSync's own
@@ -103,7 +113,7 @@ function sessionfile.export(proj, cfg, b, droot, room_dir)
     end
     if not exists(full) then return nil end
     local to = sdir .. "/media/" .. user .. "/" .. name
-    if exists(to) and band.size(to) ~= band.size(full) then -- a different file with the same name
+    if exists(to) and settled_size(to) ~= band.size(full) then -- a different file with the same name
       name = os.date("!%Y%m%d-%H%M%SZ") .. "_" .. name
       to = sdir .. "/media/" .. user .. "/" .. name
     end

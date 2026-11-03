@@ -1,6 +1,7 @@
--- @description BandSync: render the band's final mix into the song's shared folder (mixes/), for everyone
--- Renders the whole project's master mix with this project's own render format (File > Render sets it) to
--- <shared folder>/<Song>/mixes/<Song> <date> <you>, which reaches every bandmate like any file in the folder.
+-- @description BandSync: render the current mix into the song's shared folder (mixes/), for everyone
+-- Renders the whole project's master mix as this person hears it (their master is their own), with this project's own render
+-- format (File > Render sets it) to <shared folder>/<Song>/mixes/<Song> <date> <you>, which reaches every bandmate like any
+-- file in the folder, and to <Drive>/<Song>/mixes where this person uses Drive (named for them: each machine writes only its own there).
 -- Only the band's mix: BandSync's own tracks (the Real time return, live placeholders) and tracks kept as yours are
 -- muted for the render and put back after, and the render isn't added to the project (it would go to the band as
 -- a new item). Your render settings are put back as they were.
@@ -55,8 +56,16 @@ if src then
   local adjust = reaper.CalculateNormalization(src, 2, 0, 0, 0) -- (2: peak, to 0 dB: what it would take to reach full scale)
   reaper.PCM_Source_Destroy(src)
   if adjust and adjust > 0 and adjust <= 1.001 then
-    band.log("the final mix reaches full scale, so it probably clips. Turn the master down and render again (your master is your own: it doesn't go to the band)")
+    band.log("the mix reaches full scale, so it probably clips. Turn the master down and render again (your master is your own: it doesn't go to the band)")
   end
 end
-if made then band.log("final mix rendered for the band: " .. out .. "/" .. made)
+if made then
+  band.log("mix rendered for the band: " .. out .. "/" .. made)
+  local droot = require("drive").root(cfg)
+  if droot then
+    reaper.RecursiveCreateDirectory(droot .. "/" .. b.song .. "/mixes", 0)
+    local copied, why = pcall(band.copy_atomic, out .. "/" .. made, droot .. "/" .. b.song .. "/mixes/" .. made)
+    band.log(copied and "and copied to Google Drive" or ("couldn't copy the mix to Google Drive, but it's in the shared folder: " .. tostring(why)))
+  end
 else band.msg("The render didn't make a file (cancelled, or File > Render's format couldn't write). Nothing was changed.") end
+reaper.defer(function() end) -- (no "ReaScript: Run" on the undo list: Ctrl+Z would be spent on it)

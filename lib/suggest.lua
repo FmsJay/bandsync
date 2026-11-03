@@ -17,7 +17,7 @@ local function dir_of(room_dir) return room_dir .. "/suggestions" end
 local function parts_of(room_dir, id) return dir_of(room_dir) .. "/parts/" .. id end
 
 local open, heads, repeats, cache, done = {}, {}, {}, {}, {} -- (done: answered ones are never read again)
-local acts = 0
+local acts, swept = 0, {}
 suggest.note = nil -- the last thing to say on the bar (why Accept can't go ahead yet)
 
 -- What it does, in words. Pure.
@@ -155,7 +155,9 @@ function suggest.accept(proj, cfg, room_dir, h, may, local_mix)
       if ok and res then did = did + 1 else band.log("couldn't accept a change on " .. tostring(c.name) .. ": " .. tostring(ok and "it can't land here" or res)) end
     end
   end
-  reaper.Undo_EndBlock2(proj, "Accept " .. tostring(h.from) .. "'s suggestion", -1)
+  -- tracks, items and automation only (plug-ins never come this way): recording everything, undoing it reloaded every plug-in, and
+  -- Superior Drummer's saved data read differently, so its chain went out and 7 parts were printed again (PC, 0.42.29)
+  reaper.Undo_EndBlock2(proj, "Accept " .. tostring(h.from) .. "'s suggestion", 1 | 4 | 32)
   reaper.PreventUIRefresh(-1)
   reaper.UpdateArrange()
   return did, stale, refused
@@ -181,14 +183,16 @@ function suggest.notices(proj, cfg, room_dir)
       end
       for _, f in ipairs(band.files(parts_of(room_dir, h.id), ".json")) do os.remove(parts_of(room_dir, h.id) .. "/" .. f) end
       os.remove(parts_of(room_dir, h.id))
-      if a.answer == "accepted" then
-        for t = reaper.CountTracks(proj) - 1, 0, -1 do
-          local tr = reaper.GetTrack(proj, t)
-          local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
-          if mirror.local_track(tr) and name:find(" (yours, not sent)", 1, true) and reaper.CountTrackMediaItems(tr) == 0 then reaper.DeleteTrack(tr) end
-        end
-      end
       reaper.SetProjExtState(proj, SEC, h.id, "2")
+    end
+  end
+  -- (every few seconds, not on the answer: that can arrive before the changes it brings)
+  if reaper.time_precise() - (swept[tostring(proj)] or 0) > 5 then
+    swept[tostring(proj)] = reaper.time_precise()
+    for t = reaper.CountTracks(proj) - 1, 0, -1 do
+      local tr = reaper.GetTrack(proj, t)
+      local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
+      if mirror.local_track(tr) and name:find(" (yours, not sent)", 1, true) and reaper.CountTrackMediaItems(tr) == 0 then reaper.DeleteTrack(tr) end
     end
   end
 end

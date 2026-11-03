@@ -189,13 +189,13 @@ function prints.hold_fx(tr)
     local x = reaper.GetTrackMediaItem(tr, i)
     local tk = reaper.GetActiveTake(x)
     if tk and take_ext(tk, prints.KEY) ~= "" and not prints.ara_take(x) then
-      wet = true
-      -- (a comp made while a pass played its print: the Neve went off for the whole track, with no word: Mac, 0.42.5)
-      if reaper.CountTakes(x) == 1 and not said_print_only[x] then
+      -- (a comp made while a pass played its print: the Neve went off for the whole track, so every dry piece played unprocessed:
+      -- Mac, 0.42.5. One piece through its plug-ins twice is the smaller harm, and it says so)
+      if reaper.CountTakes(x) > 1 then wet = true; break end
+      if not said_print_only[x] then
         said_print_only[x] = true
-        band.log("a part on " .. select(2, reaper.GetTrackName(tr)) .. " holds only its print, no dry take, which keeps this track's plug-ins off here. If it came from a comp, comp it from the dry take")
+        band.log("a part on " .. select(2, reaper.GetTrackName(tr)) .. " holds only its print, no dry take, so it plays through this track's plug-ins a second time. If it came from a comp, comp it from the dry take")
       end
-      break
     end
   end
   local held = band.track_ext(tr, prints.FXEN)

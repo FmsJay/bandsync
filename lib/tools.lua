@@ -112,6 +112,21 @@ end
 
 -- Your newest undone edit (sync.put_back), in a yellow bar under the top bar until you dismiss it: the six-second
 -- message line was easy to miss, and the next log line replaced it (review, 2026-10-31).
+-- A docker with nothing in it, to put in a new place: REAPER lists what's in each in its ini file ("name=size docker"), and says
+-- bottom for one it has never placed. Beyond the first two, as those are the ones people use.
+function tools.free_docker()
+  local used, inside = {}, false
+  for line in (band.read(reaper.get_ini_file()) or ""):gmatch("[^\r\n]+") do
+    if line:sub(1, 1) == "[" then inside = line == "[REAPERdockpref]"
+    elseif inside then
+      local n = line:match("=[%-%d%.]+ (%d+)")
+      if n then used[tonumber(n)] = true end
+    end
+  end
+  for i = 2, 14 do if not used[i] then return i end end
+  return 1
+end
+
 function tools.put_back_bar(ctx, ImGui, song)
   local pb = band.json_decode(reaper.GetExtState(band.SECTION, "put back"))
   if not (pb and pb.text) then return end

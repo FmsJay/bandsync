@@ -562,6 +562,28 @@ function mirror.moved_tracks(old, new, selected)
   return moved
 end
 
+-- An item's state with its place and length to 8 decimals: beyond that it's arithmetic, not an edit. Pure.
+function mirror.rounded(state)
+  local function round(k, v) return k .. string.format("%.8f", tonumber(v) or 0) end
+  return (state:gsub("(%f[%w]POSITION )([%d%.]+)", round, 1):gsub("(%f[%w]LENGTH )([%d%.]+)", round, 1))
+end
+
+-- How much of a track's parts the lanes that play cover, in seconds, against all it holds: { pos, len, plays } per item. Pure.
+function mirror.lane_cover(items)
+  local function span(only)
+    local list = {}
+    for _, x in ipairs(items) do if not only or x.plays then list[#list + 1] = x end end
+    table.sort(list, function(a, z) return a.pos < z.pos end)
+    local total, reach = 0, -math.huge
+    for _, x in ipairs(list) do
+      local from = math.max(x.pos, reach)
+      if x.pos + x.len > from then total = total + x.pos + x.len - from; reach = x.pos + x.len end
+    end
+    return total
+  end
+  return span(true), span(false)
+end
+
 -- Which lane entries[i]'s item sat on, or nil (not on a lane). A delete holds no state, so it's the one its item had last.
 -- Kept on the entry: lists call this for every row they draw. Pure.
 function mirror.entry_lane(entries, i)
@@ -1678,7 +1700,9 @@ function mirror.watch(proj, cfg, song, room, opts)
         -- (or its chain: a plug-in on it was found restless since)
         if ev and (ev.hash == o.hash or o.kind == "item" and type(ev.state) == "string"
             and mirror.item_hash(o.track, mirror.normalize_item(ev.state)) == o.hash
-            or o.kind == "fx" and type(ev.state) == "string" and mirror.fx_hash(ev.state) == o.hash) then
+            or o.kind == "fx" and type(ev.state) == "string" and mirror.fx_hash(ev.state) == o.hash
+            -- (or the same but for its 14th digit, a tempo map put back: the Mac sent its Keys part as its own change, 0.42.8)
+            or o.kind == "item" and type(ev.state) == "string" and mirror.rounded(mirror.normalize_item(ev.state)) == mirror.rounded(o.state)) then
           remember(proj, o.oid, rev, o.hash, evid, kord); return
         end
       end
@@ -1761,6 +1785,20 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
         local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,
           name = name, pos = o.pos, hash = o.hash, hv = mirror.HV } -- (hash: what it is here; every receiver checks it came out the same)
+        if o.kind == "track" and o.ptr and (tonumber(o.state.lanes) or 0) > 1 then
+          -- (the first comp area: REAPER's new lane holds only that piece, and the rest of the part goes silent, with no word: Mac, 0.42.10)
+          local items = {}
+          for j = 0, reaper.CountTrackMediaItems(o.ptr) - 1 do
+            local x = reaper.GetTrackMediaItem(o.ptr, j)
+            items[#items + 1] = { pos = reaper.GetMediaItemInfo_Value(x, "D_POSITION"), len = reaper.GetMediaItemInfo_Value(x, "D_LENGTH"),
+              plays = reaper.GetMediaTrackInfo_Value(o.ptr, "C_LANEPLAYS:" .. math.floor(reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE"))) > 0 }
+          end
+          local playing, holds = mirror.lane_cover(items)
+          if holds > 0 and playing < holds / 2 then
+            say_once("cover " .. o.oid .. tostring(o.state.plays), string.format("%s: the lane that plays holds %.0f s of the %.0f s on this track. The rest is silent until it's comped in, or another lane plays",
+              name ~= "" and name or "a track", playing, holds))
+          end
+        end
         if mirror.auto[tostring(proj) .. o.oid] then ev.auto, mirror.auto[tostring(proj) .. o.oid] = true, nil end
         if o.kind == "fx" then
           ev.files = require("fxfiles").share(state, media) -- (samples, IRs, models it loads)
@@ -1822,7 +1860,14 @@ function mirror.watch(proj, cfg, song, room, opts)
         -- claimed track's item was put back three times).
         local name = perm_name(o, by_oid)
         local may = false
-        if fx and kev then
+        -- (a side room starts as a copy: what hasn't changed in it keeps the print it came with. Another machine's reading of the
+        -- same chain differs, so whoever opened the room rendered the Drums again: laptop, 0.42.5)
+        local same_as_parent = false
+        if room ~= "main" and fx then
+          local _, _, fev = mirror.known(proj, fx.oid)
+          same_as_parent = not reaper.file_exists(room_dir .. "/events/" .. tostring(kev) .. ".json") and not reaper.file_exists(room_dir .. "/events/" .. tostring(fev) .. ".json")
+        end
+        if fx and kev and not same_as_parent then
           local tr = reaper.GetMediaItem_Track(o.ptr)
           local author = kev:upper():sub(1, #mine_prefix) == mine_prefix and me or (event_file(room_dir, kev) or {}).user
           if type(author) ~= "string" then author = nil end

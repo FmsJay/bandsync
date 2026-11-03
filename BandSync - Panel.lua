@@ -184,7 +184,7 @@ local function wordmark(size)
   ImGui.Text(ctx, "nc")
   ImGui.PopFont(ctx)
 end
-local reload_now, dock_req -- (Settings: switching the window frame reopens the panel; Dock / Undock)
+local reload_now, dock_req, dock_side -- (Settings: switching the window frame reopens the panel; Dock / Undock; the side its new docker goes to)
 local placed_from, placed_how -- where the window was before the Window menu moved it (screen pixels), and how it's placed
 local banner_docked -- (docked, the panel never covers the arrange view)
 local place_req, win_rect -- a placement for the next frame (ReaImGui units); the window as ReaImGui last drew it
@@ -2064,10 +2064,10 @@ tools.dock_menu = function(docked)
         local found
         for i = 0, 15 do if reaper.DockGetPosition(i) == side[2] then found = i; break end end
         if found then dock_req = ~found -- (ReaImGui: dock id -1 is REAPER docker 0, -2 docker 1, ...)
-        else
-          dock_req = side[2] == 0 and -1 or -2
-          band.msg("REAPER has no docker on the " .. side[1]:lower() .. " yet. BandSync is in a docker now: right-click its tab, " ..
-            "Docker position, " .. side[1] .. ". REAPER remembers it.")
+        else -- no docker on that side yet: an empty one goes there (it was a message about right-clicking a tab nobody could find)
+          local free = require("tools").free_docker()
+          dock_req = ~free
+          dock_side = { docker = free, action = side[2] == 1 and 41599 or 41601, since = reaper.time_precise() } -- Docker: Show in left / right of main window
         end
       end
     end
@@ -2519,8 +2519,27 @@ local function loop()
   if visible then
     local wx, wy = ImGui.GetWindowPos(ctx)
     local ww, wh = ImGui.GetWindowSize(ctx)
-    win_rect = { wx, wy, ww, wh }
-    banner_docked = ImGui.IsWindowDocked(ctx)
+    local was_docked = win_rect and win_rect.docked
+    win_rect = { wx, wy, ww, wh, docked = ImGui.IsWindowDocked(ctx) }
+    banner_docked = win_rect.docked
+    if was_docked and not banner_docked then -- out of a docker: back to the usual size, not the docker's long thin shape
+      local vx, vy = ImGui.Viewport_GetWorkPos(ImGui.GetMainViewport(ctx))
+      place_req = { vx + 60, vy + 90, 560, 640 }
+    end
+    if dock_side then
+      -- the action moves whichever docker has the focus, so only once this window is really in its new one, and has the focus:
+      -- on the first docked frame it isn't yet, and it moved the Mixer's docker instead
+      local me = reaper.JS_Window_Find and reaper.JS_Window_Find("BandSync", true)
+      if me and reaper.DockIsChildOfDock(me) == dock_side.docker then
+        reaper.JS_Window_SetFocus(me)
+        if reaper.JS_Window_GetFocus() == me then
+          reaper.Main_OnCommand(dock_side.action, 0)
+          band.msg("BandSync is docked at the " .. (dock_side.action == 41599 and "left" or "right") .. " of REAPER.\n\nREAPER opens a new docker there very narrow, " ..
+            "and a script can't widen it: drag its inner edge across. REAPER remembers the width after that.")
+        end
+        dock_side = nil
+      elseif reaper.time_precise() - dock_side.since > 3 then dock_side = nil end
+    end
     open_cards = 0
     local ok, e = pcall(frame) -- an error in our logic must still reach End
     if not ok then -- (and End must find no card open: 0.33.2's broken lib file failed inside one, and End killed the panel)

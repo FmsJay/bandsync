@@ -119,7 +119,8 @@ local function end_of_session(why)
   local n = event_count()
   if n == ended_at_n or not reaper.ValidatePtr2(0, proj, "ReaProject*") then return end
   ended_at_n = n
-  recall.save(proj, cfg, b.song, b.room, "end of session", true)
+  -- (20 quiet minutes isn't the end of anything: it looked like one in the middle of a session, first in the list: laptop, 0.42.5)
+  recall.save(proj, cfg, b.song, b.room, why:find("20 minutes", 1, true) and "20 quiet minutes" or "end of session", true)
   band.log("saved an end-of-session version (" .. why .. "): it's kept for good (Restore > Saved versions)")
   local droot = require("drive").root(cfg) -- and the project itself, for anyone to open from Drive (lib/sessionfile.lua)
   if droot then

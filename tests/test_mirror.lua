@@ -406,6 +406,12 @@ do
   assert(mirror.lane_words(N, 8) == "", "not on a lane: nothing")
   local S = { lanes("T1", 1, 1, ""), { kind = "obj", obj = "item", oid = "I-A", id = "a", user = "M", time = "T2", rev = 1, track = "T-1", state = on(0) } }
   assert(mirror.lane_words(S, 2) == "", "a track with one lane: nothing to say")
+  assert(mirror.rounded("<ITEM\nPOSITION 108.46153846154\nLENGTH 9.23076923076923\n") == mirror.rounded("<ITEM\nPOSITION 108.46153846154\nLENGTH 9.23076923076927\n"), "a 14th digit is arithmetic")
+  assert(mirror.rounded("<ITEM\nPOSITION 1\nLENGTH 9.25\n") ~= mirror.rounded("<ITEM\nPOSITION 1\nLENGTH 9.26\n"), "a real change isn't")
+  local playing, holds = mirror.lane_cover({ { pos = 30, len = 60, plays = false }, { pos = 32, len = 8, plays = true }, { pos = 30, len = 60, plays = false } })
+  assert(playing == 8 and holds == 60, "the first comp holds 8 s of 60: " .. playing .. " of " .. holds)
+  local all, whole = mirror.lane_cover({ { pos = 0, len = 10, plays = true }, { pos = 5, len = 10, plays = true }, { pos = 20, len = 5, plays = true } })
+  assert(all == 20 and whole == 20, "overlaps count once")
   local plan = mirror.plan_undo_moment(M, 4)
   assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
 end

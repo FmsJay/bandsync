@@ -19,10 +19,6 @@ local now = sync.driver(cfg, b.song, b.room, s)
 if now == cfg.user then return band.msg("You're already driving '" .. b.song .. "' (room " .. b.room .. ").") end
 local away = now and now ~= cfg.user
 for _, o in ipairs(sync.present(cfg, b.song, b.room)) do if o == now then away = false end end
-if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ")" ..
-    (away and ", but isn't here.\n\nTake control so the session can carry on? " or ".\n\nTake control? Tell them first: ") ..
-    "from now on your deletes, moves and lane choices reach everyone (except on tracks or regions someone owns)." ..
-    (away and " They can take it back when they return." or ""), "BandSync", 4) ~= 6 then return end
 
 local function handover()
   -- every handover leaves a recall point, so the band can always go back to how it was before
@@ -38,10 +34,17 @@ local function describe(c)
   return text
 end
 
+-- One question, whichever it is: a Yes here used to be followed by a menu nobody was told about (laptop, 0.42.9)
 local c = status.handover_check(cfg, b, proj)
-if #c.problems == 0 then return handover() end
+if #c.problems == 0 then
+  if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ")" ..
+      (away and ", but isn't here.\n\nTake control so the session can carry on? " or ".\n\nTake control? Tell them first: ") ..
+      "from now on your deletes, moves and lane choices reach everyone (except on tracks or regions someone owns)." ..
+      (away and " They can take it back when they return." or ""), "BandSync", 4) ~= 6 then return end
+  return handover()
+end
 -- (named choices, not Yes/No/Cancel: review, 2026-10-31)
-local items = { "#Not everyone is in sync yet:" }
+local items = { "#" .. tostring(now) .. " is driving. Take control? Not everyone is in sync yet:" }
 for line in (describe(c) .. "\n"):gmatch("(.-)\n") do if line:match("%S") then items[#items + 1] = "#   " .. line:gsub("|", "/") end end
 local wait_, now_ = "Wait for them (up to 2 minutes), then take control", "Take control now anyway"
 items[#items + 1] = wait_

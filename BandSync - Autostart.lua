@@ -31,8 +31,14 @@ local function loop()
   if not keys_set then -- (Ctrl+Z never rolls back a bandmate's work: lib/undo.lua. Not in the hidden renderer, above)
     keys_set = true
     pcall(require("undo").auto_keys, dir)
-    reaper.atexit(function() pcall(require("undo").auto_keys, dir) end)
+    local ok, why = pcall(require("startup").on_start) -- (the band's songs, opened without REAPER's boxes: lib/startup.lua)
+    if not ok then band.log("couldn't open the band's songs by itself: " .. tostring(why)) end
+    reaper.atexit(function()
+      pcall(require("undo").auto_keys, dir)
+      pcall(require("startup").on_quit)
+    end)
   end
+  pcall(require("startup").note)
   pcall(band.sws_colours) -- (SWS auto-colouring off while a band song is in front, back on otherwise)
   -- an update: the new code takes over in place (once the version on disk has held for two looks), as Live sync does;
   -- before 0.21.3 a running Autostart kept its old rules until REAPER restarted

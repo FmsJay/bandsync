@@ -47,7 +47,16 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     -- the host's own, and took every change in again: laptop, 0.42.4.)
     local here = reaper.GetResourcePath() .. "/BandSync/" .. song .. "/"
     local own, as_guest = here .. song .. ".rpp", here .. song .. " - " .. cfg.user .. ".rpp"
-    for _, f in ipairs({ reaper.GetExtState(band.SECTION, "song file " .. song), s.host == cfg.user and own or as_guest, s.host == cfg.user and as_guest or own }) do
+    local files = { reaper.GetExtState(band.SECTION, "song file " .. song), s.host == cfg.user and own or as_guest, s.host == cfg.user and as_guest or own }
+    if reaper.JS_File_Stat then -- (the one last worked on: with two files for a song it opened one 2 hours older, and sent its old comps: laptop, 0.42.9)
+      local stamp = {}
+      for _, f in ipairs(files) do
+        local status, _, _, modified = reaper.JS_File_Stat(f)
+        stamp[f] = status == 0 and tostring(modified) or ""
+      end
+      table.sort(files, function(a, z) return stamp[a] > stamp[z] end)
+    end
+    for _, f in ipairs(files) do
       if room == "main" and f ~= "" and reaper.file_exists(f) then
         if reaper.CountTracks(0) > 0 or select(2, reaper.EnumProjects(-1)) ~= "" then reaper.Main_OnCommand(40859, 0) end
         reaper.Main_openProject(f)

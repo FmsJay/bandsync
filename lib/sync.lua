@@ -1477,7 +1477,15 @@ function sync.preload(proj, cfg, song, room)
   reaper.PreventUIRefresh(1)
   local ok, err = pcall(function()
     mirror.watch(proj, cfg, song, room, { can = can, mode = who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" })
+    -- (REAPER can't draw while this runs, and a plug-in's load can't be cut short: 206 changes took 54 s on the laptop. So its title
+    -- bar says what's happening. REAPER puts its own title back by itself.)
+    local function say()
+      if reaper.JS_Window_SetTitle then
+        reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), string.format("BandSync: getting %s ready, %d change(s) to go...", song, sync.pending_events(proj, cfg, song, room)))
+      end
+    end
     while reaper.time_precise() - t0 < sync.PRELOAD_SECS do
+      say()
       local n = sync.receive(proj, cfg, song, room, can)
       total = total + n
       if n == 0 then break end

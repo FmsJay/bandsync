@@ -46,11 +46,8 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 ## 0. Interview (one message)
 
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
-runs the always-on machine) or **joining**; if joining, the host's **Syncthing device ID** (56
-characters, from the host's Syncthing "Show ID"); whether they have a **loopback cable** (output → input)
-for the latency check; whether they mind REAPER's **plug-in scan** (see step 2); whether they'll use **Live** (hearing
-each other while playing: needs Tailscale, step 4) and **Solo edit** (editing a song while the others are offline:
-needs Google Drive, step 5). Both are optional; recording and sending takes needs neither.
+runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they have a **loopback cable** (output → input)
+for the latency check; whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus, Tailscale or Google Drive: they're core, and installed without asking (James). Each waits for its own sign-in.
 
 ## 1. Syncthing (the shared folder)
 
@@ -122,7 +119,7 @@ Solo edit (versions) and History & restore tabs only exist there. ReaPack's API 
 walk them through *Extensions > ReaPack > Browse packages*, search **ReaImGui**, right-click > Install, Apply, then
 restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui": true`.
 
-## 4. SonoBus and Tailscale (only for Live)
+## 4. SonoBus and Tailscale
 
 **Real time** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
 from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to

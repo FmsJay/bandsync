@@ -409,7 +409,7 @@ local function timed_out(key)
     return "failed"
   end
   bg.stuck[j.name] = true
-  band.log("a wet take took over " .. bg.WAIT .. " s to render and was stopped: a plug-in may be waiting for an answer (a licence, missing hardware). Bandmates keep the last one until that part changes")
+  band.log("a wet take took over " .. bg.WAIT .. " s to render and was stopped: a plug-in may be waiting for an answer (a licence, missing hardware). Collaborators keep the last one until that part changes")
   return "stuck"
 end
 

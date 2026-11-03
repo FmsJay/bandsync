@@ -17,7 +17,7 @@ local ImGui = require "imgui" "0.10"
 
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if b and b.role == "solo" then return band.msg("This is a Solo edit copy: prepare the song itself, not the copy.") end
+if b and b.role == "solo" then return band.msg("This is a Solo edit copy: prepare the project itself, not the copy.") end
 local rows = prep.scan(proj, cfg, b)
 local ctx = ImGui.CreateContext("BandSync: prepare")
 local result -- summary lines once applied

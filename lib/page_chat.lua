@@ -3,9 +3,12 @@
 local band = require("band")
 local chat = {}
 
-local SCOPES = { { "room", "This room" }, { "song", "This song" }, { "band", "Band" } }
+local SCOPES = { { "room", "This room" }, { "song", "This project" }, { "band", "Group" } }
 local scope, draft, todo_text, link_title, link_url = "song", "", "", "", ""
 local cache, cache_at, cache_key = nil, -math.huge, ""
+
+-- Whose things show (the Chat page's Everyone box; the notes and the drawings go by it too). "" for everyone's.
+function chat.only() return reaper.GetExtState(band.SECTION, "show only") end
 
 function chat.dir(cfg, b, sc)
   if sc == "band" then return cfg.root .. "/_band/chat" end
@@ -78,30 +81,69 @@ local function delete_mine(ctx, ImGui, cfg, e)
 end
 
 function chat.draw(ctx, ImGui, cfg, b)
-  if not b or not b.song then return ImGui.TextDisabled(ctx, "Open a band song to chat about it.") end
+  if not b or not b.song then return ImGui.TextDisabled(ctx, "Open a group project to chat about it.") end
   for i, sc in ipairs(SCOPES) do
     if i > 1 then ImGui.SameLine(ctx) end
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
-  ImGui.SetItemTooltip(ctx, "Who sees it: everyone in this room, everyone on this song, or the whole band (every song).")
+  ImGui.SetItemTooltip(ctx, "Who sees it: everyone in this room, everyone on this project, or the whole group (every project).")
   do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
-    local script = (debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or "") .. "/BandSync - Draw.lua"
-    local id = reaper.AddRemoveReaScript(true, 0, script, true)
-    local running = id > 0 and reaper.GetToggleCommandState(id) == 1
+    -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
+    -- was open, the lag on this page: James, 0.42.28)
+    local root = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or ""
+    local running = reaper.time_precise() - (tonumber(reaper.GetExtState(band.SECTION, "draw alive")) or -60) < 3
+    local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
     ImGui.SameLine(ctx, 0, 24)
-    if ImGui.SmallButton(ctx, "Draw on the tracks") then
-      reaper.SetExtState(band.SECTION, "draw on", "1", false)
-      if not running and id > 0 then reaper.Main_OnCommand(id, 0) end
+    if drawing then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x4C8DF6FF); ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x4C8DF6FF) end
+    if ImGui.SmallButton(ctx, "Draw") then
+      if drawing then reaper.DeleteExtState(band.SECTION, "draw on", false)
+      else
+        reaper.DeleteExtState(band.SECTION, "draw hidden", true)
+        reaper.SetExtState(band.SECTION, "draw on", "1", false)
+        band.start_draw(root)
+      end
     end
-    ImGui.SetItemTooltip(ctx, "Draw on the arrange view for everyone in this room: drag on the tracks, Done or Esc to stop.\n" ..
+    if drawing then ImGui.PopStyleColor(ctx, 2) end
+    ImGui.SetItemTooltip(ctx, drawing and "Stop drawing (or Done on the bar, or Esc)." or "Draw on the tracks for everyone in this room: the tools show at the foot of the tracks.\n" ..
       "A drawing stays on its bar and track however anyone scrolls or zooms.")
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, running and "Hide drawings" or "Show drawings") then
-      if running then reaper.SetExtState(band.SECTION, "draw quit", "1", false) elseif id > 0 then reaper.Main_OnCommand(id, 0) end
+      if running then
+        reaper.SetExtState(band.SECTION, "draw hidden", "1", true)
+        reaper.DeleteExtState(band.SECTION, "draw on", false)
+        reaper.SetExtState(band.SECTION, "draw quit", "1", false)
+      else
+        reaper.DeleteExtState(band.SECTION, "draw hidden", true)
+        band.start_draw(root)
+      end
     end
-    ImGui.SetItemTooltip(ctx, running and "Stop showing the band's drawings here." or "Show what the band drew, over the arrange view (clicks still go to REAPER).")
+    ImGui.SetItemTooltip(ctx, running and "Stop showing the group's drawings on this computer. They stay for everyone else." or "Show what the group drew, over the arrange view (clicks still go to REAPER).")
   end
   local t = load(cfg, b)
+  do -- whose: messages, to-dos, links, notes and drawings, one person's or everyone's
+    local names, seen, only = { cfg.user }, { [cfg.user] = true }, chat.only()
+    for _, list in pairs(t) do
+      for _, v in ipairs(list) do
+        if type(v.user) == "string" and not seen[v.user] then seen[v.user] = true; names[#names + 1] = v.user end
+      end
+    end
+    for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
+      if not seen[st.user] then seen[st.user] = true; names[#names + 1] = st.user end
+    end
+    table.sort(names)
+    if ImGui.GetContentRegionAvail(ctx) > 180 then ImGui.SameLine(ctx, 0, 24) end
+    ImGui.SetNextItemWidth(ctx, 150)
+    if ImGui.BeginCombo(ctx, "##only", only == "" and "Everyone" or only) then
+      if ImGui.Selectable(ctx, "Everyone", only == "") then reaper.DeleteExtState(band.SECTION, "show only", false) end
+      for _, n in ipairs(names) do
+        if ImGui.Selectable(ctx, n, n == only) then reaper.SetExtState(band.SECTION, "show only", n, false) end
+      end
+      ImGui.EndCombo(ctx)
+    end
+    ImGui.SetItemTooltip(ctx, "Show only one person's messages, to-dos, links, notes and drawings, on this computer.")
+  end
+  local only = chat.only()
+  local function shown(v) return only == "" or v.user == only end
   if ImGui.BeginTabBar(ctx, "chat") then
     if ImGui.BeginTabItem(ctx, "Messages") then
       local newest = t.msgs[#t.msgs] and t.msgs[#t.msgs].file:match("[/\\]([^/\\]+)$"):sub(1, 15) or ""
@@ -110,12 +152,14 @@ function chat.draw(ctx, ImGui, cfg, b)
       if ImGui.BeginChild(ctx, "msgs", 0, math.max(60, h - 34), ImGui.ChildFlags_Borders) then
         if #t.msgs == 0 then ImGui.TextDisabled(ctx, "No messages yet.") end
         for _, m in ipairs(t.msgs) do
-          ImGui.PushID(ctx, m.file)
-          ImGui.TextDisabled(ctx, when(m.time))
-          ImGui.SameLine(ctx)
-          ImGui.TextWrapped(ctx, tostring(m.user) .. ": " .. tostring(m.text))
-          delete_mine(ctx, ImGui, cfg, m)
-          ImGui.PopID(ctx)
+          if shown(m) then
+            ImGui.PushID(ctx, m.file)
+            ImGui.TextDisabled(ctx, when(m.time))
+            ImGui.SameLine(ctx)
+            ImGui.TextWrapped(ctx, tostring(m.user) .. ": " .. tostring(m.text))
+            delete_mine(ctx, ImGui, cfg, m)
+            ImGui.PopID(ctx)
+          end
         end
         if ImGui.GetScrollY(ctx) >= ImGui.GetScrollMaxY(ctx) - 20 then ImGui.SetScrollHereY(ctx, 1) end -- follow new ones
         ImGui.EndChild(ctx)
@@ -129,12 +173,14 @@ function chat.draw(ctx, ImGui, cfg, b)
     end
     if ImGui.BeginTabItem(ctx, "To-do") then
       for _, d in ipairs(t.todo) do
-        ImGui.PushID(ctx, d.file)
-        local ch, v = ImGui.Checkbox(ctx, tostring(d.text), d.done == true)
-        if ch then d.done, d.done_by = v, cfg.user; local f = d.file; d.file = nil; band.write_json(f, d); cache = nil end
-        if d.done and d.done_by then ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, "(" .. d.done_by .. ")") end
-        delete_mine(ctx, ImGui, cfg, d)
-        ImGui.PopID(ctx)
+        if shown(d) then
+          ImGui.PushID(ctx, d.file)
+          local ch, v = ImGui.Checkbox(ctx, tostring(d.text), d.done == true)
+          if ch then d.done, d.done_by = v, cfg.user; local f = d.file; d.file = nil; band.write_json(f, d); cache = nil end
+          if d.done and d.done_by then ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, "(" .. d.done_by .. ")") end
+          delete_mine(ctx, ImGui, cfg, d)
+          ImGui.PopID(ctx)
+        end
       end
       ImGui.SetNextItemWidth(ctx, -60)
       local enter
@@ -145,6 +191,7 @@ function chat.draw(ctx, ImGui, cfg, b)
     end
     if ImGui.BeginTabItem(ctx, "Links") then
       for _, l in ipairs(t.links) do
+        if not shown(l) then goto next_link end
         ImGui.PushID(ctx, l.file)
         if ImGui.SmallButton(ctx, "Open") then
           -- a bandmate typed this: web links open in the browser; anything else (a file, a program) is shown first
@@ -161,6 +208,7 @@ function chat.draw(ctx, ImGui, cfg, b)
         ImGui.TextWrapped(ctx, (l.title ~= "" and l.title or l.url) .. "  (" .. tostring(l.user) .. ")")
         delete_mine(ctx, ImGui, cfg, l)
         ImGui.PopID(ctx)
+        ::next_link::
       end
       ImGui.SetNextItemWidth(ctx, 160)
       _, link_title = ImGui.InputTextWithHint(ctx, "##lt", "title (lyrics, chart...)", link_title)

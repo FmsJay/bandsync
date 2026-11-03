@@ -1045,7 +1045,7 @@ function sync.apply(proj, ev, dir, root, can, me)
   if ev.type == "track" then return apply_track(proj, ev) end
   if ev.type == "mix" and type(ev.state) == "table" then -- the driver's buses, sends into them, master plug-ins (lib/mixlayer.lua)
     local n, clash = require("mixlayer").apply(proj, ev.state)
-    if clash and #clash > 0 then band.log("the band's mix has track(s) named like yours, left out here: " .. table.concat(clash, ", ")) end
+    if clash and #clash > 0 then band.log("the group's mix has track(s) named like yours, left out here: " .. table.concat(clash, ", ")) end
     setext(proj, band.SECTION, "mix_sig", ev.sig or "")
     return true
   end
@@ -1168,7 +1168,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
         for i, word in ipairs({ "the tempo map", "the markers", "the project settings (notes, title, timebase, lanes)" }) do
           if band.json_encode(before[i] or {}) ~= band.json_encode(now[i] or {}) then what[#what + 1] = word end
         end
-        band.log("sent " .. (#what > 0 and table.concat(what, " and ") or "the timeline") .. " to the band")
+        band.log("sent " .. (#what > 0 and table.concat(what, " and ") or "the timeline") .. " to the group")
         local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
         for i, m in ipairs(tempo) do
           local o = (before[1] or {})[i]
@@ -1192,11 +1192,11 @@ function sync.watch_timeline(proj, cfg, song, room, can)
           band.apply_tempo(proj, before[1])
           band.apply_project(proj, before[3])
           band.apply_markers(proj, before[2] or {})
-          reaper.Undo_EndBlock2(proj, "BandSync: put the band's tempo map and markers back", -1)
+          reaper.Undo_EndBlock2(proj, "BandSync: put the group's tempo map and markers back", -1)
           sig = timeline_sig(proj)
           sync.put_back("the tempo map, markers and project settings are the driver's to change: put back (take control, or the driver can set Editing to Open)")
         else
-          band.log("tempo or markers changed here, but only the driver's changes go to the band (Take control first)")
+          band.log("tempo or markers changed here, but only the driver's changes go to the group (Take control first)")
         end
       end
     end
@@ -1224,7 +1224,7 @@ function sync.receive(proj, cfg, song, room, can)
         sync.unreadable[id] = sync.unreadable[id] or reaper.time_precise()
         if reaper.time_precise() - sync.unreadable[id] > 120 then
           setext(proj, sync.APPLIED, id, "1")
-          band.log("skipped a file in the band's folder that BandSync can't read (" .. f .. ")")
+          band.log("skipped a file in the group's folder that BandSync can't read (" .. f .. ")")
         end
       end
       if good then
@@ -1359,7 +1359,7 @@ function sync.receive(proj, cfg, song, room, can)
     end
     if next(orph) == nil then mirror.orphaned[tostring(proj)] = nil end
   end
-  if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the band", -1) end
+  if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the group", -1) end
   for _, d in ipairs(done) do band.log(d) end
   return applied
 end
@@ -1460,6 +1460,36 @@ function sync.write_status(proj, cfg, song, room, info)
   info.reaper = (reaper.GetAppVersion():match("^[%d%.]+")) -- (Setup > Health compares the band's: "7.79/win64" -> "7.79")
   info.takes = sync.holdings(proj)
   band.write_json(dir .. "/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json", info)
+end
+
+-- Opening a project: what's new for it comes in before you get it, in one go. Left to Live sync, it comes a quarter of a second at a
+-- time with REAPER redrawing between, and you work through the lag (James, 2026-11-02). What's here that hasn't gone out goes first,
+-- as Live sync would have it. A tab you click on that's behind still catches up as it goes: it's already yours to use by then.
+sync.PRELOAD_SECS = 20
+function sync.preload(proj, cfg, song, room)
+  if select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= "" then return 0 end
+  local s = band.read_json(band.session_path(cfg, song))
+  if not (s and s.sync == "mirror") then return 0 end
+  local mirror = require("mirror")
+  local can, who = sync.authority(cfg, song, room, s)
+  sync.driver_name, sync.room_mode = who.driver, who.mode
+  local t0, total = reaper.time_precise(), 0
+  reaper.PreventUIRefresh(1)
+  local ok, err = pcall(function()
+    mirror.watch(proj, cfg, song, room, { can = can, mode = who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" })
+    while reaper.time_precise() - t0 < sync.PRELOAD_SECS do
+      local n = sync.receive(proj, cfg, song, room, can)
+      total = total + n
+      if n == 0 then break end
+    end
+  end)
+  reaper.PreventUIRefresh(-1)
+  reaper.UpdateArrange()
+  if not ok then band.log("getting '" .. song .. "' ready: " .. tostring(err)) end
+  if total > 0 then band.log(string.format("'%s' is ready: %d change(s) from the group came in as it opened (%.1f s)", song, total, reaper.time_precise() - t0)) end
+  -- (saved, so next time it opens from here. A file 27 hours old took 3034 changes in again on the Mac: 0.42.27)
+  if total > 100 and select(2, reaper.EnumProjects(-1)) ~= "" and reaper.EnumProjects(-1) == proj then reaper.Main_SaveProject(proj, false) end
+  return total
 end
 
 return sync

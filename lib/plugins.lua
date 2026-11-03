@@ -171,7 +171,7 @@ end
 -- and the members, or nil + why (fewer than two lists: nothing to compare yet).
 function plugins.update_folder(cfg, min_members)
   local set, members = plugins.band(cfg)
-  if #members < (min_members or 2) then return nil, "waiting for bandmates' plug-in lists (they're sent when Live sync starts)", members end
+  if #members < (min_members or 2) then return nil, "waiting for collaborators' plug-in lists (they're sent when Live sync starts)", members end
   local best = {}
   for _, p in ipairs(plugins.installed()) do
     local k, kind = plugins.key(p.name), plugins.kind(p.name)

@@ -1484,7 +1484,17 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   return ok
 end
 
-local function event_file(room_dir, evid) return evid and evid ~= "" and require("band").read_json(room_dir .. "/events/" .. evid .. ".json") or nil end
+-- (a side room starts as a copy: what hasn't changed in it last changed in the room it came from. Looked for only here, a chain
+-- that merely reads differently on this machine went out as a change, and opening a room printed 16 parts again: Mac, 0.42.27)
+local room_parent = {}
+local function event_file(room_dir, evid)
+  if not evid or evid == "" then return nil end
+  local band = require("band")
+  local ev = band.read_json(room_dir .. "/events/" .. evid .. ".json")
+  if ev then return ev end
+  room_parent[room_dir] = room_parent[room_dir] or (band.read_json(room_dir .. "/room.json") or {}).parent -- (it may not have synced here yet: not noted as none)
+  return room_parent[room_dir] and event_file((room_dir:gsub("[^/]+$", room_parent[room_dir])), evid) or nil
+end
 mirror.event_file = event_file
 
 -- The name permissions use for an object (claims are by track name): its track's name.
@@ -1716,10 +1726,10 @@ function mirror.watch(proj, cfg, song, room, opts)
       if o.kind == "item" and o.ptr then
         reaper.MoveMediaItemToTrack(o.ptr, keep_track(proj, why.name or ""))
         why.text = "a new item on " .. where .. " isn't yours to add: it's kept here on '" .. where .. " (yours, not sent)', " ..
-          (why.to and ("and suggested to " .. why.to) or "not sent to the band (claim the track, or take control)")
+          (why.to and ("and suggested to " .. why.to) or "not sent to the group (claim the track, or take control)")
       elseif o.kind == "track" and o.ptr then
         reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true)
-        why.text = "a new track isn't yours to add: it stays here as yours, not sent to the band (take control to add tracks)"
+        why.text = "a new track isn't yours to add: it stays here as yours, not sent to the group (take control to add tracks)"
       elseif why.text then -- (a part that never went out: said once. Every pass, it pushed all else out of the log: laptop, 0.42.4)
         say_once("never" .. o.oid, why.text .. " (it stays on this computer)")
         return
@@ -1727,7 +1737,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     else
       -- known, but its last change can't be read here (still arriving, or from another room): left as it is
       return say_once("noev" .. o.oid, "couldn't put back a change on " .. ((why.name or "") ~= "" and why.name or "an unnamed track") ..
-        " (the band's version hasn't arrived here yet): it stays as it is for now")
+        " (the group's version hasn't arrived here yet): it stays as it is for now")
     end
     back = back + 1
     if why.text then sync.put_back(why.text) end
@@ -1867,7 +1877,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
       end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
-        say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the band has it")
+        say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the group has it")
         if h == "" then -- the band deleted it since: gone here too (2026-10-31: three deleted tracks came back on a reopen)
           mirror.reopened[rk] = nil
           if o.kind == "track" or o.kind == "item" then mirror.apply(proj, { obj = o.kind, oid = o.oid, gone = true }, media, opts.local_mix) end
@@ -1934,7 +1944,7 @@ function mirror.watch(proj, cfg, song, room, opts)
           mirror.copy_failed = nil
           local shared = mirror.share_media(state, media, o.ptr)
           if mirror.copy_failed then -- (its audio didn't reach the band's folder: sent, it'd point at a file only we have)
-            return say_once("copy" .. o.oid, string.format("couldn't copy the audio of an item on %s into the band's folder (%s): it goes out once it can",
+            return say_once("copy" .. o.oid, string.format("couldn't copy the audio of an item on %s into the group's folder (%s): it goes out once it can",
               name ~= "" and name or "an unnamed track", mirror.copy_failed))
           end
           if shared ~= state then -- it now plays the shared copy here too, so the next look sees the same thing
@@ -1969,6 +1979,9 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
         local id = sync.post(cfg, song, room, ev)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
+        if name ~= "" and not ev.auto and select(2, reaper.GetProjExtState(proj, band.SECTION, "last_track")) ~= name then
+          reaper.SetProjExtState(proj, band.SECTION, "last_track", name) -- (what they're working in: Who's here)
+        end
         mirror.unsent[tostring(proj) .. o.oid] = nil -- (gone out: the band's next change to it may land)
         require("presence").touch(proj, o.oid)
         sent = sent + 1
@@ -2086,7 +2099,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       elseif oid:sub(1, 1) == "I" and mirror.find(proj, "item", oid) then
         -- still here, on a track of this machine's own (Real time, "yours, not sent"): not deleted. Sent as gone, it
         -- went for everyone (review, 2026-10-31); the band keeps it where it was
-        say_once("local" .. oid, "an item of the band's is on a track of your own: it isn't sent from there, and the band keeps it where it was (move it back to a band track to change it)")
+        say_once("local" .. oid, "an item of the group's is on a track of your own: it isn't sent from there, and the group keeps it where it was (move it back to a group track to change it)")
       else gone[#gone + 1] = { oid = oid, rev = rev, evid = evid } end
     end
   end
@@ -2207,7 +2220,7 @@ function mirror.repair(proj, ev, room_dir, local_mix)
     local ok, h = mirror.apply(proj, best, room_dir .. "/media", local_mix)
     if ok then remember(proj, ev.oid, ev.rev, h, best.id, (ev.time or "") .. (ev.user or "")) end
   end
-  require("sync").put_back("a change you made just as control changed hands wasn't yours to make: it's back as the band has it")
+  require("sync").put_back("a change you made just as control changed hands wasn't yours to make: it's back as the group has it")
 end
 
 -- History's "selected tracks" scope: the tracks selected in REAPER, their plug-ins and everything on them (then or
@@ -2270,7 +2283,8 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
     -- (by who made it, not who touched it last: having restored the Mac's track earlier made it "yours" to remove. Only undoing
     -- that very change of yours may take it away again.)
     -- (nor what your own going back revived after a bandmate deleted it: forward left a glue's pieces under the glued part: laptop, 0.42.10)
-    local theirs_new = not p.t and not mirror.is_creator(p.oid, cfg.user) and not (opts.undoes and last and last.user == cfg.user)
+    -- (opts.exact: a room made to look at that moment, where nothing is anybody's to keep)
+    local theirs_new = not opts.exact and not p.t and not mirror.is_creator(p.oid, cfg.user) and not (opts.undoes and last and last.user == cfg.user)
       and not (last and last.user == cfg.user and last.revived)
     local mine_gone = p.t and last and last.gone and last.user == cfg.user
     if not p.t and (h or "") == "" then -- gone then, gone now
@@ -2324,8 +2338,8 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   local names = {}
   for n in pairs(kept_names) do names[#names + 1] = n end
   table.sort(names)
-  return string.format("%d change(s) brought back and sent to the band%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
-    kept > 0 and string.format(" (kept what bandmates added since: %s)", table.concat(names, ", ")) or "")
+  return string.format("%d change(s) brought back and sent to the group%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
+    kept > 0 and string.format(" (kept what collaborators added since: %s)", table.concat(names, ", ")) or "")
 end
 
 -- Local mixing on: each track's record here is redone without its fader and pan.

@@ -37,7 +37,7 @@ if reaper.set_action_options then reaper.set_action_options(2) end
 local beat0 = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if beat0 and reaper.time_precise() - beat0 < 5 then return band.log("Live sync is already running for '" .. b.song .. "'") end
 if band.synced_elsewhere(proj) then
-  return band.log("'" .. b.song .. "' is already syncing in another tab: work there (this tab is a second copy of the song, and isn't synced)")
+  return band.log("'" .. b.song .. "' is already syncing in another tab: work there (this tab is a second copy of the project, and isn't synced)")
 end
 -- the newest Live sync for a tab owns it: while a dialog is open every script pauses, its heartbeat goes stale, and
 -- Autostart may start another one for the tab; when the dialog closes the older one sees it was replaced and stops
@@ -83,7 +83,7 @@ for _, d in ipairs(band.subdirs(cfg.root)) do
     if ok == "started" then band.log("started Syncthing"); st_started = reaper.time_precise() elseif not ok then band.log("Syncthing: " .. why) end
     if ok then -- quick hand-off for live use (lib/services.lua): the live MIDI view a couple of seconds behind
       local set, err = services.tune_band_folder(band.info(cfg.root).id)
-      if set and #set > 0 then band.log("Syncthing's band folder tuned for live use: " .. table.concat(set, ", "))
+      if set and #set > 0 then band.log("Syncthing's group folder tuned for live use: " .. table.concat(set, ", "))
       elseif not set then
         -- just started, it doesn't answer for a few seconds (2026-10-29, laptop): try again for a few minutes
         tune_left, tune_at = 10, reaper.time_precise()
@@ -98,7 +98,7 @@ end
 do
   local plugins = require("plugins")
   local ok, n, why = pcall(function() plugins.publish(cfg); return plugins.update_folder(cfg) end)
-  if ok and n then band.log(string.format("%d plug-ins everyone in the band has: FX browser folder '%s'", n, plugins.FOLDER))
+  if ok and n then band.log(string.format("%d plug-ins everyone in the group has: FX browser folder '%s'", n, plugins.FOLDER))
   elseif not ok then band.log("plug-in list: " .. tostring(n)) end
 end
 
@@ -174,6 +174,7 @@ end
 
 
 local last_driver
+local drawings_at = -math.huge -- (when this last looked whether the room has drawings to show)
 local last_session -- a session.json caught mid-sync reads as nothing: keep the last good one
 local joined = {} -- machines this Live sync has already let in
 -- Are we in the middle of editing? (the project changed in the last 2 s, or the mouse button is down): the band's
@@ -202,7 +203,7 @@ local function poll()
   if st_started and reaper.time_precise() - st_started > 20 then
     st_started = nil
     if not require("services").running("syncthing", true) then
-      band.log("Syncthing didn't start, so nothing reaches the band or comes in: start Syncthing yourself (Start menu, or its tray icon), " ..
+      band.log("Syncthing didn't start, so nothing reaches the group or comes in: start Syncthing yourself (Start menu, or its tray icon), " ..
         "then Live sync carries on by itself")
     end
   end
@@ -211,7 +212,7 @@ local function poll()
     local set, err = require("services").tune_band_folder(band.info(cfg.root).id)
     if set then
       tune_left = 0
-      band.log(#set > 0 and ("Syncthing's band folder tuned for live use: " .. table.concat(set, ", ")) or "Syncthing is answering")
+      band.log(#set > 0 and ("Syncthing's group folder tuned for live use: " .. table.concat(set, ", ")) or "Syncthing is answering")
     elseif tune_left == 0 then
       band.log("Syncthing: " .. tostring(err) .. " (Setup > Health shows whether the shared folder syncs)")
     end
@@ -232,8 +233,8 @@ local function poll()
   local alone = #others == 0
   if alone ~= sync.alone then
     if alone or sync.alone ~= nil then
-      band.log(alone and "nobody else is here: you have full control (what you change still goes to the band, and reaches them when they're back)"
-        or (table.concat(others, ", ") .. " joined: the band's rules are back (" .. tostring(driver) .. " drives)"))
+      band.log(alone and "nobody else is here: you have full control (what you change still goes to the group, and reaches them when they're back)"
+        or (table.concat(others, ", ") .. " joined: the group's rules are back (" .. tostring(driver) .. " drives)"))
     end
     sync.alone = alone
     reaper.SetExtState(band.SECTION, "alone " .. tostring(proj), alone and "1" or "", false)
@@ -283,7 +284,7 @@ local function poll()
       local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix,
         held = held, hold = hold, here = here, printers = who.printers })
       if not ok then band.log("mirror sync: " .. tostring(sent))
-      elseif sent > 0 then band.log(sent .. " change(s) went to the band") end
+      elseif sent > 0 then band.log(sent .. " change(s) went to the group") end
       mirror_took = reaper.time_precise() - now
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
       if hold then -- (how many are waiting, for the panel's "Holding N changes")
@@ -292,6 +293,13 @@ local function poll()
         reaper.SetExtState(band.SECTION, "held " .. key, tostring(n), false)
       end
     end
+  end
+
+  -- what's drawn in a room shows without anyone asking, unless this person hid them: nobody would see a drawing until they
+  -- pressed Show drawings on the Chat page (James, 2026-11-02: "other people can see the drawings too, right?")
+  if now - drawings_at > 10 and reaper.GetExtState(band.SECTION, "draw hidden") == "" and reaper.JS_Window_FindChildByID and reaper.APIExists("ImGui_GetBuiltinPath") then
+    drawings_at = now
+    if band.files(sync.room_dir(cfg, b.song, b.room) .. "/drawings", ".json")[1] then band.start_draw(dir) end
   end
 
   do -- (a suggestion arrived or was answered: lib/suggest.lua)
@@ -310,7 +318,7 @@ local function poll()
     local room_can = room == b.room and can or sync.authority(cfg, b.song, room, s)
     local n = 0
     if not editing() and not redo_pending() then n = sync.receive(proj, cfg, b.song, room, room_can) end
-    if n > 0 then band.log(n .. " change(s) from the band (" .. room .. ")"); mirror_due = true end
+    if n > 0 then band.log(n .. " change(s) from the group (" .. room .. ")"); mirror_due = true end
   end
 
   -- a bandmate who has every change has had a different project from ours for a minute, and we're caught up too:
@@ -332,8 +340,8 @@ local function poll()
     if heal_since and now - heal_since > 60 and now - healed_at > 300 and reaper.EnumProjects(-1) == proj then
       healed_at, heal_since = now, nil
       local ok, n = pcall(require("mirror").heal, proj, sync.room_dir(cfg, b.song, b.room), sync.local_mix)
-      if not ok then band.log("couldn't bring the project in line with the band: " .. tostring(n))
-      elseif n > 0 then band.log(string.format("brought %d thing(s) in line with the band's newest version (they hadn't landed here)", n)); mirror_due = true end
+      if not ok then band.log("couldn't bring the project in line with the group: " .. tostring(n))
+      elseif n > 0 then band.log(string.format("brought %d thing(s) in line with the group's newest version (they hadn't landed here)", n)); mirror_due = true end
     end
   end
 
@@ -349,7 +357,7 @@ local function poll()
       if auto and services.on_tailnet(d.address) and not joined[d.id] then
         joined[d.id] = true
         local ok, why = services.add_device(d.id, d.name, band.info(cfg.root).id)
-        band.log(ok and string.format("'%s' (%s) joined the band folder: it asked over the band's Tailscale", d.name, d.id:sub(1, 7))
+        band.log(ok and string.format("'%s' (%s) joined the group folder: it asked over the group's Tailscale", d.name, d.id:sub(1, 7))
           or ("couldn't add '" .. d.name .. "': " .. tostring(why)))
       elseif not joined[d.id] then
         ask[#ask + 1] = d
@@ -414,7 +422,7 @@ local function poll()
       elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
     end
     pcall(require("sessionfile").catch_up, b.song, 1.0) -- your recordings the end-of-session projects use
-    if more and not drive_more then band.log("Google Drive: bringing the band's copy of this room up to date (carries on between passes)") end
+    if more and not drive_more then band.log("Google Drive: bringing the group's copy of this room up to date (carries on between passes)") end
     if moved > 0 and not more then band.log(string.format("Google Drive copy up to date (%d file(s) this pass)", moved)) end
     drive_more = more
   end
@@ -440,10 +448,11 @@ local function poll()
     pending = sync.pending_events(proj, cfg, b.song, b.room), armed = armed, side = side_bars(),
     playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil, recording = reaper.GetPlayStateEx(proj) & 4 == 4 or nil,
     front = reaper.EnumProjects(-1) == proj, mirror = s and s.sync == "mirror" and require("mirror").root(proj) or nil,
-    editing = require("presence").editing(proj), view = require("presence").view(proj), ping = require("presence").my_ping(proj) }
+    editing = require("presence").editing(proj), view = require("presence").view(proj), ping = require("presence").my_ping(proj),
+    last_track = select(2, reaper.GetProjExtState(proj, band.SECTION, "last_track")) }
   local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
     tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror) ..
-    band.json_encode({ info.editing, info.view, info.ping or false })
+    band.json_encode({ info.editing, info.view, info.ping or false }) .. info.last_track
   if fingerprint ~= status_json or now - last_status > 15 then
     status_json, last_status = fingerprint, now
     sync.write_status(proj, cfg, b.song, b.room, info)
@@ -602,8 +611,8 @@ local function tick_body() -- returns true to keep going
         ev.lag = together.bars_after(proj, pos, lagbars)
         sync.post(cfg, b.song, b.room, ev)
         fired[ev.id], cue_at = true, math.max(cue_at, ev.at)
-        reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. (playing and string.format("you %s from %.2f s: the band follows %.1f s behind",
-          ev.rec and "recorded" or "played", pos, ev.lag) or "you stopped: the band stops too"), false)
+        reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. (playing and string.format("you %s from %.2f s: the group follows %.1f s behind",
+          ev.rec and "recorded" or "played", pos, ev.lag) or "you stopped: the group stops too"), false)
       end
     end
     side.playing, side.pos, side.t = playing, pos, tp

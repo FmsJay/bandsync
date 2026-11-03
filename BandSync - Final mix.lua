@@ -10,7 +10,7 @@ package.path = dir .. "/lib/?.lua;" .. package.path
 local band, mirror = require("band"), require("mirror")
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("This project isn't a band song: open the band's song first (BandSync panel).") end
+if not b then return band.msg("This project isn't a group project: open the group's project first (BandSync panel).") end
 local cfg = band.settings()
 if not cfg then return end
 if reaper.GetPlayStateEx(proj) & 4 == 4 then return band.msg("Stop recording first.") end
@@ -56,11 +56,11 @@ if src then
   local adjust = reaper.CalculateNormalization(src, 2, 0, 0, 0) -- (2: peak, to 0 dB: what it would take to reach full scale)
   reaper.PCM_Source_Destroy(src)
   if adjust and adjust > 0 and adjust <= 1.001 then
-    band.log("the mix reaches full scale, so it probably clips. Turn the master down and render again (your master is your own: it doesn't go to the band)")
+    band.log("the mix reaches full scale, so it probably clips. Turn the master down and render again (your master is your own: it doesn't go to the group)")
   end
 end
 if made then
-  band.log("mix rendered for the band: " .. out .. "/" .. made)
+  band.log("mix rendered for the group: " .. out .. "/" .. made)
   local droot = require("drive").root(cfg)
   if droot then
     reaper.RecursiveCreateDirectory(droot .. "/" .. b.song .. "/mixes", 0)

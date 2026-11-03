@@ -125,7 +125,7 @@ local RANK = { track = 1, recv = 2, misc = 2, env = 2, item = 3 }
 function suggest.accept(proj, cfg, room_dir, h, may, local_mix)
   local band, mirror = require("band"), require("mirror")
   if reaper.GetPlayStateEx(proj) ~= 0 then return nil, "Stop playback first." end
-  if reaper.EnumProjects(-1) ~= proj then return nil, "Switch to this song's tab first." end
+  if reaper.EnumProjects(-1) ~= proj then return nil, "Switch to this project's tab first." end
   local media, list = room_dir .. "/media", {}
   for _, oid in ipairs(h.oids) do
     local c = band.read_json(parts_of(room_dir, h.id) .. "/" .. oid .. ".json")
@@ -208,11 +208,11 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
       if did then
         suggest.note = nil
         suggest.answer(room_dir, h, cfg.user, "accepted", { left = stale + refused })
-        band.log(string.format("you accepted %s's suggestion: %d change(s) go to the band as yours%s", tostring(h.from), did,
+        band.log(string.format("you accepted %s's suggestion: %d change(s) go to the group as yours%s", tostring(h.from), did,
           stale + refused > 0 and string.format("; %d had changed since or aren't yours, and stay as they are", stale + refused) or ""))
       else suggest.note = stale end
     end
-    ImGui.SetItemTooltip(ctx, "It lands on your tracks as your own change and goes to the band from you. Your claim stays. " .. require("undo").key_name() .. " takes it back.")
+    ImGui.SetItemTooltip(ctx, "It lands on your tracks as your own change and goes to the group from you. Your claim stays. " .. require("undo").key_name() .. " takes it back.")
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Decline") then
       suggest.answer(room_dir, h, cfg.user, "declined")

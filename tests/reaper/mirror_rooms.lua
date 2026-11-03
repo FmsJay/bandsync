@@ -40,6 +40,17 @@ local ok, err = pcall(function()
     end
   end
   check(mirror.watch(ps, A, song, "side", { can = yes, mode = "claims" }) == 0, "the side copy starts in step (nothing to send)")
+  -- what hasn't changed in the room last changed in its parent: found there, so it can be put back, or read as the same
+  require("band").write_json(sync.room_dir(A, song, "side") .. "/room.json", { parent = "main", by = "James" })
+  local side_dir = sync.room_dir(A, song, "side")
+  check(mirror.event_file(side_dir, select(3, mirror.known(ps, xo))) ~= nil, "a side room finds an unchanged part's last change in its parent")
+  check(mirror.event_file(side_dir, "NO-SUCH-EVENT") == nil, "and nothing for what's nowhere")
+  do
+    local sy = mirror.find(ps, "item", yo)
+    reaper.SetMediaItemInfo_Value(sy, "D_POSITION", 2)
+    local s0 = mirror.watch(ps, A, song, "side", { can = function() return false end, mode = "driver" }) -- (driver: a maker may change their own otherwise)
+    check(s0 == 0 and reaper.GetMediaItemInfo_Value(mirror.find(ps, "item", yo), "D_POSITION") == 4, "a change you may not make in the room is put back from the parent's version")
+  end
   local sx = mirror.find(ps, "item", xo)
   reaper.SetMediaItemInfo_Value(sx, "D_POSITION", 8)
   local z = reaper.CreateNewMIDIItemInProj(reaper.GetTrack(ps, 0), 12, 13, false)

@@ -86,12 +86,12 @@ function pp.draw(ctx, ImGui, proj, cfg)
     end
   end
   local tmap = pp.translations(cfg)
-  ImGui.TextDisabled(ctx, "Plug-ins in this project, who doesn't have them, and the band's translation for them.")
+  ImGui.TextDisabled(ctx, "Plug-ins in this project, who doesn't have them, and the group's translation for them.")
   if ImGui.Button(ctx, "Apply translations here") then
-    band.log(pp.apply_here(proj, cfg) .. " translation(s) added on this machine (only here: they never go to the band)")
+    band.log(pp.apply_here(proj, cfg) .. " translation(s) added on this machine (only here: they never go to the group)")
     used_at = -math.huge
   end
-  ImGui.SetItemTooltip(ctx, "Adds the band's translation right after each plug-in this machine doesn't have, so you hear something close. " ..
+  ImGui.SetItemTooltip(ctx, "Adds the group's translation right after each plug-in this machine doesn't have, so you hear something close. " ..
     "Only on this machine; the original stays in the project for everyone who has it.")
   if ImGui.BeginTable(ctx, "plugs", 4, ImGui.TableFlags_RowBg | ImGui.TableFlags_SizingStretchProp | ImGui.TableFlags_ScrollY) then
     ImGui.TableSetupScrollFreeze(ctx, 0, 1)
@@ -117,7 +117,7 @@ function pp.draw(ctx, ImGui, proj, cfg)
       if ImGui.SmallButton(ctx, t and "Change" or "Set") then picking, filter, found, open_now = u, "", nil, true end
       if t then
         ImGui.SameLine(ctx)
-        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the band's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "BandSync", 4) == 6 then
+        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the group's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "BandSync", 4) == 6 then
           os.remove(tfile(cfg, u.key))
           require("band").log("removed the translation for " .. (u.name:gsub("^%w+:%s*", "")))
         end

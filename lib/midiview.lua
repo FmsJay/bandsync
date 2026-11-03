@@ -76,7 +76,7 @@ function midiview.show(proj, it, before)
 end
 
 function midiview.options(ctx, ImGui)
-  local rv, v = ImGui.Checkbox(ctx, "Open bandmates' MIDI edits as they happen##midiview", midiview.on())
+  local rv, v = ImGui.Checkbox(ctx, "Open collaborators' MIDI edits as they happen##midiview", midiview.on())
   if rv then reaper.SetExtState(require("band").SECTION, "show midi edits", v and "on" or "", true) end
   ImGui.SetItemTooltip(ctx, "When someone's change to a MIDI part reaches you, it opens in the MIDI editor with the notes they changed selected.\n" ..
     "A MIDI editor you opened yourself is left alone. Only on this computer.")

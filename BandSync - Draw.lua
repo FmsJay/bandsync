@@ -36,9 +36,17 @@ reaper.atexit(function()
   hold_mouse(false)
   if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end
   reaper.DeleteExtState(band.SECTION, "draw on", false)
+  reaper.DeleteExtState(band.SECTION, "draw alive", false)
 end)
 
+local theme = require("theme")
 local ctx = ImGui.CreateContext("BandSync drawings")
+local function make_font()
+  local f = ImGui.CreateFont("sans-serif")
+  ImGui.Attach(ctx, f)
+  return f
+end
+local ui_font = make_font()
 local PALETTE = { 0xFF5A5AFF, 0x4CC2FFFF, 0x7BE07BFF, 0xFFC24CFF, 0xC88BFFFF, 0xFF8BD0FF }
 -- the toolbar (James, 2026-11-01: "drawing on the project like it's microsoft paint"): this machine's choices, kept
 local TOOLS = { { "pen", "Pen" }, { "marker", "Highlighter" }, { "line", "Line" }, { "arrow", "Arrow" }, { "box", "Box" },
@@ -127,14 +135,22 @@ local TEXT_SIZE = { [2] = 14, [4] = 20, [8] = 30 }
 local bar_ext -- the toolbar's screen rectangle last frame: its dark backing, and where a press isn't drawing
 local press_n, fired = 0, {} -- each press counted; a toolbar button acts once per press (see button())
 
+local version_at = reaper.time_precise()
 local function loop()
+  -- an update: this one closes, and Live sync starts the new one (an old one kept running with the old bar: PC, 0.43.0)
+  if reaper.time_precise() - version_at > 5 then
+    version_at = reaper.time_precise()
+    local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
+    if disk and disk ~= band.VERSION and reaper.GetExtState(band.SECTION, "draw on") == "" then return end
+  end
   if reaper.GetExtState(band.SECTION, "draw quit") ~= "" then reaper.DeleteExtState(band.SECTION, "draw quit", false); return end -- (Hide drawings)
   local proj = reaper.EnumProjects(-1)
   local b = band.binding(proj)
   if not b then return reaper.defer(loop) end -- (not a BandSync tab: nothing to show; keeps running for when one is)
   -- ReaImGui lets go of a context that went a frame unused (the frames above, in another tab), so it's made again:
   -- the laptop's "expected a valid ImGui_Context*" after closing a second Mirror Test tab (block K)
-  if not ImGui.ValidatePtr(ctx, "ImGui_Context*") then ctx, placed = ImGui.CreateContext("BandSync drawings"), nil end
+  if not ImGui.ValidatePtr(ctx, "ImGui_Context*") then ctx, placed = ImGui.CreateContext("BandSync drawings"), nil; ui_font = make_font() end
+  reaper.SetExtState(band.SECTION, "draw alive", tostring(reaper.time_precise()), false) -- (the Chat page's Show or Hide)
   local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
   hold_mouse(drawing)
   local L = layout(proj)
@@ -152,6 +168,8 @@ local function loop()
   local flags = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_NoMove | ImGui.WindowFlags_NoDocking |
     -- (drawing: TopMost, a window of its own above the arrange view, or REAPER's arrange view takes the clicks)
     (drawing and ImGui.WindowFlags_TopMost or (ImGui.WindowFlags_NoInputs | ImGui.WindowFlags_NoBackground | ImGui.WindowFlags_NoFocusOnAppearing))
+  theme.push(ctx, ImGui)
+  ImGui.PushFont(ctx, ui_font, 14)
   local visible = ImGui.Begin(ctx, "BandSync drawings", nil, flags)
   if visible then
     local dl = ImGui.GetWindowDrawList(ctx)
@@ -209,7 +227,8 @@ local function loop()
       return { segs = segs }
     end
     local shown = {} -- (each drawing on screen, for the eraser)
-    for _, s in ipairs(load(b)) do shown[s] = draw(s) end
+    local only = reaper.GetExtState(band.SECTION, "show only") -- (one person's, from the Chat page)
+    for _, s in ipairs(load(b)) do if only == "" or s.user == only then shown[s] = draw(s) end end
     if stroke then draw(stroke) end
     if drawing then
       local tool, size = pick("tool", "pen"), tonumber(pick("size", "4")) or 4
@@ -309,7 +328,7 @@ local function loop()
         return true
       end
       local function button(label, on)
-        if on then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
+        if on then ImGui.PushStyleColor(ctx, ImGui.Col_Button, theme.ACCENT) end
         local hit = once(label, ImGui.SmallButton(ctx, label) or (pressed and ImGui.IsItemHovered(ctx)))
         if on then ImGui.PopStyleColor(ctx) end
         grew()
@@ -357,12 +376,19 @@ local function loop()
         cache_at, stroke = -math.huge, nil
       end
       ImGui.SetItemTooltip(ctx, "Take away every drawing you made in this room (everyone's copy goes too).")
+      ImGui.SameLine(ctx, 0, 3)
+      if button("Hide") then
+        reaper.SetExtState(band.SECTION, "draw hidden", "1", true)
+        reaper.DeleteExtState(band.SECTION, "draw on", false)
+        reaper.SetExtState(band.SECTION, "draw quit", "1", false)
+      end
+      ImGui.SetItemTooltip(ctx, "Stop showing drawings on this computer (the Chat page's Show drawings brings them back). They stay for everyone else.\n\nThe bar sits over the tracks, so it's here too for a panel it covers.")
       ImGui.SameLine(ctx, 0, 12)
       if button(at_top and "Bottom##bar" or "Top##bar") then keep("bar", at_top and "bottom" or "top") end
       ImGui.SetItemTooltip(ctx, "Move this bar to the " .. (at_top and "foot" or "top") .. " of the tracks (it covers whatever's under it).")
       ImGui.SameLine(ctx, 0, 12)
       ImGui.AlignTextToFramePadding(ctx)
-      ImGui.Text(ctx, why == "local" and "That's one of BandSync's own tracks: draw on a band track." or ({ pen = "Drag to draw.",
+      ImGui.Text(ctx, why == "local" and "That's one of BandSync's own tracks: draw on a group track." or ({ pen = "Drag to draw.",
         marker = "Drag to highlight.", line = "Drag from one end to the other.", arrow = "Drag from the tail to the point.",
         box = "Drag from corner to corner.", text = "Click where the words go.", erase = "Click one of your drawings to take it away." })[tool] or "")
       grew()
@@ -372,6 +398,8 @@ local function loop()
     end
     ImGui.End(ctx)
   end
+  ImGui.PopFont(ctx)
+  theme.pop(ctx, ImGui)
   reaper.defer(loop)
 end
 reaper.defer(loop)

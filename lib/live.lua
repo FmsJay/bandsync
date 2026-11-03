@@ -215,7 +215,7 @@ function live.join_check(proj)
   if sonobus.joined_since(chunk, (since - 2) * 1000) then
     reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
     reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
-    band.log("SonoBus joined the band's group" .. (tries > 0 and " (after " .. tries .. " retr" .. (tries == 1 and "y" or "ies") .. ")" or "") ..
+    band.log("SonoBus joined the group's group" .. (tries > 0 and " (after " .. tries .. " retr" .. (tries == 1 and "y" or "ies") .. ")" or "") ..
       " as " .. tostring(sonobus.state_user(chunk)))
     return "joined"
   end
@@ -223,15 +223,15 @@ function live.join_check(proj)
   if tries >= live.JOIN_TRIES then
     reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
     reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
-    band.log("SonoBus hasn't joined the band's group: press Configure SonoBus (Home), then Connect, and Connect to Group " ..
-      "(the band's group is filled in). Real time mode needs it to hear each other.")
+    band.log("SonoBus hasn't joined the group's group: press Configure SonoBus (Home), then Connect, and Connect to Group " ..
+      "(the group's group is filled in). Real time mode needs it to hear each other.")
     return "gave up"
   end
   reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", tostring(tries + 1))
   reaper.SetProjExtState(proj, band.SECTION, "sonobus online", tostring(os.time()))
   reaper.TrackFX_SetOffline(m, i, true) -- (loading it again is what makes "Reconnect Last" join)
   reaper.TrackFX_SetOffline(m, i, false)
-  band.log("SonoBus hasn't joined the band's group yet: trying again")
+  band.log("SonoBus hasn't joined the group's group yet: trying again")
   return "waiting"
 end
 

@@ -108,6 +108,35 @@ end
 -- first placement) or an event as posted. Sorted by time, then id.
 
 recall.ev_cache = {} -- event file path -> its event (files never change once written: read once per session)
+-- Reads the room's changes a few at a time, for `secs` per call, so nothing has to read thousands at once when a page opens.
+-- -> whether they've all been read, how many have, how many there are.
+local warming = {}
+function recall.warm(cfg, song, room, secs)
+  local rdir = sync.room_dir(cfg, song, room)
+  local w, t0 = warming[rdir], reaper.time_precise()
+  if not w or (w.i > #w.files and t0 - w.at > 5) then
+    w = { files = band.files(rdir .. "/events", ".json"), i = 1, at = t0, notes = w and w.notes or {}, noted = w and w.noted or {} }
+    warming[rdir] = w
+  end
+  while w.i <= #w.files and reaper.time_precise() - t0 < secs do
+    local path = rdir .. "/events/" .. w.files[w.i]
+    local ev = recall.ev_cache[path]
+    if not ev then
+      ev = band.read_json(path)
+      if ev and ev.id and ev.time then ev.kind = ev.type; recall.ev_cache[path] = ev end
+    end
+    if ev and (ev.kind == "note" or ev.kind == "like") and not w.noted[path] then w.noted[path] = true; w.notes[#w.notes + 1] = ev end
+    w.i = w.i + 1
+  end
+  return w.i > #w.files, w.i - 1, #w.files
+end
+-- The notes and likes read so far, newest first.
+function recall.notes(cfg, song, room)
+  local w = warming[sync.room_dir(cfg, song, room)]
+  if not w then return {} end
+  table.sort(w.notes, function(a, x) return (a.time .. a.id) > (x.time .. x.id) end)
+  return w.notes
+end
 function recall.entries(cfg, song, room)
   local out = {}
   local rdir = sync.room_dir(cfg, song, room)

@@ -190,7 +190,7 @@ end
 -- the first try). The ?<time> keeps GitHub's cache from handing out an installer from before the last release.
 -- With the band (band.info): its folder id and name ride along, so the installer joins that band.
 function services.invite_text(id, info)
-  info = info or { id = "bandsync", name = "the band" }
+  info = info or { id = "bandsync", name = "the group" }
   local base = "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/"
   local q1 = function(s) return "'" .. tostring(s):gsub("'", "") .. "'" end -- (band names are plain: band.clean)
   return "Join " .. info.name .. " on BandSync. Paste ONE of these:\n\n" ..
@@ -259,12 +259,12 @@ end
 -- computer then works in it. Returns its folder, or nil + why.
 function services.new_band(cfg, name)
   name = band.clean(name or "")
-  if name == "" then return nil, "Give the band a name." end
+  if name == "" then return nil, "Give the group a name." end
   local st = services.syncthing_path()
   if not st then return nil, "Syncthing wasn't found" end
   local id = services.band_id(name)
   for _, x in ipairs(band.bands()) do
-    if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a band called " .. x.name .. "." end
+    if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a group called " .. x.name .. "." end
   end
   local here = ((cfg.base or cfg).root or ""):gsub("[/\\]+$", "")
   local root = (here:match("^(.*)[/\\][^/\\]+$") or here) .. "/BandSync " .. name
@@ -272,7 +272,7 @@ function services.new_band(cfg, name)
   reaper.RecursiveCreateDirectory(root .. "/_band", 0)
   band.write_json(root .. "/_band/band.json", { name = name, id = id, drive = "BandSync - " .. name })
   local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. id .. " --label " .. q("BandSync " .. name) .. " --path " .. q(root), 15000) or ""
-  if not r:match("^0\n") then return nil, "Syncthing didn't add the band's folder: " .. r:gsub("^%d+\n", "") end
+  if not r:match("^0\n") then return nil, "Syncthing didn't add the group's folder: " .. r:gsub("^%d+\n", "") end
   reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " order set smallestFirst", 8000)
   services.tune_band_folder(id)
   band.use_band(root)
@@ -289,7 +289,7 @@ function services.add_device(id, name, folder)
   local r1 = reaper.ExecProcess(q(st) .. " cli config devices add --device-id " .. id .. (name ~= "" and (" --name " .. q(name)) or ""), 15000) or ""
   local r2 = reaper.ExecProcess(q(st) .. " cli config folders " .. (folder or "bandsync") .. " devices add --device-id " .. id, 15000) or ""
   if not r1:match("^0\n") then return nil, "Syncthing didn't add it: " .. r1:gsub("^%d+\n", "") end
-  if not r2:match("^0\n") then return nil, "added, but the band folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
+  if not r2:match("^0\n") then return nil, "added, but the group folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
   return true
 end
 

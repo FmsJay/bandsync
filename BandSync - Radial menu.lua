@@ -41,18 +41,18 @@ end
 
 -- label (lines), what it does (shown while pointed at), and the move; no move = shown greyed
 local SLICES = {
-  { "Undo", "Undo your own last change, for everyone. It asks first, and says if a bandmate changed the same thing since.",
+  { "Undo", "Undo your own last change, for everyone. It asks first, and says if a collaborator changed the same thing since.",
     function() ask("undo") end },
   { "Redo", "Bring back the change you undid last, for everyone. It asks first.", function() ask("redo") end },
   { "Restore…", "Opens Restore: every change with its own Undo, and Back to here... to put the selected tracks or the " ..
-    "whole song back to a moment.", function() ask("history") end },
+    "whole project back to a moment.", function() ask("history") end },
   driving and { "You\ndrive", "You're driving: your deletes, moves and lane choices already go to everyone." } or
     { "Take\ncontrol", "Take control: from now on your deletes, moves and lane choices go to everyone. It asks first.",
       function() dofile(dir .. "/BandSync - Take control.lua") end },
-  { "Real time\n" .. (rt and "on" or "off"), rt and "Turn Real time mode off: SonoBus leaves the band's group and you stop " ..
-    "following play and stop. Edits keep syncing." or "Turn Real time mode on: SonoBus joins the band's group so you hear " ..
+  { "Real time\n" .. (rt and "on" or "off"), rt and "Turn Real time mode off: SonoBus leaves the group's group and you stop " ..
+    "following play and stop. Edits keep syncing." or "Turn Real time mode on: SonoBus joins the group's group so you hear " ..
     "each other right away, and play, stop and record follow whoever presses them.", function() ask("realtime") end },
-  { "Chat", "Open the Chat page: messages, to-dos and links for the band, this song or this room.",
+  { "Chat", "Open the Chat page: messages, to-dos and links for the group, this project or this room.",
     function() ask("chat") end },
   { "Ping\nhere", string.format("Put a marker at %.2f s on everyone's timeline for %d seconds, with your name: \"look here\".",
     ping_pos, require("presence").PING_SHOWN), function() require("presence").ping_here(proj, ping_pos) end },

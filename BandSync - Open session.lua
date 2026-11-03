@@ -47,7 +47,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     -- the host's own, and took every change in again: laptop, 0.42.4.)
     local here = reaper.GetResourcePath() .. "/BandSync/" .. song .. "/"
     local own, as_guest = here .. song .. ".rpp", here .. song .. " - " .. cfg.user .. ".rpp"
-    local files = { reaper.GetExtState(band.SECTION, "song file " .. song), s.host == cfg.user and own or as_guest, s.host == cfg.user and as_guest or own }
+    local files = { reaper.GetExtState(band.SECTION, "project file " .. song), s.host == cfg.user and own or as_guest, s.host == cfg.user and as_guest or own }
     if reaper.JS_File_Stat then -- (the one last worked on: with two files for a song it opened one 2 hours older, and sent its old comps: laptop, 0.42.9)
       local stamp = {}
       for _, f in ipairs(files) do
@@ -59,11 +59,12 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     for _, f in ipairs(files) do
       if room == "main" and f ~= "" and reaper.file_exists(f) then
         if reaper.CountTracks(0) > 0 or select(2, reaper.EnumProjects(-1)) ~= "" then reaper.Main_OnCommand(40859, 0) end
-        reaper.Main_openProject(f)
+        require("startup").open_quietly(function() reaper.Main_openProject(f) end)
         local ob = band.binding(reaper.EnumProjects(-1))
         if ob and ob.song == song then
+          require("sync").preload(reaper.EnumProjects(-1), cfg, song, room)
           band.start_live(dir)
-          return band.log(string.format("opened your project for '%s': the band's changes since come in over the next moments", song))
+          return band.log(string.format("opened your project for '%s'", song))
         end
         break
       end
@@ -79,7 +80,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
     reaper.RecursiveCreateDirectory(local_dir, 0)
     reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
-    reaper.SetExtState(band.SECTION, "song file " .. song, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", true)
+    reaper.SetExtState(band.SECTION, "project file " .. song, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", true)
   end
 
   reaper.Undo_BeginBlock2(proj)
@@ -107,16 +108,16 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   local running = beat and reaper.time_precise() - beat < 5
   if not running then band.start_live(dir) end
-  band.log(string.format("opened '%s' (hosted by %s)%s: the band's tracks and items arrive over the next moments",
+  band.log(string.format("opened '%s' (hosted by %s)%s: the group's tracks and items arrive over the next moments",
     song, s.host, running and "" or ", Live sync started"))
 end
 
 if b then return open_song(b.song) end
 if #band.songs(cfg) == 0 then -- (the first thing a new bandmate sees: say what has to happen, not just that nothing's here)
-  return band.msg("Nothing from the band has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
-    "Ask the host to open REAPER: their BandSync panel shows a \"Let you in\" button for your computer. The band's " ..
-    "songs appear here once the folder syncs (Setup > Health shows whether it's connected).")
+  return band.msg("Nothing from the group has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
+    "Ask the host to open REAPER: their BandSync panel shows a \"Let you in\" button for your computer. The group's " ..
+    "projects appear here once the folder syncs (Setup > Health shows whether it's connected).")
 end
 -- straight into the main room: side rooms are made and visited from the panel's Rooms page
-require("chooser").open(cfg, { title = "Open a band song", action = "Open" },
+require("chooser").open(cfg, { title = "Open a group project", action = "Open" },
   function(song, room) if song then open_song(song, room) end end)

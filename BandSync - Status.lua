@@ -41,7 +41,7 @@ local function draw()
     text(14, 62, string.format("BandSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["syncing"])
     y = 92
   end
-  for i, h in ipairs({ "Bandmate", "State", "Last seen", "Has", "Missing yours", "Version" }) do text(cols[i], y, h, dim) end
+  for i, h in ipairs({ "Collaborator", "State", "Last seen", "Has", "Missing yours", "Version" }) do text(cols[i], y, h, dim) end
   y = y + 24
   if #view.rows == 0 then text(14, y, "Nobody else has synced in this room yet.", dim) end
   for _, r in ipairs(view.rows) do

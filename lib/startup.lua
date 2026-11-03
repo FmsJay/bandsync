@@ -107,7 +107,22 @@ function startup.summary(text)
   local bits = {}
   if #fx > 0 then bits[#bits + 1] = #fx .. " plug-in(s) this computer lacks (" .. table.concat(fx, ", ") .. "), so those parts play their prints" end
   if files then bits[#bits + 1] = files .. " file(s) missing, left offline" end
-  return #bits > 0 and ("opening the band's songs: " .. table.concat(bits, "; ")) or nil
+  return #bits > 0 and ("opening the group's projects: " .. table.concat(bits, "; ")) or nil
+end
+
+-- Opening a group project while REAPER runs (Open project, a side room's square): its boxes are answered as at REAPER's start.
+function startup.open_quietly(open)
+  if not usable() then return open() end
+  os.remove(DONE); os.remove(SAID)
+  band.write_atomic(BAND_TAB, "1")
+  start_helper()
+  local ok, a, b = pcall(open)
+  os.remove(BAND_TAB)
+  band.write_atomic(DONE, "1")
+  local line = startup.summary(band.read(SAID))
+  if line then band.log(line) end
+  if not ok then error(a) end
+  return a, b
 end
 
 function startup.on_start()
@@ -130,6 +145,10 @@ function startup.on_start()
       if not first then reaper.Main_OnCommand(40859, 0) end -- New project tab
       first = false
       reaper.Main_openProject(t.path)
+      -- (each one ready now: clicking a tab later finds it caught up, not loading while you wait)
+      local here = reaper.EnumProjects(-1)
+      local tb = t.band and band.binding(here)
+      if tb then pcall(function() require("sync").preload(here, band.for_tab(band.settings(), tb), tb.song, tb.room) end) end
     end
     if t.front then front = startup.same_path(t.path) end
   end

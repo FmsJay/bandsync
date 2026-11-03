@@ -255,7 +255,7 @@ local ok, err = pcall(function()
     reaper.SelectProjectInstance(pa)
     local msg = mirror.revert(pa, A, song, room, { [toid] = false, [ioid] = false }, { can = yes, mode = "claims" })
     check(mirror.find(pa, "track", toid) ~= nil and mirror.find(pa, "item", ioid) ~= nil, "the driver going back keeps a bandmate's new track and item")
-    check(msg:find("kept what bandmates added", 1, true) ~= nil and msg:find("James new", 1, true) ~= nil, "and says so: " .. msg)
+    check(msg:find("kept what collaborators added", 1, true) ~= nil and msg:find("James new", 1, true) ~= nil, "and says so: " .. msg)
     -- my own, gone by going back, comes back though someone's claim now stands
     reaper.InsertTrackInProject(pa, reaper.CountTracks(pa), 0)
     local lt = reaper.GetTrack(pa, reaper.CountTracks(pa) - 1)

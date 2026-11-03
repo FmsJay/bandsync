@@ -95,13 +95,13 @@ function tools.join_requests(ctx, ImGui, b)
         local ok, why
         if d.folder then ok, why = services.share_folder(d.folder, d.id) -- (already a bandmate: just this band's folder)
         else ok, why = services.add_device(d.id, d.name, binfo.id) end
-        band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the songs reach them now")
+        band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the projects reach them now")
           or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
         reaper.DeleteExtState(band.SECTION, "pending_join", false)
       end
       ImGui.SetItemTooltip(ctx, "Only if you know this computer: anyone who has your Syncthing ID can ask.")
       ImGui.SameLine(ctx)
-      if ImGui.SmallButton(ctx, "Not my bandmate##" .. d.id) then
+      if ImGui.SmallButton(ctx, "Not my collaborator##" .. d.id) then
         skip[d.id] = true
         reaper.SetExtState(band.SECTION, "join skipped", band.json_encode(skip), false)
       end
@@ -123,8 +123,23 @@ function tools.free_docker()
       if n then used[tonumber(n)] = true end
     end
   end
-  for i = 2, 14 do if not used[i] then return i end end
+  -- (and one with no side saved: one left at the left from an earlier try took the panel there on Dock > Right: Mac, 0.42.30)
+  for i = 2, 14 do if not used[i] and reaper.DockGetPosition(i) == 0 then return i end end
   return 1
+end
+
+-- The docker action moves whichever docker REAPER counts as having the focus, and on a Mac that can be the Mixer's though the
+-- panel's has the focus by every check. So look afterwards: anything else that moved goes straight back. -> true when `docker` is
+-- on `side` (0 bottom, 1 left, 2 top, 3 right, the order of the actions).
+local DOCKER_SIDE = { [0] = 41598, [1] = 41599, [2] = 41600, [3] = 41601 }
+function tools.move_docker(docker, side)
+  local before = {}
+  for i = 0, 15 do before[i] = reaper.DockGetPosition(i) end
+  reaper.Main_OnCommand(DOCKER_SIDE[side], 0)
+  for i = 0, 15 do
+    if i ~= docker and reaper.DockGetPosition(i) ~= before[i] and DOCKER_SIDE[before[i]] then reaper.Main_OnCommand(DOCKER_SIDE[before[i]], 0) end
+  end
+  return reaper.DockGetPosition(docker) == side
 end
 
 function tools.put_back_bar(ctx, ImGui, song)

@@ -174,6 +174,11 @@ function chooser.open(cfg, opts, done)
   package.path = reaper.ImGui_GetBuiltinPath() .. "/?.lua;" .. package.path
   local ImGui = require "imgui" "0.10"
   local ctx = ImGui.CreateContext("BandSync: choose")
+  local theme = require("theme")
+  local ui_font = ImGui.CreateFont("sans-serif")
+  ImGui.Attach(ctx, ui_font)
+  local as_folders = reaper.GetExtState(band.SECTION, "chooser view") == "folders" -- (this machine's choice, kept)
+  local in_folder -- the folder open in the folder view, nil at the top
   local text, sel, room, new_room, show_hidden, hide = "", nil, nil, "", false, hidden()
   local picked_for -- the text the selection was last picked for: new text picks the best match again
   local new_folder = "" -- typed in a song's right-click menu
@@ -188,7 +193,9 @@ function chooser.open(cfg, opts, done)
   local function loop()
     ImGui.SetNextWindowSize(ctx, 680, 440, ImGui.Cond_FirstUseEver)
     ImGui.SetNextWindowBgAlpha(ctx, 1) -- opaque: the arrange view showing through made it hard to read
-    local shown, open = ImGui.Begin(ctx, (opts.title or "Choose a song") .. "###bandsync_chooser", true)
+    theme.push(ctx, ImGui, true)
+    ImGui.PushFont(ctx, ui_font, 15)
+    local shown, open = ImGui.Begin(ctx, (opts.title or "Choose a project") .. "###bandsync_chooser", true)
     local result -- { song, room } when chosen, false when cancelled
     if shown then
       local list = visible_rows()
@@ -198,55 +205,124 @@ function chooser.open(cfg, opts, done)
         picked_for = text
       end
       if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
-      ImGui.SetNextItemWidth(ctx, -150)
-      local _, t = ImGui.InputTextWithHint(ctx, "##find", "Type to search: song, host, bandmate", text)
+      ImGui.SetNextItemWidth(ctx, -270)
+      local _, t = ImGui.InputTextWithHint(ctx, "##find", "Type to search: project, host, collaborator", text)
       text = t
       ImGui.SameLine(ctx)
       local nhidden = 0 -- (a hidden song also leaves its folder's count: say how many there are)
       for _, r in ipairs(rows) do if hide[r.song] then nhidden = nhidden + 1 end end
       local _, sh = ImGui.Checkbox(ctx, nhidden > 0 and ("Show hidden (" .. nhidden .. ")") or "Show hidden", show_hidden)
       show_hidden = sh
+      ImGui.SameLine(ctx)
+      if ImGui.Button(ctx, as_folders and "List" or "Folders") then
+        as_folders = not as_folders
+        reaper.SetExtState(band.SECTION, "chooser view", as_folders and "folders" or "list", true)
+      end
+      ImGui.SetItemTooltip(ctx, as_folders and "See every project in one list, with who's in it." or "See folders, as in Google Drive: double-click one to see the projects in it.")
+      local folders = {} -- every folder there is, for "Move to folder"
+      for _, r in ipairs(rows) do if (r.folder or "") ~= "" then folders[r.folder] = true end end
+      local function song_menu(r) -- right-click a song: file it, or hide it here
+        if ImGui.BeginPopupContextItem(ctx) then
+          if ImGui.BeginMenu(ctx, "Move to folder") then
+            local names = {}
+            for f in pairs(folders) do names[#names + 1] = f end
+            table.sort(names, function(a, z) return a:lower() < z:lower() end)
+            for _, f in ipairs(names) do
+              if ImGui.MenuItem(ctx, f, nil, r.folder == f) then r.folder = chooser.set_folder(cfg, r.song, f) end
+            end
+            if r.folder ~= "" and ImGui.MenuItem(ctx, "(no folder)") then r.folder = chooser.set_folder(cfg, r.song, "") end
+            ImGui.Separator(ctx)
+            ImGui.SetNextItemWidth(ctx, 200)
+            local enter, nf = ImGui.InputTextWithHint(ctx, "##newfolder", "New folder: type, then Enter", new_folder, ImGui.InputTextFlags_EnterReturnsTrue)
+            new_folder = nf
+            if enter and band.clean(nf) ~= "" then
+              r.folder = chooser.set_folder(cfg, r.song, nf)
+              new_folder = ""
+              ImGui.CloseCurrentPopup(ctx)
+            end
+            ImGui.EndMenu(ctx)
+          end
+          if ImGui.MenuItem(ctx, hide[r.song] and "Show in this list again" or "Hide from this list (this machine only)") then
+            hide[r.song] = not hide[r.song] or nil
+            save_hidden(hide)
+          end
+          ImGui.EndPopup(ctx)
+        end
+      end
+      -- The folder view: a square each, as in Google Drive. Double-click a folder to go in, a song to open it.
+      local function tile(id, label, sub, is_folder, selected)
+        local w, h = 136, 96
+        local x, y = ImGui.GetCursorScreenPos(ctx)
+        local clicked = ImGui.InvisibleButton(ctx, id, w, h)
+        local hovered = ImGui.IsItemHovered(ctx)
+        local dl = ImGui.GetWindowDrawList(ctx)
+        ImGui.DrawList_AddRectFilled(dl, x, y, x + w, y + h, selected and 0x34415AFF or hovered and 0x33373DFF or theme.CARD, 10)
+        local cx = x + w / 2
+        if is_folder then
+          ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 12, cx - 4, y + 22, 0xC99A3EFF, 3)
+          ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 16, cx + 20, y + 44, 0xE0B050FF, 4)
+        else
+          ImGui.DrawList_AddRectFilled(dl, cx - 20, y + 12, cx + 20, y + 44, 0x3B4049FF, 4)
+          for i, bar in ipairs({ 8, 16, 11, 20, 13, 7 }) do
+            local bx = cx - 20 + i * 40 / 7
+            ImGui.DrawList_AddLine(dl, bx, y + 28 - bar / 2, bx, y + 28 + bar / 2, theme.ACCENT, 2)
+          end
+        end
+        local function words(text, col, at)
+          local shortened = text
+          while ImGui.CalcTextSize(ctx, shortened) > w - 12 and #shortened > 1 do shortened = shortened:sub(1, -2) end
+          if shortened ~= text then shortened = shortened:sub(1, math.max(1, #shortened - 2)) .. ".." end
+          ImGui.DrawList_AddText(dl, cx - ImGui.CalcTextSize(ctx, shortened) / 2, at, col, shortened)
+        end
+        words(label, 0xE6E8EBFF, y + 52)
+        words(sub, theme.MUTED, y + 72)
+        if hovered and ImGui.CalcTextSize(ctx, label) > w - 12 then ImGui.SetItemTooltip(ctx, label) end
+        return clicked, hovered and ImGui.IsMouseDoubleClicked(ctx, 0)
+      end
       local flags = ImGui.TableFlags_ScrollY | ImGui.TableFlags_RowBg | ImGui.TableFlags_BordersInnerV | ImGui.TableFlags_Resizable
-      if ImGui.BeginTable(ctx, "songs", 4, flags, 0, -64 - ImGui.GetTextLineHeightWithSpacing(ctx)) then
+      if as_folders then
+        if ImGui.BeginChild(ctx, "tiles", 0, -74 - ImGui.GetTextLineHeightWithSpacing(ctx)) then
+          local searching = text:match("%S") -- (a search looks through every folder)
+          if in_folder and not searching then
+            if ImGui.SmallButton(ctx, "< All folders") then in_folder = nil end
+            ImGui.SameLine(ctx)
+            ImGui.Text(ctx, in_folder)
+          end
+          local per = math.max(1, math.floor((ImGui.GetContentRegionAvail(ctx) + 8) / 144))
+          local n = 0
+          local function place() n = n + 1; if (n - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, 8) end end
+          if not in_folder and not searching then
+            for gi, g in ipairs(chooser.groups(list)) do
+              if g.name ~= "" then
+                place()
+                local _, twice = tile("f" .. gi, g.name, #g.rows .. (#g.rows == 1 and " project" or " projects"), true, false)
+                if twice then in_folder = g.name end
+              end
+            end
+          end
+          for i, r in ipairs(list) do
+            if searching or (r.folder or "") == (in_folder or "") then
+              place()
+              ImGui.PushID(ctx, i)
+              local once, twice = tile("s", r.song, r.last ~= "" and chooser.ago(r.last, now) or (r.host or ""), false, sel == r)
+              if once then sel, room, new_room = r, r.rooms[1], "" end
+              if twice then result = { r.song, r.rooms[1] } end
+              song_menu(r)
+              ImGui.PopID(ctx)
+            end
+          end
+          ImGui.EndChild(ctx)
+        end
+      elseif ImGui.BeginTable(ctx, "songs", 4, flags, 0, -74 - ImGui.GetTextLineHeightWithSpacing(ctx)) then
         ImGui.TableSetupScrollFreeze(ctx, 0, 1)
-        ImGui.TableSetupColumn(ctx, "Song")
+        ImGui.TableSetupColumn(ctx, "Project")
         ImGui.TableSetupColumn(ctx, "Host")
         ImGui.TableSetupColumn(ctx, "Who's in it")
         ImGui.TableSetupColumn(ctx, "Last activity")
         ImGui.TableHeadersRow(ctx)
         local groups = chooser.groups(list)
-        local folders = {} -- every folder there is, for "Move to folder"
-        for _, r in ipairs(rows) do if (r.folder or "") ~= "" then folders[r.folder] = true end end
         local nested = #groups > 1 or (groups[1] and groups[1].name ~= "") -- no folders yet: a plain list
         local TN = ImGui.TreeNodeFlags_SpanAllColumns
-        local function song_menu(r) -- right-click a song: file it, or hide it here
-          if ImGui.BeginPopupContextItem(ctx) then
-            if ImGui.BeginMenu(ctx, "Move to folder") then
-              local names = {}
-              for f in pairs(folders) do names[#names + 1] = f end
-              table.sort(names, function(a, z) return a:lower() < z:lower() end)
-              for _, f in ipairs(names) do
-                if ImGui.MenuItem(ctx, f, nil, r.folder == f) then r.folder = chooser.set_folder(cfg, r.song, f) end
-              end
-              if r.folder ~= "" and ImGui.MenuItem(ctx, "(no folder)") then r.folder = chooser.set_folder(cfg, r.song, "") end
-              ImGui.Separator(ctx)
-              ImGui.SetNextItemWidth(ctx, 200)
-              local enter, nf = ImGui.InputTextWithHint(ctx, "##newfolder", "New folder: type, then Enter", new_folder, ImGui.InputTextFlags_EnterReturnsTrue)
-              new_folder = nf
-              if enter and band.clean(nf) ~= "" then
-                r.folder = chooser.set_folder(cfg, r.song, nf)
-                new_folder = ""
-                ImGui.CloseCurrentPopup(ctx)
-              end
-              ImGui.EndMenu(ctx)
-            end
-            if ImGui.MenuItem(ctx, hide[r.song] and "Show in this list again" or "Hide from this list (this machine only)") then
-              hide[r.song] = not hide[r.song] or nil
-              save_hidden(hide)
-            end
-            ImGui.EndPopup(ctx)
-          end
-        end
         local function cells(host, who, last)
           ImGui.TableNextColumn(ctx); ImGui.Text(ctx, host)
           ImGui.TableNextColumn(ctx); ImGui.Text(ctx, who)
@@ -299,7 +375,7 @@ function chooser.open(cfg, opts, done)
         end
         ImGui.EndTable(ctx)
       end
-      if #list == 0 then ImGui.TextDisabled(ctx, "No song matches '" .. text .. "'.") end
+      if #list == 0 then ImGui.TextDisabled(ctx, "No project matches '" .. text .. "'.") end
       -- the room, for the selected song
       if sel and opts.rooms then
         ImGui.AlignTextToFramePadding(ctx)
@@ -332,9 +408,11 @@ function chooser.open(cfg, opts, done)
       ImGui.SameLine(ctx)
       if ImGui.Button(ctx, "Cancel") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then result = false end
       ImGui.SameLine(ctx)
-      ImGui.TextDisabled(ctx, "Enter opens, Esc cancels; right-click a song to file it in a folder or hide it")
+      ImGui.TextDisabled(ctx, "Enter opens, Esc cancels; right-click a project to file it in a folder or hide it")
       ImGui.End(ctx)
     end
+    ImGui.PopFont(ctx)
+    theme.pop(ctx, ImGui, true)
     if result then return done(result[1], opts.rooms and result[2] or nil) end
     if result == false or not open then return done() end
     reaper.defer(loop)

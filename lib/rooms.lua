@@ -99,7 +99,7 @@ function rooms.open(from, cfg, b, name)
   local fresh = not reaper.file_exists(path)
   if fresh then reaper.Main_SaveProjectEx(src, path, 0) end -- a copy; the open project keeps its own file
   reaper.Main_OnCommand(40859, 0) -- File: New project tab
-  reaper.Main_openProject("noprompt:" .. path)
+  require("startup").open_quietly(function() reaper.Main_openProject("noprompt:" .. path) end)
   p = reaper.EnumProjects(-1)
   if file_of(p) ~= path and (file_of(p) or ""):gsub("\\", "/") ~= path then return nil, "REAPER didn't open " .. path end
   if fresh then

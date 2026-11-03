@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.42.30", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.43.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -60,7 +60,7 @@ function band.start_live(dir)
       path = d .. "/BandSync - Live sync (tab " .. n .. ").lua"
       if not reaper.file_exists(path) then
         reaper.RecursiveCreateDirectory(d, 0)
-        band.write_atomic(path, "-- BandSync: Live sync for one more session tab at once (see band.start_live)\ndofile([[" .. main .. "]])\n")
+        band.write_atomic(path, "-- BandSync: Live sync for one more session tab at once (see group.start_live)\ndofile([[" .. main .. "]])\n")
       end
     end
     local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
@@ -337,12 +337,17 @@ function band.sws_colours()
 end
 
 -- ---- bands: each band is its own shared folder (docs/bands-design.md) ----------------------------------------
+-- The drawings over the arrange view (BandSync - Draw.lua), if they aren't showing. Running it again would close it.
+function band.start_draw(dir)
+  local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Draw.lua", true)
+  if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
+end
 -- <root>/_band/band.json says which band a folder is: { name, id = its Syncthing folder id, drive = its Google Drive
 -- folder's name }. A folder without one is the first band BandSync had: id "bandsync", Drive folder "BandSync".
 function band.info(root)
   local j = (root and band.read_json(root .. "/_band/band.json")) or {}
   local id = type(j.id) == "string" and j.id ~= "" and j.id or "bandsync"
-  return { name = type(j.name) == "string" and j.name ~= "" and j.name or "the band", id = id,
+  return { name = type(j.name) == "string" and j.name ~= "" and j.name or "the group", id = id,
     drive = type(j.drive) == "string" and j.drive ~= "" and j.drive or (id == "bandsync" and "BandSync" or ("BandSync - " .. (j.name or id))) }
 end
 -- The bands this computer is in (persistent ExtState "bands": their folders), the current one always among them:

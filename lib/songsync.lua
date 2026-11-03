@@ -48,7 +48,7 @@ function songsync.merge(text, wanted)
 end
 
 -- This machine's choices (persistent ExtState): the songs opened here, and "keep every song".
-local KEY, ALL, SEEN = "songs here", "songs keep all", "songs here checked"
+local KEY, ALL, SEEN = "projects here", "projects keep all", "projects here checked"
 function songsync.keep_all() return reaper.GetExtState(band.SECTION, ALL) ~= "" end
 -- Whether a song is here in more than its listing: any changes, takes, media or stems. (0.34.7 looked at events
 -- only, and an older song with takes but no events, like CompTest, read as not here: James's PC, 2026-11-01.)

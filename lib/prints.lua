@@ -500,7 +500,7 @@ function prints.printing_ui(ctx, ImGui, cfg, b, proj, who)
       end
     end)
   end
-  ImGui.SetItemTooltip(ctx, "Their wet takes are rendered here, with your plug-ins, whoever changes them: while you're in the song\n" ..
+  ImGui.SetItemTooltip(ctx, "Their wet takes are rendered here, with your plug-ins, whoever changes them: while you're in the project\n" ..
     "and have every plug-in they play through. Otherwise whoever changed them prints, or someone here who has the plug-ins.")
   local mine, others = {}, {}
   for _, p in pairs(who and who.printers or {}) do

@@ -35,18 +35,18 @@ end
 local projname = reaper.GetProjectName(proj)
 local suggested = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 local old_for = function(song) return band.read_json(band.session_path(cfg, song)) end
-local ok, name = reaper.GetUserInputs("BandSync: publish", 1, "Song name,extrawidth=150", suggested)
+local ok, name = reaper.GetUserInputs("BandSync: publish", 1, "Project name,extrawidth=150", suggested)
 if not ok then return end
 local song = band.clean(name)
-if song == "" then return band.msg("Give the song a name.") end
+if song == "" then return band.msg("Give the project a name.") end
 require("songsync").want(cfg, song) -- (yours: it syncs here in full, whatever this computer downloads of others)
 local old = old_for(song)
 if old and old.host ~= cfg.user and b.song ~= song then
-  return band.msg("There's already a band song called '" .. song .. "' (hosted by " .. tostring(old.host) .. ").\n\n" ..
+  return band.msg("There's already a group project called '" .. song .. "' (hosted by " .. tostring(old.host) .. ").\n\n" ..
     "Pick another name, or join theirs with 'BandSync - Open session'.")
 end
-if old and b.song ~= song and reaper.MB("You already published a song called '" .. song .. "' from another project.\n\n" ..
-    "Publish this project under that name instead (the band then follows this one)?", "BandSync", 4) ~= 6 then
+if old and b.song ~= song and reaper.MB("You already published a project called '" .. song .. "' from another project.\n\n" ..
+    "Publish this project under that name instead (the group then follows this one)?", "BandSync", 4) ~= 6 then
   return
 end
 -- an untitled project takes the song's name and is saved first; either way a copy as it was before BandSync is kept
@@ -62,7 +62,7 @@ if not b.song then
   reaper.Main_SaveProjectEx(proj, pdir .. "/" .. song .. " (before BandSync).rpp", 0) -- a copy; History offers it back
   reaper.SetProjExtState(proj, band.SECTION, "before_bandsync", pdir .. "/" .. song .. " (before BandSync).rpp")
 end
-reaper.SetExtState(band.SECTION, "song file " .. song, (select(2, reaper.EnumProjects(-1)):gsub("\\", "/")), true)
+reaper.SetExtState(band.SECTION, "project file " .. song, (select(2, reaper.EnumProjects(-1)):gsub("\\", "/")), true)
 reaper.RecursiveCreateDirectory(band.song_dir(cfg, song) .. "/rooms/main/media", 0)
 local version = (old and old.version or 0) + 1
 band.write_json(band.session_path(cfg, song), {
@@ -75,4 +75,4 @@ reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.c
 reaper.Main_SaveProject(proj, false)
 local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if not (beat and reaper.time_precise() - beat < 5) then band.start_live(dir) end
-return band.log(string.format("published '%s': Live sync is sending the project to the band (bandmates: Setup > Health > Open another song)", song))
+return band.log(string.format("published '%s': Live sync is sending the project to the group (collaborators: Setup > Health > Open another project)", song))

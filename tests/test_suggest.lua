@@ -22,6 +22,10 @@ assert(#f["T-DRUMS"] == 2 and f["T-KICK"] == nil, "a track with nothing through 
 local loop = mirror.feeders({ { oid = "A", recv = "AUXRECV B 0\n" }, { oid = "B", recv = "AUXRECV A 0\n" } })
 assert(#loop.A == 1 and loop.A[1] == "B")
 
+-- a VCA holds its followers, as a bus does
+local v = mirror.feeders({ { oid = "T-LEAD", lead = 2 }, { oid = "T-KEYS", follow = 2 }, { oid = "T-BASS", follow = 4 }, { oid = "T-GTR", lead = 0, follow = 0 } })
+assert(#v["T-LEAD"] == 1 and v["T-LEAD"][1] == "T-KEYS" and v["T-BASS"] == nil, "a VCA leads only the tracks that follow its group")
+
 -- whose parts, in words
 assert(mirror.whose({ { "Mac", "Keys" }, { "Bee", "Bass" }, { "Mac", "Guitar" } }) == "Bee's Bass and Mac's Guitar, Keys")
 

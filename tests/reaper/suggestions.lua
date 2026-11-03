@@ -261,6 +261,34 @@ local ok, err = pcall(function()
   check(track_named(pa, "Free Bus") == nil and track_named(pb, "Free Bus") == nil, "a bus that holds nobody's claim is deleted")
   sync_all()
 
+  -- 8b. A VCA fader that leads Mac's Keys: moving it says so, and Keys' own fader doesn't move
+  do
+    local tkeys = track_named(pa, "Keys")
+    local vca = new_track(pa, "VCA")
+    reaper.GetSetTrackGroupMembership(vca, "VOLUME_VCA_LEAD", 1, 1)
+    reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 1, 1)
+    sync_all(); sync_all()
+    local before = reaper.GetMediaTrackInfo_Value(tkeys, "D_VOL")
+    local asked = #(select(1, suggest.rows(room_dir, "Mac"))) -- (putting Mac's Keys in the group was a change to Keys: that one's Mac's to accept)
+    say("  after joining the group: " .. asked .. " line(s) for Mac; Keys follows " .. reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 0, 0))
+    reaper.SelectProjectInstance(pa)
+    reaper.SetTrackUIVolume(vca, 0.5, false, false, 0)
+    pass_a()
+    local said
+    for _, f in ipairs(band.files(room_dir .. "/events", ".json")) do
+      local e = band.read_json(room_dir .. "/events/" .. f)
+      if e and type(e.note) == "string" and e.note:find("of VCA", 1, true) then said = e.note end
+    end
+    check(said ~= nil and said:find("Mac's Keys", 1, true) ~= nil, "moving a VCA says whose part it affects: " .. tostring(said))
+    check(reaper.GetMediaTrackInfo_Value(tkeys, "D_VOL") == before, "Keys' own fader doesn't move")
+    check(#(select(1, suggest.rows(room_dir, "Mac"))) == asked, "and moving it asks nothing of Mac")
+    reaper.GetSetTrackGroupMembership(tkeys, "VOLUME_VCA_FOLLOW", 1, 0)
+    reaper.DeleteTrack(vca)
+    sync_all(); sync_all()
+    for _, x in ipairs(suggest.all(room_dir)) do if not x.answer then suggest.answer(room_dir, x, "James", "withdrawn") end end
+    same("after the VCA")
+  end
+
   -- 9. A copy of Mac's track: James's own, named so, Mac's untouched
   reaper.SelectProjectInstance(pa)
   local tk = track_named(pa, "Keys")

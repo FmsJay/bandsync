@@ -259,7 +259,7 @@ Who may change what:
   then. A part they've changed since is left as it is. Plug-in changes aren't suggested: a plug-in can change its own
   data, which would ask its owner about nothing.
 - **Tempo**: the driver's, or anyone's in *Anyone*. The parts it moves aren't anyone's edit, whoever claimed them.
-- **Buses, folders and the master**: a change to one still goes through under the usual rules, and says whose claimed parts it affects.
+- **Buses, folders, VCA faders and the master**: a change to one still goes through under the usual rules, and says whose claimed parts it affects.
   One holding someone's claimed part can't be deleted: it comes back, and says why.
 - **A copy of someone's claimed track** goes out as yours, as "Keys (James's copy)", and says whose it was. The original isn't touched.
 - **What you see is what the group has**: anything you change that isn't yours to change is put back at once,

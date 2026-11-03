@@ -773,14 +773,19 @@ function mirror.track_line(t, local_mix, colour)
   return table.concat(f, "|")
 end
 
--- What runs through each track: its folder's tracks and what it receives, and what runs through those. Tracks with
--- nothing running through them aren't listed. Pure. tracks: { { oid, parent, recv } } (recv: its R- part).
+-- What runs through each track: its folder's tracks, what it receives, the tracks a VCA fader on it leads, and what runs through
+-- those. Tracks with nothing running through them aren't listed. Pure. tracks: { { oid, parent, recv, lead, follow } } (recv: its R- part;
+-- lead, follow: the VCA groups it leads and follows, as bits). A VCA moves no follower's own fader, only how it sounds: a bus, as far
+-- as anyone's claim goes.
 function mirror.feeders(tracks)
   local direct = {}
   local function add(to, from) direct[to] = direct[to] or {}; direct[to][#direct[to] + 1] = from end
   for _, t in ipairs(tracks) do
     if (t.parent or "") ~= "" then add(t.parent, t.oid) end
     for src in (t.recv or ""):gmatch("AUXRECV (%S+)") do add(t.oid, src) end
+    if (t.lead or 0) ~= 0 then
+      for _, x in ipairs(tracks) do if x ~= t and (t.lead & (x.follow or 0)) ~= 0 then add(t.oid, x.oid) end end
+    end
   end
   local all = {}
   for oid in pairs(direct) do
@@ -2159,7 +2164,9 @@ function mirror.watch(proj, cfg, song, room, opts)
     for _, o in ipairs(objs) do
       if o.kind == "track" then
         names[o.oid] = o.state.name
-        list[#list + 1] = { oid = o.oid, parent = o.state.parent, recv = by_oid["R" .. o.oid:sub(2)] and by_oid["R" .. o.oid:sub(2)].state }
+        -- shortcut: VCA groups 1 to 32 only (the rest are a second pair of calls): a VCA in 33 to 64 isn't seen as holding anything.
+        list[#list + 1] = { oid = o.oid, parent = o.state.parent, recv = by_oid["R" .. o.oid:sub(2)] and by_oid["R" .. o.oid:sub(2)].state,
+          lead = reaper.GetSetTrackGroupMembership(o.ptr, "VOLUME_VCA_LEAD", 0, 0), follow = reaper.GetSetTrackGroupMembership(o.ptr, "VOLUME_VCA_FOLLOW", 0, 0) }
       end
     end
     local now = {}

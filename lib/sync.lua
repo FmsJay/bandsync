@@ -614,11 +614,19 @@ end
 
 -- The tempo map and markers as they were at entries[upto] (the newest change of them by then, else the session's own), for
 -- the whole song going back: they stayed as they were (laptop, 0.42.5). Only the driver's to change. -> whether it changed them.
-function sync.restore_timeline(proj, cfg, song, room, entries, upto, session)
+-- `from`: the room `entries` are the history of, when that isn't `room` (a new room made from a moment in another's).
+function sync.restore_timeline(proj, cfg, song, room, entries, upto, session, from)
   local t
   for i = 1, math.min(upto, #entries) do
     local e = entries[i]
     if e.kind == "timeline" and e.tempo then t = e end
+  end
+  -- A side room's history starts where it was made, not at the song's start. With no tempo change in it yet, the song's first map
+  -- isn't what it had: all that follow the tempo stretched, went out and printed again (34 events for a one-item undo: Mac, 0.45.0).
+  local meta = not t and band.read_json(sync.room_dir(cfg, song, from or room) .. "/room.json")
+  if meta and meta.parent then
+    if not meta.tempo then return false end -- (made before rooms noted it: what it has now is the best guess)
+    t = meta
   end
   -- (before the song's first tempo change: the session file only holds the newest map. The Bridge's tempo stayed: laptop, 0.42.6)
   t = t or (session and session.first_timeline) or session

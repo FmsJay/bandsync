@@ -757,7 +757,7 @@ local function back_button(i, what, single)
     if not p then band.msg(why) else
       local room_can = sync.authority(cfg, b.song, name, view.session)
       local plan = mirror.plan_restore(entries, i)
-      sync.restore_timeline(p, cfg, b.song, name, entries, i, view.session)
+      sync.restore_timeline(p, cfg, b.song, name, entries, i, view.session, b.room)
       band.log("'" .. name .. "' is the project as it was " .. what .. ": " .. tostring(mirror.revert(p, cfg, b.song, name, plan, { can = room_can, mode = "claims", exact = true })))
       local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(p)))
       if not (beat and reaper.time_precise() - beat < 5) then band.start_live(dir) end
@@ -1483,9 +1483,10 @@ local function rooms_squares()
   if naming then
     if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
     ImGui.SetNextItemWidth(ctx, 300)
-    local enter, v = ImGui.InputTextWithHint(ctx, "##newroom", "a name (e.g. 'chorus ideas')", new_room, ImGui.InputTextFlags_EnterReturnsTrue)
+    -- (no EnterReturnsTrue: with it the name came back only on Return, so pressing Create lost what was typed: Mac, 0.45.0)
+    local _, v = ImGui.InputTextWithHint(ctx, "##newroom", "a name (e.g. 'chorus ideas')", new_room)
     new_room = v
-    local go = ImGui.Button(ctx, "Create") or enter
+    local go = ImGui.Button(ctx, "Create") or ImGui.IsKeyPressed(ctx, ImGui.Key_Enter) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadEnter)
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, "Cancel") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then ImGui.CloseCurrentPopup(ctx) end
     if go then
@@ -2628,7 +2629,8 @@ local function pill_window()
     local clicked = ImGui.InvisibleButton(ctx, "##pill", S, S)
     local hovered = ImGui.IsItemHovered(ctx)
     -- (anywhere on it, its edges too: only the button in its middle did, and an edge is where a hand goes first)
-    if ImGui.IsWindowHovered(ctx) and ImGui.IsMouseClicked(ctx, 0) and not locked and not ui.pill_drag then ui.pill_drag = { mx = mx, my = my, x = px, y = py } end
+    -- (the flag: pressed, the button is the active item, and a plain IsWindowHovered says no, so it never moved: Mac, 0.45.0)
+    if ImGui.IsWindowHovered(ctx, ImGui.HoveredFlags_AllowWhenBlockedByActiveItem) and ImGui.IsMouseClicked(ctx, 0) and not locked and not ui.pill_drag then ui.pill_drag = { mx = mx, my = my, x = px, y = py } end
     local dragged = false
     if ui.pill_drag then
       -- (a few pixels are a click with an unsteady hand, not a move)

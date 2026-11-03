@@ -136,7 +136,8 @@ function rooms.create(proj, cfg, b, name)
   for _, sub in ipairs({ "takes", "events", "recall", "_trash" }) do reaper.RecursiveCreateDirectory(dir .. "/" .. sub, 0) end
   local base = require("recall").save(proj, cfg, b.song, name, "made from " .. b.room, true)
   sync.set_driver(cfg, b.song, name, cfg.user)
-  band.write_json(dir .. "/room.json", { parent = b.room, by = cfg.user, time = os.date("!%Y-%m-%dT%H:%M:%SZ"), base = base })
+  band.write_json(dir .. "/room.json", { parent = b.room, by = cfg.user, time = os.date("!%Y-%m-%dT%H:%M:%SZ"), base = base,
+    tempo = band.capture_tempo(proj), markers = band.capture_markers(proj) }) -- (its history starts here: sync.restore_timeline)
   return rooms.open(proj, cfg, b, name)
 end
 

@@ -112,6 +112,22 @@ local ok, err = pcall(function()
   local now = band.capture_tempo(pa)
   check(sync.restore_timeline(pa, A, song, room, {}, 0, { tempo = now, first_timeline = { tempo = first } }), "Back from before any tempo change restores the first map")
   check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pa, 0) - 77) > 1, "the tempo's back")
+  -- a side room's history starts where it was made: the song's first map isn't what it had (Mac, 0.45.0)
+  do
+    local side = sync.room_dir(A, song, "Side")
+    reaper.RecursiveCreateDirectory(side .. "/events", 0)
+    reaper.SetCurrentBPM(pa, 77, false)
+    local made = band.capture_tempo(pa)
+    band.write_json(side .. "/room.json", { parent = "main", by = "Laptop" })
+    check(not sync.restore_timeline(pa, A, song, "Side", {}, 0, { first_timeline = { tempo = first } }), "a side room with no record of its tempo leaves it alone")
+    check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pa, 0) - 77) < 0.01, "at what it has")
+    reaper.SetCurrentBPM(pa, 88, false)
+    band.write_json(side .. "/room.json", { parent = "main", by = "Laptop", tempo = made, markers = {} })
+    check(sync.restore_timeline(pa, A, song, "Side", {}, 0, { first_timeline = { tempo = first } }), "with a record, it goes back to what the room started with")
+    check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pa, 0) - 77) < 0.01, "not the song's first: " .. reaper.TimeMap2_GetDividedBpmAtTime(pa, 0))
+    check(sync.restore_timeline(pa, A, song, "New", {}, 0, { first_timeline = { tempo = first } }, "main"), "a new room from a moment in main goes by main's history")
+    check(math.abs(reaper.TimeMap2_GetDividedBpmAtTime(pa, 0) - 77) > 1, "before main's first change: the song's first map")
+  end
 
   -- fewer lanes than its items sit on: the count holds, and nothing reads as lane 255
   reaper.SelectProjectInstance(pa)

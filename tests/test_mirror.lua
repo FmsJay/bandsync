@@ -387,6 +387,25 @@ do
   local copies = mirror.plan_undo_moment(L, 5)
   assert(copies["I-P"] == nil and copies["I-C"].id == "b" and copies["I-D"].id == "c" and copies["I-N"] == false, "and undoing them leaves the pass alone")
   assert(mirror.plan_undo_moment(L, 4)["I-P"].id == "a" and mirror.plan_undo_moment(L, 4)["I-C"] == nil, "undoing the pass leaves the comp alone")
+  -- a row names the lane as it was then, whatever has been added since
+  local function lanes(t, rev, n, names) return { kind = "obj", obj = "track", oid = "T-1", id = "t" .. rev, user = "M", time = t, rev = rev, state = { lanes = n, lanenames = names } } end
+  local N = {
+    lanes("T1", 1, 3, "Pass 1,Pass 2,Pass 3"),
+    { kind = "obj", obj = "item", oid = "I-A", id = "a", user = "M", time = "T2", rev = 1, track = "T-1", state = on(1) },
+    { kind = "obj", obj = "item", oid = "I-B", id = "b", user = "M", time = "T3", rev = 1, track = "T-1", state = on(1) },
+    lanes("T3", 2, 3, "C1,Pass 1,Pass 2"), -- (its event just after its item's, the same second)
+    lanes("T4", 3, 4, "C2,C1,Pass 1,Pass 2"),
+    { kind = "obj", obj = "item", oid = "I-A", id = "ga", user = "M", time = "T5", rev = 2, track = "T-1", gone = true },
+    { kind = "obj", obj = "item", oid = "I-C", id = "c", user = "M", time = "T6", rev = 1, track = "T-X", state = on(4) },
+    { kind = "obj", obj = "item", oid = "I-D", id = "d", user = "M", time = "T7", rev = 1, track = "T-1", state = "<ITEM\n" },
+  }
+  assert(mirror.lane_words(N, 2) == " (lane Pass 2)", "by the names then: " .. mirror.lane_words(N, 2))
+  assert(mirror.lane_words(N, 3) == " (lane Pass 1)", "with the track's event in the same second: " .. mirror.lane_words(N, 3))
+  assert(mirror.lane_words(N, 6) == " (lane Pass 2)", "a delete, by when its item last had a lane: " .. mirror.lane_words(N, 6))
+  assert(mirror.lane_words(N, 7) == " (lane 5)", "no track event to read: its number")
+  assert(mirror.lane_words(N, 8) == "", "not on a lane: nothing")
+  local S = { lanes("T1", 1, 1, ""), { kind = "obj", obj = "item", oid = "I-A", id = "a", user = "M", time = "T2", rev = 1, track = "T-1", state = on(0) } }
+  assert(mirror.lane_words(S, 2) == "", "a track with one lane: nothing to say")
   local plan = mirror.plan_undo_moment(M, 4)
   assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
 end

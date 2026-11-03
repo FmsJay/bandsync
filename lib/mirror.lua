@@ -574,6 +574,7 @@ function mirror.entry_lane(entries, i)
       if entries[j].oid == e.oid then from = entries[j] end
     end
     e.lane_seen = type(from.state) == "string" and tonumber(from.state:match("BANDLANE (%d+)")) or false
+    e.lane_time = from.time
   end
   return e.lane_seen or nil
 end
@@ -598,18 +599,28 @@ function mirror.same_moment(entries, i)
   end
   return out
 end
--- " (lane Take 2)" for a row about an item on a lane of a track with several here, else "". By the lane's name now.
--- shortcut: a lane added or removed since can shift the number it was on, so an old row may name its neighbour; storing the name on the event would settle it.
-function mirror.lane_words(proj, entries, i)
+-- " (lane Take 2)" for a row about an item on a lane, else "": the lane's name when the change was made, from its track's newest
+-- event by then, as lanes added or removed since shift the numbers. Pure.
+function mirror.lane_words(entries, i)
   local e, lane = entries[i], mirror.entry_lane(entries, i)
   if not lane or not e.track then return "" end
   if e.lane_words_seen == nil then
-    local tr = mirror.find(proj, "track", e.track)
-    if tr and reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") < 2 then e.lane_words_seen = ""
-    else
-      local name = tr and select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_LANENAME:" .. lane, "", false)) or ""
-      e.lane_words_seen = string.format(" (lane %s)", name ~= "" and name or tostring(lane + 1))
+    local start = i
+    while entries[start + 1] and entries[start + 1].time == e.time do start = start + 1 end -- (a track's event can follow its items' in the same second)
+    local name, plain = "", false
+    for j = start, 1, -1 do
+      local p = entries[j]
+      if p.obj == "track" and p.oid == e.track and type(p.state) == "table" and (p.time or "") <= (e.lane_time or "") then
+        plain = (tonumber(p.state.lanes) or 0) < 2
+        local n = 0
+        for v in ((p.state.lanenames or "") .. ","):gmatch("([^,]*),") do
+          if n == lane then name = v end
+          n = n + 1
+        end
+        break
+      end
     end
+    e.lane_words_seen = plain and "" or string.format(" (lane %s)", name ~= "" and name or tostring(lane + 1))
   end
   return e.lane_words_seen
 end

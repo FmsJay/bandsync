@@ -727,7 +727,7 @@ local function history_filtered(driving)
       and (text == "" or (line .. " " .. tostring(e.user)):lower():find(text, 1, true))
     local moment = ok and require("mirror").same_moment(entries, i) or { i }
     for _, j in ipairs(moment) do if j > i then ok = false end end -- (one row for one act, on the newest of them)
-    if ok then line = line .. require("mirror").lane_words(proj, entries, i) end
+    if ok then line = line .. require("mirror").lane_words(entries, i) end
     if #moment > 1 then line = line .. string.format(" (%d changes at that moment, undone together)", #moment) end
     if ok then
       n = n + 1
@@ -855,7 +855,7 @@ local function section_history()
             ImGui.SameLine(ctx)
             ImGui.TextDisabled(ctx, local_time(entries[i].time):sub(7))
             ImGui.SameLine(ctx)
-            ImGui.TextWrapped(ctx, describe(entries[i]) .. require("mirror").lane_words(proj, entries, i) .. (#moment > 1 and string.format(" (%d changes at that moment, undone together)", #moment) or ""))
+            ImGui.TextWrapped(ctx, describe(entries[i]) .. require("mirror").lane_words(entries, i) .. (#moment > 1 and string.format(" (%d changes at that moment, undone together)", #moment) or ""))
             ImGui.PopID(ctx)
           end
         end

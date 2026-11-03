@@ -62,6 +62,7 @@ local function same(what)
   for oid in pairs(ob) do if not oa[oid] then diff[#diff + 1] = "extra on Mac: " .. oid end end
   check(#diff == 0, what .. (#diff > 0 and (" -> " .. table.concat(diff, "; ")) or ""))
 end
+local was_put = reaper.GetExtState(band.SECTION, "put back") -- (what this says goes on the real panel's bar otherwise)
 local ok, err = pcall(function()
   reaper.SelectProjectInstance(pa)
   local keys, bass = new_track(pa, "Keys"), new_track(pa, "Bass")
@@ -302,6 +303,7 @@ local ok, err = pcall(function()
   same("after the copy")
 end)
 if not ok then say("ERROR " .. tostring(err)); fails = fails + 1 end
+reaper.SetExtState(band.SECTION, "put back", was_put, false)
 for k, p in ipairs({ pa, pb }) do
   if reaper.ValidatePtr2(0, p, "ReaProject*") then
     reaper.SelectProjectInstance(p)

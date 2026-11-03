@@ -764,7 +764,7 @@ local function section_recall()
   end
   if ImGui.SmallButton(ctx, "Render current mix") then action("Final mix") end
   ImGui.SetItemTooltip(ctx, "Renders the whole song as your master has it (in your File > Render format) into the shared folder's mixes/ for everyone, and to Google Drive if you use it.\n" ..
-    "Your own tracks and BandSync's helper tracks are left out; nothing is added to the project.")
+    "Everyone's parts are in it, yours too. Only tracks that stay on this computer ('yours, not sent', BandSync's helpers) are left out. Nothing is added to the project.")
   ImGui.SameLine(ctx, 0, 4)
   if ImGui.SmallButton(ctx, "Back up") then recall.back_up(proj, cfg, b); last = 0 end
   ImGui.SetItemTooltip(ctx, "Keeps the song as it stands now: a saved version here that's never trimmed, and the project on Google Drive if you use it. No audio is rendered.")
@@ -2240,10 +2240,10 @@ local function frame_app()
   if newest and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, 0xBFD3FFFF, newest:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
   section_invites()
   tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
-  tools.put_back_bar(ctx, ImGui, b and b.song) -- (an edit of yours that was undone, and why: stays until dismissed)
-  if b and can then -- (an edit touching a claim: lib/suggest.lua)
+  if b and can then -- (an edit touching a claim, before the rest: lib/suggest.lua)
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
   end
+  tools.put_back_bar(ctx, ImGui, b and b.song) -- (an edit of yours that was undone, and why: stays until dismissed)
   local want = reaper.GetExtState(band.SECTION, "panel page") -- a page asked for from elsewhere (a new room opens on Rooms)
   if want ~= "" then reaper.DeleteExtState(band.SECTION, "panel page", false); page = OLD_PAGES[want] or want end
   want = reaper.GetExtState(band.SECTION, "panel do") -- a choice from the radial menu

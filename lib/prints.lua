@@ -188,7 +188,10 @@ function prints.hold_fx(tr)
   for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
     local x = reaper.GetTrackMediaItem(tr, i)
     local tk = reaper.GetActiveTake(x)
-    if tk and take_ext(tk, prints.KEY) ~= "" and not prints.ara_take(x) then
+    -- (a lane that isn't playing isn't heard: its wet take took the Neve off a comp that was playing dry: Mac, 0.42.27)
+    local heard = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") ~= 2
+      or reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. math.floor(reaper.GetMediaItemInfo_Value(x, "I_FIXEDLANE"))) > 0
+    if heard and tk and take_ext(tk, prints.KEY) ~= "" and not prints.ara_take(x) then
       -- (a comp made while a pass played its print: the Neve went off for the whole track, so every dry piece played unprocessed:
       -- Mac, 0.42.5. One piece through its plug-ins twice is the smaller harm, and it says so)
       if reaper.CountTakes(x) > 1 then wet = true; break end

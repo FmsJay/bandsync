@@ -132,11 +132,12 @@ function tools.put_back_bar(ctx, ImGui, song)
   if not (pb and pb.text) then return end
   if pb.song and song and pb.song ~= song then return end -- (another song's, in another tab: laptop, 0.42.4)
   if pb.at and os.time() - pb.at > 600 then return end -- (old news: it's still in Setup > Console. Mac, 0.42.4)
+  if ImGui.SmallButton(ctx, "OK##putback") then reaper.DeleteExtState(band.SECTION, "put back", false) end -- (first: a panel docked short showed the text, and no way to dismiss it)
+  ImGui.SetItemTooltip(ctx, "Hide this. Every undone edit is also in Setup > Log.")
+  ImGui.SameLine(ctx)
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xF2BF40FF)
   ImGui.TextWrapped(ctx, "Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or ""))
   ImGui.PopStyleColor(ctx)
-  if ImGui.SmallButton(ctx, "OK##putback") then reaper.DeleteExtState(band.SECTION, "put back", false) end
-  ImGui.SetItemTooltip(ctx, "Hide this. Every undone edit is also in Setup > Log.")
 end
 
 return tools

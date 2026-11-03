@@ -193,15 +193,12 @@ function suggest.notices(proj, cfg, room_dir)
   end
 end
 
--- The lines at the top of the panel.
+-- The lines at the top of the panel. Buttons first, on the line itself: a panel docked short shows one line of this (James's PC).
 function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
   local band = require("band")
   local mine, waiting = suggest.rows(room_dir, cfg.user)
   for _, h in ipairs(mine) do
     ImGui.PushID(ctx, h.id)
-    ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xF2BF40FF)
-    ImGui.TextWrapped(ctx, string.format("%s's edit touches your parts: %s", tostring(h.from), suggest.words(h)))
-    ImGui.PopStyleColor(ctx)
     if ImGui.SmallButton(ctx, "Accept") then
       local did, stale, refused = suggest.accept(proj, cfg, room_dir, h, function(name, pos) return can(cfg.user, name, pos) end, local_mix)
       if did then
@@ -218,13 +215,18 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
       band.log(string.format("you declined %s's suggestion (%s)", tostring(h.from), suggest.words(h)))
     end
     ImGui.SetItemTooltip(ctx, "Your tracks stay as they are. " .. tostring(h.from) .. " keeps a copy of anything new on a track of their own.")
+    ImGui.SameLine(ctx)
+    ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xF2BF40FF)
+    ImGui.TextWrapped(ctx, string.format("%s's edit touches your parts: %s", tostring(h.from), suggest.words(h)))
+    ImGui.PopStyleColor(ctx)
     ImGui.PopID(ctx)
   end
   for _, h in ipairs(waiting) do
     ImGui.PushID(ctx, h.id)
-    ImGui.TextWrapped(ctx, string.format("Waiting on %s: %s", tostring(h.owner), suggest.words(h)))
     if ImGui.SmallButton(ctx, "Withdraw") then suggest.answer(room_dir, h, cfg.user, "withdrawn") end
     ImGui.SetItemTooltip(ctx, "Take the suggestion back. Anything new you added stays on your '(yours, not sent)' tracks.")
+    ImGui.SameLine(ctx)
+    ImGui.TextWrapped(ctx, string.format("Waiting on %s: %s", tostring(h.owner), suggest.words(h)))
     ImGui.PopID(ctx)
   end
   if suggest.note and #mine > 0 then ImGui.TextWrapped(ctx, suggest.note) end

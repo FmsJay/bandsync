@@ -1973,7 +1973,12 @@ local function settings_look()
     heading("Look", 17)
     do
       local pick = combo("Theme##theme", theme.name, theme.NAMES, "How the panel looks on this computer. It reopens to change.")
-      if pick and pick ~= theme.name then reaper.SetExtState(band.SECTION, "theme", pick, true); reload_now = true end
+      if pick and pick ~= theme.name then
+        reaper.SetExtState(band.SECTION, "theme", pick, true)
+        -- (back where you were: it went to Home, a second trip here each time when comparing them: Mac, 0.45.0)
+        reaper.SetExtState(band.SECTION, "panel page", "Setup", false); reaper.SetExtState(band.SECTION, "setup tab", "Options", false)
+        reload_now = true
+      end
     end
     if ImGui.Button(ctx, "Use the classic panel") then reaper.SetExtState(band.SECTION, "panel_ui", "classic", true) end
     ImGui.SetItemTooltip(ctx, "The plain panel with tabs (everything is the same underneath). 'BandSync - Classic panel' opens it too.")
@@ -2054,7 +2059,7 @@ function ui.settings_advanced()
   end
 end
 local function page_setup()
-  if not ImGui.BeginTabBar(ctx, "setup") then return end
+  if not ImGui.BeginTabBar(ctx, "setup", ImGui.TabBarFlags_FittingPolicyScroll) then return end -- (scrolls when narrow: squeezed, the names read "Hea... Con...")
   if ImGui.BeginTabItem(ctx, "Health") then layout({ { maint_health, 460 }, { section_actions, 440 } }); ImGui.EndTabItem(ctx) end
   if ImGui.BeginTabItem(ctx, "Console") then
     -- BandSync's own log, newest first (REAPER's console only shows it while open)
@@ -2069,7 +2074,9 @@ local function page_setup()
     ImGui.EndTabItem(ctx)
   end
   if ImGui.BeginTabItem(ctx, "Advanced") then layout({ { ui.settings_advanced, 460 } }); ImGui.EndTabItem(ctx) end
-  if ImGui.BeginTabItem(ctx, "Options") then
+  local to_options = reaper.GetExtState(band.SECTION, "setup tab") == "Options"
+  if to_options then reaper.DeleteExtState(band.SECTION, "setup tab", false) end
+  if ImGui.BeginTabItem(ctx, "Options", nil, to_options and ImGui.TabItemFlags_SetSelected or 0) then
     -- (Songs: inline, the panel's main chunk is near Lua's 200-locals limit) per-song sync, lib/songsync.lua
     layout({ { settings_look, 320 }, { settings_sync, 420 }, { function()
   if card("bands") then -- (each band its own shared folder: docs/bands-design.md)
@@ -2736,18 +2743,21 @@ local function loop()
       local me = ImGui.GetWindowDockID(ctx) == ~dock_side.docker and reaper.JS_Window_Find and reaper.JS_Window_Find("KitchenSync", true)
       if me then
         pcall(reaper.JS_Window_SetFocus, me)
-        if reaper.JS_Window_GetFocus() == me then
-          local where = dock_side.action == 41599 and "left" or "right"
-          if require("tools").move_docker(dock_side.docker, where == "left" and 1 or 3) then
-            band.msg("KitchenSync is docked at the " .. where .. " of REAPER.\n\nREAPER opens a new docker there very narrow, " ..
-              "and a script can't widen it: drag its inner edge across. REAPER remembers the width after that.")
-          else
-            band.msg("REAPER wouldn't move KitchenSync's docker to the " .. where .. ", so the panel is at the bottom and everything else is where it was.\n\n" ..
-              "To try by hand: right-click the 'KitchenSync' tab at the foot of the docker, and look for the docker's position there.")
-          end
+        -- (no asking whether the focus took: on a Mac it never reads as ours, and this ended with nothing said. move_docker looks afterwards
+        -- and puts back whatever else moved: Mac, 0.45.0)
+        local where = dock_side.action == 41599 and "left" or "right"
+        if require("tools").move_docker(dock_side.docker, where == "left" and 1 or 3) then
+          band.msg("KitchenSync is docked at the " .. where .. " of REAPER.\n\nREAPER opens a new docker there very narrow, " ..
+            "and a script can't widen it: drag its inner edge across. REAPER remembers the width after that.")
+        else
+          band.msg("REAPER wouldn't move KitchenSync's docker to the " .. where .. ", so the panel is at the bottom and everything else is where it was.\n\n" ..
+            "To try by hand: right-click the 'KitchenSync' tab at the foot of the docker, and look for the docker's position there.")
         end
         dock_side = nil
-      elseif reaper.time_precise() - dock_side.since > 3 then dock_side = nil end
+      elseif reaper.time_precise() - dock_side.since > 3 then
+        dock_side = nil
+        band.log("the panel didn't settle into its new docker, so it stays where it is")
+      end
     end
     open_cards = 0
     local ok, e = pcall(frame) -- an error in our logic must still reach End

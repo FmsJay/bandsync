@@ -281,6 +281,23 @@ end
 
 -- Add a machine to Syncthing and share a band's folder (`folder`: its Syncthing id, "bandsync" for the first band)
 -- with it, and only that one. Returns true, or nil + why.
+-- Stop sharing a band's folder with a machine, and forget the machine if no other folder has it. Nothing is deleted on either side.
+-- Returns true (also when it wasn't shared), or nil + why.
+function services.unshare(folder, id)
+  local st = services.syncthing_path()
+  if not st then return nil, "Syncthing wasn't found" end
+  if not services.is_device_id(id) then return nil, "not a device ID: " .. tostring(id) end
+  local function has(f) return (reaper.ExecProcess(q(st) .. " cli config folders " .. f .. " devices list", 8000) or ""):find(id, 1, true) ~= nil end
+  if has(folder) then
+    local r = reaper.ExecProcess(q(st) .. " cli config folders " .. folder .. " devices " .. id .. " delete", 15000) or ""
+    if not r:match("^0\n") then return nil, "Syncthing didn't stop sharing: " .. r:gsub("^%d+\n", "") end
+  end
+  local listed = reaper.ExecProcess(q(st) .. " cli config folders list", 8000) or ""
+  if not listed:match("^0\n") then return true end -- (the folder's done; a machine left known does no harm)
+  for f in listed:gsub("^0\n", ""):gmatch("[^\r\n]+") do if has(f) then return true end end
+  reaper.ExecProcess(q(st) .. " cli config devices " .. id .. " delete", 15000)
+  return true
+end
 function services.add_device(id, name, folder)
   local st = services.syncthing_path()
   if not st then return nil, "Syncthing wasn't found" end

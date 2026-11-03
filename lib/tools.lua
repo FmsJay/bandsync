@@ -93,6 +93,7 @@ function tools.join_requests(ctx, ImGui, b)
         local ok, why
         if d.folder then ok, why = services.share_folder(d.folder, d.id) -- (already a bandmate: just this band's folder)
         else ok, why = services.add_device(d.id, d.name, binfo.id) end
+        if ok then require("removal").let_in(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id) end -- (taken out before, and back)
         band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the projects reach them now")
           or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
         reaper.DeleteExtState(band.SECTION, "pending_join", false)
@@ -143,6 +144,15 @@ function tools.move_docker(docker, side)
     if i ~= docker and reaper.DockGetPosition(i) ~= before[i] and DOCKER_SIDE[before[i]] then reaper.Main_OnCommand(DOCKER_SIDE[before[i]], 0) end
   end
   return reaper.DockGetPosition(docker) == side
+end
+
+-- Said on the computer of someone taken out of a group, until they're let back in (lib/removal.lua).
+function tools.removed_bar(ctx, ImGui)
+  local text = reaper.GetExtState(band.SECTION, "removed from")
+  if text == "" then return end
+  ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
+  ImGui.TextWrapped(ctx, text)
+  ImGui.PopStyleColor(ctx)
 end
 
 function tools.put_back_bar(ctx, ImGui, song)

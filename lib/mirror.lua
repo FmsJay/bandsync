@@ -773,6 +773,14 @@ function mirror.track_line(t, local_mix, colour)
   return table.concat(f, "|")
 end
 
+-- The same settings? As track_line, but 0 and 0.0 are one number: a state read here has floats, and one from a bandmate's event can have
+-- whole numbers. Read as different, a track that had only moved in the list was put back and suggested to its owner at every restart.
+-- (The hash stays on track_line: changing what it reads would make every track look changed.) Pure.
+function mirror.same_line(x, y, local_mix)
+  local function plain(t) return (mirror.track_line(t, local_mix):gsub("(%d)%.0%f[|\0]", "%1")) end
+  return plain(x) == plain(y)
+end
+
 -- What runs through each track: its folder's tracks, what it receives, the tracks a VCA fader on it leads, and what runs through
 -- those. Tracks with nothing running through them aren't listed. Pure. tracks: { { oid, parent, recv, lead, follow } } (recv: its R- part;
 -- lead, follow: the VCA groups it leads and follows, as bits). A VCA moves no follower's own fader, only how it sounds: a bus, as far
@@ -1309,7 +1317,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     -- (landed, only its place in this machine's list can differ: the band's hash stands, so fingerprints agree, and it isn't
     -- "came out different". Track order can differ: PC Fight, laptop, 0.42.3)
     local h = mirror.track_hash(t, local_mix)
-    if ev.hash and h ~= ev.hash and type(ev.state) == "table" and mirror.track_line(band_json(t), local_mix) == mirror.track_line(band_json(ev.state), local_mix) then h = ev.hash end
+    if ev.hash and h ~= ev.hash and type(ev.state) == "table" and mirror.same_line(t, ev.state, local_mix) then h = ev.hash end
     return true, h
   elseif kind == "fx" then
     local tr = mirror.find(proj, "track", ev.track)
@@ -1820,7 +1828,7 @@ function mirror.watch(proj, cfg, song, room, opts)
           local ev = event_file(room_dir, evid)
           -- (a track Back restored has no hash on its event: it went out on every machine whose list differs: PC, 0.42.11)
           a = ev and type(ev.state) == "table"
-            and mirror.track_line(band_json(ev.state), opts.local_mix) == mirror.track_line(band_json(o.state), opts.local_mix) and (ev.hash or h) or false
+            and mirror.same_line(ev.state, o.state, opts.local_mix) and (ev.hash or h) or false
           mirror.track_alias[key] = a
         end
         if a then
@@ -1998,8 +2006,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       else
         -- only its place in the list differs: a track above it went (a bandmate's, say, joining late, or one that's coming
         -- back), and nobody changed this one, so it isn't news ("Track Mac Audio ... put back": laptop, 0.42.2)
-        if o.kind == "track" and last and type(last.state) == "table"
-            and mirror.track_line(o.state, opts.local_mix) == mirror.track_line(last.state, opts.local_mix) then
+        if o.kind == "track" and last and type(last.state) == "table" and mirror.same_line(o.state, last.state, opts.local_mix) then
           return put_back(o, rev, evid, { name = name })
         end
         -- the tempo changed and REAPER moved this with it: nobody's edit. It's where it should be, and whoever may change it sends
@@ -2014,7 +2021,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         if o.kind == "track" and last and type(last.state) == "table" then
           local x, y = band_json(o.state), band_json(last.state)
           x.depth, y.depth = 0, 0
-          if mirror.track_line(x, opts.local_mix) == mirror.track_line(y, opts.local_mix) then return put_back(o, rev, evid, { name = name }) end
+          if mirror.same_line(x, y, opts.local_mix) then return put_back(o, rev, evid, { name = name }) end
         end
         local where = (ok_before and name or last.name or "") ~= "" and (ok_before and name or last.name) or "an unnamed track"
         -- whose it is, and what would let you: "or take control" told the driver to take control (laptop, round 2)

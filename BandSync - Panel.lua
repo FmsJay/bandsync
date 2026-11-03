@@ -568,6 +568,27 @@ function ui.claim_chips(owned, short)
     end
   end
 end
+-- Take someone out of the group, for the driver or the song's host (lib/removal.lua). A minute to change your mind.
+function ui.remove_button(p)
+  if p.user == cfg.user then return end
+  local removal = require("removal")
+  local m = removal.mark(cfg.root, p.user)
+  if m then
+    ImGui.TextColored(ctx, YELLOW, string.format("Leaving the group in %d s", math.max(0, removal.GRACE - (os.time() - (tonumber(m.at) or 0)))))
+    next_to("Keep them")
+    if ImGui.SmallButton(ctx, "Keep them##" .. p.user) then removal.keep(cfg.root, p.user) end
+    return ImGui.SetItemTooltip(ctx, "Changed your mind: nothing has happened yet.")
+  end
+  if not (view.driver == cfg.user or (view.session and view.session.host == cfg.user)) then return end
+  if ImGui.SmallButton(ctx, "Remove##" .. p.user) and reaper.MB("Take " .. p.user .. " out of " .. tostring(view.group) .. "?\n\n" ..
+      "Within a few minutes every computer in the group stops syncing with theirs. Their claims go free. What they made stays in the songs and on Restore.\n\n" ..
+      "They keep the copy they already have: that can't be taken back. If they also have the group's Google Drive folder, remove them there too.\n\n" ..
+      "You have a minute to change your mind, and you can invite them again later.", "KitchenSync", 4) == 6 then
+    local ok, why = removal.remove(cfg.root, p.user, cfg.user)
+    if ok then band.log(p.user .. " leaves the group in a minute: Keep them on their card stops it") else reaper.MB(why, "KitchenSync", 0) end
+  end
+  ImGui.SetItemTooltip(ctx, "Take them out of the group: every computer stops syncing with theirs.")
+end
 -- Under a person in Who's here (James, 2026-11-02): what they're working in or last worked in, opening to all they've claimed.
 function ui.person_claims(user, last_track)
   local list = ui.claims_of(user)
@@ -1857,6 +1878,7 @@ local function home_who()
       if p.state ~= "here" and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 6); tools.follow_button(p.name) end
       if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
       ui.person_claims(p.user, p.last_track)
+      ui.remove_button(p)
     end
     if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
     return home_play()
@@ -1894,6 +1916,7 @@ local function home_who()
       if p.state ~= "here" and p.state ~= "offline" then tools.follow_button(p.name) end
       if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
       ui.person_claims(p.user, p.last_track)
+      ui.remove_button(p)
       card_end()
     end
   end
@@ -2333,6 +2356,7 @@ local function frame_app()
   tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)
   -- (the line keeps its height when it clears: what's under it mustn't jump as you go to click it)
   if tools.toast_line and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, theme.TOAST, tools.toast_line:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
+  tools.removed_bar(ctx, ImGui)
   section_invites()
   tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
   if b and can then -- (an edit touching a claim, before the rest: lib/suggest.lua)

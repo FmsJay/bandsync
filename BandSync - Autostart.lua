@@ -40,6 +40,7 @@ local function loop()
   end
   pcall(require("startup").note)
   pcall(band.sws_colours) -- (SWS auto-colouring off while a band song is in front, back on otherwise)
+  pcall(require("removal").tick) -- (someone taken out of a group, and which computer is whose: lib/removal.lua)
   -- an update: the new code takes over in place (once the version on disk has held for two looks), as Live sync does;
   -- before 0.21.3 a running Autostart kept its old rules until REAPER restarted
   local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')

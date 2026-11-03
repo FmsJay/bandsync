@@ -45,10 +45,11 @@ function status.gather(cfg, b, proj)
     end
   end
   view.newest_event = newest_event
-  local rows, seen = {}, {}
+  local rows, seen = {}, require("removal").gone(cfg.root) -- (someone taken out of the group isn't listed)
+  seen[cfg.user] = nil
   for _, f in ipairs(band.files(sync.room_dir(cfg, b.song, b.room) .. "/status", ".json")) do
     local st = band.read_json(sync.room_dir(cfg, b.song, b.room) .. "/status/" .. f)
-    if st and st.user then
+    if st and st.user and not seen[st.user] then
       seen[st.user] = true
       if st.user ~= cfg.user then note_version(st.version) end
       if st.user == cfg.user then view.my_age, view.my_mirror, view.my_pending = band.age(st.time), st.mirror, st.pending or 0 else

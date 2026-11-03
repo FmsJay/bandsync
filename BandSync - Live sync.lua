@@ -401,6 +401,7 @@ local function poll()
   end
   if now - quiet.checked > 60 then
     quiet.checked = now
+    pcall(require("removal").tick) -- (Autostart does this too, where it's on)
     local n = event_count()
     if n ~= quiet.n then quiet.n, quiet.since = n, now
     elseif now - quiet.since > 1200 then pcall(end_of_session, "20 minutes with no changes") end

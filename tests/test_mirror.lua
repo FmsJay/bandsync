@@ -415,4 +415,19 @@ do
   local plan = mirror.plan_undo_moment(M, 4)
   assert(plan["I-1"].id == "a1" and plan["I-2"].id == "a2", "Undo on either row brings both back")
 end
+do -- a state read here has floats, one from a bandmate's event can have whole numbers: the same settings (0.45: a track that had only moved was put back and suggested at every restart)
+  local real_own = mirror.own_colours
+  mirror.own_colours = function() return false end
+  local here = { name = "Keys", depth = 0.0, mute = 0.0, phase = 0.0, freemode = 0.0, lanes = 1.0, vol = "1.000000", color = 16576, after = "x" }
+  local theirs = { name = "Keys", depth = 0, mute = 0, phase = 0, freemode = 0, lanes = 1, vol = "1.000000", color = 16576, after = "y" }
+  assert(mirror.same_line(here, theirs, false), "0 and 0.0 are one number, and the place in the list isn't in it")
+  theirs.mute = 1
+  assert(not mirror.same_line(here, theirs, false), "a real difference still is one")
+  theirs.mute, theirs.vol = 0, "0.500000"
+  assert(not mirror.same_line(here, theirs, false), "a fader too")
+  theirs.vol, theirs.name = "1.000000", "Keys 1.0"
+  here.name = "Keys 1"
+  assert(not mirror.same_line(here, { name = "Keys 2", depth = 0 }, false), "other names differ")
+  mirror.own_colours = real_own
+end
 print("ok")

@@ -2524,6 +2524,11 @@ local function loop()
       for _ = 1, open_cards do ImGui.PopTextWrapPos(ctx); ImGui.EndChild(ctx) end
       open_cards = 0
     end
+    -- a focused panel keeps the keys from REAPER, so Ctrl+Z did nothing after a click here. (Cmd on a Mac. Not while typing: a text box has its own undo)
+    if ImGui.IsWindowFocused(ctx, ImGui.FocusedFlags_RootAndChildWindows) and not ImGui.IsAnyItemActive(ctx)
+      and ImGui.IsKeyDown(ctx, ImGui.Mod_Ctrl) and ImGui.IsKeyPressed(ctx, ImGui.Key_Z, false) then
+      action(ImGui.IsKeyDown(ctx, ImGui.Mod_Shift) and "Redo" or "Undo")
+    end
     if banner_docked then reaper.DeleteExtState(band.SECTION, "dock armed", false) -- docked: drag-to-dock did its job
     elseif not native then
       -- the top corners resize too (Dear ImGui only has grips at the bottom); the grips sit over the frame's corners

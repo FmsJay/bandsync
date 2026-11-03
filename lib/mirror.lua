@@ -1738,6 +1738,13 @@ function mirror.watch(proj, cfg, song, room, opts)
       local where = (why.name or "") ~= "" and why.name or "an unnamed track"
       if o.kind == "item" and o.ptr then
         reaper.MoveMediaItemToTrack(o.ptr, keep_track(proj, why.name or ""))
+        -- (out of the pool it shares with the part it was copied from, which is then put back from its event: REAPER's MIDI code crashed on a
+        -- later tab close with a freed entry in its list, about 1 run in 5 after this step, and never without it: PC, 2026-11-03)
+        do
+          local got, ch = reaper.GetItemStateChunk(o.ptr, "", false)
+          local unpooled, n = ch:gsub("\n%s*POOLEDEVTS[^\n]*", "")
+          if got and n > 0 then reaper.SetItemStateChunk(o.ptr, unpooled, false) end
+        end
         why.text = "a new item on " .. where .. " isn't yours to add: it's kept here on '" .. where .. " (yours, not sent)', " ..
           (why.to and ("and suggested to " .. why.to) or "not sent to the group (claim the track, or take control)")
       elseif o.kind == "track" and o.ptr then

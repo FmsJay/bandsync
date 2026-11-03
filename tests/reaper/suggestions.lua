@@ -135,6 +135,11 @@ local ok, err = pcall(function()
     suggest.notices(pa, A, room_dir)
     kept = track_named(pa, "Keys (yours, not sent)")
     check(kept ~= nil and reaper.CountTrackMediaItems(kept) == 1, "declined: James keeps his copy on his own track")
+    do -- (it left the pool it shared with the part it was copied from: mirror.lua, the reaper_midi.dll crash)
+      local function pool(it) return select(2, reaper.GetItemStateChunk(it, "", false)):match("POOLEDEVTS (%S+)") end
+      local copy, source = kept and reaper.GetTrackMediaItem(kept, 0), reaper.GetTrackMediaItem(keys, 0)
+      check(copy and source and pool(copy) ~= pool(source), "and it's out of the part's MIDI pool")
+    end
   end
   check(positions(mkeys) == "1.000 20.000", "Mac's Keys is as it was (" .. positions(mkeys) .. ")")
   sync_all()

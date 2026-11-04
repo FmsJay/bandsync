@@ -57,6 +57,11 @@ function removal.remove(root, user, by)
   band.write_json(marks(root) .. "/" .. file_name(user), { user = user, device = id, by = by, at = os.time() })
   return true
 end
+-- Someone leaving by themselves: the same mark, so every computer stops syncing with theirs. Their claims go free on the next computer to look.
+function removal.left(root, user, id)
+  reaper.RecursiveCreateDirectory(marks(root), 0)
+  band.write_json(marks(root) .. "/" .. file_name(user), { user = user, device = id, by = user, at = os.time(), left = true })
+end
 function removal.keep(root, user) os.remove(marks(root) .. "/" .. file_name(user)) end
 -- Who a mark says this computer belongs to, if it's been taken out of the group. (Its Syncthing keeps asking: that isn't someone new.)
 function removal.who_was(root, device)
@@ -88,20 +93,21 @@ function removal.tick(now)
   if now - (tonumber(reaper.GetExtState(band.SECTION, "removal look")) or 0) < 30 then return end
   reaper.SetExtState(band.SECTION, "removal look", tostring(now), false)
   local services = require("services")
+  pcall(require("groups").tick, now)
   local me, id = reaper.GetExtState(band.SECTION, "user"), services.my_device_id()
   local told = ""
   for _, g in ipairs(band.bands()) do
     if id and me ~= "" then removal.publish(g.root, me, id) end
     for _, m in ipairs(all_marks(g.root)) do
       if m.user == me or (id and m.device == id) then
-        told = string.format("%s took you out of %s: nothing syncs with the group any more, and your copy stays here. Ask to be invited again to come back.", tostring(m.by), g.name)
+        if not m.left then told = string.format("%s took you out of %s: nothing syncs with the group any more, and your copy stays here. Ask to be invited again to come back.", tostring(m.by), g.name) end
       elseif removal.due(m, now) and m.device then
         local key = "removal done " .. g.id .. " " .. m.user .. " " .. tostring(m.at)
         if reaper.GetExtState(band.SECTION, key) == "" then
           local ok, why = services.unshare(g.id, m.device)
           if ok then
             reaper.SetExtState(band.SECTION, key, "1", true)
-            if m.by == me then pcall(free, g.root, m.user, me) end
+            if m.by == me or m.left then pcall(free, g.root, m.user, me) end
             band.log(m.user .. " is out of " .. g.name .. ": this computer no longer syncs with theirs")
           else band.log("couldn't stop syncing with " .. m.user .. ": " .. tostring(why)) end
         end

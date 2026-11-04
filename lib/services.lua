@@ -264,7 +264,7 @@ end
 -- Start a band (docs/bands-design.md): its own shared folder beside this band's (<parent>/BandSync <Name>), with
 -- _band/band.json saying who it is, and its own Syncthing folder (shared with nobody yet: Invite a bandmate). This
 -- computer then works in it. Returns its folder, or nil + why.
-function services.new_band(cfg, name)
+function services.new_band(cfg, name, extra)
   name = band.clean(name or "")
   if name == "" then return nil, "Give the group a name." end
   local st = services.syncthing_path()
@@ -278,13 +278,49 @@ function services.new_band(cfg, name)
   local root = (here:match("^(.*)[/\\][^/\\]+$") or here) .. "/BandSync " .. name
   if band.subdirs(root)[1] then return nil, root .. " is already there: pick another name, or remove that folder." end
   reaper.RecursiveCreateDirectory(root .. "/_band", 0)
-  band.write_json(root .. "/_band/band.json", { name = name, id = id, drive = "BandSync - " .. name })
+  local j = { name = name, id = id, drive = "BandSync - " .. name }
+  for k, v in pairs(extra or {}) do j[k] = v end -- (a temporary session: lib/groups.lua)
+  band.write_json(root .. "/_band/band.json", j)
   local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. id .. " --label " .. q("BandSync " .. name) .. " --path " .. q(root), 15000) or ""
   if not r:match("^0\n") then return nil, "Syncthing didn't add the group's folder: " .. r:gsub("^%d+\n", "") end
   reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " order set smallestFirst", 8000)
   services.tune_band_folder(id)
   band.use_band(root)
   return root
+end
+
+function services.set_folder_label(id, label)
+  local st = services.syncthing_path()
+  if st then reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " label set " .. q(label), 8000) end
+end
+-- This computer stops syncing a group's folder, and forgets the computers only that folder had. Its files stay. -> true when it's gone.
+function services.forget_folder(id)
+  local st = services.syncthing_path()
+  if not st then return false end
+  local function lines(cmd)
+    local r = reaper.ExecProcess(q(st) .. " cli config " .. cmd, 8000) or ""
+    local out = {}
+    if r:match("^0\n") then for l in r:gsub("^0\n", ""):gmatch("[^\r\n]+") do out[#out + 1] = l end end
+    return out, r:match("^0\n") ~= nil
+  end
+  local listed, ok = lines("folders list")
+  if not ok then return false end
+  local there = false
+  for _, f in ipairs(listed) do there = there or f == id end
+  if not there then return true end
+  local peers = lines("folders " .. id .. " devices list")
+  if not (reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " delete", 15000) or ""):match("^0\n") then return false end
+  local me = services.my_device_id()
+  for _, d in ipairs(peers) do
+    local used = d == me or not me -- (who "me" is unknown: nobody is forgotten)
+    for _, f in ipairs(listed) do
+      if f ~= id and not used then
+        for _, x in ipairs((lines("folders " .. f .. " devices list"))) do used = used or x == d end
+      end
+    end
+    if not used then reaper.ExecProcess(q(st) .. " cli config devices " .. d .. " delete", 15000) end
+  end
+  return true
 end
 
 -- Add a machine to Syncthing and share a band's folder (`folder`: its Syncthing id, "bandsync" for the first band)

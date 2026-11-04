@@ -24,6 +24,10 @@ Syncing needs no account: only your two computers and the shared folder, and fil
 extras do: *Play along* and *Jam* use one Tailscale account for the group, and the optional Google Drive copy uses a
 Google account. REAPER keeps its own licence (reaper.fm).
 
+**Just one project with someone, for a while?** Open it and press **Create a temporary session**. It makes a session of
+its own, apart from your groups, and puts an invitation on your clipboard. When you're done, **End session** on Home
+stops it on every computer. Everyone keeps their copy, and the project stays open as an ordinary project.
+
 ## Collaborators: start here
 
 1. Ask whoever invited you for the line from their panel's **Invite a collaborator**, and paste it where it says.
@@ -334,6 +338,7 @@ Google Drive copy, and nobody in your other groups sees it. `_band/band.json` in
 (name, Syncthing folder id, Drive folder name); a folder without one is the first group (Syncthing id `bandsync`,
 Drive folder `BandSync`).
 
+- **Rename** and **Leave group** (Setup > Options > Groups): a new name reaches everyone, and folder names stay as they are. Leaving stops this computer syncing it: you keep your copy, its projects stay open as ordinary projects, and someone can invite you again. Your only group can't be left.
 - **Start a new group** (Setup > Options > Groups): makes its folder beside your first group's (`BandSync <Name>`) and its
   own Syncthing folder, shared with nobody yet. Then *Invite a collaborator*: the invitation is for the group you're
   working in, and their installer joins that group (`BS_BAND_ID` / `BS_BAND_NAME` on a Mac, `-BandId` / `-BandName`

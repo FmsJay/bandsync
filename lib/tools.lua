@@ -120,6 +120,7 @@ function tools.join_requests(ctx, ImGui)
       let_in(d, me)
     elseif not skip[d.id] and reaper.time_precise() - (let_at[d.id .. (d.folder or "")] or -math.huge) > 40 then
       -- (buttons first: the words pushed them off a narrow panel)
+      ImGui.SetCursorPosX(ctx, math.max(ImGui.GetCursorPosX(ctx), 16)) -- (no project open, there is no margin here: Mac, 0.52.5)
       if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id .. (d.folder or "")) then let_in(d, me) end
       ImGui.SetItemTooltip(ctx, "Only if you know this computer: anyone who has your Syncthing ID can ask.")
       ImGui.SameLine(ctx)

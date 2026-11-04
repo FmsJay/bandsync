@@ -124,9 +124,11 @@ function Install-App($id, $name) {
   if ($LASTEXITCODE -eq 0) { Ok "$name installed" } else { Warn "$name didn't install (winget exit $LASTEXITCODE): install it by hand" }
 }
 
+# (a test's -ReaperExe: only that REAPER counts. Any other is someone's real one, and this asked it to close: PC, 0.52.5)
+function Get-Reaper { $all = Get-Process reaper -ErrorAction SilentlyContinue; if ($ReaperExe) { $all | Where-Object { $_.Path -eq $ReaperExe } } else { $all } }
 function Find-Reaper {
   if ($ReaperExe) { return $ReaperExe }
-  $p = Get-Process reaper -ErrorAction SilentlyContinue | Select-Object -First 1
+  $p = Get-Reaper | Select-Object -First 1
   if ($p -and $p.Path) { return $p.Path }
   foreach ($c in @("$env:ProgramFiles\REAPER (x64)\reaper.exe", "$env:ProgramFiles\REAPER\reaper.exe")) { if (Test-Path $c) { return $c } }
   return $null
@@ -253,17 +255,17 @@ if (-not (Test-Path (Join-Path $userPlugins "reaper_imgui-x64.dll"))) { $need +=
 if (-not (Get-ChildItem $userPlugins -Filter "reaper_js_ReaScriptAPI*" -ErrorAction SilentlyContinue)) { $need += @{ file = "reaper_js_ReaScriptAPI64.dll"; url = "https://github.com/juliansader/ReaExtensions/raw/master/js_ReaScriptAPI/v1.310/reaper_js_ReaScriptAPI64.dll" } }
 if (-not (Get-ChildItem $userPlugins -Filter "reaper_sws*" -ErrorAction SilentlyContinue)) { $need += @{ file = "reaper_sws-x64.dll"; url = "https://github.com/reaper-oss/sws/releases/download/v2.14.0.7/reaper_sws-x64.dll" } }
 if ($need.Count -gt 0) {
-  if (Get-Process reaper -ErrorAction SilentlyContinue) {
+  if (Get-Reaper) {
     Say "REAPER has to restart to load its new extensions. Press Enter and REAPER is asked to close (it asks to save"
     Say "anything unsaved first; it reopens your project afterwards), or close it yourself."
     Read-Host | Out-Null
-    Get-Process reaper -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() } # like clicking X: REAPER asks to save
+    Get-Reaper | ForEach-Object { [void]$_.CloseMainWindow() } # like clicking X: REAPER asks to save
     $script:Reopen = $true
     $waited = 0
-    while (Get-Process reaper -ErrorAction SilentlyContinue) {
+    while (Get-Reaper) {
       Start-Sleep 1; $waited++
       if ($waited % 30 -eq 0) { # (asking again: REAPER drops a close asked for while it's busy, say scanning plug-ins for the first time)
-        Get-Process reaper -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }
+        Get-Reaper | ForEach-Object { [void]$_.CloseMainWindow() }
         Say "Still waiting for REAPER to close (it may be scanning plug-ins, or waiting on a question: answer it if it asked one) ..."
       }
     }
@@ -357,20 +359,21 @@ function Request($mode) {
   [IO.File]::WriteAllText((Join-Path (Split-Path $helper) "bandsync_setup.json"), $req, $utf8)
   $result = Join-Path (Split-Path $helper) "bandsync_setup_result.json"
   Remove-Item $result -ErrorAction SilentlyContinue
-  if ($script:Reopen -and -not (Get-Process reaper -ErrorAction SilentlyContinue)) {
+  if ($script:Reopen -and -not (Get-Reaper)) {
     # we closed REAPER: start it the way you do, so it reopens your projects as it always does (started WITH the
     # helper it came back with an empty project), then hand it the helper once it's up
     Start-Process $reaper
-    for ($i = 0; $i -lt 60 -and -not (Get-Process reaper -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }); $i++) { Start-Sleep 1 }
+    for ($i = 0; $i -lt 60 -and -not (Get-Reaper | Where-Object { $_.MainWindowHandle -ne 0 }); $i++) { Start-Sleep 1 }
     Start-Sleep 5
   }
   # ONE request: the helper waits inside REAPER for ReaPack itself (asking again while ReaPack's report window was up
   # crashed REAPER on macOS, 2026-10-28)
-  Start-Process $reaper -ArgumentList @("-nonewinst", "`"$helper`"")
+  $once = if ($ReaperExe) { @("-newinst", "-cfgfile", "`"$res\reaper.ini`"") } else { @("-nonewinst") }
+  Start-Process $reaper -ArgumentList ($once + "`"$helper`"")
   $script:Gone = $false
   for ($i = 0; $i -lt 360 -and -not (Test-Path $result); $i++) {
     Start-Sleep 1
-    if ($i -gt 15 -and -not (Get-Process reaper -ErrorAction SilentlyContinue)) { $script:Gone = $true; break }
+    if ($i -gt 15 -and -not (Get-Reaper)) { $script:Gone = $true; break }
     if ($i -eq 30) { Say "Waiting for StudioSync to arrive through ReaPack. ReaPack opens its own windows on a first run (Manage repositories, Transaction report): press OK on them." }
   }
   if (-not (Test-Path $result)) { return $null }

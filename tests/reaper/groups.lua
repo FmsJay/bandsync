@@ -156,7 +156,7 @@ local ok, err = pcall(function()
   check(removal.mark(three, "James").left == true, "and it's marked, by the one who left")
   band.write_json(home .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "BandSync", owner = "Sam" }); fresh()
   local only, why2 = groups.leave(home, "James")
-  check(only == nil and tostring(why2):find("only group", 1, true) ~= nil, "your only group can't be left")
+  check(only == nil and tostring(why2):find("only studio", 1, true) ~= nil, "your only group can't be left")
   check(reaper.GetExtState(band.SECTION, "sync_root") == home, "and nothing changed")
 
   -- 11. Nobody seen for a while

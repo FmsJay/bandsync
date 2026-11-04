@@ -98,6 +98,13 @@ local function delete_mine(ctx, ImGui, cfg, e)
   ImGui.SetItemTooltip(ctx, "Delete yours (for everyone).")
 end
 
+-- A text box with a button beside it. (Not EnterReturnsTrue: with it the text only comes back on Return, so pressing the button lost what was typed and sent
+-- nothing: James and the Mac both hit it.) -> Return was pressed in it, the text.
+function chat.input(ctx, ImGui, id, hint, text)
+  local _, v = ImGui.InputTextWithHint(ctx, id, hint, text)
+  return ImGui.IsItemDeactivated(ctx) and (ImGui.IsKeyPressed(ctx, ImGui.Key_Enter) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadEnter)), v
+end
+
 function chat.draw(ctx, ImGui, cfg, b)
   if not b or not b.song then return ImGui.TextDisabled(ctx, "Open a group project to chat about it.") end
   -- next to the last thing, or on a new line when `w` more won't fit (the Everyone box ran off the right of the panel)
@@ -176,7 +183,8 @@ function chat.draw(ctx, ImGui, cfg, b)
       local newest = t.msgs[#t.msgs] and t.msgs[#t.msgs].file:match("[/\\]([^/\\]+)$"):sub(1, 15) or ""
       if reaper.GetExtState(band.SECTION, seen_key(b, scope)) < newest then reaper.SetExtState(band.SECTION, seen_key(b, scope), newest, true) end
       local _, h = ImGui.GetContentRegionAvail(ctx)
-      if ImGui.BeginChild(ctx, "msgs", 0, math.max(60, h - 34), ImGui.ChildFlags_Borders) then
+      -- (what's under this is one row: at some scales a row is taller than the 34 this was, and in a short docker the box and Send went out of reach: James)
+      if ImGui.BeginChild(ctx, "msgs", 0, math.max(40, h - ImGui.GetFrameHeightWithSpacing(ctx)), ImGui.ChildFlags_Borders) then
         if #t.msgs == 0 then ImGui.TextDisabled(ctx, "No messages yet.") end
         for _, m in ipairs(t.msgs) do
           if shown(m) then
@@ -197,7 +205,8 @@ function chat.draw(ctx, ImGui, cfg, b)
       end
       ImGui.SetNextItemWidth(ctx, -60)
       local enter
-      enter, draft = ImGui.InputTextWithHint(ctx, "##draft", "message", draft, ImGui.InputTextFlags_EnterReturnsTrue)
+      enter, draft = chat.input(ctx, ImGui, "##draft", "message", draft)
+      if enter then ImGui.SetKeyboardFocusHere(ctx, -1) end -- (the next one straight away)
       ImGui.SameLine(ctx)
       if (ImGui.Button(ctx, "Send") or enter) and draft:match("%S") then add(cfg, b, "msgs", { text = draft }); draft = "" end
       ImGui.EndTabItem(ctx)
@@ -215,7 +224,7 @@ function chat.draw(ctx, ImGui, cfg, b)
       end
       ImGui.SetNextItemWidth(ctx, -60)
       local enter
-      enter, todo_text = ImGui.InputTextWithHint(ctx, "##todo", "add a to-do", todo_text, ImGui.InputTextFlags_EnterReturnsTrue)
+      enter, todo_text = chat.input(ctx, ImGui, "##todo", "add a to-do", todo_text)
       ImGui.SameLine(ctx)
       if (ImGui.Button(ctx, "Add") or enter) and todo_text:match("%S") then add(cfg, b, "todo", { text = todo_text, done = false }); todo_text = "" end
       ImGui.EndTabItem(ctx)

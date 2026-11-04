@@ -24,7 +24,7 @@ local result -- summary lines once applied
 local sharing = reaper.GetExtState(band.SECTION, "share after prepare") ~= "" -- (Share sent us: the last button goes on to it)
 reaper.DeleteExtState(band.SECTION, "share after prepare", false)
 local function share_now(ImGui_ctx)
-  if not (sharing and ImGui.Button(ImGui_ctx, "Share it with the group")) then return false end
+  if not (sharing and ImGui.Button(ImGui_ctx, "Share it")) then return false end
   reaper.SetExtState(band.SECTION, "prepared " .. tostring(proj), "1", false)
   local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Publish session.lua", true)
   if id > 0 then reaper.defer(function() reaper.Main_OnCommand(id, 0) end) end
@@ -32,7 +32,9 @@ local function share_now(ImGui_ctx)
 end
 local GREY, GREEN = 0x8C8C8CFF, 0x59CC73FF
 
+local theme = require("theme")
 local function loop()
+  theme.push(ctx, ImGui, true) -- (it was REAPER's plain ImGui grey, next to the panel)
   ImGui.SetNextWindowSize(ctx, 620, 460, ImGui.Cond_FirstUseEver)
   ImGui.SetNextWindowBgAlpha(ctx, 1) -- opaque: the arrange view showing through made it hard to read
   local shown, open = ImGui.Begin(ctx, "Prepare this project for StudioSync###bandsync_prep", true)
@@ -95,6 +97,7 @@ local function loop()
     end
     ImGui.End(ctx)
   end
+  theme.pop(ctx, ImGui, true)
   if open and not close then reaper.defer(loop) end
 end
 reaper.defer(loop)

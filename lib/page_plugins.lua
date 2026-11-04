@@ -69,7 +69,152 @@ function pp.apply_here(proj, cfg)
       end
     end
   end
+  pp.apply_drums(proj)
   return n
+end
+
+-- ---- Drum maps: every drum plug-in has its own notes for kick, snare and hats. The part stays as written; on this computer a small effect ahead of
+-- the instrument moves the notes to what the plug-in here wants. Which maps a track uses is kept on the track here (P_EXT), and the effect is one of this
+-- computer's own (band_local_fx), so nothing goes to anyone. The maps themselves are files in <group>/drummaps, so one made once is there for everyone.
+local DRUM_TAG = "for=drummap;"
+local function map_names(cfg)
+  local names = { "gm" }
+  for _, f in ipairs(band.files(cfg.root .. "/drummaps", ".json")) do if f ~= "gm.json" then names[#names + 1] = f:sub(1, -6) end end
+  return names
+end
+local function words(n) return n == "gm" and "General MIDI" or n end
+local function drum_fx(tr)
+  local list = band.track_ext(tr, "band_local_fx")
+  for g in list:gmatch("({[^}]+})" .. DRUM_TAG) do
+    for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
+      if reaper.TrackFX_GetFXGUID(tr, i) == g then return i, g end
+    end
+    return nil, g
+  end
+end
+local function drop_drum_fx(tr)
+  local i, g = drum_fx(tr)
+  if i then reaper.TrackFX_Delete(tr, i) end
+  if g then band.set_track_ext(tr, "band_local_fx", (band.track_ext(tr, "band_local_fx"):gsub(g:gsub("%p", "%%%0") .. DRUM_TAG, ""))) end
+end
+-- This track's maps made true: the right effect first in its chain, or none. -> notes moved, or nil.
+function pp.apply_drum_track(tr, root)
+  local dm = require("drummap")
+  local from, to = band.track_ext(tr, "band_drum_from"), band.track_ext(tr, "band_drum_to")
+  local t = from ~= "" and to ~= "" and from ~= to and dm.table(dm.load(root, from), dm.load(root, to))
+  if not t then drop_drum_fx(tr); return nil end
+  local text = dm.jsfx(from, to, t)
+  local file = "StudioSync drum map " .. require("mirror").hash(text):sub(1, 12) .. ".jsfx"
+  local dir = reaper.GetResourcePath() .. "/Effects/BandSync"
+  if band.read(dir .. "/" .. file) ~= text then
+    reaper.RecursiveCreateDirectory(dir, 0)
+    local f = io.open(dir .. "/" .. file, "wb")
+    if not f then return nil end
+    f:write(text)
+    f:close()
+  end
+  local i = drum_fx(tr)
+  if i and select(2, reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_ident")):find(file, 1, true) then return t end
+  drop_drum_fx(tr)
+  local idx = reaper.TrackFX_AddByName(tr, "JS:BandSync/" .. file, false, -1000)
+  if idx < 0 then return nil end
+  band.set_track_ext(tr, "band_local_fx", band.track_ext(tr, "band_local_fx") .. reaper.TrackFX_GetFXGUID(tr, idx) .. DRUM_TAG)
+  return t
+end
+-- Every track with maps: after the group's chain replaced this computer's own effects (mirror), or after reopening.
+function pp.apply_drums(proj)
+  local b = band.binding(proj)
+  local cfg = band.settings()
+  if not cfg then return end
+  cfg = band.for_tab(cfg, b)
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    if band.track_ext(tr, "band_drum_from") ~= "" then pp.apply_drum_track(tr, cfg.root) end
+  end
+end
+
+local edit_map, edit_name, edit_why
+function pp.drums(ctx, ImGui, proj, cfg)
+  local theme = require("theme")
+  local dm = require("drummap")
+  ImGui.SeparatorText(ctx, "Drum maps (this computer only)")
+  ImGui.TextDisabled(ctx, "Every drum plug-in has kick, snare and hats on its own notes. If a part was written for a different plug-in than yours, say which: the notes reach your plug-in on the right drums. Nobody else's project changes, and the part stays as written.")
+  local tr = reaper.GetSelectedTrack(proj, 0)
+  if not tr then
+    ImGui.TextColored(ctx, theme.YELLOW, "Select a drum track.")
+  else
+    local n = reaper.CountSelectedTracks(proj)
+    ImGui.Text(ctx, n == 1 and ("Track: " .. select(2, reaper.GetTrackName(tr))) or string.format("%d tracks", n))
+    local names = map_names(cfg)
+    local function pick(label, id, ext)
+      ImGui.AlignTextToFramePadding(ctx)
+      ImGui.Text(ctx, label)
+      ImGui.SameLine(ctx, 110)
+      ImGui.SetNextItemWidth(ctx, math.max(120, math.min(240, ImGui.GetContentRegionAvail(ctx))))
+      local cur = band.track_ext(tr, ext)
+      if ImGui.BeginCombo(ctx, id, cur == "" and "not set" or words(cur)) then
+        if ImGui.Selectable(ctx, "not set", cur == "") then cur = false end
+        for _, m in ipairs(names) do
+          if ImGui.Selectable(ctx, words(m), cur == m) then cur = m end
+        end
+        ImGui.EndCombo(ctx)
+        if cur ~= band.track_ext(tr, ext) then
+          for i = 0, n - 1 do
+            local t2 = reaper.GetSelectedTrack(proj, i)
+            band.set_track_ext(t2, ext, cur or "")
+            pp.apply_drum_track(t2, cfg.root)
+          end
+        end
+      end
+    end
+    pick("Written for", "##drumfrom", "band_drum_from")
+    pick("Played here on", "##drumto", "band_drum_to")
+    local from, to = band.track_ext(tr, "band_drum_from"), band.track_ext(tr, "band_drum_to")
+    if from ~= "" and to ~= "" then
+      local t = from ~= to and dm.table(dm.load(cfg.root, from), dm.load(cfg.root, to))
+      if t then
+        local c = 0
+        for _ in pairs(t) do c = c + 1 end
+        ImGui.TextColored(ctx, theme.GREEN, string.format("On: %d note%s moved, here only.", c, c == 1 and "" or "s"))
+      else ImGui.TextDisabled(ctx, "Those two use the same notes: nothing to move.") end
+    end
+  end
+  if ImGui.SmallButton(ctx, "Make a map...") then
+    edit_map, edit_name, edit_why = {}, "", nil
+    for _, k in ipairs(dm.KIT) do edit_map[k[1]] = dm.GM[k[1]] end
+    ImGui.OpenPopup(ctx, "Make a drum map")
+  end
+  ImGui.SetItemTooltip(ctx, "Name a drum plug-in and say which note plays what. Its manual lists them, or play it and watch. Everyone in the group can use the map once it's made; only the choice above is yours.")
+  ImGui.SetNextWindowSize(ctx, 380, 520, ImGui.Cond_Appearing)
+  if ImGui.BeginPopupModal(ctx, "Make a drum map", true) then
+    ImGui.SetNextItemWidth(ctx, -1)
+    local _, v = ImGui.InputTextWithHint(ctx, "##mapname", "the plug-in's name", edit_name)
+    edit_name = v
+    if ImGui.BeginChild(ctx, "kit", 0, -ImGui.GetFrameHeightWithSpacing(ctx)) then
+      for _, k in ipairs(dm.KIT) do
+        ImGui.AlignTextToFramePadding(ctx)
+        ImGui.Text(ctx, k[2])
+        ImGui.SameLine(ctx, 150)
+        ImGui.SetNextItemWidth(ctx, 110)
+        local ch, nv = ImGui.InputInt(ctx, "##" .. k[1], edit_map[k[1]])
+        if ch then edit_map[k[1]] = math.max(0, math.min(127, nv)) end
+      end
+      ImGui.EndChild(ctx)
+    end
+    if ImGui.Button(ctx, "Save") then
+      local name = band.clean(edit_name)
+      if name == "" or name:lower() == "gm" then edit_why = "Give it the plug-in's name."
+      else
+        reaper.RecursiveCreateDirectory(cfg.root .. "/drummaps", 0)
+        band.write_json(cfg.root .. "/drummaps/" .. name .. ".json", { name = name, notes = edit_map, by = cfg.user })
+        ImGui.CloseCurrentPopup(ctx)
+      end
+    end
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Cancel") then ImGui.CloseCurrentPopup(ctx) end
+    if edit_why then ImGui.SameLine(ctx); ImGui.TextColored(ctx, theme.YELLOW, edit_why) end
+    ImGui.EndPopup(ctx)
+  end
 end
 
 local picking, filter, found, used_at, used, open_now, found_all = nil, "", nil, -math.huge, {}, false, 0

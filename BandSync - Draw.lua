@@ -133,6 +133,16 @@ local function seg_dist(cx, cy, a, z)
 end
 local TEXT_SIZE = { [2] = 14, [4] = 20, [8] = 30 }
 local bar_ext -- the toolbar's screen rectangle last frame: its dark backing, and where a press isn't drawing
+local WHEEL_R = 58
+local wheel_at -- the colour wheel, open: its middle on screen
+-- Colour around, white at the middle. r, g, b -> 0xRRGGBBFF.
+local function wheel_colour(angle, sat)
+  local h = (angle / (2 * math.pi)) % 1 * 6
+  local i, f = math.floor(h), h - math.floor(h)
+  local p, q, t = 1 - sat, 1 - sat * f, 1 - sat * (1 - f)
+  local r, g, bl = table.unpack(({ { 1, t, p }, { q, 1, p }, { p, 1, t }, { p, q, 1 }, { t, p, 1 }, { 1, p, q } })[i % 6 + 1])
+  return (math.floor(r * 255 + 0.5) << 24) | (math.floor(g * 255 + 0.5) << 16) | (math.floor(bl * 255 + 0.5) << 8) | 0xFF
+end
 local press_n, fired = 0, {} -- each press counted; a toolbar button acts once per press (see button())
 
 local version_at = reaper.time_precise()
@@ -233,12 +243,8 @@ local function loop()
     if drawing then
       local tool, size = pick("tool", "pen"), tonumber(pick("size", "4")) or 4
       local mine = math.tointeger(tonumber(pick("color", ""))) or col[cfg.user]
-      local listed = mine == col[cfg.user]
-      for _, c in ipairs(SWATCHES) do if c == mine then listed = true end end
-      if not listed then mine = col[cfg.user]; reaper.DeleteExtState(band.SECTION, "draw color", true) end -- (a colour 0.35.3 had: yours again)
-      local mx, my = reaper.GetMousePosition()
-      local cx, cy = ImGui.PointConvertNative(ctx, mx, my, false)
       local in_bar = bar_ext and cx >= bar_ext[1] and cx <= bar_ext[3] and cy >= bar_ext[2] and cy <= bar_ext[4]
+      in_bar = in_bar or (wheel_at and (cx - wheel_at[1]) ^ 2 + (cy - wheel_at[2]) ^ 2 <= (WHEEL_R + 8) ^ 2)
       local on_bar = ImGui.IsAnyItemHovered(ctx) or in_bar
       -- a press: ImGui's own (it catches a click quicker than a frame, and where it was: a fast drag started late),
       -- or the button straight from the OS (an overlay can miss its own first click)
@@ -352,6 +358,37 @@ local function loop()
       ImGui.SameLine(ctx, 0, 3)
       if button("Mine##colour", mine == col[cfg.user]) then reaper.DeleteExtState(band.SECTION, "draw color", true) end
       ImGui.SetItemTooltip(ctx, "Your own colour (the one Who's here and the drawings show you in).")
+      ImGui.SameLine(ctx, 0, 3)
+      local wheel_open = wheel_at ~= nil
+      if button("Wheel##colour", wheel_open) then wheel_open = not wheel_open; wheel_at = wheel_open and {} or nil end
+      ImGui.SetItemTooltip(ctx, "Any colour: click the wheel.")
+      do
+        local ax, ay = ImGui.GetItemRectMin(ctx)
+        if wheel_at then
+          local _, zy = ImGui.GetItemRectMax(ctx)
+          wheel_at = { ax + 20, at_top and zy + 2 * fh + WHEEL_R + 14 or ay - WHEEL_R - 18 }
+        end
+      end
+      if wheel_at and wheel_at[1] then -- (drawn here, and read from the OS's click like every button on this bar)
+        local wx, wy = wheel_at[1], wheel_at[2]
+        local bar_dl = ImGui.GetWindowDrawList(ctx)
+        ImGui.DrawList_AddCircleFilled(bar_dl, wx, wy, WHEEL_R + 6, theme.BAR)
+        local SEG, RINGS = 48, 6
+        for a = 0, SEG - 1 do
+          local t0, t1 = a / SEG * 2 * math.pi, (a + 1) / SEG * 2 * math.pi
+          for r = 0, RINGS - 1 do
+            local r0, r1 = r / RINGS * WHEEL_R, (r + 1) / RINGS * WHEEL_R
+            ImGui.DrawList_AddQuadFilled(bar_dl, wx + r0 * math.cos(t0), wy + r0 * math.sin(t0), wx + r1 * math.cos(t0), wy + r1 * math.sin(t0),
+              wx + r1 * math.cos(t1), wy + r1 * math.sin(t1), wx + r0 * math.cos(t1), wy + r0 * math.sin(t1), wheel_colour((t0 + t1) / 2, (r + 0.5) / RINGS))
+          end
+        end
+        local dx, dy = cx - wx, cy - wy
+        local dist = math.sqrt(dx * dx + dy * dy)
+        if pressed and dist <= WHEEL_R + 2 then
+          keep("color", wheel_colour(math.atan(dy, dx), math.min(1, dist / WHEEL_R)))
+          wheel_at = nil
+        end
+      end
       ImGui.SameLine(ctx, 0, 12)
       for i, z in ipairs(SIZES) do
         if i > 1 then ImGui.SameLine(ctx, 0, 3) end

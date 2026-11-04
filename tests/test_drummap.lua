@@ -33,3 +33,11 @@ assert(got[1][2]:byte(2) == 36 and got[3][2]:byte(2) == 36, "note on/off remappe
 assert(got[2][2]:byte(2) == 4 and got[2][1] == 240, "CC untouched, offset kept")
 assert(drummap.translate(buf, nil) == buf, "no table: unchanged")
 print("ok")
+
+-- the effect that moves notes on one computer
+local jt = drummap.table({ notes = { kick = 36, snare = 38 } }, { notes = { kick = 35, snare = 38 } })
+local fx = drummap.jsfx("A", "B", jt)
+assert(fx:find("map[36] = 35;", 1, true), "the kick moves")
+assert(not fx:find("map[38]", 1, true), "the snare stays")
+assert(fx:find("midisend", 1, true) and fx:find("@block", 1, true), "passes MIDI on")
+assert(drummap.KIT[1][1] == "kick" and drummap.GM[drummap.KIT[1][1]] == 36, "the kit's sounds are GM's names")

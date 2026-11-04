@@ -91,8 +91,6 @@ function setup.check(cfg, b, proj)
   st.connected = not syncthing or (st.peers or 0) > 0
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   st.sync = beat ~= nil and reaper.time_precise() - beat < 5
-  local ms = tonumber(reaper.GetExtState(band.SECTION, "rec_offset_ms"))
-  st.latency, st.latency_ms = ms ~= nil and math.abs(ms) < 1, ms
   st.sonobus = live.fx(proj, false, live.SONOBUS) ~= nil
   st.server = (data.server or "") ~= ""
   st.ninjam = b.role ~= "host" or services.running("ninjamsrv")

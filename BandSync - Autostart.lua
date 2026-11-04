@@ -19,6 +19,21 @@ local REQUEST = reaper.GetResourcePath() .. "/BandSync/install-request"
 local tried = {} -- project key -> when we last started it (don't hammer a Live sync that refuses to run)
 local at, seen_disk = 0, nil
 local keys_set = false
+-- Something stopped syncing: the panel says so in red, and with the panel closed the tiny box comes back to say it. (Said once: closing the box again keeps it closed.)
+local function say_problem(words)
+  local was = reaper.GetExtState(band.SECTION, "sync problem")
+  if (words or "") == was then return end
+  if not words then return reaper.DeleteExtState(band.SECTION, "sync problem", false) end
+  reaper.SetExtState(band.SECTION, "sync problem", words, false)
+  band.log(words)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
+  if not (beat and reaper.time_precise() - beat < 10) then
+    reaper.SetExtState(band.SECTION, "panel minimized", "1", true)
+    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Panel.lua", true)
+    if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
+  end
+end
+local st_at, st_up = -math.huge, true
 local function loop()
   if reaper.time_precise() - at < 2 then return reaper.defer(loop) end -- every 2 s is plenty
   at = reaper.time_precise()
@@ -76,7 +91,16 @@ local function loop()
       if not ok then band.log("the installer's setup step failed: " .. tostring(err)) end
     end
   end
-  if reaper.Audio_IsRunning() ~= 1 then return end
+  local problem
+  if band.binding(reaper.EnumProjects(-1)) then
+    if reaper.time_precise() - st_at > 20 then
+      st_at = reaper.time_precise()
+      local ok, up = pcall(require("services").running, "syncthing")
+      st_up = not ok or up
+    end
+    if not st_up then problem = "Syncthing isn't running on this computer: nothing reaches the group or comes in. Restart REAPER, or start Syncthing." end
+  end
+  if reaper.Audio_IsRunning() ~= 1 then return say_problem(problem) end
   local front = reaper.EnumProjects(-1)
   for i = 0, 512 do
     local proj, fn = reaper.EnumProjects(i)
@@ -98,8 +122,11 @@ local function loop()
         band.log("starting Live sync again for " .. fn)
         if not band.start_live(dir) then band.log("Live sync has no free slot for " .. fn .. ": close some StudioSync tabs (17 at most run at once)") end
         if n.n == 3 then band.log("Live sync didn't stay running for " .. fn .. " after 3 tries: press Start in the StudioSync panel") end
+      elseif proj == front and n.n >= 3 then
+        problem = problem or "Live sync stopped in this project and wouldn't start again: your changes aren't going out. Open the panel and press Start."
       end
     end
   end
+  say_problem(problem)
 end
 reaper.defer(loop)

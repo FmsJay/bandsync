@@ -296,6 +296,16 @@ local function poll()
     end
   end
 
+  do -- Sync and exit (lib/leave.lua): what's still waiting to go out, and a kept version of the session when it asks
+    local leaving = reaper.GetExtState(band.SECTION, "end session " .. tostring(proj))
+    if leaving ~= "" then
+      reaper.DeleteExtState(band.SECTION, "end session " .. tostring(proj), false)
+      pcall(end_of_session, leaving)
+      mirror_due = true
+    end
+    local more = require("mirror").more and "changes" or require("bgrender").waiting() and "prints rendering" or require("prints").waiting() and "prints waiting" or nil
+    reaper.SetExtState(band.SECTION, "outbox " .. tostring(proj), band.json_encode({ at = mirror_at, more = more }), false)
+  end
   -- what's drawn in a room shows without anyone asking, unless this person hid them: nobody would see a drawing until they
   -- pressed Show drawings on the Chat page (James, 2026-11-02: "other people can see the drawings too, right?")
   if now - drawings_at > 10 and reaper.GetExtState(band.SECTION, "draw hidden") == "" and reaper.JS_Window_FindChildByID and reaper.APIExists("ImGui_GetBuiltinPath") then
@@ -459,9 +469,14 @@ local function poll()
   do
     local sm, si = live.fx(proj, false, live.SONOBUS)
     info.rt = sm and not reaper.TrackFX_GetOffline(sm, si) or nil
+    if info.rt then -- (which SonoBus group, and who you can't hear: lib/hear.lua hear.check, on their computers)
+      local g, who = reaper.GetExtState(band.SECTION, "rt group " .. tostring(proj)), reaper.GetExtState(band.SECTION, "rt silent who " .. tostring(proj))
+      if g ~= "" then info.rt = g end
+      if who ~= "" then info.rt_silent = who end
+    end
   end
   if info.listen == "" then info.listen = nil end
-  local fingerprint = tostring(info.follow) .. tostring(info.follow_driver) .. tostring(info.listen) .. tostring(info.rt) .. band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
+  local fingerprint = tostring(info.follow) .. tostring(info.follow_driver) .. tostring(info.listen) .. tostring(info.rt) .. tostring(info.rt_silent) .. band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
     tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror) ..
     band.json_encode({ info.editing, info.view, info.ping or false }) .. info.last_track
   if fingerprint ~= status_json or now - last_status > 15 then
@@ -656,6 +671,7 @@ local function tick_body() -- returns true to keep going
     local ok, e = pcall(require("hear").answer_listeners, proj, cfg, b)
     if not ok then band.log("listen: " .. tostring(e)) end
     pcall(require("hear").watch_silence, proj, cfg, require("presence").peers(cfg, b.song, b.room), now)
+    pcall(require("hear").check, proj, cfg, require("presence").peers(cfg, b.song, b.room), now)
     pcall(live.rt_sends, proj); pcall(live.join_check, proj); pcall(sync.follow_claims, proj, cfg, b.song, b.room)
   end
   -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs

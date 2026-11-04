@@ -282,14 +282,16 @@ function sync.released(cfg, song, room)
 end
 -- An admin gives someone a claim: their own claims file has one writer (them), so this is a file of its own, read as theirs by
 -- sync.authority at once, even while they're away. Their Live sync folds it into their own file (sync.follow_claims) and removes it.
-function sync.give_claims(cfg, song, room, user, tracks)
+function sync.give_claims(cfg, song, room, user, tracks, regions, times)
   local dir = sync.room_dir(cfg, song, room) .. "/claims"
   reaper.RecursiveCreateDirectory(dir, 0)
   local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
   local since = {}
-  for _, n in ipairs(tracks) do since["tracks:" .. n:lower()] = now end
+  for _, n in ipairs(tracks or {}) do since["tracks:" .. n:lower()] = now end
+  for _, n in ipairs(regions or {}) do since["regions:" .. n:lower()] = now end
+  for _, t in ipairs(times or {}) do t.at = t.at or now end -- (a time claim carries its own date)
   band.write_json(string.format("%s/given-%s-%s.json", dir, (user:gsub("[^%w%-_ ]", "")), os.date("!%Y%m%d-%H%M%S")),
-    { user = user, by = cfg.user, tracks = tracks, regions = {}, times = {}, since = since, time = now, given = true })
+    { user = user, by = cfg.user, tracks = tracks or {}, regions = regions or {}, times = times or {}, since = since, time = now, given = true })
 end
 function sync.release_claims(cfg, song, room, user)
   local r = sync.released(cfg, song, room)
@@ -305,16 +307,24 @@ function sync.follow_claims(proj, cfg, song, room)
       if f:sub(1, #prefix) == prefix then
         local g, c = band.read_json(dir .. "/" .. f), sync.my_claims(cfg, song, room)
         if type(g) == "table" and c then
-          c.tracks = c.tracks or {}
-          for _, n in ipairs(g.tracks or {}) do
-            local have = false
-            for _, m in ipairs(c.tracks) do have = have or m:lower() == n:lower() end
-            if not have then c.tracks[#c.tracks + 1] = n end
+          for _, kind in ipairs({ "tracks", "regions" }) do
+            c[kind] = c[kind] or {}
+            for _, n in ipairs(g[kind] or {}) do
+              local have = false
+              for _, m in ipairs(c[kind]) do have = have or m:lower() == n:lower() end
+              if not have then c[kind][#c[kind] + 1] = n end
+            end
           end
+          c.times = c.times or {}
+          for _, t in ipairs(g.times or {}) do c.times[#c.times + 1] = t end
           -- (dated as given: folding it in must not make it newer than a claim someone made since)
           sync.set_claims(cfg, song, room, c)
           os.remove(dir .. "/" .. f)
-          band.log(tostring(g.by) .. " gave you " .. table.concat(g.tracks or {}, ", ") .. ": yours to change now")
+          local words = {}
+          for _, n in ipairs(g.tracks or {}) do words[#words + 1] = n end
+          for _, n in ipairs(g.regions or {}) do words[#words + 1] = "region " .. n end
+          if #(g.times or {}) > 0 then words[#words + 1] = "a stretch of time" end
+          band.log(tostring(g.by) .. " gave you " .. table.concat(words, ", ") .. ": yours to change now")
         end
       end
     end

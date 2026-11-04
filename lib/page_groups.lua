@@ -98,13 +98,22 @@ local function people_in(root)
   return people_of[root]
 end
 
+-- From inside a project: the way back to it.
+local function back_button(env)
+  local song = env.project()
+  if not song then return end
+  if env.ImGui.SmallButton(env.ctx, "< Back to " .. song) then env.go("Home") end
+  env.ImGui.Spacing(env.ctx)
+end
+
 function pg.draw_groups(env)
   local ctx, ImGui = env.ctx, env.ImGui
   local cfg = env.cfg()
   local me = cfg.user
   local list = pg.live_groups()
-  env.heading("Your groups")
-  if #list == 0 then ImGui.TextDisabled(ctx, "You're not in a group yet. Start one, or paste an invitation someone sent you into a terminal.") end
+  back_button(env)
+  env.heading("Your groups/sessions")
+  if #list == 0 then ImGui.TextDisabled(ctx, "You're not in a group/session yet. Start one, or paste an invitation someone sent you into a terminal.") end
   local base = (cfg.base or cfg).root
   for i, g in ipairs(list) do
     ImGui.PushID(ctx, i)
@@ -122,13 +131,13 @@ function pg.draw_groups(env)
       local p = people_in(g.root)
       ImGui.TextDisabled(ctx, string.format("%d project%s  ·  %s", p.projects, p.projects == 1 and "" or "s", #p.names > 0 and table.concat(p.names, ", ") or "just you so far"))
       ImGui.SetItemTooltip(ctx, g.root)
-      if ImGui.SmallButton(ctx, "Projects") then
+      if ImGui.SmallButton(ctx, "Open") then
         pg.root = g.root
         band.use_band(g.root)
         env.reload_cfg()
         env.go("Projects")
       end
-      ImGui.SetItemTooltip(ctx, "Its projects, and you're working in this group from here on (new projects go to it).")
+      ImGui.SetItemTooltip(ctx, "Its projects, and you're working in this one from here on (new projects go to it).")
       ImGui.SameLine(ctx)
       invite_button(env, g, i)
       if groups.may_manage(g.root, me) then
@@ -157,6 +166,9 @@ function pg.draw_groups(env)
     ImGui.PopID(ctx)
   end
   ImGui.Spacing(ctx)
+  if #list > 0 then
+    ImGui.TextDisabled(ctx, "A new group/session is for different people, or a project of its own. For another song with the same people, share it in the one you have.")
+  end
   pg.start_button(env, #list == 0 and "Start a group/session" or "Start a new group/session")
   local old = groups.old()
   if #old > 0 then
@@ -285,22 +297,28 @@ function pg.draw_projects(env)
   if rows_root ~= root or not rows or reaper.time_precise() - rows_at > 5 then
     rows_root, rows_at, rows = root, reaper.time_precise(), chooser.songs(cfg)
   end
-  env.heading(info.name .. ": projects")
-  -- the project in front, if it isn't in a group yet
+  back_button(env)
+  -- the tab in front, if it isn't in a group yet, whatever's in it: an empty new tab showed no way to share at all (James)
   local front = reaper.EnumProjects(-1)
-  local plain = not band.binding(front) and (reaper.CountTracks(front) > 0 or reaper.GetProjectName(front) ~= "")
-  local share_label = plain and ("Share '" .. ((reaper.GetProjectName(front) ~= "" and reaper.GetProjectName(front) or "this project"):gsub("%.[Rr][Pp][Pp]$", "")) .. "' with " .. info.name) or nil
-  if share_label then
-    if #rows == 0 then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
-    if ImGui.Button(ctx, share_label) then
-      band.use_band(root)
-      env.reload_cfg()
-      env.action("Publish session")
+  local plain = not band.binding(front)
+  if plain then
+    local name = reaper.GetProjectName(front)
+    name = name ~= "" and ("'" .. name:gsub("%.[Rr][Pp][Pp]$", "") .. "'") or "this project"
+    if env.card("share") then
+      ImGui.TextDisabled(ctx, "This tab isn't shared with anyone yet.")
+      ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF)
+      if ImGui.Button(ctx, "Share " .. name .. " with " .. info.name) then
+        band.use_band(root)
+        env.reload_cfg()
+        env.action("Publish session")
+      end
+      ImGui.PopStyleColor(ctx)
+      ImGui.SetItemTooltip(ctx, "It goes through the Prepare checklist first (lanes, FLAC, names, media in one place): much harder to tidy once the group has it. Then it's shared, and you host it.")
+      env.card_end()
     end
-    if #rows == 0 then ImGui.PopStyleColor(ctx) end
-    ImGui.SetItemTooltip(ctx, "It goes through the Prepare checklist first (lanes, FLAC, names, media in one place): much harder to tidy once the group has it. Then it's shared, and you host it.")
-    ImGui.SameLine(ctx)
+    ImGui.Spacing(ctx)
   end
+  env.heading("Projects")
   if ImGui.Button(ctx, "New folder") then new_folder = ""; ImGui.OpenPopup(ctx, "New folder") end
   ImGui.SetItemTooltip(ctx, "A folder for projects, seen by the whole group. Projects with no folder stay at the top level.")
   if ImGui.BeginPopup(ctx, "New folder") then
@@ -316,8 +334,8 @@ function pg.draw_projects(env)
   local _, t = ImGui.InputTextWithHint(ctx, "##findp", "search: project, host, collaborator", text)
   text = t
   local_copy_job(env)
-  if #rows == 0 and not plain then
-    if reaper.file_exists(root .. "/_band/band.json") then ImGui.TextDisabled(ctx, "Nothing's shared in this group yet. Open a project in REAPER and it'll offer to share it here.")
+  if #rows == 0 then
+    if reaper.file_exists(root .. "/_band/band.json") then ImGui.TextDisabled(ctx, "Nothing's shared here yet.")
     else ImGui.TextDisabled(ctx, "Nothing from the group has arrived yet: it comes once a collaborator lets you in.") end
   end
   local names = known_folders(root, rows)

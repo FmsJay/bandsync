@@ -76,6 +76,25 @@ end
 
 drummap.GM_MAP = { name = "gm", notes = drummap.GM }
 
+-- The kit, in the order a map is filled in. { sound, words }.
+drummap.KIT = { { "kick", "Kick" }, { "snare", "Snare" }, { "side_stick", "Side stick" }, { "clap", "Clap" },
+  { "hihat_closed", "Hi-hat closed" }, { "hihat_pedal", "Hi-hat pedal" }, { "hihat_open", "Hi-hat open" },
+  { "tom_high", "Tom 1 (high)" }, { "tom_high_mid", "Tom 2" }, { "tom_low_mid", "Tom 3" }, { "tom_low", "Tom 4" }, { "tom_floor_high", "Floor tom" }, { "tom_floor_low", "Low floor tom" },
+  { "crash", "Crash 1" }, { "crash_2", "Crash 2" }, { "ride", "Ride" }, { "ride_bell", "Ride bell" }, { "china", "China" }, { "splash", "Splash" } }
+
+-- The effect that moves the notes on this computer: `t` from drummap.table. The notes in the project stay as they were written. Pure.
+function drummap.jsfx(from, to, t)
+  local lines = {}
+  local keys = {}
+  for n in pairs(t) do keys[#keys + 1] = n end
+  table.sort(keys)
+  for _, n in ipairs(keys) do lines[#lines + 1] = string.format("map[%d] = %d;", n, t[n]) end
+  return "desc:StudioSync drum map: " .. from .. " to " .. to .. "\n//tags: BandSync\n" ..
+    "// Written by StudioSync (lib/drummap.lua): only on this computer, and never sent. Audio passes through.\n" ..
+    "@init\nmap = 0;\ni = 0; loop(128, map[i] = i; i += 1);\n" .. table.concat(lines, "\n") .. "\n" ..
+    "@block\nwhile (midirecv(ofs, m1, m2, m3)) (\n  s = m1 & 0xF0;\n  (s == 0x80 || s == 0x90 || s == 0xA0) ? m2 = map[m2];\n  midisend(ofs, m1, m2, m3);\n);\n"
+end
+
 -- Map by name from <root>/drummaps/<name>.json ("gm" is built in). Needs band (REAPER) for file access.
 function drummap.load(root, name)
   if not name or name == "" then return nil end

@@ -30,7 +30,7 @@ local projname = reaper.GetProjectName(proj)
 local suggested = b.song or band.clean(projname:gsub("%.[Rr][Pp][Pp]$", ""))
 local old_for = function(song) return band.read_json(band.session_path(cfg, song)) end
 local ok, name = true, reaper.GetExtState(band.SECTION, "publish as") -- (Start a new group/session has asked already)
-if name == "" then ok, name = reaper.GetUserInputs("StudioSync: publish", 1, "Project name,extrawidth=150", suggested) end
+if name == "" then ok, name = reaper.GetUserInputs("StudioSync: share this project", 1, "Project name,extrawidth=150", suggested) end
 if not ok then return end
 local song = band.clean(name)
 if song == "" then return band.msg("Give the project a name.") end

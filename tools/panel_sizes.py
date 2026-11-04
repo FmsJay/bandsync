@@ -3,7 +3,7 @@ MIDI Control Center dev-eval hook (write eval.lua, read result.txt). It sizes th
 import os, sys, time
 
 DEV = r"J:\Portable Workstation\DAW\REAPER\Scripts\MIDI Control Center\midi_control_center\dev"
-PAGES = ["Home", "Rooms", "Play", "Chat", "Restore", "Plugins", "Setup"]
+PAGES = ["Groups", "Projects", "Home", "Rooms", "Play/Jam", "Chat", "Restore", "Plugins", "Settings"]
 SIZES = [(340, 700), (420, 700), (560, 640), (744, 700), (1000, 700), (1400, 260)]
 
 

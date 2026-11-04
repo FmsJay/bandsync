@@ -156,7 +156,7 @@ function prep.scan(proj, cfg, b)
     add("offline", string.format("%d file(s) are missing (offline): %s", #off, table.concat(off, ", ")),
       "Not changed: find them (File > Clean current project directory won't help; use the Media Explorer or re-link in each item) before sending.", #off, nil, false)
   end
-  if not saved then
+  if not saved and reaper.CountMediaItems(proj) > 0 then -- (an empty new tab has nothing to convert: sharing saves it)
     add("save", "Save the project first", "File conversions and copies need the project's folder: save the project, then open this again.", 0, nil, false)
   end
 
@@ -217,7 +217,7 @@ function prep.to_flac(proj, file, dest_dir)
   local was_sr, was_use = reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", 0, false), reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 0, false)
   reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", sr, true)
   reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
-  local okr, err = pcall(band.render, { RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = sr, RENDER_CHANNELS = nch, RENDER_TAILFLAG = 0,
+  local okr, err = pcall(band.render, { RENDER_NORMALIZE = 0, RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = sr, RENDER_CHANNELS = nch, RENDER_TAILFLAG = 0,
     RENDER_ADDTOPROJ = 0, RENDER_DITHER = 0 },
     { RENDER_FILE = dest_dir, RENDER_PATTERN = name, RENDER_FORMAT = band.FLAC, RENDER_FORMAT2 = "" })
   reaper.DeleteTrack(tr) -- the temporary track never stays behind

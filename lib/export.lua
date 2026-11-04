@@ -68,7 +68,7 @@ local function render_wavs(files, proj)
     end
     if any then
       local dest = files[1].to:match("^(.*)/")
-      pcall(band.render, { RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = srate, RENDER_CHANNELS = ch, RENDER_TAILFLAG = 0, RENDER_ADDTOPROJ = 0, RENDER_DITHER = 0 },
+      pcall(band.render, { RENDER_NORMALIZE = 0, RENDER_SETTINGS = 32, RENDER_BOUNDSFLAG = 4, RENDER_SRATE = srate, RENDER_CHANNELS = ch, RENDER_TAILFLAG = 0, RENDER_ADDTOPROJ = 0, RENDER_DITHER = 0 },
         { RENDER_FILE = dest, RENDER_PATTERN = "$item", RENDER_FORMAT = ex.WAV24, RENDER_FORMAT2 = "" })
     end
     for t = reaper.CountTracks(tab) - 1, 0, -1 do reaper.DeleteTrack(reaper.GetTrack(tab, t)) end

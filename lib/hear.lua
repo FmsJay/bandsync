@@ -248,15 +248,60 @@ function hear.watch_silence(proj, cfg, peers, now)
   if expecting then for ch = 0, 15 do heard = heard or reaper.Track_GetPeakInfo(rt, ch) > 0.0001 end end
   if not expecting or heard then
     silent_since = nil
-    if heard then reaper.DeleteExtState(band.SECTION, key, false) end
+    reaper.DeleteExtState(band.SECTION, key, false)
+    reaper.DeleteExtState(band.SECTION, "rt silent who " .. tostring(proj), false)
     return
   end
   silent_since = silent_since or now
   if now - silent_since >= hear.SILENT_AFTER and reaper.GetExtState(band.SECTION, key) == "" then
     local words = expecting .. " is playing, and no sound's arriving from them. Settings > Advanced > Can't hear each other? says what to try."
     reaper.SetExtState(band.SECTION, key, words, false)
+    reaper.SetExtState(band.SECTION, "rt silent who " .. tostring(proj), expecting, false)
     band.log(words)
   end
+end
+
+-- What's wrong that SonoBus won't tell you, from what each computer publishes. `mine`: the SonoBus group here. -> words, or nil. Pure.
+function hear.trouble(mine, me, peers)
+  for _, st in ipairs(peers) do
+    if type(st.rt) == "string" and mine and st.rt ~= mine then
+      return st.user .. " is in a different SonoBus group from you, so you can't hear each other. Both of you: switch Real time mode off and on."
+    end
+  end
+  for _, st in ipairs(peers) do
+    if st.rt and st.rt_silent == me then
+      return st.user .. " is waiting to hear you and nothing's reaching them. Settings > Advanced > Can't hear each other? says what to try."
+    end
+  end
+end
+-- SonoBus looked at every 20 s while it's in use: did it load, is it in the right group, and can they hear you? Said under Real time mode on Home, and once in the Console.
+hear.CHECK_EVERY = 20
+local check_at = -math.huge
+function hear.check(proj, cfg, peers, now)
+  if now - check_at < hear.CHECK_EVERY then return end
+  check_at = now
+  local live, sonobus = require("live"), require("sonobus")
+  local key, tab = "rt trouble " .. tostring(proj), tostring(proj)
+  local m, i = live.fx(proj, false, live.SONOBUS)
+  local say
+  if m and not reaper.TrackFX_GetOffline(m, i) then
+    local _, ident = reaper.TrackFX_GetNamedConfigParm(m, i, "fx_ident")
+    if not ident or ident == "" then say = "SonoBus didn't load on this computer: it may not be installed. Without it you can't hear anyone live."
+    else
+      local _, chunk = reaper.TrackFX_GetNamedConfigParm(m, i, "vst_chunk")
+      local mine = chunk and sonobus.state_group(chunk)
+      reaper.SetExtState(band.SECTION, "rt group " .. tab, mine or "", false)
+      say = hear.trouble(mine, cfg.user, peers)
+    end
+  elseif reaper.GetExtState(band.SECTION, "listen " .. tab) ~= "" then
+    say = "You're listening to " .. reaper.GetExtState(band.SECTION, "listen " .. tab) .. ", but SonoBus isn't running here. Press Listen again."
+  end
+  local before = reaper.GetExtState(band.SECTION, key)
+  if (say or "") == before then return end
+  if say then
+    reaper.SetExtState(band.SECTION, key, say, false)
+    band.log(say)
+  else reaper.DeleteExtState(band.SECTION, key, false) end
 end
 
 -- Their time: your backing later by ms (0 = your own time).

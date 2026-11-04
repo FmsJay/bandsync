@@ -2,7 +2,7 @@
 local D = reaper.GetResourcePath() .. "/BandSync/tests/control"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
-for _, m in ipairs({ "band", "sync", "groups", "songsync", "localcopy", "export", "page_chat", "people" }) do package.loaded[m] = nil end
+for _, m in ipairs({ "band", "sync", "groups", "songsync", "localcopy", "export", "page_chat", "people", "hear", "leave" }) do package.loaded[m] = nil end
 local band, sync, groups, ss, copy, ex, chat, people = require("band"), require("sync"), require("groups"), require("songsync"), require("localcopy"), require("export"), require("page_chat"), require("people")
 local out, fails = {}, 0
 local function check(ok, what) if not ok then fails = fails + 1 end; out[#out + 1] = (ok and "PASS " or "FAIL ") .. what end
@@ -152,6 +152,18 @@ copy.publish_holds(root, "Owner")
 hold = band.read_json(root .. "/_band/holds/Owner.json")
 check(hold and not hold.songs[SONG], "and comes off once it isn't")
 for k, v in pairs(saved) do reaper.SetExtState(band.SECTION, k, v, true) end
+-- ---- Sync and exit: when it's all out
+local leave, hear = require("leave"), require("hear")
+check(not leave.settled(nil), "no answer from Syncthing isn't done")
+check(not leave.settled({ state = "scanning", peers = {} }), "still looking isn't done")
+local done, words = leave.settled({ state = "idle", peers = { { name = "Sam", need = 2097152 }, { name = "Lee", need = 0 } } })
+check(not done and words:find("2.0 MB to Sam", 1, true) and not words:find("Lee", 1, true), "says who's still getting what")
+check(leave.settled({ state = "idle", peers = {} }), "nobody online and nothing to do is done")
+-- ---- SonoBus looked at
+check(hear.trouble("A", "Me", { { user = "Sam", rt = "B" } }):find("different SonoBus group", 1, true), "a different group is said")
+check(hear.trouble("A", "Me", { { user = "Sam", rt = "A" }, { user = "Lee" } }) == nil, "the same group, or someone without Real time, says nothing")
+check(hear.trouble("A", "Me", { { user = "Sam", rt = "A", rt_silent = "Me" } }):find("waiting to hear you", 1, true), "someone not hearing you is said")
+check(hear.trouble("A", "Me", { { user = "Sam", rt = "A", rt_silent = "Lee" } }) == nil, "someone not hearing somebody else isn't")
 -- (scratch: the group's folder, for the next run)
 for _, f in ipairs(files) do os.remove(sync.room_dir(cfg, SONG, ROOM) .. "/claims/" .. f) end
 out[#out + 1] = string.format("control_parts: fails %d of %d", fails, #out)

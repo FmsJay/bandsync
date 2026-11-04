@@ -81,17 +81,19 @@ function copy.publish_holds(root, me)
   local mine = band.read_json(path)
   mine = type(mine) == "table" and type(mine.songs) == "table" and mine or { songs = {} }
   local changed, is_here = false, {}
-  for _, s in ipairs(here) do is_here[s] = true end
+  -- (only this group's: the list is the computer's, and other groups' projects taking turns left a new one waiting 5 minutes: PC + Mac, 0.52.1)
+  local in_group = {}
+  for _, s in ipairs(here) do
+    is_here[s] = true
+    if reaper.file_exists(root .. "/" .. s .. "/session.json") then in_group[#in_group + 1] = s end
+  end
   for s in pairs(mine.songs) do if not is_here[s] then mine.songs[s], changed = nil, true end end
-  if #here > 0 then
-    turn[root] = (turn[root] or 0) % #here + 1
-    local song = here[turn[root]]
-    local dir = root .. "/" .. song
-    if reaper.file_exists(dir .. "/session.json") then
-      local d, n = copy.digest((copy.contents(dir)))
-      local e = mine.songs[song]
-      if n > 0 and not (type(e) == "table" and e.digest == d) then mine.songs[song], changed = { digest = d, n = n }, true end
-    end
+  if #in_group > 0 then
+    turn[root] = (turn[root] or 0) % #in_group + 1
+    local song = in_group[turn[root]]
+    local d, n = copy.digest((copy.contents(root .. "/" .. song)))
+    local e = mine.songs[song]
+    if n > 0 and not (type(e) == "table" and e.digest == d) then mine.songs[song], changed = { digest = d, n = n }, true end
   end
   if changed then
     mine.user, mine.time = me, os.date("!%Y-%m-%dT%H:%M:%SZ")

@@ -3146,7 +3146,9 @@ local function loop()
     -- what sync is doing, on the title bar like the strip. (Docked, it stays plain: it's the docker's tab, and JS_Window_Find looks for it by name.)
     local title, st = "StudioSync###BandSync", app and not native and not (win_rect and win_rect.docked) and ui.status
     if st then
-      title = string.rep(" ", math.ceil(52 / math.max(1, (ImGui.CalcTextSize(ctx, " "))))) .. "StudioSync  ·  " .. st.label .. "  ·  " .. st.drives .. "###BandSync"
+      local words = "StudioSync  ·  " .. st.label .. "  ·  " .. st.drives
+      if win_rect and 52 + ImGui.CalcTextSize(ctx, words) + 110 > win_rect[3] then words = st.label end
+      title = string.rep(" ", math.ceil(52 / math.max(1, (ImGui.CalcTextSize(ctx, " "))))) .. words .. "###BandSync"
     end
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowTitleAlign, st and 0 or 0.5, 0.5) -- (the logo has the left corner)
     visible, open = ImGui.Begin(ctx, title, true, flags)

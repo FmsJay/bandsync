@@ -58,7 +58,8 @@ function pg.join_button(env)
   local services = require("services")
   if ImGui.Button(ctx, "Paste join code") then
     local clip = ImGui.GetClipboardText(ctx) or ""
-    join_text, why_not = services.parse_join(clip) and clip or "", nil
+    local found = services.parse_join(clip)
+    join_text, why_not = found and services.join_code(found.id, { id = found.band, name = found.name }) or "", nil
     ImGui.OpenPopup(ctx, "Paste join code")
   end
   ImGui.SetItemTooltip(ctx, "Someone invited you and you already have StudioSync: paste what they sent.")
@@ -72,6 +73,7 @@ function pg.join_button(env)
     local _, v = ImGui.InputTextMultiline(ctx, "##joincode", join_text, -1, ImGui.GetTextLineHeight(ctx) * 4)
     join_text = v
     local code = services.parse_join(join_text)
+    if code and join_text:find("\n", 1, true) then join_text = services.join_code(code.id, { id = code.band, name = code.name }) end
     if why_not then ImGui.TextColored(ctx, theme.YELLOW, why_not)
     elseif code then ImGui.TextColored(ctx, theme.GREEN, "Join " .. (code.name ~= "" and code.name or code.band))
     elseif join_text ~= "" then ImGui.TextColored(ctx, theme.YELLOW, "That isn't a join code: ask them to press Invite and send it again.") end
@@ -183,7 +185,7 @@ function pg.draw_groups(env)
       ImGui.SetItemTooltip(ctx, "Its projects, and you're working in this one from here on (new projects go to it).")
       ImGui.SameLine(ctx)
       invite_button(env, g, i)
-      if groups.may_manage(g.root, me) then
+      if groups.may_manage(g.root, me) and reaper.file_exists(g.root .. "/_band/band.json") then
         ImGui.SameLine(ctx)
         if ImGui.SmallButton(ctx, "Rename") then
           local ok, name = reaper.GetUserInputs("StudioSync: rename", 1, "New name,extrawidth=120", g.name)

@@ -1540,6 +1540,7 @@ function sync.preload(proj, cfg, song, room)
   local t0, total, was_title = reaper.time_precise(), 0, nil
   reaper.PreventUIRefresh(1)
   local ok, err = pcall(function()
+    if reaper.time_precise() - (sync.order_at or 0) > 3 then sync.order_at = reaper.time_precise(); mirror.keep_order(proj, cfg, song, room) end
     mirror.watch(proj, cfg, song, room, { can = can, mode = who.mode, local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" })
     -- (REAPER can't draw while this runs, and a plug-in's load can't be cut short: 206 changes took 54 s on the laptop. So its title
     -- bar says what's happening. Put back after: REAPER only redoes its own title when something changes, and it sat there saying this.)

@@ -566,6 +566,28 @@ function mirror.moved_tracks(old, new, selected)
   return moved
 end
 
+-- The order the studio's tracks should be in: the newest list anyone published, then whatever's newer than that list under the
+-- track it sat under (`after`: oid -> oid above), or at the end. Ties by oid, so every computer comes to the same list. Pure.
+function mirror.wanted_order(list, here, after)
+  local has, out, put = {}, {}, {}
+  for _, x in ipairs(here) do has[x] = true end
+  for _, x in ipairs(list or {}) do if has[x] and not put[x] then put[x] = true; out[#out + 1] = x end end
+  local new = {}
+  for _, x in ipairs(here) do if not put[x] then new[#new + 1] = x end end
+  table.sort(new)
+  repeat
+    local landed = false
+    for k = #new, 1, -1 do -- (from the end, so of two under one track the lower oid ends up first)
+      local x, above = new[k], after[new[k]] or ""
+      local at = above == "" and 0 or nil
+      if not at then for i, y in ipairs(out) do if y == above then at = i end end end
+      if at then table.insert(out, at + 1, x); put[x] = true; table.remove(new, k); landed = true end
+    end
+  until not landed
+  for _, x in ipairs(new) do out[#out + 1] = x end -- (what it sat under is gone)
+  return out
+end
+
 -- An item's state with its place and length to 8 decimals: beyond that it's arithmetic, not an edit. Pure.
 function mirror.rounded(state)
   local function round(k, v) return k .. string.format("%.8f", tonumber(v) or 0) end
@@ -1725,6 +1747,14 @@ function mirror.watch(proj, cfg, song, room, opts)
   local function say_once(key, text)
     if not mirror.said[key] then mirror.said[key] = true; band.log(text) end
   end
+  if next(moved_set) then -- (a move that isn't yours to make goes back, below)
+    local yours = true
+    for oid in pairs(moved_set) do
+      local o = by_oid[oid]
+      if o and not allowed(o, perm_name(o, by_oid), nil) then yours = false end
+    end
+    if yours then mirror.publish_order(proj, room_dir, me) end
+  end
   local function put_back(o, rev, evid, why)
     mirror.unsent[tostring(proj) .. o.oid] = nil -- (the band's version is back: nothing of ours waits)
     local ev = event_file(room_dir, evid)
@@ -2306,8 +2336,10 @@ function mirror.sits_there(proj, ev)
   return false
 end
 
+mirror.REVERT_AT_ONCE, mirror.REVERT_SLICE = 120, 0.1 -- (changes; seconds per pass)
 function mirror.revert(proj, cfg, song, room, plan, opts)
   local sync = require("sync")
+  local function band_log(text) require("band").log(text) end
   local room_dir = sync.room_dir(cfg, song, room)
   local media = room_dir .. "/media"
   local order = { track = 1, fx = 2, item = 3 }
@@ -2336,8 +2368,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   end
   list = sorted
   local done, refused, kept, kept_names, there = 0, 0, 0, {}, 0
-  reaper.Undo_BeginBlock2(proj)
-  for _, p in ipairs(list) do
+  local function one(p)
     local rev, h, evid = mirror.known(proj, p.oid)
     local name = p.t and p.t.name or ""
     if p.t and p.t.obj ~= "track" and p.t.track then -- (a part or item: on the track as it's called now, not was; laptop 0.34.4)
@@ -2394,23 +2425,120 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
       done = done + 1
     end
   end
-  reaper.Undo_EndBlock2(proj, "StudioSync: go back", -1)
-  reaper.UpdateArrange()
-  -- a lane takes its name only now its items are in, and they came after the track: forward lost "Take 1", and sent that (Mac, 0.42.5)
-  for _, p in ipairs(list) do
-    local tr = p.landed and p.t.obj == "track" and type(p.t.state) == "table" and mirror.find(proj, "track", p.oid)
-    if tr then
-      mirror.set_track_state(proj, tr, p.t.state, opts.local_mix)
-      local rev, _, evid, ord = mirror.known(proj, p.oid)
-      remember(proj, p.oid, rev, mirror.track_hash(mirror.track_state(proj, tr, opts.local_mix), opts.local_mix), evid, ord)
+  local function finish()
+    reaper.Undo_EndBlock2(proj, "StudioSync: go back", -1)
+    reaper.UpdateArrange()
+    -- a lane takes its name only now its items are in, and they came after the track: forward lost "Take 1", and sent that (Mac, 0.42.5)
+    local tracks_landed = false
+    for _, p in ipairs(list) do
+      local tr = p.landed and p.t.obj == "track" and type(p.t.state) == "table" and mirror.find(proj, "track", p.oid)
+      if tr then
+        tracks_landed = true
+        mirror.set_track_state(proj, tr, p.t.state, opts.local_mix)
+        local rev, _, evid, ord = mirror.known(proj, p.oid)
+        remember(proj, p.oid, rev, mirror.track_hash(mirror.track_state(proj, tr, opts.local_mix), opts.local_mix), evid, ord)
+      end
+    end
+    if tracks_landed then mirror.publish_order(proj, room_dir, cfg.user) end -- (the order it had then is the order now)
+    local names = {}
+    for n in pairs(kept_names) do names[#names + 1] = n end
+    table.sort(names)
+    if done == 0 and there > 0 and refused == 0 and kept == 0 then return "it's already back: REAPER rebuilt it from its pass, so nothing changed" end
+    return string.format("%d change(s) brought back and sent to the others%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
+      kept > 0 and string.format(" (kept what collaborators added since: %s)", table.concat(names, ", ")) or "")
+  end
+  if #list <= mirror.REVERT_AT_ONCE or opts.at_once then
+    reaper.Undo_BeginBlock2(proj)
+    for _, p in ipairs(list) do one(p) end
+    return finish()
+  end
+  -- A big one, a slice per pass: 415 changes held REAPER still for 6.9 s (Mac, 0.42). Each object lands and is remembered whole, so Live sync can
+  -- look in between. No undo blocks in the middle: the one at the end is the single undo point for all of it.
+  local i = 1
+  local function slice()
+    if not reaper.ValidatePtr(proj, "ReaProject*") then return band_log("Stopped bringing back changes: the project closed.") end
+    local t0 = reaper.time_precise()
+    while i <= #list and reaper.time_precise() - t0 < mirror.REVERT_SLICE do one(list[i]); i = i + 1 end
+    if i <= #list then return reaper.defer(slice) end
+    reaper.Undo_BeginBlock2(proj)
+    band_log(finish())
+  end
+  mirror.revert_slice = slice -- (tests step it by hand)
+  slice()
+  return string.format("bringing back %d changes: REAPER keeps working while it does", #list)
+end
+
+-- Track order. A move used to travel only as that track's "sits under", landing only if its tab was in front, with each track
+-- that came in later going wherever its neighbour then was: orders drifted apart, and nothing brought them back (0.56).
+-- Each person's newest deliberate order: <room>/order/<user>.json, { list, time, by }; the newest of them is the studio's.
+local function mirrored_order(proj)
+  local list = {}
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    if not local_track(tr) then
+      local oid = trk_oid(tr)
+      if oid ~= "" then list[#list + 1] = oid end
     end
   end
-  local names = {}
-  for n in pairs(kept_names) do names[#names + 1] = n end
-  table.sort(names)
-  if done == 0 and there > 0 and refused == 0 and kept == 0 then return "it's already back: REAPER rebuilt it from its pass, so nothing changed" end
-  return string.format("%d change(s) brought back and sent to the others%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
-    kept > 0 and string.format(" (kept what collaborators added since: %s)", table.concat(names, ", ")) or "")
+  return list
+end
+function mirror.read_order(room_dir)
+  local band, best = require("band"), nil
+  for _, f in ipairs(band.files(room_dir .. "/order", ".json")) do
+    local j = band.read_json(room_dir .. "/order/" .. f)
+    if type(j) == "table" and type(j.list) == "table" and type(j.time) == "string" and type(j.by) == "string"
+      and (not best or j.time .. j.by > best.time .. best.by) then best = j end
+  end
+  return best
+end
+function mirror.publish_order(proj, room_dir, me)
+  local band = require("band")
+  reaper.RecursiveCreateDirectory(room_dir .. "/order", 0)
+  band.write_json(room_dir .. "/order/" .. me:gsub("[^%w%-_ ]", "_") .. ".json", { list = mirrored_order(proj), time = os.date("!%Y-%m-%dT%H:%M:%SZ"), by = me })
+end
+-- This tab's tracks onto the studio's list, moving as few as it takes. Only with the tab in front (REAPER reorders nowhere else), stopped,
+-- and caught up. -> how many moved.
+function mirror.keep_order(proj, cfg, song, room)
+  local sync = require("sync")
+  if reaper.EnumProjects(-1) ~= proj or reaper.GetPlayStateEx(proj) ~= 0 then return 0 end
+  if sync.pending_events(proj, cfg, song, room) > 0 then return 0 end
+  local room_dir = sync.room_dir(cfg, song, room)
+  local best, here = mirror.read_order(room_dir), mirrored_order(proj)
+  if not best then -- (nobody's said yet: whoever's here first, and what they have then, is where everyone starts)
+    if #here > 0 then mirror.publish_order(proj, room_dir, cfg.user) end
+    return 0
+  end
+  local after = {}
+  local listed = {}
+  for _, x in ipairs(best.list) do listed[x] = true end
+  for _, x in ipairs(here) do
+    if not listed[x] then -- (only what's newer than the list: reading each record on every look isn't free)
+      local _, _, evid = mirror.known(proj, x)
+      local ev = evid and evid ~= "" and event_file(room_dir, evid)
+      after[x] = ev and type(ev.state) == "table" and ev.state.after or ""
+    end
+  end
+  local want = mirror.wanted_order(best.list, here, after)
+  if table.concat(want, ",") == table.concat(here, ",") then return 0 end
+  local moved, n = mirror.moved_tracks(here, want, {}), 0
+  local sel = {}
+  for i = 0, reaper.CountSelectedTracks(proj) - 1 do sel[#sel + 1] = reaper.GetSelectedTrack(proj, i) end
+  reaper.PreventUIRefresh(1)
+  for k, x in ipairs(want) do
+    local tr = moved[x] and mirror.find(proj, "track", x)
+    if tr then
+      local above = k > 1 and mirror.find(proj, "track", want[k - 1])
+      reaper.SetOnlyTrackSelected(tr)
+      reaper.ReorderSelectedTracks(above and math.floor(reaper.GetMediaTrackInfo_Value(above, "IP_TRACKNUMBER")) or 0, 0)
+      n = n + 1
+    end
+  end
+  for i = reaper.CountSelectedTracks(proj) - 1, 0, -1 do reaper.SetTrackSelected(reaper.GetSelectedTrack(proj, i), false) end
+  for _, x in ipairs(sel) do if reaper.ValidatePtr2(proj, x, "MediaTrack*") then reaper.SetTrackSelected(x, true) end end
+  reaper.PreventUIRefresh(-1)
+  mirror.order_seen[tostring(proj)] = table.concat(mirrored_order(proj), ",") -- (not a move of this person's: the next look mustn't send it)
+  reaper.TrackList_AdjustWindows(false)
+  return n
 end
 
 -- Use mine: what lost a clash comes back at once, for everyone. mine: { { oid, ev (the event id of your version) } }. -> what happened in words, or nil with nothing to do.

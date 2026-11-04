@@ -436,3 +436,16 @@ do -- a label a print adds, which REAPER takes off a comp piece on opening, isn'
   assert(not mirror.same_but_labels('NAME "dry - pass 2"', 'NAME "pass 3"'), "another name")
 end
 print("ok")
+
+-- the studio's track order: the list, then what's newer than it under the track it sat under, the same on every computer
+do
+  local function w(list, here, after) return table.concat(mirror.wanted_order(list, here, after), " ") end
+  assert(w({ "A", "B", "C" }, { "C", "B", "A" }, {}) == "A B C")
+  assert(w({ "A", "GONE", "C" }, { "C", "A" }, {}) == "A C")
+  assert(w({ "A", "C" }, { "N", "C", "A" }, { N = "A" }) == "A N C")
+  assert(w({ "A", "C" }, { "C", "A", "N" }, { N = "" }) == "N A C")
+  assert(w({ "A", "C" }, { "C", "A", "N" }, { N = "LOST" }) == "A C N")
+  assert(w({ "A" }, { "M", "A", "N" }, { M = "N", N = "A" }) == "A N M") -- (one new one under another)
+  assert(w({ "A" }, { "P", "Q", "A" }, { P = "A", Q = "A" }) == w({ "A" }, { "A", "Q", "P" }, { P = "A", Q = "A" })) -- (the same list whatever the order here)
+  assert(w({ "A" }, { "P", "Q", "A" }, { P = "LOST", Q = "LOST" }) == "A P Q")
+end

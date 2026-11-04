@@ -3,14 +3,16 @@
 -- out of the band. No preference covers the plug-ins, and scripts are paused while a box is up. So as REAPER quits, a song's tabs
 -- are noted and REAPER told to open none; at its next start they're opened from here, and a small hidden helper answers those
 -- two boxes for band songs only (never for a project of your own), leaving the files offline and changing nothing.
--- shortcut: Windows only: on a Mac a helper clicking another app's box needs an Accessibility permission, which StudioSync won't ask for.
+-- On a Mac a helper clicking another app's box would need an Accessibility permission, which StudioSync won't ask for. There each tab is handed
+-- to the running REAPER with -ignoreerrors, its own "do not show errors on load" (0.56; proven on Windows, where a plain hand-over stops at the box).
 local band = require("band")
 local startup = {}
 
 local DIR = band.home()
 local FILE = DIR .. "/reopen.json"
 local BAND_TAB, DONE, SAID = DIR .. "/reopen-band-tab", DIR .. "/reopen-done", DIR .. "/reopen-said.txt"
-local function usable() return reaper.GetOS():find("^Win") and reaper.SNM_GetIntConfigVar ~= nil and reaper.BR_Win32_WritePrivateProfileString ~= nil end
+local function usable() return reaper.SNM_GetIntConfigVar ~= nil and reaper.BR_Win32_WritePrivateProfileString ~= nil end
+local function windows() return reaper.GetOS():find("^Win") ~= nil end
 -- In the file, not only in memory: REAPER has written its settings by the time a script's atexit runs, so a change there alone is lost.
 local function set_open_mode(value)
   reaper.SNM_SetIntConfigVar("loadlastproj", value)
@@ -128,7 +130,7 @@ end
 
 -- Opening a group project while REAPER runs (Open project, a side room's square): its boxes are answered as at REAPER's start.
 function startup.open_quietly(open)
-  if not usable() then return open() end
+  if not usable() or not windows() then return open() end -- (on a Mac a person just clicked this, and is there to answer)
   os.remove(DONE); os.remove(SAID)
   band.write_atomic(BAND_TAB, "1")
   start_helper()
@@ -141,19 +143,71 @@ function startup.open_quietly(open)
   return a, b
 end
 
-function startup.on_start()
+-- The command that hands a project to the REAPER that's running, with no boxes. Pure. exe_dir: reaper.GetExePath().
+function startup.hand_over(os_name, exe_dir, path)
+  local exe = os_name:find("^Win") and (exe_dir .. "\\reaper.exe") or (exe_dir .. "/REAPER.app/Contents/MacOS/REAPER")
+  return string.format('"%s" -nonewinst -ignoreerrors "%s"', exe, path)
+end
+startup.HAND_OVER_WAIT = 20 -- seconds for a project to arrive; after that it's opened the ordinary way, and its box waits for someone
+
+-- The tabs one at a time, a pass at a time: REAPER opens a handed-over project between passes, so this can't wait in a loop.
+local function hand_over_tabs(tabs, first, open, finish)
+  local i, since = 0, nil
+  local function front_is(path) return startup.same_path(select(2, reaper.EnumProjects(-1)) or "") == startup.same_path(path) end
+  local function step()
+    local t = tabs[i]
+    if since then
+      if not front_is(t.path) and reaper.time_precise() - since < startup.HAND_OVER_WAIT then return reaper.defer(step) end
+      if not front_is(t.path) then
+        band.log("REAPER didn't take " .. t.path .. " quietly: opening it the ordinary way")
+        reaper.Main_openProject(t.path)
+      end
+      since = nil
+      local here = reaper.EnumProjects(-1)
+      local tb = t.band and band.binding(here)
+      if tb then pcall(function() require("sync").preload(here, band.for_tab(band.settings(), tb), tb.song, tb.room) end) end
+    end
+    repeat i = i + 1; t = tabs[i] until not t or (reaper.file_exists(t.path) and not open[startup.same_path(t.path)])
+    if not t then return finish() end
+    open[startup.same_path(t.path)] = true
+    if not first then reaper.Main_OnCommand(40859, 0) end -- New project tab
+    first = false
+    if t.band then
+      since = reaper.time_precise()
+      reaper.ExecProcess(startup.hand_over(reaper.GetOS(), reaper.GetExePath(), t.path), -1)
+      return reaper.defer(step)
+    end
+    reaper.Main_openProject(t.path) -- (a project of your own says what's wrong with it, as it always has)
+    return reaper.defer(step)
+  end
+  step()
+end
+
+function startup.on_start(by_hand_over) -- (by_hand_over: what a Mac does, for testing it elsewhere)
   local plan = usable() and band.read_json(FILE)
   if not plan then return end
   os.remove(FILE)
   if plan.loadlastproj then set_open_mode(plan.loadlastproj) end
   os.remove(DONE); os.remove(BAND_TAB); os.remove(SAID)
-  start_helper()
+  local quietly = by_hand_over or not windows()
+  if not quietly then start_helper() end
   local first, front = reaper.EnumProjects(0) and select(2, reaper.EnumProjects(0)) == "" and reaper.CountTracks(reaper.EnumProjects(0)) == 0, nil
   local open = {} -- (REAPER's own reopening if the setting didn't take, or a song opened by double-clicking it: never a second tab)
   for i = 0, 512 do
     local p, fn = reaper.EnumProjects(i)
     if not p then break end
     open[startup.same_path(fn)] = true
+  end
+  local function back_in_front(front_path)
+    for i = 0, 512 do -- (back on the tab that was in front)
+      local p, fn = reaper.EnumProjects(i)
+      if not p then break end
+      if front_path and startup.same_path(fn) == front_path then reaper.SelectProjectInstance(p); break end
+    end
+  end
+  if quietly then
+    for _, t in ipairs(plan.tabs or {}) do if t.front then front = startup.same_path(t.path) end end
+    return hand_over_tabs(plan.tabs or {}, first, open, function() back_in_front(front) end)
   end
   for _, t in ipairs(plan.tabs or {}) do
     if reaper.file_exists(t.path) and not open[startup.same_path(t.path)] then
@@ -170,11 +224,7 @@ function startup.on_start()
   end
   os.remove(BAND_TAB)
   band.write_atomic(DONE, "1")
-  for i = 0, 512 do -- (back on the tab that was in front)
-    local p, fn = reaper.EnumProjects(i)
-    if not p then break end
-    if front and startup.same_path(fn) == front then reaper.SelectProjectInstance(p); break end
-  end
+  back_in_front(front)
   local line = startup.summary(band.read(SAID))
   if line then band.log(line) end
 end

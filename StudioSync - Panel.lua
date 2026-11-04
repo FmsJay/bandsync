@@ -942,7 +942,7 @@ local function back_button(i, what, single)
       local room_can = sync.authority(cfg, b.song, name, view.session)
       local plan = mirror.plan_restore(entries, i)
       sync.restore_timeline(p, cfg, b.song, name, entries, i, view.session, b.room)
-      band.log("'" .. name .. "' is the project as it was " .. what .. ": " .. tostring(mirror.revert(p, cfg, b.song, name, plan, { can = room_can, mode = "claims", exact = true })))
+      band.log("'" .. name .. "' is the project as it was " .. what .. ": " .. tostring(mirror.revert(p, cfg, b.song, name, plan, { at_once = true, can = room_can, mode = "claims", exact = true })))
       local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(p)))
       if not (beat and reaper.time_precise() - beat < 5) then band.start_live(dir) end
       reaper.SetExtState(band.SECTION, "panel page", "Rooms", false)

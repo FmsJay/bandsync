@@ -128,7 +128,11 @@ if req.mode == "reapack" then
     jsfx_only()
     req.mode, req.open_panel = "verify", true
   else
-    local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
+    do -- (the same index under its old name would install everything twice. Its files stay until uninstalled in ReaPack's window)
+      local had, old_url = reaper.ReaPack_GetRepositoryInfo("BandSync")
+      if had then reaper.ReaPack_AddSetRepository("BandSync", old_url, false, 0) end
+    end
+    local added, err = reaper.ReaPack_AddSetRepository("StudioSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
     step("add StudioSync repository", added, err ~= "" and err or req.repo_url)
     if req.jsfx then -- the plug-in pack's JSFX (both MIT): in this same ReaPack sync, never one of their own (see above)
       for _, r in ipairs(JSFX_REPOS) do

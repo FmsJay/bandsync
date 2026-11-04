@@ -11,19 +11,31 @@ project sections they work on, and Restore can take back any change, any track, 
 Plain-Lua ReaScripts (the control panel needs ReaImGui; SWS helps). REAPER 7.18 or newer; 7.83 is tested.
 Machines talk only through a shared folder (Syncthing recommended), with an optional Google Drive copy.
 
+## Start a new group
+
+1. Run the installer: **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (see
+   [Setup](#setup-each-person-once) if macOS blocks it). Answer *n* to "Is someone in the group already set up?" and
+   name your group. Already have StudioSync? **Setup > Options > Start a new group** instead.
+2. In REAPER, open your project and press **Share this project with the group** in the StudioSync panel.
+3. On the Home page, press **Invite a collaborator**. It copies a line for them to paste: send it to each person.
+4. When they've run it, your panel shows **Let *them* in**: press it.
+
+Syncing needs no account: only your two computers and the shared folder, and files move while both are online. Two
+extras do: *Play along* and *Jam* use one Tailscale account for the group, and the optional Google Drive copy uses a
+Google account. REAPER keeps its own licence (reaper.fm).
+
 ## Collaborators: start here
 
-1. Ask whoever in the group is already set up for their **Syncthing device ID** (in Syncthing: Actions > Show ID).
-2. Run the installer: **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (see
-   [Setup](#setup-each-person-once) if macOS blocks it). Answer *y* to "Is someone in the group already set up?" and
-   paste their ID.
-3. Tell them you've installed: their BandSync panel shows **Let *you* in**. Once they press it, the group's projects
+1. Ask whoever invited you for the line from their panel's **Invite a collaborator**, and paste it where it says.
+   It runs the installer with everything filled in. (No line? Run the installer as above, answer *y*, and paste their
+   **Syncthing device ID** (in Syncthing: Actions > Show ID) and the group's ID.)
+2. Tell them you've installed: their StudioSync panel shows **Let *you* in**. Once they press it, the group's projects
    arrive in your shared folder by themselves.
-4. In REAPER's BandSync panel: **Join the group's project**. Its tracks arrive over the next moments.
-5. Play and record as usual. What you change reaches everyone; anything that isn't yours to change is put back,
+3. In REAPER's StudioSync panel: **Join the group's project**. Its tracks arrive over the next moments.
+4. Play and record as usual. What you change reaches everyone; anything that isn't yours to change is put back,
    with the reason.
-6. To hear each other live: **Real time mode** on the Home page. Undo anything: the **Restore** page.
-7. Once: **Calibrate latency** (Setup > Health says when it's still missing).
+5. To hear each other live: **Real time mode** on the Home page. Undo anything: the **Restore** page.
+6. Once: **Calibrate latency** (Setup > Health says when it's still missing).
 
 Everything below is the detail.
 
@@ -322,7 +334,7 @@ Google Drive copy, and nobody in your other groups sees it. `_band/band.json` in
 (name, Syncthing folder id, Drive folder name); a folder without one is the first group (Syncthing id `bandsync`,
 Drive folder `BandSync`).
 
-- **Start a group** (Setup > Options > Groups): makes its folder beside your first group's (`BandSync <Name>`) and its
+- **Start a new group** (Setup > Options > Groups): makes its folder beside your first group's (`BandSync <Name>`) and its
   own Syncthing folder, shared with nobody yet. Then *Invite a collaborator*: the invitation is for the group you're
   working in, and their installer joins that group (`BS_BAND_ID` / `BS_BAND_NAME` on a Mac, `-BandId` / `-BandName`
   on Windows). *Let them in* shares only that group's folder.

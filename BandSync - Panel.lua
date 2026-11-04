@@ -2172,8 +2172,8 @@ local function page_setup()
         ImGui.SetItemTooltip(ctx, x.root)
       end
     end
-    if ImGui.Button(ctx, "Start a group") then
-      local ok, name = reaper.GetUserInputs("StudioSync: start a group", 1, "Group name,extrawidth=120", "")
+    if ImGui.Button(ctx, "Start a new group") then
+      local ok, name = reaper.GetUserInputs("StudioSync: start a new group", 1, "Group name,extrawidth=120", "")
       if ok and name ~= "" then
         local root, why = require("services").new_band(cfg, name)
         if root then

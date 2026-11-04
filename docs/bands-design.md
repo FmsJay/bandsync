@@ -13,7 +13,7 @@ One Syncthing folder (id `bandsync`) holds everything: every song, `_band/names.
 
 A band is its own shared folder, nothing more. Everything band-wide moves with it.
 
-- **Syncthing:** one folder per band, id `bandsync-<band>`, at `<BandSync folder>/<Band name>`. Letting someone in
+- **Syncthing:** one folder per band, id `bandsync-<band>-<4 hex digits>`, at `<BandSync folder>/<Band name>`. Letting someone in
   shares only that band's folder with them, so another band never sees it. The existing `bandsync` folder becomes
   the first band, with its id kept, so nobody re-syncs anything.
 - **Per band:** songs, `_band/names.json`, `plugins/` (what everyone in *this* band has), drum maps, the SonoBus

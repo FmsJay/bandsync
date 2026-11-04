@@ -269,7 +269,8 @@ function services.new_band(cfg, name)
   if name == "" then return nil, "Give the group a name." end
   local st = services.syncthing_path()
   if not st then return nil, "Syncthing wasn't found" end
-  local id = services.band_id(name)
+  -- (the end is random: two strangers' groups can have one name, and someone could be in both)
+  local id = services.band_id(name) .. string.format("-%04x", (os.time() * 7 + math.floor(reaper.time_precise() * 1000)) % 65536)
   for _, x in ipairs(band.bands()) do
     if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a group called " .. x.name .. "." end
   end

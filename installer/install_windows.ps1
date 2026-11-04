@@ -60,11 +60,11 @@ Write-Host ""
 
 # ---------- 0. questions ----------
 $user = $User -replace '[^\w\- ]', ''
-while (-not $user) { $user = (Ask "Your name, as the band will see it" $env:USERNAME) -replace '[^\w\- ]', '' }
+while (-not $user) { $user = (Ask "Your name, as the group will see it" $env:USERNAME) -replace '[^\w\- ]', '' }
 # Pairing: with whoever in the band is already set up (any of them: every machine passes the folder on). "Host" is
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
-$isHost = if ($Hosting) { $Hosting -eq "yes" } elseif ($HostId) { $false } else { -not (YesNo "Is someone in the band already set up with StudioSync?" "y") } # (-HostId: an invitation)
-if ($isHost -and -not $Hosting) { Say "You're the first: at the end you get your Syncthing ID to send to each bandmate who installs." }
+$isHost = if ($Hosting) { $Hosting -eq "yes" } elseif ($HostId) { $false } else { -not (YesNo "Is someone in the group already set up with StudioSync?" "y") } # (-HostId: an invitation)
+if ($isHost -and -not $Hosting) { Say "You're the first: at the end you get your Syncthing ID to send to each collaborator who installs." }
 $hostId = $HostId.ToUpper()
 $idPattern = '^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if (-not $isHost) {
@@ -79,18 +79,34 @@ if (-not $isHost) {
   }
 }
 # the band (docs/bands-design.md): each its own shared folder. An invitation names it; the first one set up names it.
-$folderId = ($BandId.ToLower() -replace '[^a-z0-9-]', ''); if (-not $folderId) { $folderId = "bandsync" }
+$folderId = ($BandId.ToLower() -replace '[^a-z0-9-]', '')
+if (-not $isHost -and -not $folderId) { # (someone's device ID typed in by hand, no invitation)
+  $folderId = ((Ask "The group's ID (it's in their invitation, after -BandId; press Enter if they don't have one)" "bandsync").ToLower() -replace '[^a-z0-9-]', '')
+  if (-not $folderId) { $folderId = "bandsync" }
+}
 $bandName = $BandName -replace '[^\w\- ]', ''
-if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Your band's name" "My band") -replace '[^\w\- ]', '' } }
-if (-not $bandName) { $bandName = "the band" }
-$driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "BandSync - $bandName" }
+if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Your group's name" "My group") -replace '[^\w\- ]', '' } }
+if (-not $bandName) { $bandName = "the group" }
 $defRoot = if ($folderId -eq "bandsync") { Join-Path $env:USERPROFILE "BandSync" } else { Join-Path $env:USERPROFILE "BandSync $bandName" }
 $root = if ($Root) { $Root } else { Ask "Where should $bandName's shared folder be" $defRoot }
+# The first one set up: an ID of the group's own. They all used to get "bandsync", so someone in two such groups had the two
+# folders treated as one and their files mixed. Run again on the same folder, it keeps the ID it has; a folder from before
+# groups had IDs, with no band.json yet, is "bandsync" (lib/band.lua band.info).
+if (-not $folderId) {
+  $known = Join-Path $root "_band\band.json"
+  if (Test-Path $known) { try { $folderId = (Get-Content $known -Raw | ConvertFrom-Json).id } catch { } }
+  elseif (Get-ChildItem $root -Force -ErrorAction SilentlyContinue | Select-Object -First 1) { $folderId = "bandsync" }
+  if (-not $folderId) {
+    $slug = ($bandName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-'); if (-not $slug) { $slug = "group" }
+    $folderId = "bandsync-$slug-" + ('{0:x4}' -f (Get-Random -Maximum 65536))
+  }
+}
+$driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "BandSync - $bandName" }
 # SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
 # (James, 2026-10-31: "it feels like a core feature"); -Live no / -Solo no still leave them out.
 $wantLive = $Live -ne "no"
 $wantSolo = $Solo -ne "no"
-$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the band plug-in pack (free, about 150 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
+$wantPlugins = if ($Plugins) { $Plugins -eq "yes" } else { YesNo "Install the plug-in pack (free, about 150 MB: Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha JSFX with drum kits and keys), so everyone has the same sounds? (Adding the JSFX runs a ReaPack sync, which also updates your other ReaPack packages.)" "y" }
 $wantExtras = if ($Extras) { $Extras -eq "yes" } else { $wantPlugins -and (YesNo "Also the larger extras (about 820 MB: Neural Amp Modeler and AIDA-X amp capture players, Odin 2 synth, sforzando with the Salamander Grand piano)?" "n") }
 Write-Host ""
 
@@ -223,7 +239,7 @@ if ($wantPlugins) {
     }
   }
   Install-Quiet
-  Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the band's 'everyone has' list only takes them after a restart)"
+  Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the group's 'everyone has' list only takes them after a restart)"
 }
 
 # ---------- 2. REAPER extensions: ReaPack and ReaImGui ----------
@@ -311,11 +327,11 @@ STcli config devices $myId name set $user | Out-Null
 if (-not $isHost) {
   $devices = STcli config devices list
   if ($devices -notcontains $hostId) {
-    STcli config devices add --device-id $hostId --name "Bandmate" --introducer --auto-accept-folders | Out-Null
+    STcli config devices add --device-id $hostId --name "Collaborator" --introducer --auto-accept-folders | Out-Null
   }
   $shared = STcli config folders $folderId devices list
   if ($shared -notcontains $hostId) { STcli config folders $folderId devices add --device-id $hostId | Out-Null }
-  Ok "paired with your bandmate"
+  Ok "paired with your collaborator"
 }
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
@@ -392,10 +408,10 @@ function Wait-Until($test) {
   return $true
 }
 if ($isHost) {
-  $left += "To bring in a bandmate: StudioSync panel > Invite a collaborator, and send them what it copies (their installer is then already paired with you). When they've run it, the panel shows 'Let them in': press it."
+  $left += "To bring in a collaborator: StudioSync panel > Invite a collaborator, and send them what it copies (their installer is then already paired with you). When they've run it, the panel shows 'Let them in': press it."
   $left += "(Your Syncthing device ID, if they ask for it:  $myId)"
 } elseif ($peers -notcontains $hostId) {
-  $left += "Tell the bandmate whose ID you used: their StudioSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
+  $left += "Tell the collaborator whose ID you used: their StudioSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
 }
 if ($wantLive) {
   $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
@@ -428,10 +444,10 @@ if ($wantLive) {
         $p.WaitForExit()
         return $p.ExitCode
       }
-      Say "Signing in to Tailscale: a browser page opens; sign in with the band's account there."
-      if ((Ts-Up @("--advertise-tags=tag:bandsync", "--timeout=300s")) -eq 0) { Ok "Tailscale signed in as a band machine (it stays signed in)"; $tagged = $true }
+      Say "Signing in to Tailscale: a browser page opens; sign in with the group's account there."
+      if ((Ts-Up @("--advertise-tags=tag:bandsync", "--timeout=300s")) -eq 0) { Ok "Tailscale signed in as a group machine (it stays signed in)"; $tagged = $true }
       # the refused tag stays in Tailscale's settings and every later sign-in fails on it: clear it, then sign in plainly
-      elseif ((Ts-Up @("--reset", "--advertise-tags=", "--timeout=120s")) -eq 0) { Ok "Tailscale signed in (without the band tag: it signs out by itself every few months; see below)" }
+      elseif ((Ts-Up @("--reset", "--advertise-tags=", "--timeout=120s")) -eq 0) { Ok "Tailscale signed in (without the group tag: it signs out by itself every few months; see below)" }
       else { Warn "Tailscale sign-in didn't finish: open Tailscale from the Start menu (or its taskbar icon) and sign in." }
     }
   }
@@ -452,9 +468,9 @@ if ($wantLive) {
     $left += "Tailscale (skipped above): sign in from its taskbar icon, then at login.tailscale.com/admin/machines > this PC > ... > Disable key expiry (otherwise it signs out every few months, maybe right before a session)."
   }
   if ($isHost) { # the host's job, once: then bandmates' installers sign their machines in for good
-    $left += "Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the policy's { }:"
+    $left += "Tailscale, once for the whole group (if not done yet): at login.tailscale.com/admin/acls add this line inside the policy's { }:"
     $left += "    `"tagOwners`": { `"tag:bandsync`": [`"autogroup:member`"] },"
-    $left += "  Then each bandmate's installer signs their machine in as a band machine that never has to sign in again."
+    $left += "  Then each collaborator's installer signs their machine in as a group machine that never has to sign in again."
   }
 }
 # Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds the
@@ -468,23 +484,23 @@ if ($wantSolo) {
   }
   $driveOk = $false
   if (-not (& $myDrive)) {
-    Say "Sign in to Google Drive (its window, or its taskbar icon), with the Google account the band's Drive folder is shared with (yours, or the band's own account if you have one). Waiting for it; press any key to skip."
+    Say "Sign in to Google Drive (its window, or its taskbar icon), with the Google account the group's Drive folder is shared with (yours, or the group's own account if you have one). Waiting for it; press any key to skip."
     $null = Wait-Until { & $myDrive }
   }
   $md = & $myDrive
-  if ($md -and (Test-Path "$md\$driveName")) { Ok "Google Drive: the band's '$driveName' folder is there"; $driveOk = $true }
+  if ($md -and (Test-Path "$md\$driveName")) { Ok "Google Drive: the group's '$driveName' folder is there"; $driveOk = $true }
   elseif ($md -and $isHost) { New-Item -ItemType Directory "$md\$driveName" | Out-Null; Ok "Google Drive: made '$driveName' in your My Drive"; $driveOk = $true }
   elseif ($md) {
-    Say "Add the band's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
+    Say "Add the group's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
     Say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press any key to skip."
     Start-Process "https://drive.google.com/drive/shared-with-me"
-    if (Wait-Until { Test-Path "$md\$driveName" }) { Ok "Google Drive: the band's '$driveName' folder is there"; $driveOk = $true }
+    if (Wait-Until { Test-Path "$md\$driveName" }) { Ok "Google Drive: the group's '$driveName' folder is there"; $driveOk = $true }
   }
-  if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each bandmate (Editor), at drive.google.com." }
+  if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each collaborator (Editor), at drive.google.com." }
   elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }
 }
 if ($isHost) { $left += "In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the group'." }
-else { $left += "In REAPER, the StudioSync panel offers 'Join the band's song' once your bandmate has let you in: the band's songs arrive by themselves, and the panel lists them." }
+else { $left += "In REAPER, the StudioSync panel offers 'Join the group's project' once your collaborator has let you in: the group's projects arrive by themselves, and the panel lists them." }
 Write-Host ""
 Say "Done. What's left (these need you):"
 foreach ($l in $left) { Write-Host "  - $l" }

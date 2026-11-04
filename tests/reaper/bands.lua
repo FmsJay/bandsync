@@ -28,9 +28,9 @@ local ok, err = pcall(function()
   reaper.ExecProcess = real_exec
   check(root == D .. "/broot_" .. base:match("broot_(%d+)") .. "/BandSync Night Shift", "its folder beside the first band's (" .. tostring(root or why) .. ")")
   local info = band.info(root)
-  check(info.name == "Night Shift" and info.id == "bandsync-night-shift" and info.drive == "BandSync - Night Shift", "band.json says who it is")
+  check(info.name == "Night Shift" and info.id:match("^bandsync%-night%-shift%-%x%x%x%x$") and info.drive == "BandSync - Night Shift", "band.json says who it is")
   local added = false
-  for _, c in ipairs(cmds) do if c:find("folders add --id bandsync-night-shift", 1, true) and c:find("BandSync Night Shift", 1, true) then added = true end end
+  for _, c in ipairs(cmds) do if c:find("folders add --id " .. info.id, 1, true) and c:find("BandSync Night Shift", 1, true) then added = true end end
   check(added, "Syncthing gets a folder of its own for it")
   check(reaper.GetExtState(band.SECTION, "sync_root") == root, "this computer works in the new band now")
   local names = {}
@@ -45,7 +45,7 @@ local ok, err = pcall(function()
   check(band.for_tab(now, { song = "Old" }).root == root, "a tab from before bands, its song in no band, is in the current band")
   check(band.for_tab(now, { song = "Lantern" }).root == base, "a tab from before bands is in the band whose folder has its song")
   local inv = services.invite_text("2MOGZMD-MVLUUSO-D6GXQIG-HMDVUBG-AOW6LHR-LMQQT6P-V4V5P73-6ZR5NQZ", band.info(root))
-  check(inv:find("BS_BAND_ID=bandsync-night-shift BS_BAND_NAME='Night Shift'", 1, true) and inv:find("-BandId bandsync-night-shift", 1, true), "an invitation is for this band")
+  check(inv:find("BS_BAND_ID=" .. info.id .. " BS_BAND_NAME='Night Shift'", 1, true) and inv:find("-BandId " .. info.id, 1, true), "an invitation is for this band")
   band.use_band(base)
   check(reaper.GetExtState(band.SECTION, "sync_root") == base and #band.bands() == 2, "switching back keeps both")
 end)

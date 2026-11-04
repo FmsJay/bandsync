@@ -41,7 +41,7 @@ echo
 # changes when cleaned is said, not changed silently)
 USERNAME_BS="$(plain "${BS_USER:-}")"
 while [ -z "$USERNAME_BS" ]; do
-  typed="$(ask "Your name, as the band will see it (you can change it later)" "$(plain "$(id -F 2>/dev/null | cut -d' ' -f1)")")"
+  typed="$(ask "Your name, as the group will see it (you can change it later)" "$(plain "$(id -F 2>/dev/null | cut -d' ' -f1)")")"
   USERNAME_BS="$(plain "$typed")"
   [ -n "$USERNAME_BS" ] && [ "$USERNAME_BS" != "$typed" ] && say "Using the name '$USERNAME_BS' (plain letters only)."
 done
@@ -49,7 +49,7 @@ done
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
 if [ -n "${BS_HOSTING:-}" ]; then HOSTING="$BS_HOSTING" # (the old way of saying "I'm the first")
 elif [ -n "${BS_HOST_ID:-}" ]; then HOSTING=n # (an invitation: someone is set up, and that's their ID)
-elif yes "$(ask "Is someone in the band already set up with StudioSync? (y/n)" y)"; then HOSTING=n
+elif yes "$(ask "Is someone in the group already set up with StudioSync? (y/n)" y)"; then HOSTING=n
 else HOSTING=y; fi
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
 ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
@@ -64,17 +64,21 @@ if ! yes "$HOSTING"; then
     echo "$HOST_ID" | grep -Eq "$ID_RE" || warn "That doesn't look like a device ID (8 groups of 7 letters/digits, joined by dashes)."
   done
 else
-  say "You're the first: at the end you get your Syncthing ID to send to each bandmate who installs."
+  say "You're the first: at the end you get your Syncthing ID to send to each collaborator who installs."
 fi
 # the band (docs/bands-design.md): each its own shared folder. An invitation names it; the first one set up names it.
-FOLDER_ID="$(printf '%s' "${BS_BAND_ID:-bandsync}" | LC_ALL=C tr -cd 'a-z0-9-')"; [ -n "$FOLDER_ID" ] || FOLDER_ID=bandsync
+FOLDER_ID="$(printf '%s' "${BS_BAND_ID:-}" | LC_ALL=C tr -cd 'a-z0-9-')"
+if ! yes "$HOSTING" && [ -z "$FOLDER_ID" ]; then # (someone's device ID typed in by hand, no invitation)
+  FOLDER_ID="$(ask "The group's ID (it's in their invitation, after BS_BAND_ID=; press Return if they don't have one)" bandsync | LC_ALL=C tr -cd 'a-z0-9-')"
+  [ -n "$FOLDER_ID" ] || FOLDER_ID=bandsync
+fi
 BAND_NAME="$(plain "${BS_BAND_NAME:-}")"
 if yes "$HOSTING" && [ -z "$BAND_NAME" ]; then
-  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Your band's name" "My band")")"; done
+  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Your group's name" "My group")")"; done
 fi
-[ -n "$BAND_NAME" ] || BAND_NAME="the band"
-DRIVE_NAME="BandSync"; DEF_ROOT="$HOME/BandSync"
-if [ "$FOLDER_ID" != bandsync ]; then DRIVE_NAME="BandSync - $BAND_NAME"; DEF_ROOT="$HOME/BandSync $BAND_NAME"; fi
+[ -n "$BAND_NAME" ] || BAND_NAME="the group"
+DEF_ROOT="$HOME/BandSync"
+if [ "$FOLDER_ID" != bandsync ]; then DEF_ROOT="$HOME/BandSync $BAND_NAME"; fi
 while :; do
   ROOT="${BS_ROOT:-$(ask "Where should $BAND_NAME's shared folder be" "$DEF_ROOT")}"
   ROOT="$(printf '%s' "$ROOT" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/\\\(.\)/\1/g')" # (dragged in from Finder: "\ " and a trailing space)
@@ -84,12 +88,24 @@ while :; do
   warn "That isn't a full folder path (it should start with / or ~). Try again, or drag the folder in from Finder."
   BS_ROOT=""
 done
+# The first one set up: an ID of the group's own. They all used to get "bandsync", so someone in two such groups had the two
+# folders treated as one and their files mixed. Run again on the same folder, it keeps the ID it has; a folder from before
+# groups had IDs, with no band.json yet, is "bandsync" (lib/band.lua band.info).
+if [ -z "$FOLDER_ID" ]; then
+  if [ -f "$ROOT/_band/band.json" ]; then FOLDER_ID="$(sed -n 's/.*"id"[^"]*"\([^"]*\)".*/\1/p' "$ROOT/_band/band.json" | head -1)"
+  elif [ -n "$(ls -A "$ROOT" 2>/dev/null)" ]; then FOLDER_ID=bandsync; fi
+  if [ -z "$FOLDER_ID" ]; then
+    SLUG="$(printf '%s' "$BAND_NAME" | tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+    FOLDER_ID="bandsync-${SLUG:-group}-$(printf '%04x' $((RANDOM * 2)))"
+  fi
+fi
+DRIVE_NAME="BandSync"; [ "$FOLDER_ID" != bandsync ] && DRIVE_NAME="BandSync - $BAND_NAME"
 # SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
 # (James, 2026-10-31: "it feels like a core feature"); BS_LIVE=no / BS_SOLO=no still leave them out.
 LIVE="${BS_LIVE:-y}"
 SOLO="${BS_SOLO:-y}"
 if [ -z "${BS_PLUGINS:-}" ]; then
-  say "The band plug-in pack (free, about 350 MB): Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD"
+  say "The plug-in pack (free, about 350 MB): Surge XT, Dexed, Airwindows, Dragonfly Reverb, Chow Tape, BYOD"
   say "guitar/bass amps and tuner, ZL Equalizer and Compressor, ChowMatrix delay, and the Saike, Chokehold and chmaha"
   say "JSFX with drum kits and keys, so everyone has the same sounds. (Adding the JSFX also updates your other ReaPack packages.)"
 fi
@@ -204,14 +220,14 @@ if yes "$LIVE" && [ -x "$TS" ]; then
     # yet, and the refused tag stuck in its settings so signing in again kept failing (2026-10-28)
     ok "Tailscale is signed in (it signs out by itself every few months: see the end to keep it signed in)"
   else
-    say "Signing in to Tailscale: a browser page opens; sign in with the band's account there. (macOS may first ask"
+    say "Signing in to Tailscale: a browser page opens; sign in with the group's account there. (macOS may first ask"
     say "to allow Tailscale's VPN configuration: click Allow.)"
     out="$WORK/ts_up.txt"; : > "$out"
     "$TS" up --advertise-tags=tag:bandsync --timeout=300s >"$out" 2>&1 &
     pid=$!; url=""
     for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
     [ -n "$url" ] && open "$url"
-    if wait $pid; then ok "Tailscale signed in as a band machine (it stays signed in)"; TS_TAGGED=1
+    if wait $pid; then ok "Tailscale signed in as a group machine (it stays signed in)"; TS_TAGGED=1
     elif ! grep -qi 'tag' "$out"; then warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."
     else
       # the refused tag stays in Tailscale's settings and every later sign-in fails on it: clear it, then sign in plainly
@@ -219,7 +235,7 @@ if yes "$LIVE" && [ -x "$TS" ]; then
       pid=$!; url=""
       for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
       [ -n "$url" ] && open "$url"
-      if wait $pid; then ok "Tailscale signed in (without the band tag)"
+      if wait $pid; then ok "Tailscale signed in (without the group tag)"
       else warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."; fi
     fi
   fi
@@ -255,27 +271,27 @@ if yes "$SOLO" && have "Google Drive"; then
   account() { echo "$1" | sed -n 's#.*/GoogleDrive-\([^/]*\)/My Drive$#\1#p'; } # the account's e-mail, from its folder
   if [ -z "$(mydrive)" ]; then
     open -a "Google Drive"
-    say "Sign in to Google Drive in its window, with the Google account the band's Drive folder is shared with (yours,"
-    say "or the band's own account if you have one). Allow its extension if macOS asks."
+    say "Sign in to Google Drive in its window, with the Google account the group's Drive folder is shared with (yours,"
+    say "or the group's own account if you have one). Allow its extension if macOS asks."
     say "Waiting for it; press Return to skip and do it later."
     while [ -z "$(mydrive)" ]; do read -t 3 -r </dev/tty && break; done
   fi
   MD="$(mydrive)"
   if [ -n "$MD" ] && [ ! -d "$MD/$DRIVE_NAME" ] && [ "$(drives | wc -l)" -gt 1 ]; then
-    say "Google Drive has several accounts signed in here. Which one is the band's (it gets the band's folder)?"
+    say "Google Drive has several accounts signed in here. Which one is the group's (it gets the group's folder)?"
     i=0; while IFS= read -r d; do i=$((i + 1)); echo "    $i) $(account "$d")"; done < <(drives)
     n="$(ask "Number" 1)"
     PICKED="$(drives | sed -n "${n}p")"; [ -n "$PICKED" ] && MD="$PICKED"
   fi
-  if [ -n "$MD" ] && [ -d "$MD/$DRIVE_NAME" ]; then ok "Google Drive: the band's '$DRIVE_NAME' folder is there ($(account "$MD"))"; DRIVE_OK=1
+  if [ -n "$MD" ] && [ -d "$MD/$DRIVE_NAME" ]; then ok "Google Drive: the group's '$DRIVE_NAME' folder is there ($(account "$MD"))"; DRIVE_OK=1
   elif [ -n "$MD" ] && yes "$HOSTING"; then
     mkdir -p "$MD/$DRIVE_NAME" && ok "Google Drive: made '$DRIVE_NAME' in your My Drive (share it at the end)"; DRIVE_OK=1
   elif [ -n "$MD" ]; then
-    say "Add the band's Drive folder: in the page that opens, right-click '$DRIVE_NAME' > Organize > Add shortcut > My Drive."
+    say "Add the group's Drive folder: in the page that opens, right-click '$DRIVE_NAME' > Organize > Add shortcut > My Drive."
     say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press Return to skip."
     open "https://drive.google.com/drive/shared-with-me?authuser=$(account "$MD")" # (in that account, not whichever the browser has)
     while [ ! -d "$MD/$DRIVE_NAME" ]; do read -t 3 -r </dev/tty && break; done
-    [ -d "$MD/$DRIVE_NAME" ] && { ok "Google Drive: the band's '$DRIVE_NAME' folder is there"; DRIVE_OK=1; }
+    [ -d "$MD/$DRIVE_NAME" ] && { ok "Google Drive: the group's '$DRIVE_NAME' folder is there"; DRIVE_OK=1; }
   fi
 fi
 # the band plug-in pack (optional): free, open-source plug-ins every bandmate can have, each from its official release
@@ -378,8 +394,8 @@ if ! yes "$HOSTING"; then
   stcli config folders "$FOLDER_ID" devices list | grep -qx "$HOST_ID" || stcli config folders "$FOLDER_ID" devices add --device-id "$HOST_ID" >/dev/null
   CONNECTED=""
   stcli show connections 2>/dev/null | tr -d '\n ' | grep -q "\"$HOST_ID\":{[^}]*\"connected\":true" && CONNECTED=1
-  if [ -n "$CONNECTED" ]; then ok "paired with your bandmate, and connected"
-  else ok "paired with your bandmate (they still have to let you in: see the end)"; fi
+  if [ -n "$CONNECTED" ]; then ok "paired with your collaborator, and connected"
+  else ok "paired with your collaborator (they still have to let you in: see the end)"; fi
 fi
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
@@ -442,12 +458,12 @@ bver="$(grep -o '"version": *"[^"]*"' "$HDIR/bandsync_setup_result.json" | sed '
 echo
 say "Done. What's left (these need you):"
 if yes "$HOSTING"; then
-  echo "  - To bring in a bandmate: StudioSync panel > Invite a collaborator, and send them what it copies (their installer is"
+  echo "  - To bring in a collaborator: StudioSync panel > Invite a collaborator, and send them what it copies (their installer is"
   echo "    then already paired with you). When they've run it, the panel shows 'Let them in': press it."
   echo "    (Your Syncthing device ID, if they ask for it:  $MY_ID)"
 else
   if [ -z "${CONNECTED:-}" ]; then
-    echo "  - Tell the bandmate whose ID you used: their StudioSync panel shows 'Let $USERNAME_BS in' (or they add your"
+    echo "  - Tell the collaborator whose ID you used: their StudioSync panel shows 'Let $USERNAME_BS in' (or they add your"
     echo "    Syncthing ID by hand: $MY_ID). The shared folder then arrives by itself."
   fi
 fi
@@ -456,12 +472,12 @@ if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
   echo "    Mac > ... > Disable key expiry (otherwise it signs out every few months, maybe right before a session)."
 fi
 if yes "$LIVE" && yes "$HOSTING"; then # the first one's job, once: then bandmates' installers sign their machines in for good
-  echo "  - Tailscale, once for the whole band (if not done yet): at login.tailscale.com/admin/acls add this line inside the"
+  echo "  - Tailscale, once for the whole group (if not done yet): at login.tailscale.com/admin/acls add this line inside the"
   echo '    policy'"'"'s { }:   "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
-  echo "    Then each bandmate's installer signs their machine in as a band machine that never has to sign in again."
+  echo "    Then each collaborator's installer signs their machine in as a group machine that never has to sign in again."
 fi
 if yes "$SOLO" && yes "$HOSTING" && [ -n "${DRIVE_OK:-}" ]; then
-  echo "  - Google Drive: share the BandSync folder in your My Drive with each bandmate (Editor), at drive.google.com."
+  echo "  - Google Drive: share the BandSync folder in your My Drive with each collaborator (Editor), at drive.google.com."
 elif yes "$SOLO" && [ -z "${DRIVE_OK:-}" ]; then
   echo "  - Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync >"
   echo "    Organize > Add shortcut > My Drive."
@@ -469,6 +485,6 @@ fi
 if yes "$HOSTING"; then
   echo "  - In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the group'."
 else
-  echo "  - In REAPER, the StudioSync panel offers 'Join the band's song' once your bandmate has let you in: the band's"
+  echo "  - In REAPER, the StudioSync panel offers 'Join the group's project' once your collaborator has let you in: the group's"
   echo "    songs arrive by themselves, and the panel lists them."
 fi

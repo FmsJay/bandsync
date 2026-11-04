@@ -569,11 +569,12 @@ local function section_drive()
     ImGui.SetItemTooltip(ctx, drive_root)
   end
   local missing = not drive_root and not off and require("drive").missing
-  if missing then
+  if missing and not require("groups").temporary(cfg.root) then -- (a temporary session has no use for a Drive copy)
+    local folder = band.info(cfg.root).drive
     ImGui.PushTextWrapPos(ctx, 0)
-    ImGui.TextColored(ctx, YELLOW, "No BandSync folder in " .. missing .. ". On drive.google.com, find the group's BandSync folder " ..
-      "(Shared with me), right-click > Organize > Add shortcut > My Drive, and keep the name BandSync. Starting a group? " ..
-      "Make a folder called BandSync in My Drive and share it with everyone as Editor.")
+    ImGui.TextColored(ctx, YELLOW, "No " .. folder .. " folder in " .. missing .. ". On drive.google.com, find the group's " .. folder .. " folder " ..
+      "(Shared with me), right-click > Organize > Add shortcut > My Drive, and keep the name " .. folder .. ". You started this group? " ..
+      "Make a folder called " .. folder .. " in My Drive and share it with everyone as Editor.")
     ImGui.PopTextWrapPos(ctx)
   end
 end
@@ -2638,13 +2639,12 @@ local function frame()
     if starter then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
     if ImGui.Button(ctx, "Share this project with the group") then action("Publish session") end
     if starter then ImGui.PopStyleColor(ctx) end
-    if ImGui.Button(ctx, "Create a temporary session") then ui.temp_session() end
-    ImGui.SetItemTooltip(ctx, "Work on this project with someone for a while, apart from your groups: it gets a session of its own and an invitation to send them.\n" ..
-      "End session when you're done: nothing syncs any more, and everyone keeps their copy.")
-    ImGui.SameLine(ctx)
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Prepare this project first") then action("Prepare session") end
     ImGui.SetItemTooltip(ctx, "For a busy project: takes into lanes, FLAC recording, clear track names, media in the project folder, tidy-up. Shows a checklist first.")
+    if ImGui.Button(ctx, "Create a temporary session") then ui.temp_session() end
+    ImGui.SetItemTooltip(ctx, "Work on this project with someone for a while, apart from your groups: it gets a session of its own and an invitation to send them.\n" ..
+      "End session when you're done: nothing syncs any more, and everyone keeps their copy.")
     ImGui.Spacing(ctx)
     tools.dock_menu(ImGui.IsWindowDocked(ctx)) -- (place the panel before any session is open)
     if not ImGui.IsWindowDocked(ctx) then

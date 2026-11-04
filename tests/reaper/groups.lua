@@ -8,7 +8,7 @@ for _, m in ipairs({ "band", "services", "removal", "groups", "sync", "rooms" })
 local band, services, removal, groups = require("band"), require("services"), require("removal"), require("groups")
 local out, fails = {}, 0
 local function check(ok, what) if not ok then fails = fails + 1 end; out[#out + 1] = (ok and "PASS " or "FAIL ") .. what end
-local KEYS = { "sync_root", "bands", "user", "leaving", "removal look" }
+local KEYS = { "sync_root", "bands", "user", "leaving", "removal look", "old groups" }
 local saved = {}
 for _, k in ipairs(KEYS) do saved[k] = reaper.GetExtState(band.SECTION, k) end
 local real_exec, real_id, real_st, real_quiet = reaper.ExecProcess, services.my_device_id, services.syncthing_path, services.days_quiet

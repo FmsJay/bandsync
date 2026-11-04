@@ -493,8 +493,10 @@ local function section_sync()
     local changed, v = check("Hold my changes (try things; they go out once, when you switch this off)", hold)
     if changed then reaper.SetProjExtState(proj, band.SECTION, "hold", v and "1" or "") end
   end
-  ImGui.Text(ctx, string.format("Here: %d/%d takes%s", view.total - view.my_missing, view.total,
-    view.my_missing > 0 and (", " .. view.my_missing .. " still arriving") or ""))
+  if classic() then
+    ImGui.Text(ctx, string.format("Here: %d/%d takes%s", view.total - view.my_missing, view.total,
+      view.my_missing > 0 and (", " .. view.my_missing .. " still arriving") or ""))
+  end
   if view.newer then
     -- already on disk (an update, or a bandmate's folder install)? Then only this running panel is old
     local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')

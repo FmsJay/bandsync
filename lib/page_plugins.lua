@@ -80,6 +80,7 @@ local browsing -- { tr, proj, u, since }
 local function browse(proj, u)
   local tr = require("mirror").add_local_track(proj, "StudioSync: pick a translation", "pick")
   reaper.SetOnlyTrackSelected(tr)
+  reaper.Main_OnCommand(40914, 0) -- Track: Set first selected track as last touched track (else it opens a Browse FX with nothing to add to)
   reaper.Main_OnCommand(40291, 0) -- Track: View FX chain for current/last touched track (empty, it opens Add FX)
   browsing = { tr = tr, proj = proj, u = u, since = reaper.time_precise() }
 end
@@ -100,7 +101,9 @@ local function browse_tick(cfg)
     band.log("translation for " .. (h.u.name:gsub("^%w+:%s*", "")) .. ": " .. (name:gsub("^%w+:%s*", "")))
     reaper.DeleteTrack(h.tr)
     browsing = nil
-  elseif reaper.time_precise() - h.since > 1 and reaper.TrackFX_GetChainVisible(h.tr) == -1 then -- (-1: its window is closed; -2 is the empty chain's Add FX up)
+  elseif reaper.time_precise() - h.since > 1.5 and reaper.TrackFX_GetChainVisible(h.tr) == -1
+      -- (the Add FX window doesn't count as the chain being open: the helper track went from under it, and its Add button greyed out)
+      and (reaper.JS_Window_Find and not (reaper.JS_Window_Find("Browse FX", true) or reaper.JS_Window_Find("Add FX to", false)) or reaper.time_precise() - h.since > 300) then
     reaper.DeleteTrack(h.tr)
     browsing = nil
   end

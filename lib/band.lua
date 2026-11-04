@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.51.9", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.51.12", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -346,7 +346,9 @@ end
 -- The drawings over the arrange view (BandSync - Draw.lua), if they aren't showing. Running it again would close it.
 function band.start_draw(dir)
   local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Draw.lua", true)
-  if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
+  -- (a script that died keeps its toggle lit: its beat says whether it's really running)
+  local beat = tonumber(reaper.GetExtState(band.SECTION, "draw alive"))
+  if id > 0 and (reaper.GetToggleCommandState(id) ~= 1 or not beat or reaper.time_precise() - beat > 3) then reaper.Main_OnCommand(id, 0) end
 end
 -- <root>/_band/band.json says which band a folder is: { name, id = its Syncthing folder id, drive = its Google Drive
 -- folder's name }. A folder without one is the first band BandSync had: id "bandsync", Drive folder "BandSync".

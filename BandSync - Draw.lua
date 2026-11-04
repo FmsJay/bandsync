@@ -243,6 +243,8 @@ local function loop()
     if drawing then
       local tool, size = pick("tool", "pen"), tonumber(pick("size", "4")) or 4
       local mine = math.tointeger(tonumber(pick("color", ""))) or col[cfg.user]
+      local mx, my = reaper.GetMousePosition()
+      local cx, cy = ImGui.PointConvertNative(ctx, mx, my, false)
       local in_bar = bar_ext and cx >= bar_ext[1] and cx <= bar_ext[3] and cy >= bar_ext[2] and cy <= bar_ext[4]
       in_bar = in_bar or (wheel_at and (cx - wheel_at[1]) ^ 2 + (cy - wheel_at[2]) ^ 2 <= (WHEEL_R + 8) ^ 2)
       local on_bar = ImGui.IsAnyItemHovered(ctx) or in_bar
@@ -362,6 +364,11 @@ local function loop()
       local wheel_open = wheel_at ~= nil
       if button("Wheel##colour", wheel_open) then wheel_open = not wheel_open; wheel_at = wheel_open and {} or nil end
       ImGui.SetItemTooltip(ctx, "Any colour: click the wheel.")
+      do -- (what you're drawing in, whichever way it was picked)
+        local wx0, wy0 = ImGui.GetItemRectMin(ctx)
+        local wx1, wy1 = ImGui.GetItemRectMax(ctx)
+        ImGui.DrawList_AddRectFilled(ImGui.GetWindowDrawList(ctx), wx0 + 2, wy1 - 3, wx1 - 2, wy1 - 1, mine)
+      end
       do
         local ax, ay = ImGui.GetItemRectMin(ctx)
         if wheel_at then

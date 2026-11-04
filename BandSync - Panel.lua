@@ -569,6 +569,7 @@ local function section_driver()
   end
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, cur[3] .. (may_set and "" or "\nThe driver or an admin picks this."))
+  if not may_set then ImGui.SameLine(ctx); ImGui.TextDisabled(ctx, "the driver or an admin picks") end
   ImGui.Text(ctx, driving and "You're driving: what nobody has claimed follows you." or (tostring(view.driver) .. " is driving."))
   local away = reaper.GetExtState(band.SECTION, "driver_away " .. tostring(proj))
   if away ~= "" and not driving then
@@ -787,6 +788,11 @@ end
 -- Under a person in Who's here (James, 2026-11-02): what they're working in or last worked in, opening to all they've claimed.
 function ui.person_claims(user, last_track)
   local list = ui.claims_of(user)
+  if (last_track or "") ~= "" then -- (a track that's gone isn't where anyone's working: Mac, 0.50.4)
+    local there = false
+    for i = 0, reaper.CountTracks(proj) - 1 do there = there or select(2, reaper.GetTrackName(reaper.GetTrack(proj, i))) == last_track end
+    if not there then last_track = "" end
+  end
   if #list == 0 and (last_track or "") == "" then return end
   local head = (last_track or "") ~= "" and ('Working in "' .. last_track .. '"') or list[1].short
   if #list == 0 then return ImGui.TextDisabled(ctx, head) end
@@ -1252,7 +1258,8 @@ end
 local server_at = 0
 -- Reach the server: curl connects, and with nothing to say it runs out of time (28) or ends clean (0); it can't connect otherwise. (Blocks up to 3 s: only on a click.)
 function ui.test_server(addr)
-  local r = reaper.ExecProcess('curl -s -m 2 "telnet://' .. addr:gsub('[^%w%.%-:]', "") .. '"', 4000) or ""
+  local curl = reaper.GetOS():find("^Win") and "curl" or "/usr/bin/curl" -- (ExecProcess on a Mac doesn't search the path: Mac, 0.51.12)
+  local r = reaper.ExecProcess(curl .. ' -s -m 2 "telnet://' .. addr:gsub('[^%w%.%-:]', "") .. '"', 4000) or ""
   local rc = tonumber(r:match("^(%-?%d+)"))
   if rc == 0 or rc == 28 or rc == 56 then return { true, "Reached it." } end
   if rc == 6 then return { false, "That address doesn't resolve from here." } end

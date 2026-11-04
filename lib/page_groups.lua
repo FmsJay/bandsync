@@ -320,7 +320,7 @@ function pg.draw_projects(env)
     end
     ImGui.Spacing(ctx)
   end
-  env.heading("Projects")
+  env.heading("Projects in " .. info.name) -- (opened from another group's project, the pills still name that one: Mac, 0.51.9)
   if ImGui.Button(ctx, "New folder") then new_folder = ""; ImGui.OpenPopup(ctx, "New folder") end
   ImGui.SetItemTooltip(ctx, "A folder for projects, seen by everyone in this group/session. Projects with no folder stay at the top level.")
   if ImGui.BeginPopup(ctx, "New folder") then

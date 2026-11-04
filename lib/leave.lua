@@ -22,7 +22,14 @@ function leave.ask_syncthing(cfg)
     if conn.connections[dev] and conn.connections[dev].connected then
       local comp = band.json_decode(services.ask("/rest/db/completion?folder=" .. id .. "&device=" .. dev, 3) or "")
       if type(comp) == "table" and not comp.error and comp.remoteState ~= "notSharing" then
-        names[dev] = names[dev] or services.device_name(dev) -- (slow: once)
+        -- (their name in the group, as Who's here says it; what Syncthing calls that computer only if they haven't said: Mac, 0.51.9)
+        if not names[dev] then
+          for _, f in ipairs(band.files(cfg.root .. "/_band/devices", ".json")) do
+            local d = band.read_json(cfg.root .. "/_band/devices/" .. f)
+            if type(d) == "table" and d.device == dev and d.user then names[dev] = d.user end
+          end
+          names[dev] = names[dev] or services.device_name(dev) -- (slow: once)
+        end
         out.peers[#out.peers + 1] = { name = names[dev], need = comp.needBytes or 0 }
       end
     end

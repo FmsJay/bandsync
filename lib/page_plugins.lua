@@ -22,12 +22,13 @@ end
 function pp.used(proj)
   local by, out = {}, {}
   local function scan(tr, tname)
+    local helpers = require("mirror").live_fx(tr) -- (SonoBus, the live mix, NINJAM: StudioSync's own, not the project's: Mac, 0.51.9)
     for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
       local ok, name = reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_name")
       if not ok or name == "" then _, name = reaper.TrackFX_GetFXName(tr, i, "") end
       local key = plugins.key(name)
       local guid = reaper.TrackFX_GetFXGUID(tr, i)
-      local mine = band.track_ext(tr, "band_local_fx"):find(guid, 1, true)
+      local mine = helpers[guid] or band.track_ext(tr, "band_local_fx"):find(guid, 1, true)
       if not mine then
         local u = by[key]
         if not u then u = { key = key, name = name, tracks = {}, fx = {} }; by[key] = u; out[#out + 1] = u end

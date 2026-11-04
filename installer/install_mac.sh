@@ -10,6 +10,7 @@
 # BS_LIVE / BS_SOLO (no: leave out SonoBus / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG,
 # BS_BAND_ID / BS_BAND_NAME (the band an invitation is for: its Syncthing folder id and name; the first band is "bandsync").
 # A bandmate's panel (Invite a collaborator) hands out the curl line above with BS_HOST_ID already in it.
+# Testing: BS_SYNCTHING_HOME drives a separate Syncthing instance, BS_NO_REAPER stops before anything happens inside REAPER.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
 REPO="FmsJay/bandsync"
@@ -296,10 +297,13 @@ fi
 
 # ---------- 3. Syncthing: the shared folder ----------
 ST="/Applications/Syncthing.app/Contents/Resources/syncthing/syncthing"
-STHOME="$HOME/Library/Application Support/Syncthing"
+STHOME="${BS_SYNCTHING_HOME:-$HOME/Library/Application Support/Syncthing}"
 [ -x "$ST" ] || { warn "Syncthing wasn't found: install it from syncthing.net and run this again."; exit 1; }
 stcli() { "$ST" cli --home "$STHOME" "$@" 2>&1; }
-if ! pgrep -x syncthing >/dev/null; then
+if [ -n "${BS_SYNCTHING_HOME:-}" ]; then
+  [ -f "$STHOME/config.xml" ] || "$ST" generate --home "$STHOME" >/dev/null
+  "$ST" serve --no-browser --home "$STHOME" >/dev/null 2>&1 &
+elif ! pgrep -x syncthing >/dev/null; then
   say "Starting Syncthing. macOS asks to let it find devices on your local network: click Allow."
   open -a Syncthing
 fi
@@ -333,6 +337,8 @@ if ! yes "$HOSTING"; then
   if [ -n "$CONNECTED" ]; then ok "paired with your collaborator, and connected"
   else ok "paired with your collaborator (they still have to let you in: see the end)"; fi
 fi
+
+[ -n "${BS_NO_REAPER:-}" ] && { ok "stopping before REAPER, as asked. This computer's Syncthing ID: $MY_ID"; exit 0; }
 
 # ---------- 4. BandSync scripts, inside REAPER ----------
 ZREF="heads/main"; [ "$TAG" != main ] && ZREF="tags/$TAG"

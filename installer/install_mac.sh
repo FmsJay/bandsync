@@ -9,7 +9,7 @@
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
 # BS_LIVE / BS_SOLO (no: leave out SonoBus + Tailscale / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG,
 # BS_BAND_ID / BS_BAND_NAME (the band an invitation is for: its Syncthing folder id and name; the first band is "bandsync").
-# A bandmate's panel (Invite a bandmate) hands out the curl line above with BS_HOST_ID already in it.
+# A bandmate's panel (Invite a collaborator) hands out the curl line above with BS_HOST_ID already in it.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
 REPO="FmsJay/bandsync"
@@ -56,7 +56,7 @@ ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if ! yes "$HOSTING"; then
   echo "$HOST_ID" | grep -Eq "$ID_RE" || {
     say "Their Syncthing device ID is 8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567 (63 characters)."
-    say "Easiest: they press 'Invite a bandmate' in their StudioSync panel and send you the line it copies (it has the ID"
+    say "Easiest: they press 'Invite a collaborator' in their StudioSync panel and send you the line it copies (it has the ID"
     say "in it). Or they find it in Syncthing: Actions > Show ID. Copy all of it and paste it here."
   }
   until echo "$HOST_ID" | grep -Eq "$ID_RE"; do
@@ -422,7 +422,7 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
   for i in $(seq 1 360); do
     [ -f "$HDIR/bandsync_setup_result.json" ] && break
     if [ $i -gt 15 ] && ! pgrep -x REAPER >/dev/null; then GONE=1; break; fi
-    [ $i -eq 30 ] && say "Waiting for StudioSync to arrive through ReaPack. If REAPER shows ReaPack's report window, close it."
+    [ $i -eq 30 ] && say "Waiting for StudioSync to arrive through ReaPack. ReaPack opens its own windows on a first run (Manage repositories, Transaction report): press OK on them."
     sleep 1
   done
   [ -f "$HDIR/bandsync_setup_result.json" ]
@@ -442,7 +442,7 @@ bver="$(grep -o '"version": *"[^"]*"' "$HDIR/bandsync_setup_result.json" | sed '
 echo
 say "Done. What's left (these need you):"
 if yes "$HOSTING"; then
-  echo "  - To bring in a bandmate: StudioSync panel > Invite a bandmate, and send them what it copies (their installer is"
+  echo "  - To bring in a bandmate: StudioSync panel > Invite a collaborator, and send them what it copies (their installer is"
   echo "    then already paired with you). When they've run it, the panel shows 'Let them in': press it."
   echo "    (Your Syncthing device ID, if they ask for it:  $MY_ID)"
 else
@@ -467,7 +467,7 @@ elif yes "$SOLO" && [ -z "${DRIVE_OK:-}" ]; then
   echo "    Organize > Add shortcut > My Drive."
 fi
 if yes "$HOSTING"; then
-  echo "  - In REAPER, open your song's project: the StudioSync panel offers 'Start a band song from this project'."
+  echo "  - In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the group'."
 else
   echo "  - In REAPER, the StudioSync panel offers 'Join the band's song' once your bandmate has let you in: the band's"
   echo "    songs arrive by themselves, and the panel lists them."

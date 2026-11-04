@@ -2,7 +2,7 @@
 # Run it with "Install BandSync (Windows).cmd" (double-click). Windows PowerShell 5.1 compatible.
 #   REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), and optionally
 #   SonoBus + Tailscale (hearing each other) and Google Drive for desktop (the band's copy): -Live no / -Solo no leave them out.
-# A bandmate's panel (Invite a bandmate) hands out a one-line command that runs this with -HostId already in it.
+# A bandmate's panel (Invite a collaborator) hands out a one-line command that runs this with -HostId already in it.
 # Each app comes from its official source (winget, or the extension's own release); each installer may show a
 # Windows permission prompt. Sign-ins (Tailscale, Google Drive) stay the musician's own clicks.
 # Every question can be answered up front (for an AI installer or a test run); anything not given is asked.
@@ -15,6 +15,7 @@ param(
   [ValidateSet("", "yes", "no")][string]$Extras = "", # the larger extras: amp modelers, Odin 2, sforzando + Salamander piano
   [ValidateSet("reapack", "folder", "verify")][string]$Scripts = "reapack", # folder: band-internal copy in <root>/_tools/bandsync
   [string]$SyncthingHome = "",    # testing: drive a separate Syncthing instance (--home)
+  [string]$ReaperExe = "",         # testing: this REAPER, as if the installer had just put it there
   [switch]$NoApps,                # testing: skip installing apps, only configure
   [switch]$NoReaper               # testing: stop before anything happens inside REAPER (the shared folder and pairing only)
 )
@@ -35,7 +36,7 @@ $boxed = Get-ChildItem "$env:LOCALAPPDATA\Packages\*\LocalCache\Local\$probe" -E
 Remove-Item (Join-Path $env:LOCALAPPDATA $probe) -ErrorAction SilentlyContinue
 if ($boxed) {
   $argv = @("-Tag", $Tag, "-Scripts", $Scripts)
-  foreach ($k in "User", "HostId", "Root", "BandId", "BandName", "Hosting", "Live", "Solo", "Plugins", "Extras", "SyncthingHome") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
+  foreach ($k in "User", "HostId", "Root", "BandId", "BandName", "Hosting", "Live", "Solo", "Plugins", "Extras", "SyncthingHome", "ReaperExe") { $v = Get-Variable $k -ValueOnly; if ($v) { $argv += @("-$k", $v) } }
   if ($NoApps) { $argv += "-NoApps" }
   if ($NoReaper) { $argv += "-NoReaper" }
   $quoted = ($argv | ForEach-Object { if ($_ -match '^-') { $_ } else { '"' + $_ + '"' } }) -join " "
@@ -69,7 +70,7 @@ $idPattern = '^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
 if (-not $isHost) {
   if ($hostId -notmatch $idPattern) {
     Say "Their Syncthing device ID is 8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567 (63 characters)."
-    Say "Easiest: they press 'Invite a bandmate' in their StudioSync panel and send you the line it copies (it has the ID"
+    Say "Easiest: they press 'Invite a collaborator' in their StudioSync panel and send you the line it copies (it has the ID"
     Say "in it). Or they find it in Syncthing: Actions > Show ID. Copy all of it and paste it here."
   }
   while ($hostId -notmatch $idPattern) {
@@ -107,6 +108,7 @@ function Install-App($id, $name) {
 }
 
 function Find-Reaper {
+  if ($ReaperExe) { return $ReaperExe }
   $p = Get-Process reaper -ErrorAction SilentlyContinue | Select-Object -First 1
   if ($p -and $p.Path) { return $p.Path }
   foreach ($c in @("$env:ProgramFiles\REAPER (x64)\reaper.exe", "$env:ProgramFiles\REAPER\reaper.exe")) { if (Test-Path $c) { return $c } }
@@ -243,7 +245,10 @@ if ($need.Count -gt 0) {
     $waited = 0
     while (Get-Process reaper -ErrorAction SilentlyContinue) {
       Start-Sleep 1; $waited++
-      if ($waited % 30 -eq 0) { Say "Still waiting for REAPER to close (answer its save question if it asked one) ..." }
+      if ($waited % 30 -eq 0) { # (asking again: REAPER drops a close asked for while it's busy, say scanning plug-ins for the first time)
+        Get-Process reaper -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }
+        Say "Still waiting for REAPER to close (it may be scanning plug-ins, or waiting on a question: answer it if it asked one) ..."
+      }
     }
   }
   New-Item -ItemType Directory -Force $userPlugins | Out-Null
@@ -270,7 +275,7 @@ $cfgDir = if ($SyncthingHome) { $SyncthingHome } else { Join-Path $env:LOCALAPPD
 if (-not (Test-Path (Join-Path $cfgDir "config.xml"))) { ST generate | Out-Null; Ok "Syncthing set up for the first time" }
 $running = if ($SyncthingHome) { $false } else { [bool](Get-Process syncthing -ErrorAction SilentlyContinue) }
 if (-not $running) {
-  $sargs = @("serve", "--no-browser") + $homeArg
+  $sargs = @("serve", "--no-browser"); if ($SyncthingHome) { $sargs += @("--home", "`"$SyncthingHome`"") } # (Start-Process doesn't quote a path with spaces)
   Start-Process $st -ArgumentList $sargs -WindowStyle Hidden
   Ok "Syncthing started (StudioSync's Live sync starts it from now on)"
 }
@@ -349,7 +354,7 @@ function Request($mode) {
   for ($i = 0; $i -lt 360 -and -not (Test-Path $result); $i++) {
     Start-Sleep 1
     if ($i -gt 15 -and -not (Get-Process reaper -ErrorAction SilentlyContinue)) { $script:Gone = $true; break }
-    if ($i -eq 30) { Say "Waiting for StudioSync to arrive through ReaPack. If REAPER shows ReaPack's report window, close it." }
+    if ($i -eq 30) { Say "Waiting for StudioSync to arrive through ReaPack. ReaPack opens its own windows on a first run (Manage repositories, Transaction report): press OK on them." }
   }
   if (-not (Test-Path $result)) { return $null }
   Start-Sleep -Milliseconds 300
@@ -387,7 +392,7 @@ function Wait-Until($test) {
   return $true
 }
 if ($isHost) {
-  $left += "To bring in a bandmate: StudioSync panel > Invite a bandmate, and send them what it copies (their installer is then already paired with you). When they've run it, the panel shows 'Let them in': press it."
+  $left += "To bring in a bandmate: StudioSync panel > Invite a collaborator, and send them what it copies (their installer is then already paired with you). When they've run it, the panel shows 'Let them in': press it."
   $left += "(Your Syncthing device ID, if they ask for it:  $myId)"
 } elseif ($peers -notcontains $hostId) {
   $left += "Tell the bandmate whose ID you used: their StudioSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
@@ -478,7 +483,7 @@ if ($wantSolo) {
   if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each bandmate (Editor), at drive.google.com." }
   elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }
 }
-if ($isHost) { $left += "In REAPER, open your song's project: the StudioSync panel offers 'Start a band song from this project'." }
+if ($isHost) { $left += "In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the group'." }
 else { $left += "In REAPER, the StudioSync panel offers 'Join the band's song' once your bandmate has let you in: the band's songs arrive by themselves, and the panel lists them." }
 Write-Host ""
 Say "Done. What's left (these need you):"

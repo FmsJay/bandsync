@@ -148,10 +148,9 @@ function ui.gradient(dl, x0, y0, x1, y1, from, to, draw)
     ImGui.DrawList_PopClipRect(dl)
   end
 end
--- The logo: two linked faders whose slots are portals, blue into orange. Drawn, so it's sharp at any size (docs/logo has it as SVG).
--- `s` = its height; it's 0.93 s wide. Drawn at the cursor, taking that space.
-local FLAMES = { { -70, 26, 7, 2.2, .9 }, { -35, 30, 6, 2, .6 }, { -5, 34, 8, 2.6, .85 }, { 32, 30, 5.5, 1.9, .55 }, { 62, 30, 7, 2.3, .9 },
-  { 110, 26, 7, 2.2, .85 }, { 145, 30, 5.5, 2, .6 }, { 178, 34, 7.5, 2.5, .85 }, { 214, 30, 5.5, 1.9, .55 }, { 245, 28, 6.5, 2.1, .85 } } -- angle on the rim, how far round, how far out, width, opacity
+-- The logo: two linked faders, each a plain line with a portal opening from it towards the other fader, blue into orange.
+-- Drawn, so it's sharp at any size (docs/logo has it as SVG). `s` = its height; it's 0.93 s wide. Drawn at the cursor, taking that space.
+local FLAMES = { { -72, 26, 6, 2, .9 }, { -48, 26, 7, 2.2, .7 }, { -22, 30, 8, 2.6, .9 }, { 8, 28, 6.5, 2.1, .6 }, { 34, 28, 7.5, 2.4, .9 }, { 60, 22, 6, 2, .75 } } -- angle on the rim, how far round, how far out, width, opacity
 local function logo(s)
   local dl = ImGui.GetWindowDrawList(ctx)
   local x, y = ImGui.GetCursorScreenPos(ctx)
@@ -159,32 +158,50 @@ local function logo(s)
   local function X(u) return x + (u - 4) * k end
   local function Y(v) return y + (v - 2) * k end
   local function tint(u, a) return ui.blue_orange((u - 12) / 40, a) end
-  local function rim(cx, deg, rx, ry) local t = math.rad(deg); return cx + rx * math.cos(t), 32 + ry * math.sin(t) end
-  for _, cx in ipairs({ 18, 46 }) do
-    local own = cx == 18 and 0 or 1
-    for _, f in ipairs(FLAMES) do -- all turning the same way round, so the portal spins
-      if s < 40 or (s < 80 and f[5] < 0.7) then goto next_flame end -- (small, the faint ones and then all of them only scribble)
-      local x0, y0 = rim(cx, f[1], 5.2, 26.5)
-      local x1, y1 = rim(cx, f[1] + f[2], 5.2 + f[3], 26.5 + f[3] * 0.45)
-      local n = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
-      local px, py, mx, my = -(y1 - y0) / n, (x1 - x0) / n, (x0 + x1) / 2, (y0 + y1) / 2
-      local col, ax, ay, bx, by = tint((x0 + x1) / 2, math.floor(f[5] * 255))
-      for i = 0, 6 do
-        local t, u = i / 6, 1 - i / 6
-        local cxa, cya = mx + px * (-2.2 + f[4] / 2), my + py * (-2.2 + f[4] / 2)
-        local cxb, cyb = mx + px * (-2.2 - f[4] / 2), my + py * (-2.2 - f[4] / 2)
-        local nax, nay = u * u * x0 + 2 * u * t * cxa + t * t * x1, u * u * y0 + 2 * u * t * cya + t * t * y1
-        local nbx, nby = u * u * x0 + 2 * u * t * cxb + t * t * x1, u * u * y0 + 2 * u * t * cyb + t * t * y1
-        if ax then ImGui.DrawList_AddQuadFilled(dl, X(ax), Y(ay), X(nax), Y(nay), X(nbx), Y(nby), X(bx), Y(by), col) end
-        ax, ay, bx, by = nax, nay, nbx, nby
-      end
-      ::next_flame::
+  local line = ImGui.GetColor(ctx, ImGui.Col_Text)
+  for _, flip in ipairs({ false, true }) do
+    local own = flip and 1 or 0
+    -- worked out for the left fader; the right one is it turned half way round the middle of the mark
+    local function P(u, v) if flip then return X(64 - u), Y(64 - v) end return X(u), Y(v) end
+    local function rim(deg, rx, ry) local t = math.rad(deg); return 18 + rx * math.cos(t), 32 + ry * math.sin(t) end
+    local function half(rx, ry, col, thick) -- the half ellipse from the line
+      ImGui.DrawList_PathClear(dl)
+      for i = -12, 12 do ImGui.DrawList_PathLineTo(dl, P(rim(i * 7.5, rx, ry))) end
+      if thick then ImGui.DrawList_PathStroke(dl, col, ImGui.DrawFlags_None, thick) else ImGui.DrawList_PathFillConvex(dl, col) end
     end
-    for i = 0, 2 do ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), (9.5 - i * 1.6) * k, (30 - i) * k, ui.blue_orange(own, 0x24)) end -- its glow
-    ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 4.6 * k, 26.5 * k, ui.blue_orange(own, 0x90))
-    ImGui.DrawList_AddEllipse(dl, X(cx), Y(32), 4.6 * k, 26.5 * k, ui.blue_orange(own), 0, 0, math.max(1, 1.7 * k))
-    ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 2.2 * k, 24 * k, 0xFFFFFF50) -- the fader's own line, where the portal comes from
-    ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 0.9 * k, 23 * k, 0xFFFFFFFF)
+    if s >= 40 then
+      for _, f in ipairs(FLAMES) do -- all turning the same way round, so the portal spins
+        if s >= 80 or f[5] >= 0.7 then -- (small, the faint ones only scribble)
+          local x0, y0 = rim(f[1], 7.5, 25)
+          local x1, y1 = rim(f[1] + f[2], 7.5 + f[3], 25 + f[3] * 0.3)
+          local n = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
+          local px, py, mx, my = -(y1 - y0) / n, (x1 - x0) / n, (x0 + x1) / 2, (y0 + y1) / 2
+          local col, ax, ay, bx, by = tint(flip and 64 - mx or mx, math.floor(f[5] * 255))
+          for i = 0, 6 do
+            local t, u = i / 6, 1 - i / 6
+            local cxa, cya = mx + px * (-2 + f[4] / 2), my + py * (-2 + f[4] / 2)
+            local cxb, cyb = mx + px * (-2 - f[4] / 2), my + py * (-2 - f[4] / 2)
+            local nax, nay = u * u * x0 + 2 * u * t * cxa + t * t * x1, u * u * y0 + 2 * u * t * cya + t * t * y1
+            local nbx, nby = u * u * x0 + 2 * u * t * cxb + t * t * x1, u * u * y0 + 2 * u * t * cyb + t * t * y1
+            if ax then
+              local a1, a2 = P(ax, ay)
+              local b1, b2 = P(nax, nay)
+              local c1, c2 = P(nbx, nby)
+              local d1, d2 = P(bx, by)
+              ImGui.DrawList_AddQuadFilled(dl, a1, a2, b1, b2, c1, c2, d1, d2, col)
+            end
+            ax, ay, bx, by = nax, nay, nbx, nby
+          end
+        end
+      end
+    end
+    for i = 0, 2 do half(11.5 - i * 1.6, 28 - i, ui.blue_orange(own, 0x24)) end -- its glow
+    half(7.5, 25, ui.blue_orange(own, 0x90))
+    half(3.2, 22, 0xFFFFFF60)
+    half(7.5, 25, ui.blue_orange(own), math.max(1, 1.7 * k))
+    local x1, y1 = P(18, 5)
+    local x2, y2 = P(18, 59)
+    ImGui.DrawList_AddLine(dl, x1, y1, x2, y2, line, math.max(1.5, 3 * k)) -- the fader's own line, on the outside
   end
   local px, py
   for i = 0, 16 do -- the link: 18,20 to 46,44, as one S

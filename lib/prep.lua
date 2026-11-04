@@ -76,7 +76,7 @@ function prep.scan(proj, cfg, b)
   if lanes.n > 0 then
     add("lanes", #lanes.set > 0 and string.format("Fixed lanes on %d track(s)%s", #lanes.set, multi > 0 and string.format(", %d multi-take item(s) exploded into lanes", multi) or "")
         or string.format("Explode %d multi-take item(s) into lanes", multi),
-      "Takes become lanes (the take that plays keeps playing), and new recordings land in lanes: the group sees every pass the same way.", lanes.n, lanes)
+      "Takes become lanes (the take that plays keeps playing), and new recordings land in lanes: everyone sees every pass the same way.", lanes.n, lanes)
   end
 
   -- recording format and sample rate
@@ -115,7 +115,7 @@ function prep.scan(proj, cfg, b)
   end
   if #generic > 0 then
     add("generic", string.format("%d track(s) with a generic name: %s", #generic, table.concat(generic, ", ")),
-      "Not changed: rename them to what's on them (Bass, Vox...) so the group's takes land where they belong.", #generic, nil, false)
+      "Not changed: rename them to what's on them (Bass, Vox...) so the studio's takes land where they belong.", #generic, nil, false)
   end
 
   -- audio files: convert to FLAC, copy the rest in from outside the project, report offline ones
@@ -170,7 +170,7 @@ function prep.scan(proj, cfg, b)
   end
   if #clutter > 0 then
     add("clutter", string.format("Remove %d empty item(s) and slivers under 50 ms", #clutter),
-      "Leftovers from editing: they'd go out to the group as takes of nothing.", #clutter, clutter)
+      "Leftovers from editing: they'd go out to the others as takes of nothing.", #clutter, clutter)
   end
 
   -- ripple editing moves other people's parts, which BandSync then puts back
@@ -181,7 +181,7 @@ function prep.scan(proj, cfg, b)
   -- BandSync's own setup
   local live = require("live")
   if b and b.role ~= "solo" and not live.fx(proj, false, live.SONOBUS) then
-    add("sonobus", "Put SonoBus on the master (off until you Connect)", "For Real time: it joins your group by itself when you switch that on.", 1, true)
+    add("sonobus", "Put SonoBus on the master (off until you Connect)", "For Real time: it joins your studio by itself when you switch that on.", 1, true)
   end
   if not require("tools").autostart_on() then
     add("autostart", "Start Live sync with REAPER", "A REAPER restart brings Live sync back for sessions where it was running (otherwise changes quietly stay here).", 1, true)

@@ -1747,10 +1747,10 @@ function mirror.watch(proj, cfg, song, room, opts)
           if got and n > 0 then reaper.SetItemStateChunk(o.ptr, unpooled, false) end
         end
         why.text = "a new item on " .. where .. " isn't yours to add: it's kept here on '" .. where .. " (yours, not sent)', " ..
-          (why.to and ("and suggested to " .. why.to) or "not sent to the group (claim the track, or take control)")
+          (why.to and ("and suggested to " .. why.to) or "not sent to the others (claim the track, or take control)")
       elseif o.kind == "track" and o.ptr then
         reaper.GetSetMediaTrackInfo_String(o.ptr, "P_EXT:band_local", "yours", true)
-        why.text = "a new track isn't yours to add: it stays here as yours, not sent to the group (take control to add tracks)"
+        why.text = "a new track isn't yours to add: it stays here as yours, not sent to the others (take control to add tracks)"
       elseif o.kind == "misc" then
         -- a group or lock put on someone's track: nothing here is worth keeping, and left on, your VCA went on moving their track on
         -- this computer alone (what you hear and render differs from everyone else). If they accept, it lands as theirs.
@@ -1762,7 +1762,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     else
       -- known, but its last change can't be read here (still arriving, or from another room): left as it is
       return say_once("noev" .. o.oid, "couldn't put back a change on " .. ((why.name or "") ~= "" and why.name or "an unnamed track") ..
-        " (the group's version hasn't arrived here yet): it stays as it is for now")
+        " (the studio's version hasn't arrived here yet): it stays as it is for now")
     end
     back = back + 1
     if why.text then sync.put_back(why.text) end
@@ -1902,7 +1902,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         end
       end
       if mirror.reopened[rk] and rev then -- opened without its last save: the band's version, not this older one
-        say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the group has it")
+        say_once("reopened" .. tostring(proj), "this project was opened without its last save: what changed since is back as the studio has it")
         if h == "" then -- the band deleted it since: gone here too (2026-10-31: three deleted tracks came back on a reopen)
           mirror.reopened[rk] = nil
           if o.kind == "track" or o.kind == "item" then mirror.apply(proj, { obj = o.kind, oid = o.oid, gone = true }, media, opts.local_mix) end
@@ -1972,7 +1972,7 @@ function mirror.watch(proj, cfg, song, room, opts)
           mirror.copy_failed = nil
           local shared = mirror.share_media(state, media, o.ptr)
           if mirror.copy_failed then -- (its audio didn't reach the band's folder: sent, it'd point at a file only we have)
-            return say_once("copy" .. o.oid, string.format("couldn't copy the audio of an item on %s into the group's folder (%s): it goes out once it can",
+            return say_once("copy" .. o.oid, string.format("couldn't copy the audio of an item on %s into the studio's folder (%s): it goes out once it can",
               name ~= "" and name or "an unnamed track", mirror.copy_failed))
           end
           if shared ~= state then -- it now plays the shared copy here too, so the next look sees the same thing
@@ -2127,7 +2127,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       elseif oid:sub(1, 1) == "I" and mirror.find(proj, "item", oid) then
         -- still here, on a track of this machine's own (Real time, "yours, not sent"): not deleted. Sent as gone, it
         -- went for everyone (review, 2026-10-31); the band keeps it where it was
-        say_once("local" .. oid, "an item of the group's is on a track of your own: it isn't sent from there, and the group keeps it where it was (move it back to a group track to change it)")
+        say_once("local" .. oid, "an item of the studio's is on a track of your own: it isn't sent from there, and the others keep it where it was (move it back to a studio track to change it)")
       else gone[#gone + 1] = { oid = oid, rev = rev, evid = evid } end
     end
   end
@@ -2250,7 +2250,7 @@ function mirror.repair(proj, ev, room_dir, local_mix)
     local ok, h = mirror.apply(proj, best, room_dir .. "/media", local_mix)
     if ok then remember(proj, ev.oid, ev.rev, h, best.id, (ev.time or "") .. (ev.user or "")) end
   end
-  require("sync").put_back("a change you made just as control changed hands wasn't yours to make: it's back as the group has it")
+  require("sync").put_back("a change you made just as control changed hands wasn't yours to make: it's back as the studio has it")
 end
 
 -- History's "selected tracks" scope: the tracks selected in REAPER, their plug-ins and everything on them (then or
@@ -2402,7 +2402,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   for n in pairs(kept_names) do names[#names + 1] = n end
   table.sort(names)
   if done == 0 and there > 0 and refused == 0 and kept == 0 then return "it's already back: REAPER rebuilt it from its pass, so nothing changed" end
-  return string.format("%d change(s) brought back and sent to the group%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
+  return string.format("%d change(s) brought back and sent to the others%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
     kept > 0 and string.format(" (kept what collaborators added since: %s)", table.concat(names, ", ")) or "")
 end
 

@@ -60,10 +60,10 @@ Write-Host ""
 
 # ---------- 0. questions ----------
 $user = $User -replace '[^\w\- ]', ''
-while (-not $user) { $user = (Ask "Your name, as the group will see it" $env:USERNAME) -replace '[^\w\- ]', '' }
+while (-not $user) { $user = (Ask "Your name, as the studio will see it" $env:USERNAME) -replace '[^\w\- ]', '' }
 # Pairing: with whoever in the band is already set up (any of them: every machine passes the folder on). "Host" is
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
-$isHost = if ($Hosting) { $Hosting -eq "yes" } elseif ($HostId) { $false } else { -not (YesNo "Is someone in the group already set up with StudioSync?" "y") } # (-HostId: an invitation)
+$isHost = if ($Hosting) { $Hosting -eq "yes" } elseif ($HostId) { $false } else { -not (YesNo "Is someone in the studio already set up with StudioSync?" "y") } # (-HostId: an invitation)
 if ($isHost -and -not $Hosting) { Say "You're the first: at the end you get your Syncthing ID to send to each collaborator who installs." }
 $hostId = $HostId.ToUpper()
 $idPattern = '^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
@@ -81,12 +81,12 @@ if (-not $isHost) {
 # the band (docs/bands-design.md): each its own shared folder. An invitation names it; the first one set up names it.
 $folderId = ($BandId.ToLower() -replace '[^a-z0-9-]', '')
 if (-not $isHost -and -not $folderId) { # (someone's device ID typed in by hand, no invitation)
-  $folderId = ((Ask "The group's ID (it's in their invitation, after -BandId; press Enter if they don't have one)" "bandsync").ToLower() -replace '[^a-z0-9-]', '')
+  $folderId = ((Ask "The studio's ID (it's in their invitation, after -BandId; press Enter if they don't have one)" "bandsync").ToLower() -replace '[^a-z0-9-]', '')
   if (-not $folderId) { $folderId = "bandsync" }
 }
 $bandName = $BandName -replace '[^\w\- ]', ''
-if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Name your group or session" "My group") -replace '[^\w\- ]', '' } }
-if (-not $bandName) { $bandName = "the group" }
+if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Name your studio" "My studio") -replace '[^\w\- ]', '' } }
+if (-not $bandName) { $bandName = "the studio" }
 $defRoot = if ($folderId -eq "bandsync") { Join-Path $env:USERPROFILE "BandSync" } else { Join-Path $env:USERPROFILE "StudioSync $bandName" }
 $root = if ($Root) { $Root } else { Ask "Where should $bandName's shared folder be" $defRoot }
 # The first one set up: an ID of the group's own. They all used to get "bandsync", so someone in two such groups had the two
@@ -240,7 +240,7 @@ if ($wantPlugins) {
     }
   }
   Install-Quiet
-  Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the group's 'everyone has' list only takes them after a restart)"
+  Ok "plug-in pack done: restart REAPER so it finds them (a re-scan in Preferences shows them, but the studio's 'everyone has' list only takes them after a restart)"
 }
 
 # ---------- 2. REAPER extensions: ReaPack and ReaImGui ----------
@@ -425,23 +425,23 @@ if ($wantSolo) {
   }
   $driveOk = $false
   if (-not (& $myDrive)) {
-    Say "Sign in to Google Drive (its window, or its taskbar icon), with the Google account the group's Drive folder is shared with (yours, or the group's own account if you have one). Waiting for it; press any key to skip."
+    Say "Sign in to Google Drive (its window, or its taskbar icon), with the Google account the studio's Drive folder is shared with (yours, or the studio's own account if you have one). Waiting for it; press any key to skip."
     $null = Wait-Until { & $myDrive }
   }
   $md = & $myDrive
-  if ($md -and (Test-Path "$md\$driveName")) { Ok "Google Drive: the group's '$driveName' folder is there"; $driveOk = $true }
+  if ($md -and (Test-Path "$md\$driveName")) { Ok "Google Drive: the studio's '$driveName' folder is there"; $driveOk = $true }
   elseif ($md -and $isHost) { New-Item -ItemType Directory "$md\$driveName" | Out-Null; Ok "Google Drive: made '$driveName' in your My Drive"; $driveOk = $true }
   elseif ($md) {
-    Say "Add the group's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
+    Say "Add the studio's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
     Say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press any key to skip."
     Start-Process "https://drive.google.com/drive/shared-with-me"
-    if (Wait-Until { Test-Path "$md\$driveName" }) { Ok "Google Drive: the group's '$driveName' folder is there"; $driveOk = $true }
+    if (Wait-Until { Test-Path "$md\$driveName" }) { Ok "Google Drive: the studio's '$driveName' folder is there"; $driveOk = $true }
   }
   if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each collaborator (Editor), at drive.google.com." }
   elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }
 }
-if ($isHost) { $left += "In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the group'." }
-else { $left += "In REAPER, the StudioSync panel offers 'Join the group's project' once your collaborator has let you in: the group's projects arrive by themselves, and the panel lists them." }
+if ($isHost) { $left += "In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the studio'." }
+else { $left += "In REAPER, the StudioSync panel offers 'Join the studio's project' once your collaborator has let you in: the studio's projects arrive by themselves, and the panel lists them." }
 Write-Host ""
 Say "Done. What's left (these need you):"
 foreach ($l in $left) { Write-Host "  - $l" }

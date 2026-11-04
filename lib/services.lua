@@ -214,10 +214,13 @@ end
 -- the first try). The ?<time> keeps GitHub's cache from handing out an installer from before the last release.
 -- With the band (band.info): its folder id and name ride along, so the installer joins that band.
 function services.invite_text(id, info)
-  info = info or { id = "bandsync", name = "the group" }
+  info = info or { id = "bandsync", name = "the studio" }
   local base = "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/"
   local q1 = function(s) return "'" .. tostring(s):gsub("'", "") .. "'" end -- (band names are plain: band.clean)
-  return "Join " .. info.name .. " on StudioSync. Paste ONE of these:\n\n" ..
+  return "Join " .. info.name .. " on StudioSync.\n\n" ..
+    "Already have StudioSync? In its panel, open your studios, press Paste join code, and paste this message:\n" ..
+    services.join_code(id, info) .. "\n\n" ..
+    "New to it? Paste ONE of these:\n\n" ..
     "Mac (in Terminal):\n" ..
     'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " BS_BAND_ID=" .. info.id ..
     " BS_BAND_NAME=" .. q1(info.name) .. " bash\n\n" ..
@@ -225,6 +228,52 @@ function services.invite_text(id, info)
     '$f="$env:TEMP\\bandsync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
     "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. " -BandId " .. info.id .. " -BandName " .. q1(info.name) .. "\n\n" ..
     "When it's done, tell me: I let you in from my StudioSync panel."
+end
+
+-- The line that gets someone with StudioSync into a studio, in an invitation.
+function services.join_code(id, info) return "studiosync-join:" .. id .. ":" .. info.id .. ":" .. tostring(info.name):gsub("[\r\n]", "") end
+-- What was pasted: the code, on its own or in the whole message, or an invitation from before there were codes (the installer's own lines). -> { id, band, name }, or nil. Pure.
+function services.parse_join(text)
+  text = tostring(text or "")
+  local id, folder, name = text:match("studiosync%-join:([%u%d%-]+):([%w%-]+):([^\r\n]*)")
+  if not id then id, folder, name = text:match("%-HostId%s+([%u%d%-]+)%s+%-BandId%s+([%w%-]+)%s+%-BandName%s+'([^'\r\n]*)'") end
+  if not id then id, folder, name = text:match("BS_HOST_ID=([%u%d%-]+)%s+BS_BAND_ID=([%w%-]+)%s+BS_BAND_NAME='([^'\r\n]*)'") end
+  if not id or not services.is_device_id(id) then return nil end
+  return { id = id, band = folder:lower(), name = (name:gsub("[^%w%-_ ]", ""):match("^%s*(.-)%s*$")) }
+end
+-- Into a studio from a code, with StudioSync already here: what an invitation's installer does (the folder, the pairing), and nothing else to install. Whoever invited
+-- you then sees Let them in. -> its folder, or nil + why.
+function services.join_band(cfg, code)
+  local st = services.syncthing_path()
+  if not st then return nil, "Syncthing wasn't found" end
+  if code.id == services.my_device_id() then return nil, "That's your own join code: send it to whoever you're inviting." end
+  for _, x in ipairs(band.bands()) do
+    if x.id == code.band and not require("groups").is_old(x.root) then band.use_band(x.root); return x.root, "already" end
+  end
+  local name = code.name ~= "" and code.name or code.band
+  local here = ((cfg.base or cfg).root or ""):gsub("[/\\]+$", "")
+  local parent = here:match("^(.*)[/\\][^/\\]+$") or here
+  local root, n = parent .. "/StudioSync " .. name, 1
+  while band.subdirs(root)[1] and band.info(root).id ~= code.band do n = n + 1; root = parent .. "/StudioSync " .. name .. " " .. n end -- (strangers' studios can share a name)
+  reaper.RecursiveCreateDirectory(root, 0)
+  reaper.SetExtState(band.SECTION, "joining " .. root, band.json_encode({ name = name, id = code.band }), true) -- (who this folder is, until its own _band/band.json arrives)
+  if not reaper.file_exists(root .. "/.stignore") then -- (each project in full once it's opened; the rest as a listing)
+    band.write_atomic(root .. "/.stignore", table.concat(require("songsync").block({}), "\n") .. "\n")
+  end
+  local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. code.band .. " --label " .. q("StudioSync " .. name) .. " --path " .. q(root), 15000) or ""
+  if not r:match("^0\n") and not (reaper.ExecProcess(q(st) .. " cli config folders " .. code.band .. " label get", 8000) or ""):match("^0\n") then
+    return nil, "Syncthing didn't add the studio's folder: " .. r:gsub("^%d+\n", "")
+  end
+  reaper.ExecProcess(q(st) .. " cli config folders " .. code.band .. " order set smallestFirst", 8000)
+  services.tune_band_folder(code.band)
+  if not (reaper.ExecProcess(q(st) .. " cli config devices " .. code.id .. " name get", 8000) or ""):match("^0\n") then
+    r = reaper.ExecProcess(q(st) .. " cli config devices add --device-id " .. code.id .. " --name " .. q("Collaborator") .. " --introducer --auto-accept-folders", 15000) or ""
+    if not r:match("^0\n") then return nil, "Syncthing didn't pair with them: " .. r:gsub("^%d+\n", "") end
+  end
+  reaper.ExecProcess(q(st) .. " cli config folders " .. code.band .. " devices add --device-id " .. code.id, 15000)
+  require("groups").forget_old(root) -- (back in one you'd left)
+  band.use_band(root)
+  return root
 end
 
 -- A bandmate already known here offering a band's folder: someone in one of your bands joining another of them (an
@@ -283,13 +332,13 @@ end
 -- computer then works in it. Returns its folder, or nil + why.
 function services.new_band(cfg, name)
   name = band.clean(name or "")
-  if name == "" then return nil, "Give the group a name." end
+  if name == "" then return nil, "Give the studio a name." end
   local st = services.syncthing_path()
   if not st then return nil, "Syncthing wasn't found" end
   -- (the end is random: two strangers' groups can have one name, and someone could be in both)
   local id = services.band_id(name) .. string.format("-%04x", (os.time() * 7 + math.floor(reaper.time_precise() * 1000)) % 65536)
   for _, x in ipairs(band.bands()) do
-    if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a group called " .. x.name .. "." end
+    if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a studio called " .. x.name .. "." end
   end
   local here = ((cfg.base or cfg).root or ""):gsub("[/\\]+$", "")
   local root = (here:match("^(.*)[/\\][^/\\]+$") or here) .. "/StudioSync " .. name
@@ -297,7 +346,7 @@ function services.new_band(cfg, name)
   reaper.RecursiveCreateDirectory(root .. "/_band", 0)
   band.write_json(root .. "/_band/band.json", { name = name, id = id, drive = "StudioSync - " .. name, owner = (cfg.base or cfg).user })
   local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. id .. " --label " .. q("StudioSync " .. name) .. " --path " .. q(root), 15000) or ""
-  if not r:match("^0\n") then return nil, "Syncthing didn't add the group's folder: " .. r:gsub("^%d+\n", "") end
+  if not r:match("^0\n") then return nil, "Syncthing didn't add the studio's folder: " .. r:gsub("^%d+\n", "") end
   reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " order set smallestFirst", 8000)
   services.tune_band_folder(id)
   band.use_band(root)
@@ -390,7 +439,7 @@ function services.add_device(id, name, folder)
   local r1 = reaper.ExecProcess(q(st) .. " cli config devices add --device-id " .. id .. (name ~= "" and (" --name " .. q(name)) or ""), 15000) or ""
   local r2 = reaper.ExecProcess(q(st) .. " cli config folders " .. (folder or "bandsync") .. " devices add --device-id " .. id, 15000) or ""
   if not r1:match("^0\n") then return nil, "Syncthing didn't add it: " .. r1:gsub("^%d+\n", "") end
-  if not r2:match("^0\n") then return nil, "added, but the group folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
+  if not r2:match("^0\n") then return nil, "added, but the studio folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
   return true
 end
 

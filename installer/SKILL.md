@@ -1,6 +1,6 @@
 ---
 name: bandsync-setup
-description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, and the group's Google Drive folder. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
+description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, and the studio's Google Drive folder. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
 ---
 
 # BandSync setup
@@ -46,7 +46,7 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 ## 0. Interview (one message)
 
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
-runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play/Jam tab (off by default) or a router that stops SonoBus needs it.
+runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 studios of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play/Jam tab (off by default) or a router that stops SonoBus needs it.
 
 ## 1. Syncthing (the shared folder)
 
@@ -60,7 +60,7 @@ it only syncs while running.
 
 **Before pairing, configure defaults, or folders land in the wrong place:**
 - `cli config defaults folder path set "<parent of the BandSync folder>"`. It was empty on Windows, which puts the folder in the home dir.
-- Pre-create the folder so it gets the right name and case: folder ID from the invitation (`BandId`; the first machine of a new group makes its own, `bandsync-<name>-<4 hex digits>`; plain `bandsync` is only for a group from before IDs), label `BandSync`, path
+- Pre-create the folder so it gets the right name and case: folder ID from the invitation (`BandId`; the first machine of a new studio makes its own, `bandsync-<name>-<4 hex digits>`; plain `bandsync` is only for a studio from before IDs), label `BandSync`, path
   `<parent>/BandSync`. Auto-accept otherwise creates a lowercase `~/bandsync` on macOS.
 - On that folder: `order set smallestFirst` and `fswatcher-delays set 1`. The default 10 s watcher delay added
   10 s to every take.
@@ -122,7 +122,7 @@ restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui"
 
 **Real time** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
 from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to
-join the band's group under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
+join the band's studio under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.
 
 **Play along** and **Jam** (the Play/Jam tab: off by default, Settings > Advanced) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. Only set this up if the person asks for those.

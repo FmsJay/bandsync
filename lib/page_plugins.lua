@@ -185,7 +185,7 @@ function pp.drums(ctx, ImGui, proj, cfg)
     for _, k in ipairs(dm.KIT) do edit_map[k[1]] = dm.GM[k[1]] end
     ImGui.OpenPopup(ctx, "Make a drum map")
   end
-  ImGui.SetItemTooltip(ctx, "Name a drum plug-in and say which note plays what. Its manual lists them, or play it and watch. Everyone in the group can use the map once it's made; only the choice above is yours.")
+  ImGui.SetItemTooltip(ctx, "Name a drum plug-in and say which note plays what. Its manual lists them, or play it and watch. Everyone in the studio can use the map once it's made; only the choice above is yours.")
   ImGui.SetNextWindowSize(ctx, 380, 520, ImGui.Cond_Appearing)
   if ImGui.BeginPopupModal(ctx, "Make a drum map", true) then
     ImGui.SetNextItemWidth(ctx, -1)
@@ -272,12 +272,12 @@ function pp.draw(ctx, ImGui, proj, cfg)
     end
   end
   local tmap = pp.translations(cfg)
-  ImGui.TextDisabled(ctx, "Plug-ins in this project, who doesn't have them, and the group's translation for them.")
+  ImGui.TextDisabled(ctx, "Plug-ins in this project, who doesn't have them, and the studio's translation for them.")
   if ImGui.Button(ctx, "Apply translations here") then
-    band.log(pp.apply_here(proj, cfg) .. " translation(s) added on this machine (only here: they never go to the group)")
+    band.log(pp.apply_here(proj, cfg) .. " translation(s) added on this machine (only here: they never go to the others)")
     used_at = -math.huge
   end
-  ImGui.SetItemTooltip(ctx, "Adds the group's translation right after each plug-in this machine doesn't have, so you hear something close. " ..
+  ImGui.SetItemTooltip(ctx, "Adds the studio's translation right after each plug-in this machine doesn't have, so you hear something close. " ..
     "Only on this machine; the original stays in the project for everyone who has it.")
   if ImGui.BeginTable(ctx, "plugs", 4, ImGui.TableFlags_RowBg | ImGui.TableFlags_SizingStretchProp | ImGui.TableFlags_ScrollY) then
     ImGui.TableSetupScrollFreeze(ctx, 0, 1)
@@ -305,7 +305,7 @@ function pp.draw(ctx, ImGui, proj, cfg)
       if ImGui.IsItemClicked(ctx, 1) then picking, filter, found, open_now = u, "", nil, true end
       if t then
         ImGui.SameLine(ctx)
-        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the group's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "StudioSync", 4) == 6 then
+        if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the studio's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "StudioSync", 4) == 6 then
           os.remove(tfile(cfg, u.key))
           require("band").log("removed the translation for " .. (u.name:gsub("^%w+:%s*", "")))
         end

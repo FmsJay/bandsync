@@ -89,7 +89,7 @@ function status.handover_check(cfg, b, proj)
   if not beat or reaper.time_precise() - beat > 30 then out[#out + 1] = "your Live sync isn't running" end -- a long reprint holds its tick
   if v.my_missing > 0 then out[#out + 1] = string.format("you: %d take(s) still arriving", v.my_missing) end
   local mine = sync.pending_events(proj, cfg, b.song, b.room)
-  if mine > 0 then out[#out + 1] = string.format("you: %d change(s) from the group not applied yet", mine) end
+  if mine > 0 then out[#out + 1] = string.format("you: %d change(s) from the others not applied yet", mine) end
   if select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= "" then out[#out + 1] = "you: Hold sync is on" end
   for _, r in ipairs(v.rows) do
     if r.state == "offline" or r.state == "no receipt" then offline[#offline + 1] = r.name

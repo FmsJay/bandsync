@@ -49,7 +49,7 @@ function page.realtime(ctx, ImGui, proj)
   if ImGui.RadioButton(ctx, "My time", not their) and their then
     reaper.SetProjExtState(proj, band.SECTION, "hear their time", "")
     hear.set_delay(proj, 0)
-    band.log("you hear in your own time again: your backing on time, the group as it arrives")
+    band.log("you hear in your own time again: your backing on time, the others as they arrive")
   end
   ImGui.SetItemTooltip(ctx, "You hear everyone as it arrives: your backing on time, them a little late (the network).")
   -- (the label says whose side moves: "Their time" alone read as their audio being delayed, on the laptop)
@@ -59,7 +59,7 @@ function page.realtime(ctx, ImGui, proj)
     local want = guest.on(proj) and guest.delay(proj) or tonumber(ext(proj, "their ms")) or 100
     hear.set_delay(proj, want)
     ms = want
-    band.log(string.format("you hear in their time: your backing %d ms later, so the group lines up with it (listening, not playing)", want))
+    band.log(string.format("you hear in their time: your backing %d ms later, so the others line up with it (listening, not playing)", want))
   end
   ImGui.SetItemTooltip(ctx, "Your backing (and your own playing) comes later, so what they play lines up with it:\n" ..
     "for listening along, not for playing (you'd be playing late). With a guest, use their measured delay;\n" ..
@@ -77,7 +77,7 @@ function page.realtime(ctx, ImGui, proj)
   local chg, gv = ImGui.Checkbox(ctx, "Guest", g)
   if chg then guest.set(proj, gv) end
   ImGui.SetItemTooltip(ctx, "For someone joining with only SonoBus (a singer at home): they hear your whole mix, and what they sing\n" ..
-    "is recorded on the Real time track whenever you record. Send them your group's SonoBus link (Configure SonoBus).")
+    "is recorded on the Real time track whenever you record. Send them your studio's SonoBus link (Configure SonoBus).")
   if g then
     local d = guest.delay(proj)
     local label = d and string.format("Measure again (%d ms)", d) or "Measure their delay"
@@ -92,12 +92,12 @@ function page.realtime(ctx, ImGui, proj)
         if _ then
           reaper.SetProjExtState(proj, band.SECTION, "guest name", name)
           local n, label = guest.line_up(proj, name)
-          band.log(n > 0 and string.format("%d take(s) moved %d ms earlier onto '%s': the group gets them now", n, d, label)
+          band.log(n > 0 and string.format("%d take(s) moved %d ms earlier onto '%s': the others get them now", n, d, label)
             or "nothing recorded from the guest yet: record (they sing along), then line up")
         end
       end
-      ImGui.SetItemTooltip(ctx, "Moves what you recorded from them onto a group track of their own, earlier by their delay, so it sits\n" ..
-        "where they sang it. The group gets it like any take.")
+      ImGui.SetItemTooltip(ctx, "Moves what you recorded from them onto a studio track of their own, earlier by their delay, so it sits\n" ..
+        "where they sang it. The others get it like any take.")
     end
   end
 end

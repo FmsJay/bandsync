@@ -70,7 +70,7 @@ function undo.bind_keys(dir)
   local list = {}
   for _, k in ipairs(left) do list[#list + 1] = string.format("%d. %s in %s: press %s, then OK", #list + 1, k.what, k.where, k.what == "Undo" and z or z:gsub("%+Z", "+Shift+Z")) end
   if #left == 0 or reaper.MB("REAPER's own box opens " .. #left .. " time(s), one after the other. If it says the key is in use, choose to replace it:\n\n" .. table.concat(list, "\n") ..
-      "\n\nOutside group projects these keys do what they always did.", "StudioSync", 1) ~= 1 then return end
+      "\n\nOutside studio projects these keys do what they always did.", "StudioSync", 1) ~= 1 then return end
   for _, k in ipairs(left) do
     if not reaper.DoActionShortcutDialog(reaper.GetMainHwnd(), reaper.SectionFromUniqueID(k.section), k.id, -1) then break end
   end

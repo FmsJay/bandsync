@@ -3,7 +3,7 @@
 local band = require("band")
 local chat = {}
 
-local SCOPES = { { "room", "This room" }, { "song", "This project" }, { "band", "Group/session" } }
+local SCOPES = { { "room", "This room" }, { "song", "This project" }, { "band", "Studio" } }
 local scope, draft, todo_text, link_title, link_url = "song", "", "", "", ""
 local cache, cache_at, cache_key = nil, -math.huge, ""
 
@@ -30,7 +30,7 @@ function chat.sources(cfg, b, sc)
   if sc == "room" then out[1] = { chat.dir(cfg, b, "room"), b.room or "main" }
   elseif sc == "song" then project(b.song)
   else
-    out[1] = { cfg.root .. "/_band/chat", "Group" }
+    out[1] = { cfg.root .. "/_band/chat", "Studio" }
     for _, song in ipairs(band.songs(cfg)) do project(song) end
   end
   return out
@@ -107,7 +107,7 @@ function chat.input(ctx, ImGui, id, hint, text)
 end
 
 function chat.draw(ctx, ImGui, cfg, b)
-  if not b or not b.song then return ImGui.TextDisabled(ctx, "Open a group project to chat about it.") end
+  if not b or not b.song then return ImGui.TextDisabled(ctx, "Open a studio project to chat about it.") end
   -- next to the last thing, or on a new line when `w` more won't fit (the Everyone box ran off the right of the panel)
   local function fits(w, gap)
     ImGui.SameLine(ctx, 0, gap or 8)
@@ -118,7 +118,7 @@ function chat.draw(ctx, ImGui, cfg, b)
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
   ImGui.SetItemTooltip(ctx, "What you see and who you're writing to. This room: only this room's. This project: the project's and all its rooms'. " ..
-    "Group/session: everything, from every project and room. What you write goes to the one picked here.")
+    "Studio: everything, from every project and room. What you write goes to the one picked here.")
   do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
     -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
     -- was open, the lag on this page: James, 0.42.28)
@@ -152,7 +152,7 @@ function chat.draw(ctx, ImGui, cfg, b)
         band.start_draw(root)
       end
     end
-    ImGui.SetItemTooltip(ctx, running and "Stop showing the group's drawings on this computer. They stay for everyone else." or "Show what the group drew, over the arrange view (clicks still go to REAPER).")
+    ImGui.SetItemTooltip(ctx, running and "Stop showing the others' drawings on this computer. They stay for everyone else." or "Show what the others drew, over the arrange view (clicks still go to REAPER).")
   end
   local t = load(cfg, b)
   do -- whose: messages, to-dos, links, notes and drawings, one person's or everyone's

@@ -312,9 +312,9 @@ end
 
 -- Tooltips for controls that don't set their own, by label (a control's own tooltip, set after it, wins).
 local TIPS = {
-  ["Start"] = "Start Live sync in this tab: your takes and changes go out, the group's come in.",
+  ["Start"] = "Start Live sync in this tab: your takes and changes go out, the studio's come in.",
   ["Update"] = "Get the newest StudioSync through ReaPack.",
-  ["Let in"] = "Add this machine to the group folder.",
+  ["Let in"] = "Add this machine to the studio folder.",
   ["Take control"] = "Become the driver: your deletes, moves and lane choices reach everyone (except where someone has claimed).",
   ["Take control now"] = "The driver isn't here: carry on as the driver (they can take it back when they return).",
   ["Claim region"] = "Every take that starts in the region at the edit cursor becomes yours to change, whoever drives.",
@@ -323,16 +323,16 @@ local TIPS = {
   ["Save this version"] = "Save how the session is now (takes, where they sit, what plays) as a version anyone can go back to.",
   ["Update the folder now"] = "Send your plug-in list and rebuild the FX browser folder 'BandSync (everyone has)' now.",
   ["##drummap"] = "The drum map this drum track uses: notes arriving in another kit's map are translated to it.",
-  ["Play along (synced to the project)"] = "Hear each other in time with the project, at any distance (a bar or two late). Needs the group's NINJAM server.",
+  ["Play along (synced to the project)"] = "Hear each other in time with the project, at any distance (a bar or two late). Needs the studio's NINJAM server.",
   ["Real time (SonoBus, lowest delay)"] = "Hear each other right away, peer to peer (best on wired internet, not too far apart).",
   ["Jam (NINJAM intervals)"] = "Classic NINJAM: everyone hears everyone one interval late.",
   ["Leave"] = "Leave: SonoBus stops (it stays on its track, sending nothing) or ReaNINJAM disconnects.",
   ["##server"] = "The host's Tailscale address and NINJAM port, e.g. 100.64.0.1:2049.",
-  ["Save for the group"] = "Everyone's Connect uses this address.",
+  ["Save for the studio"] = "Everyone's Connect uses this address.",
   ["##ninjamdir"] = "The folder holding ninjamsrv and bandsync.cfg (host only).",
   ["Use server folder"] = "Remember this NINJAM server folder (host only).",
   ["Send my audio (my whole mix)"] = "Off: you listen without sending anything.",
-  ["Connect"] = "Join the group's live audio in the mode above.",
+  ["Connect"] = "Join the studio's live audio in the mode above.",
   ["Show it"] = "Open the live plug-in's window.",
   ["Open latest to look"] = "Open the newest Solo edit version to look at.",
   ["Check out"] = "Take a working copy to edit while the others are offline.",
@@ -343,10 +343,10 @@ local TIPS = {
   ["count-in bars"] = "Bars of count-in before the start point.",
   ["Play together"] = "Everyone running Live sync starts playing from the same point at the same moment (5 s after you click).",
   ["Stop together"] = "Everyone stops.",
-  ["##note"] = "A note for the group: on the selected take, or at the cursor. Everyone sees it on the timeline and on the Restore page.",
+  ["##note"] = "A note for everyone: on the selected take, or at the cursor. Everyone sees it on the timeline and on the Restore page.",
   ["Note on selected take"] = "Post the note on the selected take (a take marker everyone sees).",
   ["Note at cursor"] = "Post the note at the edit cursor.",
-  ["Like selected take"] = "Tell the group you like the selected take.",
+  ["Like selected take"] = "Tell everyone you like the selected take.",
   ["Take back my last take"] = "Remove your newest take for everyone (it waits in the room's trash).",
   ["Print selected MIDI as audio"] = "Render the selected MIDI through its instrument as an audio take everyone hears.",
   ["Insert bars"] = "Insert bars at the edit cursor on every machine (driver only).",
@@ -354,13 +354,13 @@ local TIPS = {
   ["##newroom"] = "A name for a new side room.",
   ["Go"] = "Go to the room they're asking you to.",
   ["Not now"] = "Hide this invitation.",
-  ["Share this project with the group"] = "Make this project a group project: you host it, and everyone joins it from their panel.",
-  ["Join the group's project"] = "Open a project someone in the group started, in its own tab.",
+  ["Share this project with the studio"] = "Make this project a studio project: you host it, and everyone joins it from their panel.",
+  ["Join the studio's project"] = "Open a project someone in the studio started, in its own tab.",
   ["Come see!"] = "Ask everyone with this project open to come to this room.",
   ["Prepare this project first"] = "A checklist for a busy project before starting a project from it (shows what it would change first).",
   ["Switch to the new look"] = "The app layout with a sidebar of pages.",
   ["Settings"] = "StudioSync's settings: your name, the shared folder, how takes land.",
-  ["Open another project"] = "Open another group project in a new tab.",
+  ["Open another project"] = "Open another studio project in a new tab.",
   ["Prepare this project"] = "A checklist for a busy project (shows what it would change first).",
 }
 ImGui.SetItemTooltip = function(c, text)
@@ -539,9 +539,9 @@ end
 
 local drive_root, drive_at = nil, -math.huge
 local MODE_INFO = {
-  { "driver", "Only the driver", "Only the driver changes what the group has. Everyone else's changes are put back (record as usual)." },
+  { "driver", "Only the driver", "Only the driver changes what the studio has. Everyone else's changes are put back (record as usual)." },
   { "claims", "Driver + claims", "The driver, and everyone on what they've claimed (a track, a region, a stretch of time). Other changes are put back." },
-  { "admins", "Admins only", "Only the group's owner and admins change what the group has, and anyone on what an admin gave them (right-click their name). Other changes are put back." },
+  { "admins", "Admins only", "Only the studio's owner and admins change what the studio has, and anyone on what an admin gave them (right-click their name). Other changes are put back." },
   { "open", "Anyone", "Anyone changes anything nobody has claimed, the tempo map and markers too. If two change one thing at once,\n" ..
     "whoever changed it more wins (the other's is on Restore)." },
 }
@@ -581,7 +581,7 @@ local function section_driver()
   end
   if reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) ~= "" then
     ImGui.PushTextWrapPos(ctx, 0)
-    ImGui.TextColored(ctx, GREEN, "Nobody else is here: you have full control. Everything you change goes to the group, and reaches " ..
+    ImGui.TextColored(ctx, GREEN, "Nobody else is here: you have full control. Everything you change goes to the others, and reaches " ..
       "them when they're back. When someone joins, the rules above apply again.")
     ImGui.PopTextWrapPos(ctx)
   end
@@ -590,10 +590,10 @@ local function section_drive()
   ImGui.SeparatorText(ctx, "Google Drive")
   if reaper.time_precise() - drive_at > 30 then drive_at = reaper.time_precise(); drive_root = require("drive").root(cfg) end
   local off = reaper.GetExtState(band.SECTION, "drive_root") == "off"
-  local dch, don = check("Keep the group's copy on Google Drive", drive_root ~= nil)
+  local dch, don = check("Keep the studio's copy on Google Drive", drive_root ~= nil)
   if dch then reaper.SetExtState(band.SECTION, "drive_root", don and "" or "off", true); drive_at = -math.huge end
   ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every few minutes, while stopped): what someone " ..
-    "does alone reaches the group whenever they next open the project, and every end-of-session point is kept there.")
+    "does alone reaches the studio whenever they next open the project, and every end-of-session point is kept there.")
     or off and "Off on this machine." or "No Google Drive for desktop here (My Drive not found).")
   if drive_root then -- (which account's Drive it is, in view: with several signed in it matters; Mac, 0.34.5)
     ImGui.TextDisabled(ctx, "Copies to " .. (drive_root:match("GoogleDrive%-([^/]+)/") or drive_root:match("^(%a:)") or drive_root))
@@ -603,8 +603,8 @@ local function section_drive()
   if missing then
     local folder = band.info(cfg.root).drive
     ImGui.PushTextWrapPos(ctx, 0)
-    ImGui.TextColored(ctx, YELLOW, "No " .. folder .. " folder in " .. missing .. ". On drive.google.com, find the group's " .. folder .. " folder " ..
-      "(Shared with me), right-click > Organize > Add shortcut > My Drive, and keep the name " .. folder .. ". You started this group? " ..
+    ImGui.TextColored(ctx, YELLOW, "No " .. folder .. " folder in " .. missing .. ". On drive.google.com, find the studio's " .. folder .. " folder " ..
+      "(Shared with me), right-click > Organize > Add shortcut > My Drive, and keep the name " .. folder .. ". You started this studio? " ..
       "Make a folder called " .. folder .. " in My Drive and share it with everyone as Editor.")
     ImGui.PopTextWrapPos(ctx)
   end
@@ -678,7 +678,7 @@ function ui.leaving_row(p)
   local groups, removal = require("groups"), require("removal")
   local m = p.user ~= cfg.user and removal.mark(cfg.root, p.user)
   if not m then return end
-  ImGui.TextColored(ctx, YELLOW, string.format("Leaving the group in %d s", math.max(0, removal.GRACE - (os.time() - (tonumber(m.at) or 0)))))
+  ImGui.TextColored(ctx, YELLOW, string.format("Leaving the studio in %d s", math.max(0, removal.GRACE - (os.time() - (tonumber(m.at) or 0)))))
   if groups.may_manage(cfg.root, cfg.user) then
     next_to("Keep them")
     if ImGui.SmallButton(ctx, "Keep them##" .. p.user) then removal.keep(cfg.root, p.user) end
@@ -701,10 +701,10 @@ function ui.person_menu(p)
     any = true
     if ImGui.Selectable(ctx, theirs == "admin" and "Make member..." or "Make admin...") then
       local on = theirs ~= "admin"
-      if reaper.MB(on and ("Make " .. p.user .. " an admin of " .. tostring(view.group) .. "?\n\nThey can let people in, rename the group, remove members and give claims. Only you can close it.")
-          or ("Make " .. p.user .. " a member again?\n\nThey can't let people in, rename the group or remove anyone any more."), "StudioSync", 4) == 6 then
+      if reaper.MB(on and ("Make " .. p.user .. " an admin of " .. tostring(view.group) .. "?\n\nThey can let people in, rename the studio, remove members and give claims. Only you can close it.")
+          or ("Make " .. p.user .. " a member again?\n\nThey can't let people in, rename the studio or remove anyone any more."), "StudioSync", 4) == 6 then
         groups.set_admin(cfg.root, me, p.user, on)
-        band.log(p.user .. (on and " is an admin now: they can let people in, rename the group, remove members and give claims" or " is a member again"))
+        band.log(p.user .. (on and " is an admin now: they can let people in, rename the studio, remove members and give claims" or " is a member again"))
       end
     end
     if ImGui.Selectable(ctx, "Make owner...") and reaper.MB("Make " .. p.user .. " the owner of " .. tostring(view.group) .. "?\n\nYou stay on as an admin. Only they can give it back.", "StudioSync", 4) == 6 then
@@ -745,15 +745,15 @@ function ui.person_menu(p)
   end
   if groups.may_remove(cfg.root, me, p.user) and not removal.mark(cfg.root, p.user) then
     any = true
-    if ImGui.Selectable(ctx, "Remove from the group...") and reaper.MB("Take " .. p.user .. " out of " .. tostring(view.group) .. "?\n\n" ..
-        "Within a few minutes every computer in the group stops syncing with theirs. Their claims go free. What they made stays in the songs and on Restore.\n\n" ..
-        "They keep the copy they already have: that can't be taken back. If they also have the group's Google Drive folder, remove them there too.\n\n" ..
+    if ImGui.Selectable(ctx, "Remove from the others...") and reaper.MB("Take " .. p.user .. " out of " .. tostring(view.group) .. "?\n\n" ..
+        "Within a few minutes every computer in the studio stops syncing with theirs. Their claims go free. What they made stays in the songs and on Restore.\n\n" ..
+        "They keep the copy they already have: that can't be taken back. If they also have the studio's Google Drive folder, remove them there too.\n\n" ..
         "You have a minute to change your mind, and you can invite them again later.", "StudioSync", 4) == 6 then
       local ok, why = removal.remove(cfg.root, p.user, me)
-      if ok then band.log(p.user .. " leaves the group in a minute: Keep them on their card stops it") else reaper.MB(why, "StudioSync", 0) end
+      if ok then band.log(p.user .. " leaves the studio in a minute: Keep them on their card stops it") else reaper.MB(why, "StudioSync", 0) end
     end
   end
-  if not any then ImGui.TextDisabled(ctx, "Nothing here for you: the owner and admins manage the group.") end
+  if not any then ImGui.TextDisabled(ctx, "Nothing here for you: the owner and admins manage the studio.") end
   ImGui.EndPopup(ctx)
 end
 -- A name, with its role beside it. Right-clicking it opens the menu.
@@ -947,7 +947,7 @@ local function back_button(i, what, single)
     ImGui.EndDisabled(ctx)
     local together = #mirror.same_moment(entries, i)
     ImGui.SetItemTooltip(ctx, e and e.kind == "obj" and ((together > 1 and string.format("Undo this and the %d other change(s) made with it: ", together - 1) or "Undo only this change: ") ..
-      describe(e) .. ". Everything else stays; the undo goes to the group as a new change.")
+      describe(e) .. ". Everything else stays; the undo goes to the others as a new change.")
       or "This kind of change (tempo, a handover, a note) isn't undone on its own: restore the whole project to here instead.")
     next_to("Restore selected tracks to here")
   end
@@ -958,7 +958,7 @@ local function back_button(i, what, single)
       band.log(mirror.revert(proj, cfg, b.song, b.room, mirror.plan_restore(entries, i, scope), opts)); hist_at = 0
     end
   end
-  ImGui.SetItemTooltip(ctx, "The tracks selected in REAPER, as they were " .. what .. ". It goes to the group as new changes.")
+  ImGui.SetItemTooltip(ctx, "The tracks selected in REAPER, as they were " .. what .. ". It goes to the others as new changes.")
   next_to("Restore whole project to here")
   local driving = view.driver == cfg.user
   ImGui.BeginDisabled(ctx, not driving)
@@ -969,7 +969,7 @@ local function back_button(i, what, single)
     last, hist_at = 0, 0
   end
   ImGui.EndDisabled(ctx)
-  ImGui.SetItemTooltip(ctx, driving and ("The whole project, as it was " .. what .. ". It goes to the group as new changes.") or "The driver does this.")
+  ImGui.SetItemTooltip(ctx, driving and ("The whole project, as it was " .. what .. ". It goes to the others as new changes.") or "The driver does this.")
   next_to("Open in side room")
   if ImGui.SmallButton(ctx, "Open in side room") then
     -- a look at that moment that touches nobody's work: a new room, put back to then. Archive it (Rooms) when you've heard it.
@@ -1066,13 +1066,13 @@ local function section_recall()
   ImGui.SameLine(ctx, 0, 4)
   if ImGui.SmallButton(ctx, "Back up") then recall.back_up(proj, cfg, b); last = 0 end
   ImGui.SetItemTooltip(ctx, "Keeps the project as it stands now: a saved version here that's never trimmed, and the project on Google Drive if you use it. No audio is rendered.")
-  next_to("Save a copy outside the group")
-  if ImGui.SmallButton(ctx, "Save a copy outside the group") then
+  next_to("Save a copy outside the studio")
+  if ImGui.SmallButton(ctx, "Save a copy outside the studio") then
     local keep, wav = "As it is (FLAC, as recorded)", "With WAV files"
     local pick = band.pick({ "#A plain project of its own, with all its media", keep, wav })
     if pick == keep or pick == wav then require("export").ask(proj, b.song, pick == wav) end
   end
-  ImGui.SetItemTooltip(ctx, "A separate plain REAPER project in a folder you pick, with every file it uses, that opens anywhere with no StudioSync. Nothing in the group changes, and nothing you do to the copy goes to anyone.\n\n" ..
+  ImGui.SetItemTooltip(ctx, "A separate plain REAPER project in a folder you pick, with every file it uses, that opens anywhere with no StudioSync. Nothing in the studio changes, and nothing you do to the copy goes to anyone.\n\n" ..
     "For an older version: click it below, Open in side room, then save the copy from that room.")
   local driving = view.driver == cfg.user
   -- (docked, the list takes the column's height instead of a short box inside it)
@@ -1081,7 +1081,7 @@ local function section_recall()
     local before = select(2, reaper.GetProjExtState(proj, band.SECTION, "before_bandsync"))
     if before ~= "" and reaper.file_exists(before) then
       if ImGui.SmallButton(ctx, "Open it as it was before BandSync") then reaper.Main_OnCommand(40859, 0); reaper.Main_openProject(before) end
-      ImGui.SetItemTooltip(ctx, "Opens the copy saved when this project was first published, in a new tab (it isn't a group session).")
+      ImGui.SetItemTooltip(ctx, "Opens the copy saved when this project was first published, in a new tab (it isn't a studio session).")
     end
     for i, p in ipairs(points) do
       ImGui.PushID(ctx, i)
@@ -1192,7 +1192,7 @@ local plug_info
 local function section_plugins()
   heading("Plug-ins everyone has", 17)
   ImGui.PushTextWrapPos(ctx, 0)
-  ImGui.TextDisabled(ctx, "Each machine sends the group its list of plug-ins (names only) when Live sync starts. What all of you have " ..
+  ImGui.TextDisabled(ctx, "Each machine sends the studio its list of plug-ins (names only) when Live sync starts. What all of you have " ..
     "goes in the FX browser folder '" .. plugins.FOLDER .. "': use those and the project sounds the same on every machine. " ..
     "JSFX (REAPER's own effects, and ReaPack's) work on Windows and Mac alike.")
   ImGui.PopTextWrapPos(ctx)
@@ -1241,7 +1241,7 @@ local function set_same_room(v)
   else
     if sm then reaper.TrackFX_SetOffline(sm, si, true) end
     reaper.SetProjExtState(proj, band.SECTION, "side", "")
-    band.log("Real time mode off: SonoBus left the group and side by side is off (edits still sync)")
+    band.log("Real time mode off: SonoBus left the studio and side by side is off (edits still sync)")
   end
 end
 local SAME_ROOM_TIP = "Real time mode. On: you hear each other right away through SonoBus (what each of you plays, over your own copy of the song),\n" ..
@@ -1302,7 +1302,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   end
   if part == "mode" then return end
   if same_room_on() then -- (my time / their time, a guest: moved here from Home)
-    ImGui.SeparatorText(ctx, "Real time: how you hear the group")
+    ImGui.SeparatorText(ctx, "Real time: how you hear the others")
     require("page_hear").realtime(ctx, ImGui, proj)
     ImGui.Spacing(ctx)
   end
@@ -1310,17 +1310,17 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
     local sm, si = live.fx(proj, false, live.SONOBUS)
     local on = sm and not reaper.TrackFX_GetOffline(sm, si)
     if ImGui.Button(ctx, on and "Open SonoBus##sb" or "Connect##sb") then sonobus_open() end
-    ImGui.SetItemTooltip(ctx, "Turns on SonoBus, already set to join your group: it sends what you play and brings the others in.")
+    ImGui.SetItemTooltip(ctx, "Turns on SonoBus, already set to join your studio: it sends what you play and brings the others in.")
     if on then
       ImGui.SameLine(ctx)
       if ImGui.Button(ctx, "Leave##sb") then reaper.TrackFX_SetOffline(sm, si, true) end
-      ImGui.TextColored(ctx, GREEN, "SonoBus is on and connected to your group, until you Leave.")
+      ImGui.TextColored(ctx, GREEN, "SonoBus is on and connected to your studio, until you Leave.")
     elseif sm then
       ImGui.TextDisabled(ctx, "SonoBus is ready on your master track (off: it sends nothing until you Connect).")
     end
     if sb_link then
       if ImGui.SmallButton(ctx, "Copy join link") then ImGui.SetClipboardText(ctx, sb_link) end
-      ImGui.SetItemTooltip(ctx, "For joining from SonoBus's own app (outside REAPER): its paste button fills the group in.")
+      ImGui.SetItemTooltip(ctx, "For joining from SonoBus's own app (outside REAPER): its paste button fills the studio in.")
     end
     return
   end
@@ -1329,8 +1329,8 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   ImGui.SetNextItemWidth(ctx, 220)
   local changed, v = ImGui.InputTextWithHint(ctx, "##server", "its address:2049", live_server, ImGui.InputTextFlags_None)
   if changed then live_server = v end
-  next_to("Save for the group")
-  if ImGui.SmallButton(ctx, "Save for the group") then
+  next_to("Save for the studio")
+  if ImGui.SmallButton(ctx, "Save for the studio") then
     local data = band.read_json(lfile) or {} -- keep whatever else is in it
     data.server, data.by = live_server, cfg.user
     band.write_json(lfile, data)
@@ -1589,7 +1589,7 @@ local notes_at, notes = 0, {}
 local function section_notes()
   ImGui.SeparatorText(ctx, "Notes and likes")
   ImGui.SetNextItemWidth(ctx, -1)
-  local entered, t = require("page_chat").input(ctx, ImGui, "##note", "a note for the group, Enter to post (e.g. 'try the chorus an octave up')", note_text)
+  local entered, t = require("page_chat").input(ctx, ImGui, "##note", "a note for everyone, Enter to post (e.g. 'try the chorus an octave up')", note_text)
   note_text = t
   local id, it = sel_take()
   ImGui.TextDisabled(ctx, id and string.format("Selected: %s's take on %s, bar %s", (id:match("^(.-)%-%d+%-%d+Z") or "?"):gsub("_", " "),
@@ -1646,7 +1646,7 @@ local function section_ideas()
     if ImGui.SmallButton(ctx, "Dismiss##" .. who_) then tools.dismiss_ideas(proj, who_); ideas_at = 0 end
   end
   if ImGui.Button(ctx, "Keep selected") then band.log(tools.keep_ideas(proj) .. " idea(s) kept as your own items"); ideas_at = 0 end
-  ImGui.SetItemTooltip(ctx, "The selected placeholders stay for good (no take replaces them). Send them with Send selected to main if the group should have them.")
+  ImGui.SetItemTooltip(ctx, "The selected placeholders stay for good (no take replaces them). Send them with Send selected to main if the studio should have them.")
 end
 
 local rooms = require("rooms")
@@ -1933,10 +1933,10 @@ local function maint_rows()
   s.sync = beat ~= nil and reaper.time_precise() - beat < 5
   local rows = {
     { "audio", s.audio, "red", "Audio device is running", "REAPER's audio device is closed: pick one in Preferences > Audio > Device." },
-    { "folder", s.folder, "red", "Shared folder is syncing", "Syncthing isn't running: nothing reaches the group or comes in." },
+    { "folder", s.folder, "red", "Shared folder is syncing", "Syncthing isn't running: nothing reaches the studio or comes in." },
     { "sync", s.sync, "red", "Live sync is running", "Live sync is off in this tab: press Start at the top." },
-    { "same", (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) == 0, "red", "Changes from the group come out the same here",
-      "Some changes from the group came out different here than on their machine (the Console names them). Ask the driver to " ..
+    { "same", (tonumber(reaper.GetExtState(band.SECTION, "mirror drift " .. tostring(proj))) or 0) == 0, "red", "Changes from the others come out the same here",
+      "Some changes from the others came out different here than on their machine (the Console names them). Ask the driver to " ..
       "use Restore > Back to here... > The whole project, or close and reopen this project." },
     -- (red only when a bandmate is online and we can't reach them: working alone showed red, with "Something needs
     -- fixing" on the tab, though nothing did: review, 2026-10-31)
@@ -1971,7 +1971,7 @@ local function maint_rows()
   if reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("offlineinact", 0) ~= 0 then
     rows[#rows + 1] = { "offline when inactive", false, "yellow", "", "REAPER takes your media offline whenever another app is in front, so parts show OFFLINE then: turn off 'Set media items offline when application is not active' in Preferences > Media." }
   end
-  if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "StudioSync " .. view.newer .. " is in use in the group; you have " .. band.VERSION .. ": press Update below." } end
+  if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "StudioSync " .. view.newer .. " is in use in the studio; you have " .. band.VERSION .. ": press Update below." } end
   pcall(require("drive").root, cfg) -- (what it says next is about the group it last looked at: this tab's, then. Mac, 0.51.12)
   local dmiss = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").missing
   if dmiss then
@@ -1980,13 +1980,13 @@ local function maint_rows()
   end
   for _, m in ipairs(s.routed or {}) do
     rows[#rows + 1] = { "routed " .. m.track, false, "yellow", "", string.format("'%s' plays %s on '%s', which doesn't load on this computer: " ..
-      "you hear the group's print (the wet take) where there is one, and nothing where there isn't. Installing %s brings the notes back here.",
+      "you hear the studio's print (the wet take) where there is one, and nothing where there isn't. Installing %s brings the notes back here.",
       m.track, m.fx, m.dest, m.fx) }
   end
   local daway = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").away
   if daway then
     local who = daway:match("GoogleDrive%-([^/]+)/") or daway:match("^(%a:)")
-    rows[#rows + 1] = { "drive away", false, "yellow", "", "Google Drive: the group's folder (" .. tostring(who) .. ") isn't here now. Is that Google " ..
+    rows[#rows + 1] = { "drive away", false, "yellow", "", "Google Drive: the studio's folder (" .. tostring(who) .. ") isn't here now. Is that Google " ..
       "account signed out of Drive, or switched for another? Everything still syncs between you; the Drive copy catches up once it's back." }
   end
   return rows
@@ -2161,7 +2161,7 @@ local function home_who()
     if card("who " .. p.name, w) then -- (grows with what they have armed)
       ui.person_name(p, 16)
       pill(p.state == "syncing" and "getting changes" or p.state, p.state == "here" and GREEN or rgba(status.COLORS[p.state] or { 0.55, 0.55, 0.55 }))
-      ImGui.SetItemTooltip(ctx, ({ here = "This machine.", ["synced"] = "Has every change.", ["syncing"] = "Still getting changes (yours or the group's).",
+      ImGui.SetItemTooltip(ctx, ({ here = "This machine.", ["synced"] = "Has every change.", ["syncing"] = "Still getting changes (yours or the studio's).",
         offline = "Not seen for over a minute.", ["no receipt"] = "Has sent takes, but never ran Live sync here." })[p.state] or p.state)
       if p.recording then ImGui.SameLine(ctx, 0, 4); pill("recording", RED)
       elseif p.playing and p.state ~= "offline" then ImGui.SameLine(ctx, 0, 4); pill("playing", ACCENT, 0xFFFFFFFF) end
@@ -2192,7 +2192,7 @@ local function local_mix_row()
   if ch and v then reaper.SetProjExtState(proj, band.SECTION, "local_mix", "1"); require("mirror").begin_local_mix(proj)
   elseif ch then
     -- (named choices: as Yes/No, "No" sent your faders and pan to every bandmate: review, 2026-10-31)
-    local take, send = "Use the group's mix (your faders and pan follow theirs again)", "Send my faders and pan to everyone (the tracks I may change)"
+    local take, send = "Use the studio's mix (your faders and pan follow theirs again)", "Send my faders and pan to everyone (the tracks I may change)"
     local r = band.pick({ "#Local mixing off: whose mix?", take, send, "Cancel (keep Local mixing on)" })
     if r == take or r == send then
       require("mirror").end_local_mix(proj, cfg, b.song, b.room, r == take)
@@ -2260,7 +2260,7 @@ local function settings_sync()
     local prints = require("prints")
     for _, m in ipairs({ { "auto", "Auto", "The dry take (the notes, through your instruments) when the track's plug-ins all load here, else the wet one." },
         { "notes", "Dry", "Always the dry take: the notes through your own instruments, so you can change the sound." },
-        { "sound", "Wet", "Always the wet take: the sound the group printed, exactly what whoever played it heard." } }) do
+        { "sound", "Wet", "Always the wet take: the sound the studio printed, exactly what whoever played it heard." } }) do
       if m[1] ~= "auto" then ImGui.SameLine(ctx) end
       if ImGui.RadioButton(ctx, m[2] .. "##midiplays", prints.mode() == m[1]) then
         reaper.SetExtState(band.SECTION, "midi_plays", m[1], true)
@@ -2297,15 +2297,15 @@ function ui.settings_you()
       end
     end
     ImGui.SetItemTooltip(ctx, "Your name in StudioSync, everywhere (Who's here, claims, who drives). Your tracks stay yours, and\n" ..
-      "the group's machines learn the new name. Changes you made before keep the old one in Restore.")
+      "the studio's machines learn the new name. Changes you made before keep the old one in Restore.")
     require("people").colour_options(ctx, ImGui, cfg)
     ImGui.Spacing(ctx)
     local n = #require("page_groups").live_groups()
     ImGui.AlignTextToFramePadding(ctx)
-    ImGui.Text(ctx, string.format("You're in %d group%s/session%s", n, n == 1 and "" or "s", n == 1 and "" or "s"))
+    ImGui.Text(ctx, string.format("You're in %d studio%s", n, n == 1 and "" or "s"))
     ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Your groups/sessions") then page = "Groups"; require("page_groups").root = nil end
-    ImGui.SetItemTooltip(ctx, "All of them: switch between them, invite people, rename, close or leave. The group pill at the top goes there too.")
+    if ImGui.SmallButton(ctx, "Your studios") then page = "Groups"; require("page_groups").root = nil end
+    ImGui.SetItemTooltip(ctx, "All of them: switch between them, invite people, rename, close or leave. The studio pill at the top goes there too.")
     card_end()
   end
 end
@@ -2392,13 +2392,13 @@ local function page_setup()
 end
 
 local PAGES = {
-  { "Projects", "This group/session's projects, in their folders: open one, share one, file them, or free up space." },
+  { "Projects", "This studio's projects, in their folders: open one, share one, file them, or free up space." },
   { "Home", "Who's here and what they're doing, real time mode, following and listening, and who changes what." },
   { "Rooms", "The project's rooms: make a side room to try things, have everyone come and see, and bring work back." },
   { "Play/Jam", "Start together, Play along and Jam (NINJAM). Settings > Advanced shows or hides this tab." },
-  { "Chat", "Messages, to-dos, notes and links for this room, this project or the whole group/session." },
+  { "Chat", "Messages, to-dos, notes and links for this room, this project or the whole studio." },
   { "Restore", "Every change, and three ways back: the whole project, the selected tracks, or one change." },
-  { "Plugins", "Every plug-in in this project, who doesn't have it, and the group's translations for it." },
+  { "Plugins", "Every plug-in in this project, who doesn't have it, and the studio's translations for it." },
   { "Settings", "You, options, health (red: needs fixing, yellow: worth a look), the console and updates." },
 }
 local LOBBY = { Groups = true, Projects = true, Settings = true } -- (what there is with no group project in front. Groups isn't a tab: the group pill goes there)
@@ -2546,7 +2546,7 @@ local function frame_app()
     local x, y = ImGui.GetCursorScreenPos(ctx)
     if ImGui.Selectable(ctx, (compact and "" or "  ") .. p[1] .. "##nav", p[1] == page, ImGui.SelectableFlags_None, w, h) then page = p[1] end
     local c = nav_dot(p[1])
-    ImGui.SetItemTooltip(ctx, p[2] .. (c and (level == "red" and "\n\nSomething needs fixing before the group can sync: open it to see what."
+    ImGui.SetItemTooltip(ctx, p[2] .. (c and (level == "red" and "\n\nSomething needs fixing before the studio can sync: open it to see what."
       or "\n\nSomething is worth a look (or an extra isn't set up): open it to see, or dismiss it there.") or ""))
     if c then
       local iw = ImGui.GetItemRectSize(ctx)
@@ -2556,7 +2556,7 @@ local function frame_app()
   end
   local y0 = ImGui.GetCursorPosY(ctx) + 8
   ImGui.SetCursorPos(ctx, 16, y0)
-  if ui.crumb(view.group or "", 0, 1 / 3, fh, "The group/session this project belongs to. Click: all your groups/sessions.") then page = "Groups"; require("page_groups").root = nil end
+  if ui.crumb(view.group or "", 0, 1 / 3, fh, "The studio this project belongs to. Click: all your studios.") then page = "Groups"; require("page_groups").root = nil end
   local function at_row(label) -- next to the last piece, or on a new line when `label`'s piece doesn't fit
     ImGui.SameLine(ctx, 0, 8)
     if label and ImGui.GetContentRegionAvail(ctx) < ImGui.CalcTextSize(ctx, label) + 24 then
@@ -2570,7 +2570,7 @@ local function frame_app()
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
   local running = beat and reaper.time_precise() - beat < 5
   at_row(b.song)
-  if ui.crumb(b.song, 1 / 3, 2 / 3, fh, "The project in this tab. Click: this group/session's projects.") then page = "Projects"; require("page_groups").root = cfg.root end
+  if ui.crumb(b.song, 1 / 3, 2 / 3, fh, "The project in this tab. Click: this studio's projects.") then page = "Projects"; require("page_groups").root = cfg.root end
   at_row(b.room)
   if ui.crumb(b.room, 2 / 3, 1, fh, "The room this tab is in. Click: the Rooms page.") then page = "Rooms" end
   -- what sync is actually doing, not just whether it runs ("Sync on" was green with nothing reaching anyone: review)
@@ -2587,7 +2587,7 @@ local function frame_app()
     elseif #behind > 0 then label, colour = "Sending", YELLOW -- (who to: Who's here; names here crowded the bar, James)
     elseif online == 0 then label, colour = "Sync on", GREEN -- (Who's here says nobody else is: James)
     else label, colour = "Synced", GREEN end
-    tip = "Live sync is running in this tab: your takes and changes go out, the group's come in." .. (#lines > 0 and ("\n\n" .. table.concat(lines, "\n")) or "")
+    tip = "Live sync is running in this tab: your takes and changes go out, the studio's come in." .. (#lines > 0 and ("\n\n" .. table.concat(lines, "\n")) or "")
   end
   local drives = view.driver == cfg.user and "you drive" or view.driver and (view.driver .. " drives") or "nobody drives yet"
   ui.status = { label = label, colour = colour, tip = tip, drives = drives }
@@ -2603,7 +2603,7 @@ local function frame_app()
     ImGui.SetItemTooltip(ctx, "Hold my changes is on: what you change stays here until you send it.")
     at_row("Send now")
     if ImGui.SmallButton(ctx, "Send now##hold") then reaper.SetProjExtState(proj, band.SECTION, "hold", "") end
-    ImGui.SetItemTooltip(ctx, "Switch Hold my changes off: everything you changed goes to the group.")
+    ImGui.SetItemTooltip(ctx, "Switch Hold my changes off: everything you changed goes to the others.")
   end
   do -- two people armed on one track: both record onto it at once (review item 33)
     local mine, both = {}, {}
@@ -2664,7 +2664,7 @@ local function frame_app()
   if room > need + 12 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
   else at_row("Sync and exit") end
   if ImGui.Button(ctx, "Sync and exit") then require("leave").start(proj, cfg, b) end
-  ImGui.SetItemTooltip(ctx, "Leaving? Saves, gets everything you've done out to the group, says who has it, then lets you close the project or quit REAPER.")
+  ImGui.SetItemTooltip(ctx, "Leaving? Saves, gets everything you've done out to the others, says who has it, then lets you close the project or quit REAPER.")
   at_row(docked and "Undock" or "Window")
   if docked then tools.dock_menu(true) else ui.window_button() end
   if bar_min then ui.window_buttons(at_row, y0, fh) end
@@ -2677,7 +2677,7 @@ local function frame_app()
     tools.toast_newest = newest
     -- (a routine count doesn't push out what's being said: a first comp's warning lasted an instant, Mac 0.42.27. Both can arrive
     -- between two frames, the count on top, so this looks through all that's new: Mac, 0.45.0)
-    local routine = function(l) return l:find("change(s) went to the group", 1, true) end
+    local routine = function(l) return l:find("change(s) went to the others", 1, true) end
     local say = newest
     for _, l in ipairs(log) do
       if l == before then break end
@@ -2784,7 +2784,7 @@ function ui.frame_lobby()
   ImGui.SetCursorPos(ctx, 16, y0)
   local root = pg.root or cfg.root
   if not none and not require("groups").is_old(root) then
-    if ui.crumb(band.info(root).name, 0, 1, fh, "The group/session you're working in. Click: all your groups/sessions.") then page = "Groups" end
+    if ui.crumb(band.info(root).name, 0, 1, fh, "The studio you're working in. Click: all your studios.") then page = "Groups" end
     ImGui.SameLine(ctx, 0, 12)
     ImGui.SetCursorPosY(ctx, y0)
   end
@@ -2859,38 +2859,38 @@ local function frame()
     end
     local list = start_songs.list
     local bands = band.bands()
-    ImGui.TextWrapped(ctx, "This project isn't a group project. Group: " .. band.info(cfg.root).name)
+    ImGui.TextWrapped(ctx, "This project isn't a studio project. Studio: " .. band.info(cfg.root).name)
     if #bands > 1 then
       ImGui.SameLine(ctx)
-      if ImGui.SmallButton(ctx, "Switch group") then
-        local names = { "#Work in which group?" }
+      if ImGui.SmallButton(ctx, "Switch studio") then
+        local names = { "#Work in which studio?" }
         for _, x in ipairs(bands) do names[#names + 1] = x.name end
         local pick = band.pick(names)
         for _, x in ipairs(bands) do
           if x.name == pick then band.use_band(x.root); cfg = band.settings(); start_songs = nil; drive_at = -math.huge end
         end
       end
-      ImGui.SetItemTooltip(ctx, "You're in several groups: new projects, Join the group's project and the project list are this group's.")
+      ImGui.SetItemTooltip(ctx, "You're in several studios: new projects, Join the studio's project and the project list are this studio's.")
     end
     -- (a group with nothing in it, and its name here already: you started it, so there's nothing to join. Someone waiting to be let in has no band.json yet)
     local starter = #list == 0 and reaper.file_exists(cfg.root .. "/_band/band.json")
     if starter then
-      ImGui.TextColored(ctx, GREY, "Nothing is shared in this group yet. Share a project, then invite your collaborators from Home.")
+      ImGui.TextColored(ctx, GREY, "Nothing is shared in this studio yet. Share a project, then invite your collaborators from Home.")
     else
       ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF)
-      if ImGui.Button(ctx, "Join the group's project") then action("Open session") end
+      if ImGui.Button(ctx, "Join the studio's project") then action("Open session") end
       ImGui.PopStyleColor(ctx)
       ImGui.SameLine(ctx)
       if #list == 0 then
-        ImGui.TextColored(ctx, GREY, "nothing from the group has arrived yet")
-        ImGui.SetItemTooltip(ctx, "The group's projects arrive in your shared folder (" .. cfg.root .. ") once a collaborator lets you in: " ..
+        ImGui.TextColored(ctx, GREY, "nothing from the others has arrived yet")
+        ImGui.SetItemTooltip(ctx, "The studio's projects arrive in your shared folder (" .. cfg.root .. ") once a collaborator lets you in: " ..
           "their panel shows a 'Let you in' button for your computer. Settings > Health shows whether the folder is connected.")
       else
-        ImGui.TextColored(ctx, GREY, string.format("%d project%s in the group folder, worked on last: %s", #list, #list == 1 and "" or "s", list[1]))
+        ImGui.TextColored(ctx, GREY, string.format("%d project%s in the studio folder, worked on last: %s", #list, #list == 1 and "" or "s", list[1]))
       end
     end
     if starter then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
-    if ImGui.Button(ctx, "Share this project with the group") then action("Publish session") end
+    if ImGui.Button(ctx, "Share this project with the studio") then action("Publish session") end
     if starter then ImGui.PopStyleColor(ctx) end
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Prepare this project first") then action("Prepare session") end

@@ -5,10 +5,10 @@ local band = require("band")
 local groups, chooser, theme = require("groups"), require("chooser"), require("theme")
 local pg = { root = nil } -- pg.root: the group the Projects page shows (nil: where you're working)
 
-local WHAT_IS = "A group/session is its own shared folder, with its own projects, collaborators and chat.\n\n" ..
-  "Use one for a band, or for one song with one person: name it what it is. Nobody in your other groups/sessions sees it.\n\n" ..
+local WHAT_IS = "A studio is its own shared folder, with its own projects, collaborators and chat.\n\n" ..
+  "Use one for a band, or for one song with one person: name it what it is. Nobody in your other studios sees it.\n\n" ..
   "Next you'll share a project with it and invite people. You can close it whenever you're done, and everyone keeps their copy."
-local new_name, why_not = "", nil
+local new_name, why_not, join_text = "", nil, ""
 
 -- Live: not left or closed here. -> the groups, and the old ones.
 function pg.live_groups()
@@ -22,10 +22,10 @@ end
 -- The name, a few words on what it is, and Start. Then on to its Projects page.
 function pg.start_button(env, label)
   local ctx, ImGui = env.ctx, env.ImGui
-  if ImGui.Button(ctx, label) then new_name, why_not = "", nil; ImGui.OpenPopup(ctx, "Start a group or session") end
+  if ImGui.Button(ctx, label) then new_name, why_not = "", nil; ImGui.OpenPopup(ctx, "Start a studio") end
   ImGui.SetItemTooltip(ctx, "Its own shared folder, projects and collaborators. You only need another for different people or a project of its own.")
   ImGui.SetNextWindowSize(ctx, 440, 0)
-  if ImGui.BeginPopupModal(ctx, "Start a group or session", nil, ImGui.WindowFlags_NoResize) then
+  if ImGui.BeginPopupModal(ctx, "Start a studio", nil, ImGui.WindowFlags_NoResize) then
     ImGui.PushTextWrapPos(ctx, 0)
     ImGui.Text(ctx, WHAT_IS)
     ImGui.PopTextWrapPos(ctx)
@@ -52,6 +52,49 @@ function pg.start_button(env, label)
   end
 end
 
+-- Someone with StudioSync joining with what they were sent. (What's on the clipboard is filled in when it's a code.)
+function pg.join_button(env)
+  local ctx, ImGui = env.ctx, env.ImGui
+  local services = require("services")
+  if ImGui.Button(ctx, "Paste join code") then
+    local clip = ImGui.GetClipboardText(ctx) or ""
+    join_text, why_not = services.parse_join(clip) and clip or "", nil
+    ImGui.OpenPopup(ctx, "Paste join code")
+  end
+  ImGui.SetItemTooltip(ctx, "Someone invited you and you already have StudioSync: paste what they sent.")
+  ImGui.SetNextWindowSize(ctx, 440, 0)
+  if ImGui.BeginPopupModal(ctx, "Paste join code", nil, ImGui.WindowFlags_NoResize) then
+    ImGui.PushTextWrapPos(ctx, 0)
+    ImGui.Text(ctx, "Paste the message they sent you, or just the line starting studiosync-join. Only use one from someone you know: it connects this computer to theirs.")
+    ImGui.PopTextWrapPos(ctx)
+    ImGui.Spacing(ctx)
+    if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
+    local _, v = ImGui.InputTextMultiline(ctx, "##joincode", join_text, -1, ImGui.GetTextLineHeight(ctx) * 4)
+    join_text = v
+    local code = services.parse_join(join_text)
+    if why_not then ImGui.TextColored(ctx, theme.YELLOW, why_not)
+    elseif code then ImGui.TextColored(ctx, theme.GREEN, "Join " .. (code.name ~= "" and code.name or code.band))
+    elseif join_text ~= "" then ImGui.TextColored(ctx, theme.YELLOW, "That isn't a join code: ask them to press Invite and send it again.") end
+    ImGui.BeginDisabled(ctx, not code)
+    local go = ImGui.Button(ctx, "Join")
+    ImGui.EndDisabled(ctx)
+    ImGui.SameLine(ctx)
+    if ImGui.Button(ctx, "Cancel") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then ImGui.CloseCurrentPopup(ctx) end
+    if go then
+      local root, why = services.join_band(env.cfg(), code)
+      if root then
+        band.log(why == "already" and ("you're already in " .. band.info(root).name) or
+          ("joined " .. band.info(root).name .. ": ask whoever invited you to press Let you in. Its projects arrive after that."))
+        pg.root = root
+        env.reload_cfg()
+        ImGui.CloseCurrentPopup(ctx)
+        env.go("Projects")
+      else why_not = tostring(why) end
+    end
+    ImGui.EndPopup(ctx)
+  end
+end
+
 local function invite_button(env, g, id)
   local ctx, ImGui = env.ctx, env.ImGui
   local services = require("services")
@@ -62,7 +105,7 @@ local function invite_button(env, g, id)
     band.log("an invitation to " .. g.name .. " is on your clipboard: paste it to your collaborator. When they've run it, 'Let them in' shows on Home")
   end
   ImGui.EndDisabled(ctx)
-  ImGui.SetItemTooltip(ctx, my_id and "Copies a message with one line to paste on a Mac and one on Windows: it installs everything, already paired with this computer." or "Waiting for Syncthing (it has to be running).")
+  ImGui.SetItemTooltip(ctx, my_id and "Copies a message to send them: a join code if they have StudioSync, and a line for a Mac and one for Windows if they don't, which installs everything." or "Waiting for Syncthing (it has to be running).")
 end
 
 -- This computer out of a group, or the owner closing it for everyone.
@@ -80,7 +123,7 @@ local function leave(env, root)
   if not ok then return band.msg(tostring(why)) end
   if pg.root == root then pg.root = nil end
   env.reload_cfg()
-  band.log((closing and "closed " or "left ") .. info.name .. ": your copy stays in " .. root .. " (Groups: delete it when you like)")
+  band.log((closing and "closed " or "left ") .. info.name .. ": your copy stays in " .. root .. " (Studios: delete it when you like)")
 end
 
 local people_at, people_of = {}, {}
@@ -112,8 +155,8 @@ function pg.draw_groups(env)
   local me = cfg.user
   local list = pg.live_groups()
   back_button(env)
-  env.heading("Your groups/sessions")
-  if #list == 0 then ImGui.TextDisabled(ctx, "You're not in a group/session yet. Start one, or paste an invitation someone sent you into a terminal.") end
+  env.heading("Your studios")
+  if #list == 0 then ImGui.TextDisabled(ctx, "You're not in a studio yet. Start one, or paste the join code someone sent you.") end
   local base = (cfg.base or cfg).root
   for i, g in ipairs(list) do
     ImGui.PushID(ctx, i)
@@ -167,9 +210,11 @@ function pg.draw_groups(env)
   end
   ImGui.Spacing(ctx)
   if #list > 0 then
-    ImGui.TextDisabled(ctx, "A new group/session is for different people, or a project of its own. For another song with the same people, share it in the one you have.")
+    ImGui.TextDisabled(ctx, "A new studio is for different people, or a project of its own. For another song with the same people, share it in the one you have.")
   end
-  pg.start_button(env, #list == 0 and "Start a group/session" or "Start a new group/session")
+  pg.start_button(env, #list == 0 and "Start a studio" or "Start a new studio")
+  ImGui.SameLine(ctx)
+  pg.join_button(env)
   local old = groups.old()
   if #old > 0 then
     ImGui.Spacing(ctx)
@@ -186,7 +231,7 @@ function pg.draw_groups(env)
         band.log(left > 0 and ("some of " .. tostring(o.name) .. " is still in use: restart REAPER and delete what's left of " .. tostring(o.root)) or ("deleted this computer's copy of " .. tostring(o.name)))
       end
       ImGui.EndDisabled(ctx)
-      ImGui.SetItemTooltip(ctx, can and tostring(o.root) or "This computer is still set to it: start or join another group/session first.")
+      ImGui.SetItemTooltip(ctx, can and tostring(o.root) or "This computer is still set to it: start or join another studio first.")
       ImGui.SameLine(ctx)
       if ImGui.SmallButton(ctx, "Keep it, hide this") then groups.forget_old(o.root) end
       ImGui.SameLine(ctx)
@@ -315,14 +360,14 @@ function pg.draw_projects(env)
         env.action("Publish session")
       end
       ImGui.PopStyleColor(ctx)
-      ImGui.SetItemTooltip(ctx, "It goes through the Prepare checklist first (lanes, FLAC, names, media in one place): much harder to tidy once the group has it. Then it's shared, and you host it.")
+      ImGui.SetItemTooltip(ctx, "It goes through the Prepare checklist first (lanes, FLAC, names, media in one place): much harder to tidy once the studio has it. Then it's shared, and you host it.")
       env.card_end()
     end
     ImGui.Spacing(ctx)
   end
   env.heading("Projects in " .. info.name) -- (opened from another group's project, the pills still name that one: Mac, 0.51.9)
   if ImGui.Button(ctx, "New folder") then new_folder = ""; ImGui.OpenPopup(ctx, "New folder") end
-  ImGui.SetItemTooltip(ctx, "A folder for projects, seen by everyone in this group/session. Projects with no folder stay at the top level.")
+  ImGui.SetItemTooltip(ctx, "A folder for projects, seen by everyone in this studio. Projects with no folder stay at the top level.")
   if ImGui.BeginPopup(ctx, "New folder") then
     if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
     ImGui.SetNextItemWidth(ctx, 220)
@@ -415,7 +460,7 @@ function pg.draw_projects(env)
   local all = ss.keep_all()
   local ch, v = ImGui.Checkbox(ctx, "Keep every project on this computer", all)
   if ch then reaper.SetExtState(band.SECTION, "projects keep all", v and "1" or "", true); ss.apply(cfg) end
-  ImGui.SetItemTooltip(ctx, "On: every project of this group/session comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
+  ImGui.SetItemTooltip(ctx, "On: every project of this studio comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
     "Off: every project's listing comes, and a project in full once you open it here.")
 end
 

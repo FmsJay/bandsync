@@ -41,7 +41,7 @@ echo
 # changes when cleaned is said, not changed silently)
 USERNAME_BS="$(plain "${BS_USER:-}")"
 while [ -z "$USERNAME_BS" ]; do
-  typed="$(ask "Your name, as the group will see it (you can change it later)" "$(plain "$(id -F 2>/dev/null | cut -d' ' -f1)")")"
+  typed="$(ask "Your name, as the studio will see it (you can change it later)" "$(plain "$(id -F 2>/dev/null | cut -d' ' -f1)")")"
   USERNAME_BS="$(plain "$typed")"
   [ -n "$USERNAME_BS" ] && [ "$USERNAME_BS" != "$typed" ] && say "Using the name '$USERNAME_BS' (plain letters only)."
 done
@@ -49,7 +49,7 @@ done
 # a song's, not a machine's: anyone can host a song (James, 2026-10-31: "are you the band's host" read as a role).
 if [ -n "${BS_HOSTING:-}" ]; then HOSTING="$BS_HOSTING" # (the old way of saying "I'm the first")
 elif [ -n "${BS_HOST_ID:-}" ]; then HOSTING=n # (an invitation: someone is set up, and that's their ID)
-elif yes "$(ask "Is someone in the group already set up with StudioSync? (y/n)" y)"; then HOSTING=n
+elif yes "$(ask "Is someone in the studio already set up with StudioSync? (y/n)" y)"; then HOSTING=n
 else HOSTING=y; fi
 HOST_ID="$(echo "${BS_HOST_ID:-}" | tr '[:lower:]' '[:upper:]')"
 ID_RE='^[A-Z0-9]{7}(-[A-Z0-9]{7}){7}$'
@@ -69,14 +69,14 @@ fi
 # the band (docs/bands-design.md): each its own shared folder. An invitation names it; the first one set up names it.
 FOLDER_ID="$(printf '%s' "${BS_BAND_ID:-}" | LC_ALL=C tr -cd 'a-z0-9-')"
 if ! yes "$HOSTING" && [ -z "$FOLDER_ID" ]; then # (someone's device ID typed in by hand, no invitation)
-  FOLDER_ID="$(ask "The group's ID (it's in their invitation, after BS_BAND_ID=; press Return if they don't have one)" bandsync | LC_ALL=C tr -cd 'a-z0-9-')"
+  FOLDER_ID="$(ask "The studio's ID (it's in their invitation, after BS_BAND_ID=; press Return if they don't have one)" bandsync | LC_ALL=C tr -cd 'a-z0-9-')"
   [ -n "$FOLDER_ID" ] || FOLDER_ID=bandsync
 fi
 BAND_NAME="$(plain "${BS_BAND_NAME:-}")"
 if yes "$HOSTING" && [ -z "$BAND_NAME" ]; then
-  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Name your group or session" "My group")")"; done
+  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Name your studio" "My studio")")"; done
 fi
-[ -n "$BAND_NAME" ] || BAND_NAME="the group"
+[ -n "$BAND_NAME" ] || BAND_NAME="the studio"
 DEF_ROOT="$HOME/BandSync"
 if [ "$FOLDER_ID" != bandsync ]; then DEF_ROOT="$HOME/StudioSync $BAND_NAME"; fi
 while :; do
@@ -207,27 +207,27 @@ if yes "$SOLO" && have "Google Drive"; then
   account() { echo "$1" | sed -n 's#.*/GoogleDrive-\([^/]*\)/My Drive$#\1#p'; } # the account's e-mail, from its folder
   if [ -z "$(mydrive)" ]; then
     open -a "Google Drive"
-    say "Sign in to Google Drive in its window, with the Google account the group's Drive folder is shared with (yours,"
-    say "or the group's own account if you have one). Allow its extension if macOS asks."
+    say "Sign in to Google Drive in its window, with the Google account the studio's Drive folder is shared with (yours,"
+    say "or the studio's own account if you have one). Allow its extension if macOS asks."
     say "Waiting for it; press Return to skip and do it later."
     while [ -z "$(mydrive)" ]; do read -t 3 -r </dev/tty && break; done
   fi
   MD="$(mydrive)"
   if [ -n "$MD" ] && [ ! -d "$MD/$DRIVE_NAME" ] && [ "$(drives | wc -l)" -gt 1 ]; then
-    say "Google Drive has several accounts signed in here. Which one is the group's (it gets the group's folder)?"
+    say "Google Drive has several accounts signed in here. Which one is the studio's (it gets the studio's folder)?"
     i=0; while IFS= read -r d; do i=$((i + 1)); echo "    $i) $(account "$d")"; done < <(drives)
     n="$(ask "Number" 1)"
     PICKED="$(drives | sed -n "${n}p")"; [ -n "$PICKED" ] && MD="$PICKED"
   fi
-  if [ -n "$MD" ] && [ -d "$MD/$DRIVE_NAME" ]; then ok "Google Drive: the group's '$DRIVE_NAME' folder is there ($(account "$MD"))"; DRIVE_OK=1
+  if [ -n "$MD" ] && [ -d "$MD/$DRIVE_NAME" ]; then ok "Google Drive: the studio's '$DRIVE_NAME' folder is there ($(account "$MD"))"; DRIVE_OK=1
   elif [ -n "$MD" ] && yes "$HOSTING"; then
     mkdir -p "$MD/$DRIVE_NAME" && ok "Google Drive: made '$DRIVE_NAME' in your My Drive (share it at the end)"; DRIVE_OK=1
   elif [ -n "$MD" ]; then
-    say "Add the group's Drive folder: in the page that opens, right-click '$DRIVE_NAME' > Organize > Add shortcut > My Drive."
+    say "Add the studio's Drive folder: in the page that opens, right-click '$DRIVE_NAME' > Organize > Add shortcut > My Drive."
     say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press Return to skip."
     open "https://drive.google.com/drive/shared-with-me?authuser=$(account "$MD")" # (in that account, not whichever the browser has)
     while [ ! -d "$MD/$DRIVE_NAME" ]; do read -t 3 -r </dev/tty && break; done
-    [ -d "$MD/$DRIVE_NAME" ] && { ok "Google Drive: the group's '$DRIVE_NAME' folder is there"; DRIVE_OK=1; }
+    [ -d "$MD/$DRIVE_NAME" ] && { ok "Google Drive: the studio's '$DRIVE_NAME' folder is there"; DRIVE_OK=1; }
   fi
 fi
 # the band plug-in pack (optional): free, open-source plug-ins every bandmate can have, each from its official release
@@ -410,8 +410,8 @@ elif yes "$SOLO" && [ -z "${DRIVE_OK:-}" ]; then
   echo "    Organize > Add shortcut > My Drive."
 fi
 if yes "$HOSTING"; then
-  echo "  - In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the group'."
+  echo "  - In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the studio'."
 else
-  echo "  - In REAPER, the StudioSync panel offers 'Join the group's project' once your collaborator has let you in: the group's"
+  echo "  - In REAPER, the StudioSync panel offers 'Join the studio's project' once your collaborator has let you in: the studio's"
   echo "    songs arrive by themselves, and the panel lists them."
 fi

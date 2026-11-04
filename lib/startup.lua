@@ -123,7 +123,7 @@ function startup.summary(text)
   local bits = {}
   if #fx > 0 then bits[#bits + 1] = #fx .. " plug-in(s) this computer lacks (" .. table.concat(fx, ", ") .. "), so those parts play their prints" end
   if files then bits[#bits + 1] = files .. " file(s) missing, left offline" end
-  return #bits > 0 and ("opening the group's projects: " .. table.concat(bits, "; ")) or nil
+  return #bits > 0 and ("opening the studio's projects: " .. table.concat(bits, "; ")) or nil
 end
 
 -- Opening a group project while REAPER runs (Open project, a side room's square): its boxes are answered as at REAPER's start.

@@ -109,7 +109,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   local running = beat and reaper.time_precise() - beat < 5
   if not running then band.start_live(dir) end
-  band.log(string.format("opened '%s' (hosted by %s)%s: the group's tracks and items arrive over the next moments",
+  band.log(string.format("opened '%s' (hosted by %s)%s: the studio's tracks and items arrive over the next moments",
     song, s.host, running and "" or ", Live sync started"))
 end
 
@@ -124,10 +124,10 @@ do
 end
 if b then return open_song(b.song) end
 if #band.songs(cfg) == 0 then -- (the first thing a new bandmate sees: say what has to happen, not just that nothing's here)
-  return band.msg("Nothing from the group has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
-    "Ask the host to open REAPER: their StudioSync panel shows a \"Let you in\" button for your computer. The group's " ..
+  return band.msg("Nothing from the others has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
+    "Ask the host to open REAPER: their StudioSync panel shows a \"Let you in\" button for your computer. The studio's " ..
     "projects appear here once the folder syncs (Settings > Health shows whether it's connected).")
 end
 -- straight into the main room: side rooms are made and visited from the panel's Rooms page
-require("chooser").open(cfg, { title = "Open a group project", action = "Open" },
+require("chooser").open(cfg, { title = "Open a studio project", action = "Open" },
   function(song, room) if song then open_song(song, room) end end)

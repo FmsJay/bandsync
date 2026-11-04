@@ -109,12 +109,12 @@ local n = 0
 for _ in pairs(room_s) do n = n + 1 end
 check(n == 1 and room_s.main == sdir .. "/rooms/main/chat", "this room holds only its own")
 check(song_s[SONG] == sdir .. "/chat" and song_s[SONG .. " / main"] and song_s[SONG .. " / side"], "this project holds its own and all its rooms'")
-check(band_s.Group == root .. "/_band/chat" and band_s[SONG] and band_s[SONG .. " / side"], "the group holds everything")
+check(band_s.Studio == root .. "/_band/chat" and band_s[SONG] and band_s[SONG .. " / side"], "the group holds everything")
 
 -- ---- track colours
 reaper.DeleteExtState(band.SECTION, "track colours", false)
 check(people.mode() == "working", "show who's working is the default")
-check(people.MODES[2][2] == "Group colours + show who's working", "and what it's called")
+check(people.MODES[2][2] == "Studio colours + show who's working", "and what it's called")
 
 -- ---- a plain copy's text
 local text = [[

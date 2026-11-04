@@ -220,7 +220,7 @@ function live.join_check(proj)
     end
     reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
     reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
-    band.log("SonoBus joined your group's live audio" .. (tries > 0 and " (after " .. tries .. " retr" .. (tries == 1 and "y" or "ies") .. ")" or "") ..
+    band.log("SonoBus joined your studio's live audio" .. (tries > 0 and " (after " .. tries .. " retr" .. (tries == 1 and "y" or "ies") .. ")" or "") ..
       " as " .. tostring(sonobus.state_user(chunk)))
     return "joined"
   end
@@ -228,7 +228,7 @@ function live.join_check(proj)
   if tries >= live.JOIN_TRIES then
     reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
     reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
-    band.log("SonoBus couldn't join your group's live audio. Press Configure SonoBus (Home), then Connect, and Connect to Group " ..
+    band.log("SonoBus couldn't join your studio's live audio. Press Configure SonoBus (Home), then Connect, and Connect to Group " ..
       "(the name is filled in). If that fails too: Settings > Advanced > Can't hear each other?")
     return "gave up"
   end
@@ -240,7 +240,7 @@ function live.join_check(proj)
     reaper.TrackFX_Show(m, i, 3)
     reaper.SetProjExtState(proj, band.SECTION, "sonobus shown", "1")
   end
-  band.log("SonoBus hasn't joined your group's live audio yet: trying again")
+  band.log("SonoBus hasn't joined your studio's live audio yet: trying again")
   return "waiting"
 end
 

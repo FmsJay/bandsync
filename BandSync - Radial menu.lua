@@ -52,7 +52,7 @@ local SLICES = {
   { "Real time\n" .. (rt and "on" or "off"), rt and "Turn Real time mode off: SonoBus leaves and you stop " ..
     "following play and stop. Edits keep syncing." or "Turn Real time mode on: SonoBus joins so you hear " ..
     "each other right away, and play, stop and record follow whoever presses them.", function() ask("realtime") end },
-  { "Chat", "Open the Chat page: messages, to-dos and links for the group, this project or this room.",
+  { "Chat", "Open the Chat page: messages, to-dos and links for the studio, this project or this room.",
     function() ask("chat") end },
   { "Ping\nhere", string.format("Put a marker at %.2f s on everyone's timeline for %d seconds, with your name: \"look here\".",
     ping_pos, require("presence").PING_SHOWN), function() require("presence").ping_here(proj, ping_pos) end },

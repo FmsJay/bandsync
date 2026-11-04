@@ -137,10 +137,10 @@ function ex.ask(proj, name, wav)
   local start = reaper.GetExtState(band.SECTION, "backup folder")
   local ok, folder
   if reaper.JS_Dialog_BrowseForFolder then
-    ok, folder = reaper.JS_Dialog_BrowseForFolder("StudioSync: save a copy outside the group, in...", start)
+    ok, folder = reaper.JS_Dialog_BrowseForFolder("StudioSync: save a copy outside the studio, in...", start)
     ok = ok == 1
   else
-    ok, folder = reaper.GetUserInputs("StudioSync: save a copy outside the group", 1, "In this folder,extrawidth=250", start)
+    ok, folder = reaper.GetUserInputs("StudioSync: save a copy outside the studio", 1, "In this folder,extrawidth=250", start)
   end
   if not ok or (folder or "") == "" then return end
   reaper.SetExtState(band.SECTION, "backup folder", (folder:gsub("\\", "/")), true)

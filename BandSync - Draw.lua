@@ -432,7 +432,7 @@ local function loop()
       ImGui.SetItemTooltip(ctx, "Move this bar to the " .. (at_top and "foot" or "top") .. " of the tracks (it covers whatever's under it).")
       ImGui.SameLine(ctx, 0, 12)
       ImGui.AlignTextToFramePadding(ctx)
-      ImGui.Text(ctx, why == "local" and "That's one of StudioSync's own tracks: draw on a group track." or ({ pen = "Drag to draw.",
+      ImGui.Text(ctx, why == "local" and "That's one of StudioSync's own tracks: draw on a studio track." or ({ pen = "Drag to draw.",
         marker = "Drag to highlight.", line = "Drag from one end to the other.", arrow = "Drag from the tail to the point.",
         box = "Drag from corner to corner.", text = "Click where the words go.", erase = "Click one of your drawings to take it away." })[tool] or "")
       grew()

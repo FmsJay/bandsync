@@ -1101,7 +1101,7 @@ function sync.apply(proj, ev, dir, root, can, me)
   if ev.type == "track" then return apply_track(proj, ev) end
   if ev.type == "mix" and type(ev.state) == "table" then -- the driver's buses, sends into them, master plug-ins (lib/mixlayer.lua)
     local n, clash = require("mixlayer").apply(proj, ev.state)
-    if clash and #clash > 0 then band.log("the group's mix has track(s) named like yours, left out here: " .. table.concat(clash, ", ")) end
+    if clash and #clash > 0 then band.log("the studio's mix has track(s) named like yours, left out here: " .. table.concat(clash, ", ")) end
     setext(proj, band.SECTION, "mix_sig", ev.sig or "")
     return true
   end
@@ -1224,7 +1224,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
         for i, word in ipairs({ "the tempo map", "the markers", "the project settings (notes, title, timebase, lanes)" }) do
           if band.json_encode(before[i] or {}) ~= band.json_encode(now[i] or {}) then what[#what + 1] = word end
         end
-        band.log("sent " .. (#what > 0 and table.concat(what, " and ") or "the timeline") .. " to the group")
+        band.log("sent " .. (#what > 0 and table.concat(what, " and ") or "the timeline") .. " to the studio")
         local from = math.huge -- where the map first differs: audio past there keeps its recorded speed
         for i, m in ipairs(tempo) do
           local o = (before[1] or {})[i]
@@ -1248,11 +1248,11 @@ function sync.watch_timeline(proj, cfg, song, room, can)
           band.apply_tempo(proj, before[1])
           band.apply_project(proj, before[3])
           band.apply_markers(proj, before[2] or {})
-          reaper.Undo_EndBlock2(proj, "BandSync: put the group's tempo map and markers back", -1)
+          reaper.Undo_EndBlock2(proj, "BandSync: put the studio's tempo map and markers back", -1)
           sig = timeline_sig(proj)
           sync.put_back("the tempo map, markers and project settings are the driver's to change: put back (take control, or the driver can set Editing to Open)")
         else
-          band.log("tempo or markers changed here, but only the driver's changes go to the group (Take control first)")
+          band.log("tempo or markers changed here, but only the driver's changes go to the others (Take control first)")
         end
       end
     end
@@ -1280,7 +1280,7 @@ function sync.receive(proj, cfg, song, room, can)
         sync.unreadable[id] = sync.unreadable[id] or reaper.time_precise()
         if reaper.time_precise() - sync.unreadable[id] > 120 then
           setext(proj, sync.APPLIED, id, "1")
-          band.log("skipped a file in the group's folder that StudioSync can't read (" .. f .. ")")
+          band.log("skipped a file in the studio's folder that StudioSync can't read (" .. f .. ")")
         end
       end
       if good then
@@ -1415,7 +1415,7 @@ function sync.receive(proj, cfg, song, room, can)
     end
     if next(orph) == nil then mirror.orphaned[tostring(proj)] = nil end
   end
-  if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the group", -1) end
+  if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the others", -1) end
   for _, d in ipairs(done) do band.log(d) end
   return applied
 end
@@ -1552,7 +1552,7 @@ function sync.preload(proj, cfg, song, room)
   reaper.UpdateArrange()
   if was_title and reaper.JS_Window_SetTitle then reaper.JS_Window_SetTitle(reaper.GetMainHwnd(), was_title) end
   if not ok then band.log("getting '" .. song .. "' ready: " .. tostring(err)) end
-  if total > 0 then band.log(string.format("'%s' is ready: %d change(s) from the group came in as it opened (%.1f s)", song, total, reaper.time_precise() - t0)) end
+  if total > 0 then band.log(string.format("'%s' is ready: %d change(s) from the others came in as it opened (%.1f s)", song, total, reaper.time_precise() - t0)) end
   -- (saved, so next time it opens from here. A file 27 hours old took 3034 changes in again on the Mac: 0.42.27)
   if total > 100 and select(2, reaper.EnumProjects(-1)) ~= "" and reaper.EnumProjects(-1) == proj then reaper.Main_SaveProject(proj, false) end
   return total

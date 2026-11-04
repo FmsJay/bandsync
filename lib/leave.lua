@@ -78,7 +78,7 @@ function leave.tick()
   if not reaper.ValidatePtr2(0, j.proj, "ReaProject*") then leave.job = nil; return end
   if j.step == "save" then
     save_tab(j)
-    j.saved_at, j.step, j.words = now, "send", "Sending your changes to the group"
+    j.saved_at, j.step, j.words = now, "send", "Sending your changes to the studio"
   elseif j.step == "send" then
     local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(j.proj)))
     if not beat or now - beat > 10 then
@@ -128,7 +128,7 @@ function leave.tick()
         lines[#lines + 1] = j.drive_left and "Nobody else is online. Google Drive has some of it and the rest is still copying: it carries on while this computer's on."
           or "Nobody else is online. Google Drive has it, so they get it from there or from this computer."
       else
-        lines[#lines + 1] = "Nobody else is online, and this group/session has no Google Drive copy here: it reaches them when this computer and theirs are on at the same time."
+        lines[#lines + 1] = "Nobody else is online, and this studio has no Google Drive copy here: it reaches them when this computer and theirs are on at the same time."
         j.only_here = true
       end
       if (j.st and j.st.need or 0) > 0 then lines[#lines + 1] = string.format("There's %.1f MB on its way to you.", j.st.need / 1048576) end

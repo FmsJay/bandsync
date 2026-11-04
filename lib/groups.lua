@@ -78,7 +78,7 @@ function groups.rename(root, name, by)
   name = band.clean(name or "")
   if name == "" then return nil, "Give it a name." end
   for _, x in ipairs(band.bands()) do
-    if x.root ~= root and x.name:lower() == name:lower() then return nil, "You're already in a group called " .. x.name .. "." end
+    if x.root ~= root and x.name:lower() == name:lower() then return nil, "You're already in a studio called " .. x.name .. "." end
   end
   local id = band.info(root).id
   save(root, function(j) j.name = name end)
@@ -132,7 +132,7 @@ function groups.leave(root, me, over)
   if not over and groups.role(root, me) == "owner" then return nil, "You own this. Make someone else the owner first (their card in Who's here), or close it." end
   local others = {}
   for _, x in ipairs(band.bands()) do if x.root ~= root then others[#others + 1] = x.root end end
-  if #others == 0 and not over then return nil, "This is your only group. Start or join another first." end
+  if #others == 0 and not over then return nil, "This is your only studio. Start or join another first." end
   if recording(root) then return nil, "Stop recording first." end
   local info = band.info(root)
   for _, p in ipairs(tabs_of(root)) do -- (Live sync sees it isn't a group project any more, and stops)
@@ -190,7 +190,7 @@ function groups.tick(now)
         local days = services.days_quiet(g.id)
         if days and days >= groups.QUIET_DAYS then
           said_quiet[g.id] = true
-          band.log(string.format("nobody in %s has been online for %d days. It may have been closed, or you taken out: you can leave it on the Groups page", g.name, days))
+          band.log(string.format("nobody in %s has been online for %d days. It may have been closed, or you taken out: you can leave it on the Studios page", g.name, days))
         end
       end
     end

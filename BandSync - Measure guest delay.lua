@@ -10,7 +10,7 @@ local proj = reaper.EnumProjects(-1)
 local rt = live.rt_track(proj, false)
 local sm, si = live.fx(proj, false, live.SONOBUS)
 if not rt or not sm or reaper.TrackFX_GetOffline(sm, si) then
-  return band.msg("Turn on Real time mode first (Home), and have your guest join the group's SonoBus group.")
+  return band.msg("Turn on Real time mode first (Home), and have your guest join the studio's SonoBus group.")
 end
 if reaper.GetPlayStateEx(proj) ~= 0 then return band.msg("Stop playback first, then measure.") end
 if reaper.MB("Tell your guest: they'll hear a bar of count-in (higher clicks), then 8 clicks. Clap along with the 8, " ..

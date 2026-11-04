@@ -37,11 +37,11 @@ if song == "" then return band.msg("Give the project a name.") end
 require("songsync").want(cfg, song) -- (yours: it syncs here in full, whatever this computer downloads of others)
 local old = old_for(song)
 if old and old.host ~= cfg.user and b.song ~= song then
-  return band.msg("There's already a group project called '" .. song .. "' (hosted by " .. tostring(old.host) .. ").\n\n" ..
+  return band.msg("There's already a studio project called '" .. song .. "' (hosted by " .. tostring(old.host) .. ").\n\n" ..
     "Pick another name, or join theirs with 'BandSync - Open session'.")
 end
 if old and b.song ~= song and reaper.MB("You already published a project called '" .. song .. "' from another project.\n\n" ..
-    "Publish this project under that name instead (the group then follows this one)?", "StudioSync", 4) ~= 6 then
+    "Publish this project under that name instead (everyone then follows this one)?", "StudioSync", 4) ~= 6 then
   return
 end
 -- an untitled project takes the song's name and is saved first; either way a copy as it was before BandSync is kept
@@ -70,4 +70,4 @@ reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.c
 reaper.Main_SaveProject(proj, false)
 local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if not (beat and reaper.time_precise() - beat < 5) then band.start_live(dir) end
-return band.log(string.format("published '%s': Live sync is sending the project to the group (collaborators: it's on their Projects page)", song))
+return band.log(string.format("published '%s': Live sync is sending the project to the studio (collaborators: it's on their Projects page)", song))

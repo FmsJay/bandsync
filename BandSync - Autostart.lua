@@ -47,7 +47,7 @@ local function loop()
     keys_set = true
     pcall(require("undo").auto_keys, dir)
     local ok, why = pcall(require("startup").on_start) -- (the band's songs, opened without REAPER's boxes: lib/startup.lua)
-    if not ok then band.log("couldn't open the group's projects by itself: " .. tostring(why)) end
+    if not ok then band.log("couldn't open the studio's projects by itself: " .. tostring(why)) end
     reaper.atexit(function()
       pcall(require("undo").auto_keys, dir)
       pcall(require("startup").on_quit)
@@ -98,7 +98,7 @@ local function loop()
       local ok, up = pcall(require("services").running, "syncthing")
       st_up = not ok or up
     end
-    if not st_up then problem = "Syncthing isn't running on this computer: nothing reaches the group or comes in. Restart REAPER, or start Syncthing." end
+    if not st_up then problem = "Syncthing isn't running on this computer: nothing reaches the studio or comes in. Restart REAPER, or start Syncthing." end
   end
   if reaper.Audio_IsRunning() ~= 1 then return say_problem(problem) end
   local front = reaper.EnumProjects(-1)

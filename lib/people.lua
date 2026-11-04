@@ -13,8 +13,8 @@ local band = require("band")
 local people = {}
 
 people.PALETTE = { 0xFF5A5A, 0x4CC2FF, 0x7BE07B, 0xFFC24C, 0xC88BFF, 0xFF8BD0, 0x5AE0D0, 0xFF9F5A }
-people.MODES = { { "band", "Group colours", "Tracks keep the colours the group gave them." },
-  { "working", "Group colours + show who's working", "The group's colours, but a track someone else is editing or has claimed shows their colour until they're done." },
+people.MODES = { { "band", "Studio colours", "Tracks keep the colours the studio gave them." },
+  { "working", "Studio colours + show who's working", "The studio's colours, but a track someone else is editing or has claimed shows their colour until they're done." },
   { "people", "Whose track", "Every track in the colour of whoever is editing it, claimed it, or made it." } }
 
 local function file(root, user) return root .. "/_band/colours/" .. (user:gsub("[^%w%-_ ]", "")) .. ".json" end

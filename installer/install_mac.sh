@@ -74,11 +74,11 @@ if ! yes "$HOSTING" && [ -z "$FOLDER_ID" ]; then # (someone's device ID typed in
 fi
 BAND_NAME="$(plain "${BS_BAND_NAME:-}")"
 if yes "$HOSTING" && [ -z "$BAND_NAME" ]; then
-  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Your group's name" "My group")")"; done
+  while [ -z "$BAND_NAME" ]; do BAND_NAME="$(plain "$(ask "Name your group or session" "My group")")"; done
 fi
 [ -n "$BAND_NAME" ] || BAND_NAME="the group"
 DEF_ROOT="$HOME/BandSync"
-if [ "$FOLDER_ID" != bandsync ]; then DEF_ROOT="$HOME/BandSync $BAND_NAME"; fi
+if [ "$FOLDER_ID" != bandsync ]; then DEF_ROOT="$HOME/StudioSync $BAND_NAME"; fi
 while :; do
   ROOT="${BS_ROOT:-$(ask "Where should $BAND_NAME's shared folder be" "$DEF_ROOT")}"
   ROOT="$(printf '%s' "$ROOT" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' -e 's/\\\(.\)/\1/g')" # (dragged in from Finder: "\ " and a trailing space)
@@ -99,7 +99,7 @@ if [ -z "$FOLDER_ID" ]; then
     FOLDER_ID="bandsync-${SLUG:-group}-$(printf '%04x' $((RANDOM * 2)))"
   fi
 fi
-DRIVE_NAME="BandSync"; [ "$FOLDER_ID" != bandsync ] && DRIVE_NAME="BandSync - $BAND_NAME"
+DRIVE_NAME="BandSync"; [ "$FOLDER_ID" != bandsync ] && DRIVE_NAME="StudioSync - $BAND_NAME"
 # SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
 # (James, 2026-10-31: "it feels like a core feature"); BS_LIVE=no / BS_SOLO=no still leave them out.
 LIVE="${BS_LIVE:-y}"
@@ -373,14 +373,14 @@ MY_ID="$("$ST" device-id --home "$STHOME" 2>/dev/null | tail -1 | tr -d '[:space
 mkdir -p "$ROOT"
 if yes "$HOSTING" && [ ! -f "$ROOT/_band/band.json" ]; then # (who this folder is: lib/band.lua band.info; names are plain)
   mkdir -p "$ROOT/_band"
-  printf '{ "name": "%s", "id": "%s", "drive": "%s" }\n' "$BAND_NAME" "$FOLDER_ID" "$DRIVE_NAME" > "$ROOT/_band/band.json"
+  printf '{ "name": "%s", "id": "%s", "drive": "%s", "owner": "%s" }\n' "$BAND_NAME" "$FOLDER_ID" "$DRIVE_NAME" "$USERNAME_BS" > "$ROOT/_band/band.json"
 fi
 # per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
 # full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
 if ! yes "$HOSTING" && ! grep -q '^// BandSync end$' "$ROOT/.stignore" 2>/dev/null; then
   printf '%s\n' '// BandSync: what this computer downloads (written by BandSync, up to the line below)' '!/_*' '!/plugins' '!/drummaps' '!/*/session.json' '!/*/folder.json' '!/*/live.json' '!/*/invites' '!/*/rooms/*/room.json' '!/*/rooms/*/summary' '!/*/rooms/*/status' '(?d)/*/*' '// BandSync end' >> "$ROOT/.stignore" && ok "this computer gets each song in full once it's opened (the rest: their listing)"
 fi
-LABEL="BandSync"; [ "$FOLDER_ID" != bandsync ] && LABEL="BandSync $BAND_NAME"
+LABEL="BandSync"; [ "$FOLDER_ID" != bandsync ] && LABEL="StudioSync $BAND_NAME"
 if stcli config folders list | grep -qx "$FOLDER_ID"; then ok "$BAND_NAME's shared folder is already set up"
 else
   stcli config folders list | grep -q . || stcli config defaults folder path set "$(dirname "$ROOT")" >/dev/null # (fresh setup: new folders land beside it)

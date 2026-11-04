@@ -83,6 +83,7 @@ end
 local let_at = {} -- (who was just let in: Syncthing's own list says they're asking for up to 20 s more, and the row stayed)
 function tools.join_requests(ctx, ImGui, b)
   if not b then return end -- (any bandmate's invite brings a request here: not only the host's)
+  if not require("groups").may_manage(b.root or reaper.GetExtState(band.SECTION, "sync_root"), reaper.GetExtState(band.SECTION, "user")) then return end
   local binfo = band.info(b.root or reaper.GetExtState(band.SECTION, "sync_root"))
   local asking = band.json_decode(reaper.GetExtState(band.SECTION, "pending_join"))
   local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}

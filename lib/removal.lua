@@ -42,7 +42,7 @@ local function all_marks(root)
   local list = {}
   for _, f in ipairs(band.files(marks(root), ".json")) do
     local m = band.read_json(marks(root) .. "/" .. f)
-    if type(m) == "table" and m.user then list[#list + 1] = m end
+    if type(m) == "table" and m.user and (m.left or require("groups").may_remove(root, m.by, m.user)) then list[#list + 1] = m end
   end
   return list
 end

@@ -1,7 +1,7 @@
 -- BandSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.48.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.49.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -258,6 +258,12 @@ function band.rename(root, old, new)
   reaper.RecursiveCreateDirectory(root .. "/_band", 0)
   band.write_json(root .. "/_band/names.json", map)
   names_at[root] = nil
+  local j = band.read_json(root .. "/_band/band.json") -- (who runs the group: lib/groups.lua)
+  if type(j) == "table" and (j.owner == old or type(j.admins) == "table") then
+    if j.owner == old then j.owner = new end
+    for i, a in ipairs(type(j.admins) == "table" and j.admins or {}) do if a == old then j.admins[i] = new end end
+    band.write_json(root .. "/_band/band.json", j)
+  end
   local n = 0
   for _, song in ipairs(band.subdirs(root)) do
     for _, room in ipairs(band.subdirs(root .. "/" .. song .. "/rooms")) do

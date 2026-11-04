@@ -26,11 +26,11 @@ local ok, err = pcall(function()
   reaper.ExecProcess = function(c) cmds[#cmds + 1] = c; return "0\n" end -- (Syncthing's commands recorded, not run)
   local root, why = services.new_band(cfg, "Night Shift")
   reaper.ExecProcess = real_exec
-  check(root == D .. "/broot_" .. base:match("broot_(%d+)") .. "/BandSync Night Shift", "its folder beside the first band's (" .. tostring(root or why) .. ")")
+  check(root == D .. "/broot_" .. base:match("broot_(%d+)") .. "/StudioSync Night Shift", "its folder beside the first band's (" .. tostring(root or why) .. ")")
   local info = band.info(root)
-  check(info.name == "Night Shift" and info.id:match("^bandsync%-night%-shift%-%x%x%x%x$") and info.drive == "BandSync - Night Shift", "band.json says who it is")
+  check(info.name == "Night Shift" and info.id:match("^bandsync%-night%-shift%-%x%x%x%x$") and info.drive == "StudioSync - Night Shift", "band.json says who it is")
   local added = false
-  for _, c in ipairs(cmds) do if c:find("folders add --id " .. info.id, 1, true) and c:find("BandSync Night Shift", 1, true) then added = true end end
+  for _, c in ipairs(cmds) do if c:find("folders add --id " .. info.id, 1, true) and c:find("StudioSync Night Shift", 1, true) then added = true end end
   check(added, "Syncthing gets a folder of its own for it")
   check(reaper.GetExtState(band.SECTION, "sync_root") == root, "this computer works in the new band now")
   local names = {}

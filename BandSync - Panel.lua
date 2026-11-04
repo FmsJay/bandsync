@@ -569,7 +569,7 @@ local function section_drive()
     ImGui.SetItemTooltip(ctx, drive_root)
   end
   local missing = not drive_root and not off and require("drive").missing
-  if missing and not require("groups").temporary(cfg.root) then -- (a temporary session has no use for a Drive copy)
+  if missing then
     local folder = band.info(cfg.root).drive
     ImGui.PushTextWrapPos(ctx, 0)
     ImGui.TextColored(ctx, YELLOW, "No " .. folder .. " folder in " .. missing .. ". On drive.google.com, find the group's " .. folder .. " folder " ..
@@ -644,24 +644,46 @@ function ui.claim_chips(owned, short)
 end
 -- Take someone out of the group, for the driver or the song's host (lib/removal.lua). A minute to change your mind.
 function ui.remove_button(p)
+  local groups = require("groups")
+  local their_role = groups.role(cfg.root, p.user)
+  if their_role == "owner" or their_role == "admin" then ImGui.TextDisabled(ctx, their_role) end
   if p.user == cfg.user then return end
   local removal = require("removal")
   local m = removal.mark(cfg.root, p.user)
   if m then
     ImGui.TextColored(ctx, YELLOW, string.format("Leaving the group in %d s", math.max(0, removal.GRACE - (os.time() - (tonumber(m.at) or 0)))))
-    next_to("Keep them")
-    if ImGui.SmallButton(ctx, "Keep them##" .. p.user) then removal.keep(cfg.root, p.user) end
-    return ImGui.SetItemTooltip(ctx, "Changed your mind: nothing has happened yet.")
+    if groups.may_manage(cfg.root, cfg.user) then
+      next_to("Keep them")
+      if ImGui.SmallButton(ctx, "Keep them##" .. p.user) then removal.keep(cfg.root, p.user) end
+      ImGui.SetItemTooltip(ctx, "Changed your mind: nothing has happened yet.")
+    end
+    return
   end
-  if not (view.driver == cfg.user or (view.session and view.session.host == cfg.user)) then return end
-  if ImGui.SmallButton(ctx, "Remove##" .. p.user) and reaper.MB("Take " .. p.user .. " out of " .. tostring(view.group) .. "?\n\n" ..
-      "Within a few minutes every computer in the group stops syncing with theirs. Their claims go free. What they made stays in the songs and on Restore.\n\n" ..
-      "They keep the copy they already have: that can't be taken back. If they also have the group's Google Drive folder, remove them there too.\n\n" ..
-      "You have a minute to change your mind, and you can invite them again later.", "StudioSync", 4) == 6 then
-    local ok, why = removal.remove(cfg.root, p.user, cfg.user)
-    if ok then band.log(p.user .. " leaves the group in a minute: Keep them on their card stops it") else reaper.MB(why, "StudioSync", 0) end
+  if groups.may_remove(cfg.root, cfg.user, p.user) then
+    if ImGui.SmallButton(ctx, "Remove##" .. p.user) and reaper.MB("Take " .. p.user .. " out of " .. tostring(view.group) .. "?\n\n" ..
+        "Within a few minutes every computer in the group stops syncing with theirs. Their claims go free. What they made stays in the songs and on Restore.\n\n" ..
+        "They keep the copy they already have: that can't be taken back. If they also have the group's Google Drive folder, remove them there too.\n\n" ..
+        "You have a minute to change your mind, and you can invite them again later.", "StudioSync", 4) == 6 then
+      local ok, why = removal.remove(cfg.root, p.user, cfg.user)
+      if ok then band.log(p.user .. " leaves the group in a minute: Keep them on their card stops it") else reaper.MB(why, "StudioSync", 0) end
+    end
+    ImGui.SetItemTooltip(ctx, "Take them out of the group: every computer stops syncing with theirs.")
   end
-  ImGui.SetItemTooltip(ctx, "Take them out of the group: every computer stops syncing with theirs.")
+  if groups.role(cfg.root, cfg.user) == "owner" then
+    local make = their_role == "admin" and "Make member" or "Make admin"
+    next_to(make)
+    if ImGui.SmallButton(ctx, make .. "##" .. p.user) then
+      groups.set_admin(cfg.root, cfg.user, p.user, their_role ~= "admin")
+      band.log(p.user .. (their_role == "admin" and " is a member again" or " is an admin now: they can let people in, rename the group and remove members"))
+    end
+    ImGui.SetItemTooltip(ctx, "Admins can let people in, rename the group and remove members. Only you can close it.")
+    next_to("Make owner")
+    if ImGui.SmallButton(ctx, "Make owner##" .. p.user) and reaper.MB("Make " .. p.user .. " the owner of " .. tostring(view.group) .. "?\n\nYou stay on as an admin. Only they can give it back.", "StudioSync", 4) == 6 then
+      groups.hand_over(cfg.root, cfg.user, p.user)
+      band.log(p.user .. " owns " .. tostring(view.group) .. " now, and you're an admin")
+    end
+    ImGui.SetItemTooltip(ctx, "Hand the group over. Do this before you leave, if it should carry on without you.")
+  end
 end
 -- Under a person in Who's here (James, 2026-11-02): what they're working in or last worked in, opening to all they've claimed.
 function ui.person_claims(user, last_track)
@@ -1929,14 +1951,6 @@ local function home_who()
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, my_id and "Copies a message with one line to paste on a Mac and one on Windows: it installs everything, " ..
     "already paired with this computer.\nWhen they've run it, 'Let them in' shows here." or "Waiting for Syncthing (it has to be running).")
-  local temp, started_by = require("groups").temporary(cfg.root)
-  if temp then
-    local word = started_by == cfg.user and "End session" or "Leave session"
-    next_to(word)
-    if ImGui.SmallButton(ctx, word) then ui.leave_group(cfg.root) end
-    ImGui.SetItemTooltip(ctx, started_by == cfg.user and "Stops this session on every computer. Everyone keeps their copy, and the project stays open as an ordinary project."
-      or "This computer stops syncing the session. You keep your copy, and the project stays open as an ordinary project.")
-  end
   local people, armed = {}, {}
   for i = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, i)
@@ -2168,21 +2182,30 @@ local function page_setup()
   if card("bands") then -- (each band its own shared folder: docs/bands-design.md)
     heading("Groups", 17)
     local here = band.info(cfg.root)
-    local temp, started_by = require("groups").temporary(cfg.root)
-    ImGui.TextWrapped(ctx, "You're working in " .. here.name .. (temp and ", a temporary session." or "."))
+    local groups = require("groups")
+    local role = groups.role(cfg.root, cfg.user)
+    ImGui.TextWrapped(ctx, "You're working in " .. here.name .. (role == "owner" and ". You own it." or role == "admin" and ". You're an admin." or "."))
     ImGui.SetItemTooltip(ctx, (cfg.base or cfg).root)
-    if ImGui.SmallButton(ctx, "Rename##group") then
-      local ok, name = reaper.GetUserInputs("StudioSync: rename", 1, "New name,extrawidth=120", here.name)
-      if ok and name ~= here.name then
-        local new, why = require("groups").rename(cfg.root, name)
-        if new then band.log("renamed " .. here.name .. " to " .. new .. ": everyone in it sees the new name") else band.msg(tostring(why)) end
+    if groups.may_manage(cfg.root, cfg.user) then
+      if ImGui.SmallButton(ctx, "Rename##group") then
+        local ok, name = reaper.GetUserInputs("StudioSync: rename", 1, "New name,extrawidth=120", here.name)
+        if ok and name ~= here.name then
+          local new, why = groups.rename(cfg.root, name, cfg.user)
+          if new then band.log("renamed " .. here.name .. " to " .. new .. ": everyone in it sees the new name") else band.msg(tostring(why)) end
+        end
       end
+      ImGui.SetItemTooltip(ctx, "Everyone in it sees the new name. Its folder names, here and on Google Drive, stay as they are.")
+      ImGui.SameLine(ctx)
     end
-    ImGui.SetItemTooltip(ctx, "Everyone in it sees the new name. Its folder names, here and on Google Drive, stay as they are.")
-    ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, (temp and started_by == cfg.user and "End session" or temp and "Leave session" or "Leave group") .. "##group") then ui.leave_group(cfg.root) end
-    ImGui.SetItemTooltip(ctx, temp and started_by == cfg.user and "Stops this session on every computer. Everyone keeps their copy."
+    if ImGui.SmallButton(ctx, (role == "owner" and "Close" or "Leave") .. "##group") then ui.leave_group(cfg.root) end
+    ImGui.SetItemTooltip(ctx, role == "owner" and "End it for everyone: every computer stops syncing it, and everyone keeps their copy. To stay and leave it to someone else, make them the owner on their card in Who's here."
       or "This computer stops syncing it. You keep your copy, and someone can invite you again.")
+    local quiet = require("services").days_quiet(here.id)
+    if quiet and quiet >= groups.QUIET_DAYS then
+      ImGui.PushStyleColor(ctx, ImGui.Col_Text, YELLOW)
+      ImGui.TextWrapped(ctx, string.format("Nobody in %s has been online for %d days. It may have been closed, or you taken out: if so, Leave.", here.name, quiet))
+      ImGui.PopStyleColor(ctx)
+    end
     for _, x in ipairs(band.bands()) do
       if x.root ~= (cfg.base or cfg).root then
         if ImGui.SmallButton(ctx, "Switch to##group" .. x.root) then
@@ -2194,20 +2217,9 @@ local function page_setup()
         ImGui.SetItemTooltip(ctx, x.root)
       end
     end
-    if ImGui.Button(ctx, "Start a new group") then -- (a temporary session starts from a project: its first screen)
-      local ok, name = reaper.GetUserInputs("StudioSync: start a new group", 1, "Group name,extrawidth=120", "")
-      if ok and name ~= "" then
-        local root, why = require("services").new_band(cfg, name)
-        if root then
-          cfg = band.settings(); drive_at = -math.huge
-          band.log("started the group " .. band.info(root).name .. " in " .. root)
-          band.msg("You're working in " .. band.info(root).name .. " now: its own projects, plug-ins and collaborators, shared with nobody yet.\n\n" ..
-            "Open a project and Share a project with the group from it, then Invite a collaborator (Home) to bring people in. Switch groups in Setup > Options.")
-        else band.msg(tostring(why)) end
-      end
-    end
-    ImGui.SetItemTooltip(ctx, "A group of its own (another group of people): its own shared folder, projects, plug-ins and Drive copy.\n" ..
-      "Nobody in your other groups sees it.")
+    if ImGui.Button(ctx, "Start a new group/session") then ui.new_group() end
+    ImGui.SetItemTooltip(ctx, "Its own shared folder, projects and collaborators: a band, or one song with someone. Name it what it is.\n" ..
+      "Nobody in your other groups sees it, and you can close it when you're done.")
     card_end()
   end
 end, 360 }, { settings_drive, 360 }, { function()
@@ -2544,42 +2556,46 @@ local function frame_app()
 end
 
 local start_songs -- (the start screen's song list, read every few seconds)
--- This computer out of a group, or a temporary session ended for everyone: lib/groups.lua.
+-- This computer out of a group, or the owner closing it for everyone: lib/groups.lua.
 function ui.leave_group(root)
   local groups, info = require("groups"), band.info(root)
-  local temp, started_by = groups.temporary(root)
-  local ending = temp and started_by == cfg.user
-  if reaper.MB(ending and ("End the session " .. info.name .. " for everyone?\n\nEvery computer stops syncing it. Everyone keeps their copy, and the project stays open as an ordinary project.")
+  local closing = groups.role(root, cfg.user) == "owner"
+  local quiet = require("services").days_quiet(info.id)
+  if reaper.MB(closing and ("Close " .. info.name .. " for everyone?\n\nEvery computer stops syncing it. Everyone keeps their copy, and its projects stay open as ordinary projects.")
       or ("Leave " .. info.name .. "?\n\nThis computer stops syncing it. Your copy stays in " .. root .. ", and its projects stay open as ordinary projects. Someone can invite you again."),
       "StudioSync", 4) ~= 6 then return end
   local ok, why
-  if ending then ok, why = groups.end_session(root, cfg.user) else ok, why = groups.leave(root, cfg.user) end
+  if closing then ok, why = groups.close(root, cfg.user)
+  else ok, why = groups.leave(root, cfg.user, quiet and quiet >= groups.QUIET_DAYS) end
   if not ok then return band.msg(tostring(why)) end
   cfg = band.settings(); start_songs = nil; drive_at = -math.huge
-  band.log((ending and "ended the session " or "left ") .. info.name .. ": your copy stays in " .. root)
+  band.log((closing and "closed " or "left ") .. info.name .. ": your copy stays in " .. root)
 end
--- A project, a session of its own, and an invitation on the clipboard.
-function ui.temp_session()
+-- A group of its own: for a band, or for one song with someone. Offers to share the project that's open, and has the invitation ready.
+function ui.new_group()
   local here = reaper.EnumProjects(-1)
-  local suggested = band.clean((reaper.GetProjectName(here):gsub("%.[Rr][Pp][Pp]$", "")))
-  local ok, name = reaper.GetUserInputs("StudioSync: create a temporary session", 1, "Session name,extrawidth=150", suggested)
-  if not ok then return end
-  local groups, services = require("groups"), require("services")
-  local root, why = groups.create_session(cfg, name, cfg.user)
+  local plain = not band.binding(here) and reaper.CountTracks(here) > 0
+  local project = plain and band.clean((reaper.GetProjectName(here):gsub("%.[Rr][Pp][Pp]$", ""))) or ""
+  local ok, name = reaper.GetUserInputs("StudioSync: start a new group/session", 1, "Name,extrawidth=150", project)
+  if not ok or band.clean(name) == "" then return end
+  local services = require("services")
+  local root, why = services.new_band(cfg, name)
   if not root then return band.msg(tostring(why)) end
   cfg = band.settings(); start_songs = nil; drive_at = -math.huge
-  reaper.SetExtState(band.SECTION, "publish as", suggested ~= "" and suggested or band.clean(name), false)
+  local shown = band.info(root).name
+  band.log("started " .. shown .. " in " .. root)
+  if not (plain and reaper.MB(shown .. " is ready.\n\nShare the project that's open with it now?", "StudioSync", 4) == 6) then
+    return band.msg("You're working in " .. shown .. " now: shared with nobody yet.\n\nOpen a project and press Share this project with the group, then Invite a collaborator on Home.")
+  end
+  reaper.SetExtState(band.SECTION, "publish as", project ~= "" and project or band.clean(name), false)
   action("Publish session")
   reaper.DeleteExtState(band.SECTION, "publish as", false)
-  if not band.binding(here) then -- (it needed preparing: the checklist is up)
-    return band.msg("The session " .. band.info(root).name .. " is ready. When this project is prepared, press Share this project with the group, then Invite a collaborator.")
-  end
+  if not band.binding(here) then return end -- (it needed preparing: the checklist is up, and Share comes after that)
   local id = services.my_device_id()
   if id then ImGui.SetClipboardText(ctx, services.invite_text(id, band.info(root))) end
-  band.msg("The session " .. band.info(root).name .. " is ready.\n\n" .. (id and "An invitation is on your clipboard: paste it to whoever you're working with" or "Press Invite a collaborator on Home, and send them what it copies") ..
-    ". When they've run it, press Let them in.\n\nWhen you're done, press End session on Home: everyone keeps their copy, and nothing syncs any more.")
+  band.msg("The project is shared with " .. shown .. ".\n\n" .. (id and "An invitation is on your clipboard: paste it to whoever you're working with" or "Press Invite a collaborator on Home, and send them what it copies") ..
+    ". When they've run it, press Let them in.\n\nWhen you're done, Close is in Setup > Options: everyone keeps their copy, and nothing syncs any more.")
 end
-
 local function frame()
   if b and cfg then recall.warm(cfg, b.song, b.room, 0.004) end
   if reaper.time_precise() - last > 1.5 or reaper.EnumProjects(-1) ~= proj then
@@ -2642,9 +2658,8 @@ local function frame()
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Prepare this project first") then action("Prepare session") end
     ImGui.SetItemTooltip(ctx, "For a busy project: takes into lanes, FLAC recording, clear track names, media in the project folder, tidy-up. Shows a checklist first.")
-    if ImGui.Button(ctx, "Create a temporary session") then ui.temp_session() end
-    ImGui.SetItemTooltip(ctx, "Work on this project with someone for a while, apart from your groups: it gets a session of its own and an invitation to send them.\n" ..
-      "End session when you're done: nothing syncs any more, and everyone keeps their copy.")
+    if ImGui.Button(ctx, "Start a new group/session") then ui.new_group() end
+    ImGui.SetItemTooltip(ctx, "For a band, or one song with someone: its own shared folder and collaborators, apart from your other groups. It can share this project and have the invitation ready.")
     ImGui.Spacing(ctx)
     tools.dock_menu(ImGui.IsWindowDocked(ctx)) -- (place the panel before any session is open)
     if not ImGui.IsWindowDocked(ctx) then

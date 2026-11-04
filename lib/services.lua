@@ -264,7 +264,7 @@ end
 -- Start a band (docs/bands-design.md): its own shared folder beside this band's (<parent>/BandSync <Name>), with
 -- _band/band.json saying who it is, and its own Syncthing folder (shared with nobody yet: Invite a bandmate). This
 -- computer then works in it. Returns its folder, or nil + why.
-function services.new_band(cfg, name, extra)
+function services.new_band(cfg, name)
   name = band.clean(name or "")
   if name == "" then return nil, "Give the group a name." end
   local st = services.syncthing_path()
@@ -275,13 +275,11 @@ function services.new_band(cfg, name, extra)
     if x.id == id or x.name:lower() == name:lower() then return nil, "You're already in a group called " .. x.name .. "." end
   end
   local here = ((cfg.base or cfg).root or ""):gsub("[/\\]+$", "")
-  local root = (here:match("^(.*)[/\\][^/\\]+$") or here) .. "/BandSync " .. name
+  local root = (here:match("^(.*)[/\\][^/\\]+$") or here) .. "/StudioSync " .. name
   if band.subdirs(root)[1] then return nil, root .. " is already there: pick another name, or remove that folder." end
   reaper.RecursiveCreateDirectory(root .. "/_band", 0)
-  local j = { name = name, id = id, drive = "BandSync - " .. name }
-  for k, v in pairs(extra or {}) do j[k] = v end -- (a temporary session: lib/groups.lua)
-  band.write_json(root .. "/_band/band.json", j)
-  local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. id .. " --label " .. q("BandSync " .. name) .. " --path " .. q(root), 15000) or ""
+  band.write_json(root .. "/_band/band.json", { name = name, id = id, drive = "StudioSync - " .. name, owner = (cfg.base or cfg).user })
+  local r = reaper.ExecProcess(q(st) .. " cli config folders add --id " .. id .. " --label " .. q("StudioSync " .. name) .. " --path " .. q(root), 15000) or ""
   if not r:match("^0\n") then return nil, "Syncthing didn't add the group's folder: " .. r:gsub("^%d+\n", "") end
   reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " order set smallestFirst", 8000)
   services.tune_band_folder(id)
@@ -289,6 +287,31 @@ function services.new_band(cfg, name, extra)
   return root
 end
 
+-- How long since anyone else in a folder was online: days, from Syncthing's own stats (read in the background, at most every 5 minutes).
+-- nil when it can't tell, or there's nobody yet, or they've never connected (someone waiting to be let in).
+function services.quiet_days(stats, peers, now)
+  local newest
+  for _, id in ipairs(peers) do
+    local d = type(stats) == "table" and stats[id]
+    local y, mo, da, h, mi = tostring(type(d) == "table" and d.lastSeen or ""):match("^(%d+)-(%d+)-(%d+)T(%d+):(%d+)")
+    if y and tonumber(y) > 2000 then
+      local t = os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(da), hour = tonumber(h), min = tonumber(mi) })
+      if not newest or t > newest then newest = t end
+    end
+  end
+  return newest and math.floor((now - newest) / 86400) or nil
+end
+function services.days_quiet(id)
+  local st = services.syncthing_path()
+  local cmd = st_api("/rest/stats/device")
+  if not (st and cmd) then return nil end
+  local stats = band.json_decode(background("st-stats", cmd, 300) or "")
+  local me, peers = services.my_device_id(), {}
+  for d in (background("st-peers-" .. id, q(st) .. " cli config folders " .. id .. " devices list", 300) or ""):gmatch("[^\r\n]+") do
+    if d ~= me then peers[#peers + 1] = d end
+  end
+  return services.quiet_days(stats, peers, os.time())
+end
 function services.set_folder_label(id, label)
   local st = services.syncthing_path()
   if st then reaper.ExecProcess(q(st) .. " cli config folders " .. id .. " label set " .. q(label), 8000) end

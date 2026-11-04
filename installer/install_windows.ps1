@@ -85,9 +85,9 @@ if (-not $isHost -and -not $folderId) { # (someone's device ID typed in by hand,
   if (-not $folderId) { $folderId = "bandsync" }
 }
 $bandName = $BandName -replace '[^\w\- ]', ''
-if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Your group's name" "My group") -replace '[^\w\- ]', '' } }
+if ($isHost -and -not $bandName) { while (-not $bandName) { $bandName = (Ask "Name your group or session" "My group") -replace '[^\w\- ]', '' } }
 if (-not $bandName) { $bandName = "the group" }
-$defRoot = if ($folderId -eq "bandsync") { Join-Path $env:USERPROFILE "BandSync" } else { Join-Path $env:USERPROFILE "BandSync $bandName" }
+$defRoot = if ($folderId -eq "bandsync") { Join-Path $env:USERPROFILE "BandSync" } else { Join-Path $env:USERPROFILE "StudioSync $bandName" }
 $root = if ($Root) { $Root } else { Ask "Where should $bandName's shared folder be" $defRoot }
 # The first one set up: an ID of the group's own. They all used to get "bandsync", so someone in two such groups had the two
 # folders treated as one and their files mixed. Run again on the same folder, it keeps the ID it has; a folder from before
@@ -101,7 +101,7 @@ if (-not $folderId) {
     $folderId = "bandsync-$slug-" + ('{0:x4}' -f (Get-Random -Maximum 65536))
   }
 }
-$driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "BandSync - $bandName" }
+$driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "StudioSync - $bandName" }
 # SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
 # (James, 2026-10-31: "it feels like a core feature"); -Live no / -Solo no still leave them out.
 $wantLive = $Live -ne "no"
@@ -305,7 +305,7 @@ New-Item -ItemType Directory -Force $root | Out-Null
 $bj = Join-Path $root "_band\band.json"
 if ($isHost -and -not (Test-Path $bj)) { # (who this folder is: lib/band.lua band.info; names are plain)
   New-Item -ItemType Directory -Force (Join-Path $root "_band") | Out-Null
-  [IO.File]::WriteAllText($bj, (@{ name = $bandName; id = $folderId; drive = $driveName } | ConvertTo-Json -Compress))
+  [IO.File]::WriteAllText($bj, (@{ name = $bandName; id = $folderId; drive = $driveName; owner = $user } | ConvertTo-Json -Compress))
 }
 # per-song sync (lib/songsync.lua writes the same block): a new bandmate gets every song's listing, and a song in
 # full once they open it, so the first sync isn't the whole library. The first one set up keeps everything.
@@ -316,7 +316,7 @@ if (-not $isHost -and -not ((Test-Path $ign) -and (Select-String -Path $ign -Pat
 }
 $folders = @(STcli config folders list)
 if (-not ($folders | Where-Object { $_ })) { STcli config defaults folder path set (Split-Path $root) | Out-Null } # fresh setup only
-$label = if ($folderId -eq "bandsync") { "BandSync" } else { "BandSync $bandName" }
+$label = if ($folderId -eq "bandsync") { "BandSync" } else { "StudioSync $bandName" }
 if ($folders -notcontains $folderId) {
   STcli config folders add --id $folderId --label $label --path $root | Out-Null
   Ok "$bandName's shared folder -> $root"

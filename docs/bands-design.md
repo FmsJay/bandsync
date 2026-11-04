@@ -13,13 +13,13 @@ One Syncthing folder (id `bandsync`) holds everything: every song, `_band/names.
 
 A band is its own shared folder, nothing more. Everything band-wide moves with it.
 
-- **Syncthing:** one folder per band, id `bandsync-<band>-<4 hex digits>`, at `<BandSync folder>/<Band name>`. Letting someone in
+- **Syncthing:** one folder per band, id `bandsync-<band>-<4 hex digits>`, at `<parent folder>/StudioSync <Band name>`. Letting someone in
   shares only that band's folder with them, so another band never sees it. The existing `bandsync` folder becomes
   the first band, with its id kept, so nobody re-syncs anything.
 - **Per band:** songs, `_band/names.json`, `plugins/` (what everyone in *this* band has), drum maps, the SonoBus
   group, the Drive copy.
 - **Per machine (unchanged):** your name, audio settings, latency, MIDI plays as.
-- **Google Drive:** one Drive folder per band, `BandSync - <Band>`, shared with that band only (Drive shares whole
+- **Google Drive:** one Drive folder per band, `StudioSync - <Band>`, shared with that band only (Drive shares whole
   folders, so bands can't nest inside one shared folder). The existing `BandSync` folder stays as the first band's.
 - **Panel:** the start screen and Setup show the band you're in, with a switch when you're in more than one. Each song
   tab remembers its band, so two bands' songs can be open at once.

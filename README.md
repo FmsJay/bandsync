@@ -11,22 +11,23 @@ project sections they work on, and Restore can take back any change, any track, 
 Plain-Lua ReaScripts (the control panel needs ReaImGui; SWS helps). REAPER 7.18 or newer; 7.83 is tested.
 Machines talk only through a shared folder (Syncthing recommended), with an optional Google Drive copy.
 
-## Start a new group
+## Start a new group/session
+
+For a band, or for one song with someone: it's the same thing, so name it what it is.
 
 1. Run the installer: **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (see
    [Setup](#setup-each-person-once) if macOS blocks it). Answer *n* to "Is someone in the group already set up?" and
-   name your group. Already have StudioSync? **Setup > Options > Start a new group** instead.
+   give it a name. Already have StudioSync? Press **Start a new group/session** on a project's first screen, or in
+   Setup > Options. With a project open, it offers to share it and has the invitation ready.
 2. In REAPER, open your project and press **Share this project with the group** in the StudioSync panel.
 3. On the Home page, press **Invite a collaborator**. It copies a line for them to paste: send it to each person.
 4. When they've run it, your panel shows **Let *them* in**: press it.
+5. Finished? **Close** in Setup > Options stops it on every computer. Everyone keeps their copy, and its projects stay
+   open as ordinary projects.
 
 Syncing needs no account: only your two computers and the shared folder, and files move while both are online. Two
 extras do: *Play along* and *Jam* use one Tailscale account for the group, and the optional Google Drive copy uses a
 Google account. REAPER keeps its own licence (reaper.fm).
-
-**Just one project with someone, for a while?** Open it and press **Create a temporary session**. It makes a session of
-its own, apart from your groups, and puts an invitation on your clipboard. When you're done, **End session** on Home
-stops it on every computer. Everyone keeps their copy, and the project stays open as an ordinary project.
 
 ## Collaborators: start here
 
@@ -338,8 +339,9 @@ Google Drive copy, and nobody in your other groups sees it. `_band/band.json` in
 (name, Syncthing folder id, Drive folder name); a folder without one is the first group (Syncthing id `bandsync`,
 Drive folder `BandSync`).
 
-- **Rename** and **Leave group** (Setup > Options > Groups): a new name reaches everyone, and folder names stay as they are. Leaving stops this computer syncing it: you keep your copy, its projects stay open as ordinary projects, and someone can invite you again. Your only group can't be left.
-- **Start a new group** (Setup > Options > Groups): makes its folder beside your first group's (`BandSync <Name>`) and its
+- **Who runs a group**: whoever started it is its **owner**, and can make people **admins** on their cards in Who's here. Admins let people in, rename it and remove members. Only the owner can remove an admin, make someone else the owner, or close it. This trusts the people in the group: the list is a shared file, not a lock.
+- **Rename** and **Leave** (Setup > Options > Groups): a new name reaches everyone, and folder names stay as they are. Leaving stops this computer syncing it: you keep your copy, its projects stay open as ordinary projects, and someone can invite you again. The owner hands it over first, or closes it. Your only group can't be left, unless nobody in it has been online for a week: closed or removed while you were offline, nothing can reach you to say so, and the panel says so then.
+- **Start a new group/session** (Setup > Options > Groups): makes its folder beside your first group's (`StudioSync <Name>`) and its
   own Syncthing folder, shared with nobody yet. Then *Invite a collaborator*: the invitation is for the group you're
   working in, and their installer joins that group (`BS_BAND_ID` / `BS_BAND_NAME` on a Mac, `-BandId` / `-BandName`
   on Windows). *Let them in* shares only that group's folder.

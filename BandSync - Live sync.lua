@@ -357,7 +357,7 @@ local function poll()
     local ask = {}
     local auto = host and #band.bands() <= 1
     for _, d in ipairs(services.pending_devices()) do
-      if auto and services.on_tailnet(d.address) and not joined[d.id] then
+      if auto and services.on_tailnet(d.address) and not joined[d.id] and require("groups").may_manage(cfg.root, cfg.user) then
         joined[d.id] = true
         local ok, why = services.add_device(d.id, d.name, band.info(cfg.root).id)
         band.log(ok and string.format("'%s' (%s) joined the group folder: it asked over the group's Tailscale", d.name, d.id:sub(1, 7))

@@ -279,17 +279,19 @@ function pp.draw(ctx, ImGui, proj, cfg)
   end
   ImGui.SetItemTooltip(ctx, "Adds the studio's translation right after each plug-in this machine doesn't have, so you hear something close. " ..
     "Only on this machine; the original stays in the project for everyone who has it.")
-  if ImGui.BeginTable(ctx, "plugs", 4, ImGui.TableFlags_RowBg | ImGui.TableFlags_SizingStretchProp | ImGui.TableFlags_ScrollY) then
+  local narrow = ImGui.GetContentRegionAvail(ctx) < 420 -- (four columns in 340 px read "Missing for" as "...": design review)
+  if ImGui.BeginTable(ctx, "plugs", narrow and 3 or 4, ImGui.TableFlags_RowBg | ImGui.TableFlags_ScrollY) then
     ImGui.TableSetupScrollFreeze(ctx, 0, 1)
-    ImGui.TableSetupColumn(ctx, "Plug-in")
-    ImGui.TableSetupColumn(ctx, "Tracks")
-    ImGui.TableSetupColumn(ctx, "Missing for")
-    ImGui.TableSetupColumn(ctx, "Translation", ImGui.TableColumnFlags_WidthFixed, 120) -- (long track lists squeezed out its button)
+    ImGui.TableSetupColumn(ctx, "Plug-in", ImGui.TableColumnFlags_WidthStretch, 3)
+    if not narrow then ImGui.TableSetupColumn(ctx, "Tracks", ImGui.TableColumnFlags_WidthStretch, 2) end
+    ImGui.TableSetupColumn(ctx, "Missing for", ImGui.TableColumnFlags_WidthStretch, 2)
+    ImGui.TableSetupColumn(ctx, "Translation", ImGui.TableColumnFlags_WidthFixed, narrow and 76 or 120) -- (long track lists squeezed out its button)
     ImGui.TableHeadersRow(ctx)
     for _, u in ipairs(used) do
       ImGui.TableNextRow(ctx)
       ImGui.TableNextColumn(ctx); ImGui.Text(ctx, (u.name:gsub("^%w+:%s*", "")))
-      ImGui.TableNextColumn(ctx); ImGui.TextDisabled(ctx, table.concat(u.tracks, ", "))
+      ImGui.SetItemTooltip(ctx, table.concat(u.tracks, ", "))
+      if not narrow then ImGui.TableNextColumn(ctx); ImGui.TextDisabled(ctx, table.concat(u.tracks, ", ")) end
       ImGui.TableNextColumn(ctx)
       local miss = {}
       for _, l in ipairs(lists) do if not l.set[u.key] then miss[#miss + 1] = l.user end end

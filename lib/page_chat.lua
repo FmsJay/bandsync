@@ -116,10 +116,12 @@ function chat.draw(ctx, ImGui, cfg, b)
   local t = load(cfg, b)
   local short = select(2, ImGui.GetContentRegionAvail(ctx)) < 170
   local function switches()
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 4, 1)
   for i, sc in ipairs(SCOPES) do
     if i > 1 then fits(ImGui.CalcTextSize(ctx, sc[2]) + 36) end
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
+  ImGui.PopStyleVar(ctx)
   ImGui.SetItemTooltip(ctx, "What you see and who you're writing to. This room: only this room's. This project: the project's and all its rooms'. " ..
     "Studio: everything, from every project and room. What you write goes to the one picked here.")
   do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
@@ -180,11 +182,14 @@ function chat.draw(ctx, ImGui, cfg, b)
     ImGui.SetItemTooltip(ctx, "Show only one person's messages, to-dos, links, notes and drawings, on this computer.")
   end
   end
-  if short then
-    if ImGui.SmallButton(ctx, "Show...") then ImGui.OpenPopup(ctx, "chat switches") end
+  local function to_button()
+    local now = "?"
+    for _, sc in ipairs(SCOPES) do if sc[1] == scope then now = sc[2] end end
+    if ImGui.Button(ctx, "To: " .. now .. "...") then ImGui.OpenPopup(ctx, "chat switches") end -- (who you're writing to stays in view)
     ImGui.SetItemTooltip(ctx, "What you see and who you're writing to, and drawing on the tracks.")
     if ImGui.BeginPopup(ctx, "chat switches") then switches(); ImGui.EndPopup(ctx) end
-  else switches() end
+  end
+  if not short then switches() end
   local only = chat.only()
   local function shown(v) return only == "" or v.user == only end
   if ImGui.BeginTabBar(ctx, "chat") then
@@ -193,6 +198,7 @@ function chat.draw(ctx, ImGui, cfg, b)
       if reaper.GetExtState(band.SECTION, seen_key(b, scope)) < newest then reaper.SetExtState(band.SECTION, seen_key(b, scope), newest, true) end
       local _, h = ImGui.GetContentRegionAvail(ctx)
       local function typing()
+        if short then to_button(); ImGui.SameLine(ctx) end
         ImGui.SetNextItemWidth(ctx, -60)
         local enter
         enter, draft = chat.input(ctx, ImGui, "##draft", "message", draft)

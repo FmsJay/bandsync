@@ -14,8 +14,6 @@ local PALETTES = {
   Warm = { bg = 0x221D18, card = 0x312A23, nav = 0x29231D, text = 0xEFE6DA, muted = 0xA19383, accent = 0xE0954A,
     green = 0x8CC56A, yellow = 0xEDC05A, red = 0xE5705A, on_status = 0x221D18, steel = 0xD6CBBC },
 }
--- Group, project and room on the top bar: their own colours in every theme, with white words.
-theme.PILL_GROUP, theme.PILL_PROJECT, theme.PILL_ROOM, theme.PILL_TEXT = 0x7458C8FF, 0x2F6FE0FF, 0x14899CFF, 0xFFFFFFFF
 
 local function mix(a, b, t) -- a towards b, each channel; no alpha
   local out = 0

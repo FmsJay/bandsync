@@ -82,10 +82,10 @@ end
 -- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).
 -- What StudioSync just did, for a few seconds. Exactly one line is held for it: a toast that wrapped moved the page under the mouse and back (Mac, 0.51.9),
 -- so a longer one lies over the page, on its own background, and what's under it stays put and clickable.
-function tools.toast_show(ctx, ImGui, line)
+function tools.toast_show(ctx, ImGui, line, place)
   local x, y = ImGui.GetCursorScreenPos(ctx)
   local w, lh = (ImGui.GetContentRegionAvail(ctx)), ImGui.GetTextLineHeight(ctx)
-  ImGui.Dummy(ctx, 0, lh)
+  if place then x, y, w = place.x, place.y, place.w else ImGui.Dummy(ctx, 0, lh) end
   if not line then return end
   local theme, text = require("theme"), line:sub(7)
   local dl = ImGui.GetForegroundDrawList(ctx)

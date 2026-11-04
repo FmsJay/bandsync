@@ -138,7 +138,7 @@ function ui.crumb(text, t0, t1, h, tip)
     ImGui.SetMouseCursor(ctx, ImGui.MouseCursor_Hand)
     ImGui.DrawList_AddRect(dl, x, y, x + w, y + h, 0xFFFFFFC0, h / 2, 0, 1.5)
   end
-  ImGui.DrawList_AddText(dl, x + 8, y + (h - th) / 2, DARK, text)
+  ImGui.DrawList_AddText(dl, x + 8, y + (h - th) / 2, 0x10131AFF, text) -- (dark on these colours in every theme: Light's white was hard to read)
   ImGui.SetItemTooltip(ctx, tip)
   return clicked
 end
@@ -774,7 +774,6 @@ function ui.person_name(p, size)
   local role = require("groups").role(cfg.root, p.user)
   if role == "owner" or role == "admin" then
     ImGui.SameLine(ctx, 0, 6)
-    ImGui.AlignTextToFramePadding(ctx)
     ImGui.TextDisabled(ctx, role)
   end
 end
@@ -1095,7 +1094,7 @@ local function section_recall()
       ImGui.PushID(ctx, i)
       local upto = 0 -- (mirror sessions: the point is a moment in History)
       for k, e in ipairs(entries) do if (e.time or "") <= (p.time or "") then upto = k end end
-      ui.change_row("version " .. i, local_time(p.time), string.format("%s%s  ·  %d takes", p.label, p.keep and " (kept)" or "", p.takes), upto, "at '" .. p.label .. "'", nil, tostring(p.by), p.keep and GREEN or nil)
+      ui.change_row("version " .. i, local_time(p.time), string.format("%s%s%s", p.label, p.keep and " (kept)" or "", (p.takes or 0) > 0 and string.format("  ·  %d takes", p.takes) or ""), upto, "at '" .. p.label .. "'", nil, tostring(p.by), p.keep and GREEN or nil)
       ImGui.PopID(ctx)
     end
     ImGui.EndChild(ctx)
@@ -1763,6 +1762,7 @@ local function rooms_squares()
   local avail = ImGui.GetContentRegionAvail(ctx)
   local w, gap = 178, 8
   local per = math.max(1, math.floor((avail + gap) / (w + gap)))
+  w = math.floor((avail - gap * (per - 1)) / per) -- (they fill the page, as the people's cards do)
   for i, r in ipairs(room_view.list) do
     if (i - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, gap) end
     local here = r.name == b.room
@@ -1777,7 +1777,7 @@ local function rooms_squares()
         local cx, cy = ImGui.GetWindowPos(ctx)
         local cw, ch = ImGui.GetWindowSize(ctx)
         local dl = ImGui.GetWindowDrawList(ctx)
-        ImGui.PushClipRect(ctx, cx, cy, cx + cw, cy + ch, false)
+        ImGui.PushClipRect(ctx, cx, cy, cx + cw, cy + ch, true) -- (true: with the column's own edges, or it ran past them)
         ui.gradient(dl, cx, cy, cx + cw, cy + ch, cx, cx + cw, function(col) ImGui.DrawList_AddRect(dl, cx + 1, cy + 1, cx + cw - 1, cy + ch - 1, col, 8, 0, 2) end)
         ImGui.PopClipRect(ctx)
       end
@@ -1880,20 +1880,16 @@ local function layout(parts) -- { { fn, width } }
     for _, part in ipairs(parts) do part[1]() end
     return
   end
-  local _, h = ImGui.GetContentRegionAvail(ctx)
-  if h < 170 and reaper.GetExtState(band.SECTION, "dock_hint") == "" then -- once: a short docker hides most of each page (above the columns: beside them it could be off the edge)
-    ImGui.TextColored(ctx, YELLOW, "Short on room: drag the thin line just above the docker's tabs upward to see more.")
-    ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Got it") then reaper.SetExtState(band.SECTION, "dock_hint", "1", true) end
-    _, h = ImGui.GetContentRegionAvail(ctx)
-  end
+  local avail, h = ImGui.GetContentRegionAvail(ctx)
+  local total = 0
+  for _, part in ipairs(parts) do total = total + (part[2] or 340) end
+  local scale = math.max(1, (avail - 10 * (#parts - 1)) / total) -- (fixed widths left the right of a wide docker empty: design review)
   for i, part in ipairs(parts) do
     if i > 1 then ImGui.SameLine(ctx, 0, 10) end
     ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, theme.COLUMN)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 12, 10)
     ImGui.BeginGroup(ctx)
-    local fh = ImGui.GetTextLineHeightWithSpacing(ctx) -- a line under the column says when it hides more (drawn over the column, it covered text)
-    local open = ImGui.BeginChild(ctx, "col" .. i, part[2] or 340, h - fh, ImGui.ChildFlags_AlwaysUseWindowPadding)
+    local open = ImGui.BeginChild(ctx, "col" .. i, math.floor((part[2] or 340) * scale), h, ImGui.ChildFlags_AlwaysUseWindowPadding)
     ImGui.PopStyleVar(ctx)
     ImGui.PopStyleColor(ctx)
     local more = false
@@ -1901,14 +1897,15 @@ local function layout(parts) -- { { fn, width } }
       ImGui.PushTextWrapPos(ctx, 0)
       part[1]()
       ImGui.PopTextWrapPos(ctx)
-      more = ImGui.GetScrollMaxY(ctx) - ImGui.GetScrollY(ctx) > fh -- (less than a line out of sight isn't "more")
+      -- (a fade at the foot says there's more; a line of words cost every column its height, whether it hid anything or not: design review)
+      more = ImGui.GetScrollMaxY(ctx) - ImGui.GetScrollY(ctx) > ImGui.GetTextLineHeight(ctx)
+      if more then
+        local cx, cy = ImGui.GetWindowPos(ctx)
+        local cw, ch = ImGui.GetWindowSize(ctx)
+        local solid = theme.COLUMN
+        ImGui.DrawList_AddRectFilledMultiColor(ImGui.GetWindowDrawList(ctx), cx, cy + ch - 22, cx + cw, cy + ch, solid & 0xFFFFFF00, solid & 0xFFFFFF00, solid, solid)
+      end
       ImGui.EndChild(ctx)
-    end
-    if more then
-      ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + 12)
-      ImGui.TextDisabled(ctx, "more below: scroll this column")
-    else
-      ImGui.Dummy(ctx, 1, fh - 4)
     end
     ImGui.EndGroup(ctx)
   end
@@ -2158,7 +2155,7 @@ local function home_who()
       ui.leaving_row(p)
     end
     if #view.rows == 0 then ImGui.TextDisabled(ctx, "Nobody else has synced in this room yet.") end
-    return home_play()
+    return
   end
   local avail = ImGui.GetContentRegionAvail(ctx)
   local w, gap = 214, 8
@@ -2230,7 +2227,7 @@ local function home_claims()
   section_claims()
 end
 local function page_home()
-  if wide then layout({ { home_who, 300 }, { home_rules, 420 }, { home_claims, 420 } })
+  if wide then layout({ { home_who, 420 }, { home_play, 300 }, { home_rules, 360 }, { home_claims, 360 } }) -- (Real time had to be scrolled to, under the people: design review)
   else layout({ { home_who, 360 }, { home_session, 400 } }) end
 end
 
@@ -2453,7 +2450,9 @@ function ui.window_button()
   end
   ImGui.SetItemTooltip(ctx, armed and "Drag-to-dock is on: drag the window onto a REAPER docker. Right-click to turn it off."
     or "Dock it, fill the screen it's on or half of it. Right-click: turn on drag-to-dock (or hold Shift while dragging).")
-  if not clicked then return end
+  if clicked then ui.window_menu() end
+end
+function ui.window_menu()
   local full = placed_how == "Fill this screen"
   local list = { "Dock at the bottom", "Dock at the left", "Dock at the right", full and "Exit full screen" or "Fill this screen" }
   for _, w in ipairs(WINDOW_MENU) do if w ~= "Fill this screen" then list[#list + 1] = w end end
@@ -2599,11 +2598,10 @@ local function frame_app()
   end
   local drives = view.driver == cfg.user and "you drive" or view.driver and (view.driver .. " drives") or "nobody drives yet"
   ui.status = { label = label, colour = colour, tip = tip, drives = drives }
-  local on_bar = ImGui.IsWindowDocked(ctx) or native -- (no title bar of ours to put them on)
-  if on_bar then
-    at_row(label); pill(label, colour, DARK, fh)
-    ImGui.SetItemTooltip(ctx, tip)
-  end
+  at_row(label)
+  if ImGui.GetCursorPosX(ctx) > 17 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + 10) end -- (apart from the coloured pills: those say where you are, this how sync is going)
+  pill(label, colour, DARK, fh)
+  ImGui.SetItemTooltip(ctx, tip)
   if select(2, reaper.GetProjExtState(proj, band.SECTION, "hold")) ~= "" then -- (Hold my changes was invisible once on: review)
     local n = tonumber(reaper.GetExtState(band.SECTION, "held " .. key)) or 0
     local held = n > 0 and string.format("Holding %d change%s", n, n == 1 and "" or "s") or "Holding your changes"
@@ -2639,11 +2637,10 @@ local function frame_app()
     at_row("Start")
     if ImGui.Button(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
-  if on_bar then
-    at_row(drives); ImGui.AlignTextToFramePadding(ctx)
-    ImGui.TextDisabled(ctx, drives)
-    ImGui.SetItemTooltip(ctx, "The driver's changes go to everyone, except on what someone has claimed.")
-  end
+  at_row(drives)
+  ImGui.SetCursorPosY(ctx, y0 + (fh - ImGui.GetTextLineHeight(ctx)) / 2) -- (not AlignTextToFramePadding: it carries along the row, and the page tabs sat low: design review)
+  ImGui.TextDisabled(ctx, drives)
+  ImGui.SetItemTooltip(ctx, "The driver's changes go to everyone, except on what someone has claimed.")
   -- (no buttons for these: Ctrl+Z and Ctrl+Shift+Z do it, and Edit > Undo: Live sync steps in. The radial menu still asks for them here.)
   local function undo_redo(redo) -- (lib/undo.lua: the same as the BandSync - Undo / Redo actions, but always asks)
     local res, why = require("undo").step(proj, cfg, b, redo, { ask = true, describe = describe })
@@ -2652,14 +2649,15 @@ local function frame_app()
   end
   if wide then -- the pages, in the bar
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, 8, 0) -- (a selectable grows by the spacing: the highlight stood taller than the pills)
     for i, p in ipairs(ui.pages()) do
       ImGui.SameLine(ctx, 0, i == 1 and 24 or 2)
       -- (they stay put: going by the status beside them, they slid when "In sync" became "Receiving 13", under the mouse)
       if i == 1 then tabs_at = math.max(tabs_at, ImGui.GetCursorPosX(ctx)); ImGui.SetCursorPosX(ctx, tabs_at) end
       ImGui.SetCursorPosY(ctx, y0)
-      nav_item(p, ImGui.CalcTextSize(ctx, p[1]) + 28, fh)
+      nav_item(p, ImGui.CalcTextSize(ctx, p[1]) + 28 + (nav_dot(p[1]) and 12 or 0), fh)
     end
-    ImGui.PopStyleVar(ctx)
+    ImGui.PopStyleVar(ctx, 2)
     if wh < y0 + fh + 60 then
       local words = "Too short to show a page: drag the line above the docker's tabs up."
       ImGui.SameLine(ctx, 0, 16)
@@ -2675,14 +2673,45 @@ local function frame_app()
   for _, l in ipairs(labels) do need = need + ImGui.CalcTextSize(ctx, l) + 28 end
   ImGui.SameLine(ctx, 0, 8)
   local room = ImGui.GetContentRegionAvail(ctx)
-  if room > need + 12 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
-  else at_row("Sync and exit") end
-  if ImGui.Button(ctx, "Sync and exit") then require("leave").start(proj, cfg, b) end
-  ImGui.SetItemTooltip(ctx, "Leaving? Saves, gets everything you've done out to the others, says who has it, then lets you close the project or quit REAPER.")
-  at_row(docked and "Undock" or "Window")
-  if docked then tools.dock_menu(true) else ui.window_button() end
+  local toast_place
+  if ww >= 520 and room - need > 160 then -- (the bar has room: a blank line under it cost a short docker 30 px for something shown 6 s at a time)
+    local tx = ImGui.GetCursorScreenPos(ctx)
+    local _, ty = ImGui.GetWindowPos(ctx)
+    toast_place = { x = tx + 8, y = ty + y0 + (fh - ImGui.GetTextLineHeight(ctx)) / 2, w = room - need - 16 }
+  end
+  if ww < 520 then -- (narrow, "Window" wrapped alone onto a row of its own: design review)
+    at_row("...")
+    if ImGui.Button(ctx, "...##window") then
+      local pick = band.pick({ "Sync and exit", docked and "Undock" or "Window..." })
+      if pick == "Sync and exit" then require("leave").start(proj, cfg, b)
+      elseif pick == "Undock" then dock_req = 0
+      elseif pick then ui.window_menu() end
+    end
+    ImGui.SetItemTooltip(ctx, "Sync and exit, and where the panel sits.")
+  else
+    if room > need + 12 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
+    else at_row("Sync and exit") end
+    if ImGui.Button(ctx, "Sync and exit") then require("leave").start(proj, cfg, b) end
+    ImGui.SetItemTooltip(ctx, "Leaving? Saves, gets everything you've done out to the others, says who has it, then lets you close the project or quit REAPER.")
+    at_row(docked and "Undock" or "Window")
+    if docked then tools.dock_menu(true) else ui.window_button() end
+  end
   if bar_min then ui.window_buttons(at_row, y0, fh) end
   ImGui.SetCursorPos(ctx, 16, y0 + fh + 8)
+  -- narrow: the pages first, so a row arriving under them can't slide them from under the mouse (design review)
+  if compact and not wide then
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
+    for i, p in ipairs(ui.pages()) do
+      local w = ImGui.CalcTextSize(ctx, p[1]) + 28 + (nav_dot(p[1]) and 12 or 0)
+      if i > 1 then
+        ImGui.SameLine(ctx, 0, 2)
+        if ImGui.GetContentRegionAvail(ctx) < w then ImGui.NewLine(ctx); ImGui.SetCursorPosX(ctx, 16) end -- (a narrow panel lost Plugins and Setup off the right)
+      end
+      nav_item(p, w, fh)
+    end
+    ImGui.PopStyleVar(ctx)
+    ImGui.SetCursorPosX(ctx, 16)
+  end
   -- what BandSync just did, under the bar for a few seconds (actions used to report only to the Console)
   local log = band.activity()
   local newest = log[1]
@@ -2703,7 +2732,11 @@ local function frame_app()
     end
   end
   tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)
-  tools.toast_show(ctx, ImGui, tools.toast_line and reaper.time_precise() - tools.toast_at < 6 and tools.toast_line or nil)
+  tools.toast_show(ctx, ImGui, tools.toast_line and reaper.time_precise() - tools.toast_at < 6 and tools.toast_line or nil, toast_place)
+  local bars_at = ImGui.GetCursorPosY(ctx)
+  ImGui.SetNextWindowSizeConstraints(ctx, 0, 0, 100000, (wide or wh < 440) and (ImGui.GetFrameHeightWithSpacing(ctx) * 2 + 2) or wh * 0.25)
+  local bars_open = ImGui.BeginChild(ctx, "bars", 0, 0, ImGui.ChildFlags_AutoResizeY)
+  if bars_open then ImGui.Indent(ctx, 16) end
   tools.removed_bar(ctx, ImGui)
   ui.sync_problem()
   require("leave").draw(ctx, ImGui)
@@ -2713,6 +2746,9 @@ local function frame_app()
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
   end
   tools.put_back_bar(ctx, ImGui, b and b.song) -- (an edit of yours that was undone, and why: stays until dismissed)
+  if bars_open then ImGui.Unindent(ctx, 16); ImGui.EndChild(ctx) end
+  local _, bars_h = ImGui.GetItemRectSize(ctx)
+  if bars_h < 2 then ImGui.SetCursorPosY(ctx, bars_at) end -- (nothing in them: no gap)
   ui.asked_page()
   local want
   want = reaper.GetExtState(band.SECTION, "panel do") -- a choice from the radial menu
@@ -2722,19 +2758,6 @@ local function frame_app()
     elseif want == "realtime" then set_same_room(not same_room_on())
     elseif want == "chat" then page = "Chat"
     elseif want:match("^history") then page = "Restore" end
-  end
-  if compact and not wide then
-    ImGui.SetCursorPosX(ctx, 16)
-    ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
-    for i, p in ipairs(ui.pages()) do
-      local w = ImGui.CalcTextSize(ctx, p[1]) + 28
-      if i > 1 then
-        ImGui.SameLine(ctx, 0, 2)
-        if ImGui.GetContentRegionAvail(ctx) < w then ImGui.NewLine(ctx); ImGui.SetCursorPosX(ctx, 16) end -- (a narrow panel lost Plugins and Setup off the right)
-      end
-      nav_item(p, w, fh)
-    end
-    ImGui.PopStyleVar(ctx)
   end
   ImGui.Separator(ctx)
   if not compact then
@@ -2755,13 +2778,18 @@ local function frame_app()
   -- (rows coming or going above it move the page under the mouse: its buttons wait a moment too, or a Remove or Restore could take a click aimed elsewhere)
   local settling = require("suggest").settling()
   ImGui.BeginDisabled(ctx, settling)
+  if wide then -- (two full-size buttons filled a short column: design review)
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 8, 3)
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, 8, 5)
+  end
+  local was_wide = wide
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
     ImGui.PushTextWrapPos(ctx, 0) -- text wraps to the page, whatever its width
     if page == "Play/Jam" and not ui.play_shown() then page = "Home" end
     if page == "Groups" then ui.page_body(function() require("page_groups").draw_groups(ui.env) end)
     elseif page == "Projects" then ui.page_body(function() require("page_groups").draw_projects(ui.env) end)
     elseif page == "Home" then page_home()
-    elseif page == "Rooms" then layout({ { rooms_squares, 560 }, { rooms_actions, 560 } })
+    elseif page == "Rooms" then layout({ { rooms_squares, 900 }, { rooms_actions, 300 } })
     elseif page == "Play/Jam" then
       if wide then layout({ { section_together, 380 }, { function() section_live("mode") end, 420 }, { function() section_live("rest") end, 520 } })
       else layout({ { section_together, 380 }, { section_live, 480 } }) end
@@ -2774,6 +2802,7 @@ local function frame_app()
     ImGui.PopTextWrapPos(ctx)
     ImGui.EndChild(ctx)
   end
+  if was_wide then ImGui.PopStyleVar(ctx, 2) end
   ImGui.EndDisabled(ctx)
   ImGui.PopStyleVar(ctx)
 end
@@ -3152,15 +3181,8 @@ local function loop()
   local visible, open = false, true
   if minimized then open = pill_window()
   else
-    -- what sync is doing, on the title bar like the strip. (Docked, it stays plain: it's the docker's tab, and JS_Window_Find looks for it by name.)
-    local title, st = "StudioSync###BandSync", app and not native and not (win_rect and win_rect.docked) and ui.status
-    if st then
-      local words = "StudioSync  ·  " .. st.label .. "  ·  " .. st.drives
-      if win_rect and 52 + ImGui.CalcTextSize(ctx, words) + 110 > win_rect[3] then words = st.label end
-      title = string.rep(" ", math.ceil(52 / math.max(1, (ImGui.CalcTextSize(ctx, " "))))) .. words .. "###BandSync"
-    end
-    ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowTitleAlign, st and 0 or 0.5, 0.5) -- (the logo has the left corner)
-    visible, open = ImGui.Begin(ctx, title, true, flags)
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowTitleAlign, 0.5, 0.5) -- (the logo has the left corner)
+    visible, open = ImGui.Begin(ctx, "StudioSync###BandSync", true, flags)
     ImGui.PopStyleVar(ctx)
   end
   if visible then

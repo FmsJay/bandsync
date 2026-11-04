@@ -37,7 +37,9 @@ function pg.start_button(env, label)
     if why_not then ImGui.TextColored(ctx, theme.YELLOW, why_not) end
     do
       local drive = require("drive")
+      ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 4, 1)
       local ch, on = ImGui.Checkbox(ctx, "Keep a copy on Google Drive", drive.wanted())
+      ImGui.PopStyleVar(ctx)
       if ch then
         reaper.SetExtState(band.SECTION, "drive make", on and "" or "off", true)
         if on and reaper.GetExtState(band.SECTION, "drive_root") == "off" then reaper.SetExtState(band.SECTION, "drive_root", "", true) end
@@ -192,7 +194,6 @@ function pg.draw_groups(env)
       env.heading(g.name, 17)
       local role = groups.role(g.root, me)
       ImGui.SameLine(ctx)
-      ImGui.AlignTextToFramePadding(ctx)
       if g.root == cfg.root then ImGui.TextColored(ctx, theme.GREEN, "you're working in this one")
       elseif role == "owner" or role == "admin" then ImGui.TextDisabled(ctx, role) end
       if g.root == cfg.root and (role == "owner" or role == "admin") then
@@ -222,8 +223,10 @@ function pg.draw_groups(env)
         end
         ImGui.SetItemTooltip(ctx, "Everyone in it sees the new name. Its folder names, here and on Google Drive, stay as they are.")
       end
-      ImGui.SameLine(ctx)
+      ImGui.SameLine(ctx, 0, 18)
+      if role == "owner" then ImGui.PushStyleColor(ctx, ImGui.Col_Text, theme.RED) end
       if ImGui.SmallButton(ctx, role == "owner" and "Close" or "Leave") then leave(env, g.root) end
+      if role == "owner" then ImGui.PopStyleColor(ctx) end
       ImGui.SetItemTooltip(ctx, role == "owner" and "End it for everyone: every computer stops syncing it, and everyone keeps their copy. To stay and leave it to someone else, right-click their name in Who's here and make them the owner."
         or "This computer stops syncing it. You keep your copy, and someone can invite you again.")
       local quiet = require("services").days_quiet(g.id)
@@ -488,7 +491,9 @@ function pg.draw_projects(env)
   ImGui.Spacing(ctx)
   ImGui.Separator(ctx)
   local all = ss.keep_all()
+  ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 4, 1)
   local ch, v = ImGui.Checkbox(ctx, "Keep every project on this computer", all)
+  ImGui.PopStyleVar(ctx)
   if ch then reaper.SetExtState(band.SECTION, "projects keep all", v and "1" or "", true); ss.apply(cfg) end
   ImGui.SetItemTooltip(ctx, "On: every project of this studio comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
     "Off: every project's listing comes, and a project in full once you open it here.")

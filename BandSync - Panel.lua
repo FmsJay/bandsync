@@ -2561,18 +2561,26 @@ local function frame()
       end
       ImGui.SetItemTooltip(ctx, "You're in several groups: new projects, Join the group's project and the project list are this group's.")
     end
-    ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF)
-    if ImGui.Button(ctx, "Join the group's project") then action("Open session") end
-    ImGui.PopStyleColor(ctx)
-    ImGui.SameLine(ctx)
-    if #list == 0 then
-      ImGui.TextColored(ctx, GREY, "nothing from the group has arrived yet")
-      ImGui.SetItemTooltip(ctx, "The group's projects arrive in your shared folder (" .. cfg.root .. ") once a collaborator lets you in: " ..
-        "their panel shows a 'Let you in' button for your computer. Setup > Health shows whether the folder is connected.")
+    -- (a group with nothing in it, and its name here already: you started it, so there's nothing to join. Someone waiting to be let in has no band.json yet)
+    local starter = #list == 0 and reaper.file_exists(cfg.root .. "/_band/band.json")
+    if starter then
+      ImGui.TextColored(ctx, GREY, "Nothing is shared in this group yet. Share a project, then invite your collaborators from Home.")
     else
-      ImGui.TextColored(ctx, GREY, string.format("%d project%s in the group folder, worked on last: %s", #list, #list == 1 and "" or "s", list[1]))
+      ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF)
+      if ImGui.Button(ctx, "Join the group's project") then action("Open session") end
+      ImGui.PopStyleColor(ctx)
+      ImGui.SameLine(ctx)
+      if #list == 0 then
+        ImGui.TextColored(ctx, GREY, "nothing from the group has arrived yet")
+        ImGui.SetItemTooltip(ctx, "The group's projects arrive in your shared folder (" .. cfg.root .. ") once a collaborator lets you in: " ..
+          "their panel shows a 'Let you in' button for your computer. Setup > Health shows whether the folder is connected.")
+      else
+        ImGui.TextColored(ctx, GREY, string.format("%d project%s in the group folder, worked on last: %s", #list, #list == 1 and "" or "s", list[1]))
+      end
     end
+    if starter then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
     if ImGui.Button(ctx, "Share this project with the group") then action("Publish session") end
+    if starter then ImGui.PopStyleColor(ctx) end
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Prepare this project first") then action("Prepare session") end
     ImGui.SetItemTooltip(ctx, "For a busy project: takes into lanes, FLAC recording, clear track names, media in the project folder, tidy-up. Shows a checklist first.")

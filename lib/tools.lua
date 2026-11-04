@@ -80,20 +80,24 @@ end
 -- A machine asking to join the band folder (the host's Syncthing has it waiting; one on the band's Tailscale is let in
 -- by Live sync by itself). On every page of the panel, at the top: in the classic panel only, a new bandmate who
 -- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).
+local let_at = {} -- (who was just let in: Syncthing's own list says they're asking for up to 20 s more, and the row stayed)
 function tools.join_requests(ctx, ImGui, b)
   if not b then return end -- (any bandmate's invite brings a request here: not only the host's)
   local binfo = band.info(b.root or reaper.GetExtState(band.SECTION, "sync_root"))
   local asking = band.json_decode(reaper.GetExtState(band.SECTION, "pending_join"))
   local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}
   for _, d in ipairs(type(asking) == "table" and asking or {}) do
-    if type(d) == "table" and d.id and not skip[d.id] then
+    if type(d) == "table" and d.id and not skip[d.id] and reaper.time_precise() - (let_at[d.id .. (d.folder or "")] or -math.huge) > 40 then
       -- (buttons first: the words pushed them off a narrow panel)
       if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id .. (d.folder or "")) then
         local services = require("services")
         local ok, why
         if d.folder then ok, why = services.share_folder(d.folder, d.id) -- (already a bandmate: just this band's folder)
         else ok, why = services.add_device(d.id, d.name, binfo.id) end
-        if ok then require("removal").let_in(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id) end -- (taken out before, and back)
+        if ok then
+          require("removal").let_in(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id) -- (taken out before, and back)
+          let_at[d.id .. (d.folder or "")] = reaper.time_precise()
+        end
         band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the projects reach them now")
           or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
         reaper.DeleteExtState(band.SECTION, "pending_join", false)

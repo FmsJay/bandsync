@@ -94,6 +94,7 @@ end
 local function delete_mine(ctx, ImGui, cfg, e)
   if e.user ~= cfg.user then return end
   ImGui.SameLine(ctx)
+  if ImGui.GetContentRegionAvail(ctx) < 30 then ImGui.NewLine(ctx) end -- (after a long row it ran off the panel: Mac, 0.51.13)
   if ImGui.SmallButton(ctx, "x") and reaper.MB("Delete this for everyone?", "StudioSync", 4) == 6 then os.remove(e.file); cache = nil end
   ImGui.SetItemTooltip(ctx, "Delete yours (for everyone).")
 end

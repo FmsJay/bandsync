@@ -77,8 +77,12 @@ function presence.follow(proj, list, name)
     if st.user == name then
       -- stopped, your cursor goes where theirs is: after a stop, and when they jump somewhere (Mac, 0.50.4: it stayed at your own catch-up start, and a jump never came)
       local key, cur = tostring(proj) .. name, tonumber(st.cursor)
-      if cur and reaper.GetPlayStateEx(proj) == 0 and followed_cursor[key] ~= cur then reaper.SetEditCurPos2(proj, cur, false, false) end
-      if cur then followed_cursor[key] = cur end
+      -- (their status has no cursor while they play, so every stop counts as a move, even back to where their cursor already was: Mac, 0.51.13)
+      if not cur then followed_cursor[key] = nil
+      elseif reaper.GetPlayStateEx(proj) == 0 and followed_cursor[key] ~= cur then
+        reaper.SetEditCurPos2(proj, cur, false, false)
+        followed_cursor[key] = cur
+      end
       return
     end
   end

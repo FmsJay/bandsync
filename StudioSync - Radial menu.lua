@@ -1,6 +1,6 @@
--- @description BandSync: radial menu at the mouse (undo, restore, take control, Real time mode, chat)
--- A ring of BandSync's everyday moves that pops up where the mouse is: bind it to a key or a mouse button
--- (Actions list > "BandSync - Radial menu" > Add shortcut). Point at a slice to read what it does, click it to do it;
+-- @description StudioSync: radial menu at the mouse (undo, restore, take control, Real time mode, chat)
+-- A ring of StudioSync's everyday moves that pops up where the mouse is: bind it to a key or a mouse button
+-- (Actions list > "StudioSync - Radial menu" > Add shortcut). Point at a slice to read what it does, click it to do it;
 -- Esc, a click anywhere else, or the shortcut again closes it. The panel does the work (it opens if it was closed),
 -- so every choice asks first exactly as its button there does.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -34,7 +34,7 @@ local function ask(what)
   reaper.DeleteExtState(band.SECTION, "panel minimized", true) -- (the pill doesn't run the panel's pages)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
   if not (beat and reaper.time_precise() - beat < 10) then
-    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Panel.lua", true)
+    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/StudioSync - Panel.lua", true)
     if id > 0 then reaper.Main_OnCommand(id, 0) end
   end
 end
@@ -48,7 +48,7 @@ local SLICES = {
     "whole project back to a moment.", function() ask("history") end },
   driving and { "You\ndrive", "You're driving: your deletes, moves and lane choices already go to everyone." } or
     { "Take\ncontrol", "Take control: from now on your deletes, moves and lane choices go to everyone. It asks first.",
-      function() dofile(dir .. "/BandSync - Take control.lua") end },
+      function() dofile(dir .. "/StudioSync - Take control.lua") end },
   { "Real time\n" .. (rt and "on" or "off"), rt and "Turn Real time mode off: SonoBus leaves and you stop " ..
     "following play and stop. Edits keep syncing." or "Turn Real time mode on: SonoBus joins so you hear " ..
     "each other right away, and play, stop and record follow whoever presses them.", function() ask("realtime") end },
@@ -64,7 +64,7 @@ local ACCENT, SLICE, OFF, TEXT, MUTED = 0x4C8DF6FF, 0x2A2D32F2, 0x1F2124E6, 0xE6
 local STEP = 2 * math.pi / #SLICES
 local A0 = -math.pi / 2 - STEP / 2 -- slice 1 sits at the top
 
-local ctx = ImGui.CreateContext("BandSync radial")
+local ctx = ImGui.CreateContext("StudioSync radial")
 local mx, my = ImGui.PointConvertNative(ctx, reaper.GetMousePosition())
 do -- on the screen the mouse is on, all of it: opened near the top it was cut off above (Mac, 0.45.0)
   local nx, ny = reaper.GetMousePosition()
@@ -98,7 +98,7 @@ local function loop()
   ImGui.SetNextWindowPos(ctx, mx, my, ImGui.Cond_Appearing, 0.5, (R + PAD) / H) -- the ring's centre on the mouse
   ImGui.SetNextWindowSize(ctx, W, H, ImGui.Cond_Always)
   if frame == 1 then ImGui.SetNextWindowFocus(ctx) end
-  local visible, open = ImGui.Begin(ctx, "BandSync radial", true, FLAGS)
+  local visible, open = ImGui.Begin(ctx, "StudioSync radial", true, FLAGS)
   if visible then
     local dl = ImGui.GetWindowDrawList(ctx)
     local wx, wy = ImGui.GetWindowPos(ctx)

@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). Mirror sync between two scratch tabs on this machine: "James" (A, allowed everything) and "Bee" (B). The shared
 -- folder is a scratch folder, so nothing reaches the band. Both tabs are saved to the scratch folder and closed at
 -- the end (James's projects are never touched).
-local D = reaper.GetResourcePath() .. "/BandSync/tests" -- scratch: never the shared folder
+local D = reaper.GetResourcePath() .. "/StudioSync/tests" -- scratch: never the shared folder
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

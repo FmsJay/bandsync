@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). Who runs a group, renaming it, leaving it and closing it, on two computers' worth of settings.
 -- Scratch folders and a scratch tab; Syncthing's commands are recorded here, not run, and this computer's own group settings are put
 -- back at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "services", "removal", "groups", "sync", "rooms" }) do package.loaded[m] = nil end
@@ -32,7 +32,7 @@ services.my_device_id = function() return ME end
 services.days_quiet = function() return nil end
 local function said(s) for _, c in ipairs(cmds) do if c:find(s, 1, true) then return true end end return false end
 local base = D .. "/groot_" .. os.time()
-local home = base .. "/BandSync"
+local home = base .. "/StudioSync"
 local tab
 local ended_keys = {}
 -- (who's asked is read at most every few seconds: a fresh copy of the module forgets)
@@ -42,7 +42,7 @@ local function fresh()
 end
 local ok, err = pcall(function()
   reaper.RecursiveCreateDirectory(home .. "/_band", 0)
-  band.write_json(home .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "BandSync" })
+  band.write_json(home .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "StudioSync" })
   reaper.RecursiveCreateDirectory(home .. "/Lantern", 0)
   folders.bandsync = { ME, PEER }
   reaper.SetExtState(band.SECTION, "sync_root", home, false)

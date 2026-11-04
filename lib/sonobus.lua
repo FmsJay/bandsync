@@ -1,4 +1,4 @@
--- SonoBus's saved state, read and written so BandSync can put the band's group straight into it: SonoBus then
+-- SonoBus's saved state, read and written so StudioSync can put the band's group straight into it: SonoBus then
 -- joins by itself (its "Reconnect Last" rejoins the newest recent connection whenever it's instantiated), with no
 -- paste and no clipboard. Layout, from SonoBus 1.7.2 / JUCE (SonobusPluginProcessor::getStateInformation, verified
 -- against a real REAPER vst_chunk, tests/fixtures/sonobus_1.7.2_state.bin):
@@ -132,7 +132,7 @@ local function param_value(tree, id)
   end
 end
 
--- Whether a SonoBus state is already in `group` (as `user`, when given) with BandSync's buffer defaults.
+-- Whether a SonoBus state is already in `group` (as `user`, when given) with StudioSync's buffer defaults.
 function sonobus.is_set_up(b64, group, user)
   local c = unpack_chunk(b64)
   if not c or sonobus.state_group(b64) ~= group then return false end
@@ -198,7 +198,7 @@ end
 
 -- Whether SonoBus has joined a group since `ms` (Unix ms): each join puts a new entry, with the join's time, at the
 -- top of its recent connections (seen 2026-10-31: the laptop's state gained "Laptop 5" on top when it joined). A
--- written but unjoined state keeps BandSync's own entry and time.
+-- written but unjoined state keeps StudioSync's own entry and time.
 function sonobus.joined_since(b64, ms)
   local c = unpack_chunk(b64)
   local rec = c and child(c.tree, "RecentConnections")
@@ -208,7 +208,7 @@ end
 
 -- Each bandmate's own output pair. SonoBus keeps what you set for each person by name (PeerStateCacheMap, saved
 -- when they leave) and puts it back when someone of that name joins; a renamed "Laptop 5" takes "Laptop"'s. So
--- writing an entry per bandmate sends each one to their own pair, and BandSync's mix on the master (lib/hear.lua)
+-- writing an entry per bandmate sends each one to their own pair, and StudioSync's mix on the master (lib/hear.lua)
 -- can turn each person up, down or off. `outs`: { [name] = first output channel (0-based) }. Layout from SonoBus
 -- 1.7.2 (PeerStateCache::getValueTree), read from a real saved state.
 local function channel_group(start)

@@ -6,7 +6,7 @@ local page = {}
 
 local function ext(proj, k) return select(2, reaper.GetProjExtState(proj, band.SECTION, k)) end
 local function run(name)
-  local script = (debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or "") .. "/BandSync - " .. name .. ".lua"
+  local script = (debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or "") .. "/StudioSync - " .. name .. ".lua"
   local id = reaper.AddRemoveReaScript(true, 0, script, true)
   if id > 0 then reaper.Main_OnCommand(id, 0) end
 end

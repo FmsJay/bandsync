@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). Melodyne (ARA) on a take: the machine that edits it gets a print that travels; it
 -- keeps playing the editable take, a bandmate plays the print; closing the Melodyne window makes a new print.
 -- Needs Melodyne installed. Scratch folder and scratch tabs only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

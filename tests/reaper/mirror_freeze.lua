@@ -1,6 +1,6 @@
 -- Run inside REAPER (ReaScript). Freezing a track (its items rendered to audio, its plug-ins kept aside in the track's
 -- own <FREEZE> block) and unfreezing it, between two scratch tabs "James" (A) and "Bee" (B). Scratch only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

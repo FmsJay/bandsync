@@ -2,7 +2,7 @@
 -- brought back. One batch has the old "track deleted" and the item's newest change; the track's return comes
 -- later. The item must still land once its track is back (laptop, 0.34.8: SongSync Test opened without Keys' items).
 -- Two scratch tabs, a scratch shared folder; both tabs saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

@@ -2,7 +2,7 @@
 -- synth, so a bandmate in the song who has it prints it instead, and its print goes out even on a track it may not
 -- change (claimed). Also: an item's takes become fixed lanes, the comp kept, and reach the bandmate.
 -- Two scratch tabs, a scratch shared folder; both saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "json" }) do package.loaded[m] = nil end

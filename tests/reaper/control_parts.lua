@@ -1,5 +1,5 @@
 -- Run inside REAPER (ReaScript). Admins only, giving claims, what a deleted copy leaves behind, chat's scopes, the plain copy. Scratch folders only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests/control"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests/control"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "groups", "songsync", "localcopy", "export", "page_chat", "people", "hear", "leave" }) do package.loaded[m] = nil end

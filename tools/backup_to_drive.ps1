@@ -1,5 +1,5 @@
 <#
-  One-way backup of BandSync data into a cloud-drive folder (default: Google Drive), meant to run nightly.
+  One-way backup of StudioSync data into a cloud-drive folder (default: Google Drive), meant to run nightly.
   Copies new and changed files only and never deletes from the backup, so a mistake that syncs to every
   machine (a deleted take, an overwritten project) can still be recovered from here.
   Never point Syncthing and the cloud drive at the same folder: two sync engines fight over it.
@@ -7,8 +7,8 @@
   Usage: pwsh -File backup_to_drive.ps1 [-Source <folders>] [-Dest <backup folder>]
 #>
 param(
-  [string[]]$Source = @('J:\Portable Workstation\BandSync', 'J:\Portable Workstation\DAW\REAPER\BandSync'),
-  [string]$Dest = 'G:\My Drive\BandSync backup'
+  [string[]]$Source = @('J:\Portable Workstation\StudioSync', 'J:\Portable Workstation\DAW\REAPER\StudioSync'),
+  [string]$Dest = 'G:\My Drive\StudioSync backup'
 )
 
 $drive = Split-Path -Qualifier $Dest

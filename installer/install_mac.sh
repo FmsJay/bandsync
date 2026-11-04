@@ -1,7 +1,7 @@
 #!/bin/bash
 # StudioSync setup for macOS: installs and sets up everything StudioSync needs, skipping whatever is already there.
-# Run it with "Install BandSync (Mac).command" (right-click > Open the first time), or in Terminal:
-#   curl -fsSL "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/install_mac.sh?$(date +%s)" | bash
+# Run it with "Install StudioSync (Mac).command" (right-click > Open the first time), or in Terminal:
+#   curl -fsSL "https://raw.githubusercontent.com/FmsJay/studiosync/main/installer/install_mac.sh?$(date +%s)" | bash
 # (the ?<time>: GitHub's cache handed out the previous installer for minutes after a release, 2026-10-31)
 # REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), SonoBus
 # (hearing each other) and Google Drive for desktop (the band's copy). Every app comes from its official source.
@@ -13,7 +13,7 @@
 # Testing: BS_SYNCTHING_HOME drives a separate Syncthing instance, BS_NO_REAPER stops before anything happens inside REAPER.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
 set -u
-REPO="FmsJay/bandsync"
+REPO="FmsJay/studiosync"
 TAG="${BS_TAG:-main}"
 REAIMGUI="0.10.0.5"   # shortcut: pinned, like the Windows installer
 REAPACK="v1.2.6"
@@ -21,7 +21,7 @@ REAPACK="v1.2.6"
 # Rosetta says x86_64 on an Apple Silicon Mac, and those builds don't load in REAPER there.)
 ARCH="x86_64"; [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && ARCH="arm64"
 RES="$HOME/Library/Application Support/REAPER"
-WORK="$(mktemp -d /tmp/bandsync_setup.XXXXXX)"
+WORK="$(mktemp -d /tmp/studiosync_setup.XXXXXX)"
 trap 'rm -rf "$WORK"' EXIT # (also when it stops early)
 
 say()  { printf '\033[36m%s\033[0m\n' "$*"; }
@@ -97,7 +97,7 @@ if [ -z "$FOLDER_ID" ]; then
   elif [ -n "$(ls -A "$ROOT" 2>/dev/null)" ]; then FOLDER_ID=bandsync; fi
   if [ -z "$FOLDER_ID" ]; then
     SLUG="$(printf '%s' "$BAND_NAME" | tr '[:upper:]' '[:lower:]' | LC_ALL=C sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
-    FOLDER_ID="bandsync-${SLUG:-group}-$(printf '%04x' $((RANDOM * 2)))"
+    FOLDER_ID="studiosync-${SLUG:-group}-$(printf '%04x' $((RANDOM * 2)))"
   fi
 fi
 DRIVE_NAME="BandSync"; [ "$FOLDER_ID" != bandsync ] && DRIVE_NAME="StudioSync - $BAND_NAME"
@@ -194,10 +194,10 @@ if yes "$SOLO"; then
   if have "Google Drive"; then ok "Google Drive is already installed"
   else say "Installing Google Drive for desktop (asks for your password) ..."; from_dmg https://dl.google.com/drive-file-stream/GoogleDrive.dmg GoogleDrive "Google Drive"; fi
 fi
-# Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds
+# Google Drive: signed in, and the band's StudioSync folder in My Drive (the first one makes it; everyone else adds
 # the shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). Return skips.
 if yes "$SOLO" && have "Google Drive"; then
-  # (one My Drive per Google account signed in; with several, the one that has BandSync is the band's, as BandSync
+  # (one My Drive per Google account signed in; with several, the one that has StudioSync is the band's, as StudioSync
   # itself looks: lib/drive.lua. Mac 0.34.4: a personal and a band account, and head -1 watched the wrong one.)
   drives() { ls -d "$HOME"/Library/CloudStorage/GoogleDrive-*/"My Drive" 2>/dev/null; }
   mydrive() {
@@ -232,7 +232,7 @@ if yes "$SOLO" && have "Google Drive"; then
   fi
 fi
 # the band plug-in pack (optional): free, open-source plug-ins every bandmate can have, each from its official release
-# (never bundled here); what everyone has shows in REAPER's FX browser folder "BandSync (everyone has)"
+# (never bundled here); what everyone has shows in REAPER's FX browser folder "StudioSync (everyone has)"
 if yes "$PLUGINS"; then
   plugin_dmg "$(gh_asset_tag surge-synthesizer/releases-xt "$(curl -fsSL https://api.github.com/repos/surge-synthesizer/releases-xt/releases/latest | grep -o '"tag_name": *"[^"]*"' | sed 's/.*"\([^"]*\)"$/\1/')" 'macOS-[0-9.]+\.dmg$')" "Surge XT" "Surge XT*"
   plugin_dmg "$(gh_asset asb2m10/dexed 'macOS\.dmg$')" "Dexed" "Dexed*"
@@ -252,7 +252,7 @@ if yes "$PLUGINS"; then
     if plugin_found "Odin2*"; then ok "Odin 2 is already installed"
     elif [ -n "$odin" ] && curl -fsSL "$odin" -o "$WORK/odin2.pkg"; then password_note; sudo installer -pkg "$WORK/odin2.pkg" -target / >/dev/null && ok "Odin 2 installed"
     else warn "Odin 2 didn't download: install it by hand"; fi
-    piano="$HOME/Documents/BandSync Instruments/Salamander Grand Piano"
+    piano="$HOME/Documents/StudioSync Instruments/Salamander Grand Piano"
     if [ -d "$piano" ]; then ok "Salamander Grand piano is already there"
     else
       say "Downloading the Salamander Grand piano (about 715 MB) ..."
@@ -340,18 +340,18 @@ fi
 
 [ -n "${BS_NO_REAPER:-}" ] && { ok "stopping before REAPER, as asked. This computer's Syncthing ID: $MY_ID"; exit 0; }
 
-# ---------- 4. BandSync scripts, inside REAPER ----------
+# ---------- 4. StudioSync scripts, inside REAPER ----------
 ZREF="heads/main"; [ "$TAG" != main ] && ZREF="tags/$TAG"
 curl -fsSL "https://codeload.github.com/$REPO/zip/refs/$ZREF" -o "$WORK/bandsync.zip" && ditto -x -k "$WORK/bandsync.zip" "$WORK/src"
-HELPER="$(find "$WORK/src" -path '*/installer/bandsync_setup.lua' | head -1)"
+HELPER="$(find "$WORK/src" -path '*/installer/studiosync_setup.lua' | head -1)"
 HDIR="$(dirname "$HELPER")"
-request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR/bandsync_setup_result.json
+request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR/studiosync_setup_result.json
   local panel=false; [ "$1" = verify ] && panel=true
   local jsfx=false; yes "$PLUGINS" && jsfx=true
   local root_json; root_json="$(printf '%s' "$ROOT" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')" # (a " or \ in the path broke the JSON)
   printf '{"sync_root":"%s","user":"%s","mode":"%s","repo_url":"https://github.com/%s/raw/main/index.xml","open_panel":%s,"jsfx":%s}' \
-    "$root_json" "$USERNAME_BS" "$1" "$REPO" "$panel" "$jsfx" > "$HDIR/bandsync_setup.json"
-  rm -f "$HDIR/bandsync_setup_result.json"
+    "$root_json" "$USERNAME_BS" "$1" "$REPO" "$panel" "$jsfx" > "$HDIR/studiosync_setup.json"
+  rm -f "$HDIR/studiosync_setup_result.json"
   if [ -n "${REOPEN:-}" ] && ! pgrep -x REAPER >/dev/null; then
     # we quit REAPER: start it the way you do, so it reopens your project tabs as it always does (started WITH the
     # helper it came back with one tab, 2026-10-28), then hand it the helper once it's up
@@ -360,11 +360,12 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
     sleep 8
   fi
   # Any Apple Event ("open -a") reaching REAPER while ReaPack's report window is open crashes it on macOS
-  # (2026-10-28). A REAPER running BandSync's background loop (Autostart, from __startup.lua) gets a request FILE
+  # (2026-10-28). A REAPER running StudioSync's background loop (Autostart, from __startup.lua) gets a request FILE
   # instead; only a REAPER that isn't running is started with the helper.
-  local REQ="$RES/BandSync/install-request" HANDED=""
-  if pgrep -x REAPER >/dev/null && grep -q "BandSync autostart" "$RES/Scripts/__startup.lua" 2>/dev/null; then
-    mkdir -p "$RES/BandSync"; printf '%s' "$HELPER" > "$REQ"
+  local HOME_DIR="$RES/StudioSync" HANDED=""; [ -d "$RES/BandSync" ] && HOME_DIR="$RES/BandSync" # (lib/band.lua band.home)
+  local REQ="$HOME_DIR/install-request"
+  if pgrep -x REAPER >/dev/null && grep -q "StudioSync autostart" "$RES/Scripts/__startup.lua" 2>/dev/null; then
+    mkdir -p "$HOME_DIR"; printf '%s' "$HELPER" > "$REQ"
     for i in $(seq 1 20); do [ -f "$REQ" ] || { HANDED=1; break; }; sleep 1; done
     rm -f "$REQ" # not picked up (an older StudioSync, or a window holding REAPER): asked the other way below
   fi
@@ -378,22 +379,22 @@ request() { # mode -> runs the helper in REAPER, leaves its JSON result in $HDIR
   fi
   GONE=""
   for i in $(seq 1 360); do
-    [ -f "$HDIR/bandsync_setup_result.json" ] && break
+    [ -f "$HDIR/studiosync_setup_result.json" ] && break
     if [ $i -gt 15 ] && ! pgrep -x REAPER >/dev/null; then GONE=1; break; fi
     [ $i -eq 30 ] && say "Waiting for StudioSync to arrive through ReaPack. ReaPack opens its own windows on a first run (Manage repositories, Transaction report): press OK on them."
     sleep 1
   done
-  [ -f "$HDIR/bandsync_setup_result.json" ]
+  [ -f "$HDIR/studiosync_setup_result.json" ]
 }
 say "Setting up StudioSync inside REAPER (REAPER opens; on a first start it scans your plug-ins, which can take a while) ..."
 say "macOS may ask to let REAPER use the microphone: click Allow, or your takes record silence."
 if request "${BS_SCRIPTS:-reapack}"; then
-  if grep -q '"ok": *false' "$HDIR/bandsync_setup_result.json"; then warn "REAPER setup step had problems:"; cat "$HDIR/bandsync_setup_result.json"
-  else ok "REAPER: name, shared folder and BandSync repository set"; fi
+  if grep -q '"ok": *false' "$HDIR/studiosync_setup_result.json"; then warn "REAPER setup step had problems:"; cat "$HDIR/studiosync_setup_result.json"
+  else ok "REAPER: name, shared folder and StudioSync repository set"; fi
 elif [ -n "$GONE" ]; then warn "REAPER closed unexpectedly during setup. Open REAPER (and your project: File > Recent projects), then run this again."; exit 1
 else warn "REAPER didn't run the setup step. Open REAPER, then run this again."; exit 1; fi
-count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/bandsync_setup_result.json" | grep -o '[0-9]*$')"
-bver="$(grep -o '"version": *"[^"]*"' "$HDIR/bandsync_setup_result.json" | sed 's/.*"\([^"]*\)"$/\1/')"
+count="$(grep -o '"registered_actions": *[0-9]*' "$HDIR/studiosync_setup_result.json" | grep -o '[0-9]*$')"
+bver="$(grep -o '"version": *"[^"]*"' "$HDIR/studiosync_setup_result.json" | sed 's/.*"\([^"]*\)"$/\1/')"
 [ "${count:-0}" -ge 5 ] && ok "StudioSync ${bver:-} installed: $count actions (the StudioSync panel opens in REAPER)" || warn "StudioSync's scripts haven't arrived yet: in REAPER, Extensions > ReaPack > Synchronize packages"
 
 # ---------- 5. what's left for a human ----------

@@ -1,6 +1,6 @@
 -- Per-song sync (docs/bands-design.md): every machine gets every song's listing (a few KB: what the song chooser
 -- shows), and a song in full only once it's opened here. Syncthing's ignore file in the shared folder (.stignore,
--- never synced: each machine its own) holds a block BandSync writes; anything else in that file is left as it is.
+-- never synced: each machine its own) holds a block StudioSync writes; anything else in that file is left as it is.
 --   !/_*  !/plugins  !/drummaps      the band-wide folders, always (a new band-wide folder must be added here)
 --   !/<Song>                          each song opened on this machine, in full
 --   !/*/session.json ...              every other song's listing
@@ -42,7 +42,7 @@ function songsync.block_except(gone)
   return out
 end
 
--- The ignore file's text with BandSync's block replaced (or added at the end; nil wanted = taken out). `gone`: keep everything but these. Pure.
+-- The ignore file's text with StudioSync's block replaced (or added at the end; nil wanted = taken out). `gone`: keep everything but these. Pure.
 function songsync.merge(text, wanted, gone)
   local keep, inside = {}, false
   text = (text or ""):gsub("^\239\187\191", "") -- (a byte-order mark would hide the first line: an editor's, or PowerShell's)

@@ -1,8 +1,8 @@
--- Run inside REAPER (ReaScript). BandSync's live mix (lib/hear.lua) without SonoBus: tracks stand in for what SonoBus
+-- Run inside REAPER (ReaScript). StudioSync's live mix (lib/hear.lua) without SonoBus: tracks stand in for what SonoBus
 -- would bring in, sent onto the Real time track's pairs as SonoBus would, and the master is rendered and listened to:
 -- each person at their level or off, "their time" delaying the backing and nothing else. Also a guest's feed (every
 -- band track to SonoBus) and the band's colours held when the Real time track goes in. Scratch tab and folder only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
@@ -113,7 +113,7 @@ local ok, err = pcall(function()
   check(n == 0, "without one, only what's armed (" .. n .. ")")
   -- (the master's chain travels to the band, but never the live mix)
   local _, mch = reaper.GetTrackStateChunk(m, "", false)
-  check(not (mirror.fxchain(mch, mirror.live_fx(m)) or ""):find("BandSync live mix", 1, true), "the live mix never goes to the band")
+  check(not (mirror.fxchain(mch, mirror.live_fx(m)) or ""):find("StudioSync live mix", 1, true), "the live mix never goes to the band")
 end)
 if not ok then fails = fails + 1; out[#out + 1] = "ERROR " .. tostring(err) end
 if p and reaper.ValidatePtr2(0, p, "ReaProject*") then

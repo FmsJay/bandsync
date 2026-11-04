@@ -2,7 +2,7 @@
 -- reaches them as one suggestion, accepted or declined without the claim ever moving. Also: a tempo change is nobody's edit,
 -- a bus keeps what it holds, a bus's change says whose parts it affects, and a copy of a claimed track goes out as yours.
 -- Two scratch tabs and a scratch shared folder: "James" (drives) and "Mac" (claims Keys).
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

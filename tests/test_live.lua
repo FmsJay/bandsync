@@ -38,8 +38,8 @@ assert(not live.replaces("Laptop-20261028-004305Z-1", "Laptop", S, "20261028-003
 reaper = { time_precise = function() return 1.5 end }
 local data = {}
 local g, p = live.sonobus_group(data)
-assert(g:match("^BandSync %w%w%w%w%w%w$") and #p == 12 and data.group == g and data.password == p, g .. " / " .. p)
+assert(g:match("^StudioSync %w%w%w%w%w%w$") and #p == 12 and data.group == g and data.password == p, g .. " / " .. p)
 assert(select(2, live.sonobus_group(data)) == p, "kept once made")
-assert(live.sonobus_link("BandSync My Song", "ab&c") ==
-  "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=BandSync%20My%20Song&p=ab%26c", live.sonobus_link("BandSync My Song", "ab&c"))
+assert(live.sonobus_link("StudioSync My Song", "ab&c") ==
+  "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=StudioSync%20My%20Song&p=ab%26c", live.sonobus_link("StudioSync My Song", "ab&c"))
 print("ok")

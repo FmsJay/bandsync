@@ -1,6 +1,6 @@
 -- Run inside REAPER (ReaScript). The master track, automation items, ruler lanes, local solo, arriving-audio
 -- placeholders and plug-in files, between two scratch tabs "James" (A) and "Bee" (B). Scratch folder and tabs only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests" -- scratch: never the shared folder
+local D = reaper.GetResourcePath() .. "/StudioSync/tests" -- scratch: never the shared folder
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

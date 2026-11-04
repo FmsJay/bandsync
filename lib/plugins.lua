@@ -1,12 +1,12 @@
 -- Plug-ins the whole band has. Each machine publishes the plug-ins it has (<shared folder>/plugins/<user>.json,
--- names only); what everyone has goes in a folder of REAPER's FX browser, "BandSync (everyone has)", so you
+-- names only); what everyone has goes in a folder of REAPER's FX browser, "StudioSync (everyone has)", so you
 -- can pick from it knowing the song will open with that sound on every bandmate's machine.
 --   reaper-fxfolders.ini (format as REAPER writes it, and as Sexan's FX Browser parser reads it):
 --     [Folders] IdN=<folder number> NameN=<name> NbFolders=<count>
 --     [Folder<number>] ItemK=<ident> TypeK=<3 VST/VST3, 2 JS, 7 CLAP, 5 AU, 1 LV2> Nb=<count>
 local band = require("band")
 local plugins = {}
-plugins.FOLDER = "BandSync (everyone has)"
+plugins.FOLDER = "StudioSync (everyone has)"
 
 -- "VST3: Surge XT (Surge Synth Team) (2->6ch)" -> "surge xt (surge synth team)": the same plug-in in any format,
 -- on any OS. Pure.
@@ -130,15 +130,15 @@ function plugins.folders_ini(text, name, items)
 end
 
 -- REAPER's FX browser lists categories from reaper-fxtags.ini ([category] <plug-in file or CLAP id>=A|B|C). The
--- plug-ins everyone in the band has also go in a "BandSync" category (next to its Categories and Developers).
-plugins.CATEGORY = "BandSync"
+-- plug-ins everyone in the band has also go in a "StudioSync" category (next to its Categories and Developers).
+plugins.CATEGORY = "StudioSync"
 -- The category key REAPER uses for an installed plug-in: the file name for VST/VST3, the id for CLAP; nil for a
 -- plug-in inside a shell (Waves) or a JSFX. Pure.
 function plugins.tag_key(ident, kind)
   if (kind or ""):match("^CLAP") then return ident end
   if (kind or ""):match("^VST") and not ident:find("<", 1, true) then return ident:match("[^\\/]+$") end
 end
--- reaper-fxtags.ini with "BandSync" on exactly the keys in `set`, every other category kept. Pure.
+-- reaper-fxtags.ini with "StudioSync" on exactly the keys in `set`, every other category kept. Pure.
 function plugins.tags_ini(text, set)
   local lines, sec, seen, at, out = {}, nil, {}, nil, {}
   for line in ((text or "") .. "\n"):gmatch("([^\r\n]*)\r?\n") do lines[#lines + 1] = line end
@@ -152,7 +152,7 @@ function plugins.tags_ini(text, set)
     elseif sec == "category" and line:find("=", 1, true) then
       local k, v = line:match("^(.-)=(.*)$")
       local cats = {}
-      for c in (v .. "|"):gmatch("([^|]*)|") do if c ~= "" and c ~= plugins.CATEGORY then cats[#cats + 1] = c end end
+      for c in (v .. "|"):gmatch("([^|]*)|") do if c ~= "" and c ~= plugins.CATEGORY and c ~= "BandSync" then cats[#cats + 1] = c end end
       if set[k] then cats[#cats + 1] = plugins.CATEGORY; seen[k] = true end
       if #cats > 0 then out[#out + 1] = k .. "=" .. table.concat(cats, "|") end
     else
@@ -182,9 +182,9 @@ function plugins.update_folder(cfg, min_members)
   table.sort(items, function(a, z) return a.name:lower() < z.name:lower() end)
   local path = reaper.GetResourcePath() .. "/reaper-fxfolders.ini"
   local old = band.read(path) or ""
-  local new = plugins.folders_ini(old, plugins.FOLDER, items)
+  local new = plugins.folders_ini((old:gsub("BandSync %(everyone has%)", plugins.FOLDER)), plugins.FOLDER, items)
   if new ~= old then band.write_atomic(path, new) end
-  -- and the BandSync category (REAPER reads both when it starts: a new list shows after a restart)
+  -- and the StudioSync category (REAPER reads both when it starts: a new list shows after a restart)
   local keys = {}
   for _, it in ipairs(items) do local k = plugins.tag_key(it.ident, it.kind); if k then keys[k] = true end end
   local tpath = reaper.GetResourcePath() .. "/reaper-fxtags.ini"

@@ -2,7 +2,7 @@
 -- Syncthing folder, this computer then works in it, both bands are listed, a song tab keeps its own band, and an
 -- invitation names the band. Scratch folders only; Syncthing's commands are recorded here, not run, and this
 -- computer's own band settings (ExtState sync_root, bands) are put back at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "services", "json" }) do package.loaded[m] = nil end
@@ -12,11 +12,11 @@ local function say(s) out[#out + 1] = s end
 local function check(ok, what) if not ok then fails = fails + 1 end; say((ok and "PASS " or "FAIL ") .. what) end
 local saved = { root = reaper.GetExtState(band.SECTION, "sync_root"), bands = reaper.GetExtState(band.SECTION, "bands") }
 local real_exec, cmds = reaper.ExecProcess, {}
-local base = D .. "/broot_" .. os.time() .. "/BandSync"
+local base = D .. "/broot_" .. os.time() .. "/StudioSync"
 local ok, err = pcall(function()
   reaper.RecursiveCreateDirectory(base .. "/Lantern/rooms/main", 0)
   reaper.RecursiveCreateDirectory(base .. "/_band", 0)
-  band.write_json(base .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "BandSync" })
+  band.write_json(base .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "StudioSync" })
   band.write_json(base .. "/Lantern/session.json", { song = "Lantern", host = "James", sync = "mirror" })
   reaper.SetExtState(band.SECTION, "sync_root", base, false)
   reaper.SetExtState(band.SECTION, "bands", "", false)

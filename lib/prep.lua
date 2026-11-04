@@ -1,4 +1,4 @@
--- "Prepare this project for BandSync": tidy an already busy project before it's published or joined. scan() lists
+-- "Prepare this project for StudioSync": tidy an already busy project before it's published or joined. scan() lists
 -- what it would change (each a checkbox in the window); apply() does the chosen ones, after saving a backup copy,
 -- as one undo point (file conversions aside: their originals are kept in a backup folder).
 local band = require("band")
@@ -7,7 +7,7 @@ local prep = {}
 local GENERIC = { "^track %d*$", "^audio %d*$", "^midi %d*$", "^untitled", "^new track" }
 local CONVERT = { WAVE = true, AIFF = true } -- uncompressed: FLAC holds them exactly at half the size or less
 
--- Items and tracks BandSync made (the band's prints, stems, live placeholders, MIDI copies) aren't the project's own.
+-- Items and tracks StudioSync made (the band's prints, stems, live placeholders, MIDI copies) aren't the project's own.
 local function bands(it)
   local tk = reaper.GetActiveTake(it)
   return band.track_ext(reaper.GetMediaItem_Track(it), "band_stem") ~= "" or band.item_ext(it, "band_take") ~= ""
@@ -99,7 +99,7 @@ function prep.scan(proj, cfg, b)
       "Recordings come out half the size with nothing lost, and the project keeps one sample rate whatever interface is plugged in.", 1, want_sr)
   end
 
-  -- track names: BandSync matches parts to tracks by name
+  -- track names: StudioSync matches parts to tracks by name
   local seen, dup, blank, generic = {}, {}, {}, {}
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
@@ -153,7 +153,7 @@ function prep.scan(proj, cfg, b)
   table.sort(conv)
   if #conv > 0 then
     add("flac", string.format("Convert %d WAV/AIFF file(s) to FLAC", #conv),
-      "Exact copies at half the size or less (checked sample by sample); the originals move to a 'BandSync originals' folder next to the project" ..
+      "Exact copies at half the size or less (checked sample by sample); the originals move to a 'StudioSync originals' folder next to the project" ..
       (#kept > 0 and ("; left as they are: " .. table.concat(kept, ", ")) or "") .. ".", #conv, conv, saved)
   end
   if #outside > 0 then
@@ -190,12 +190,12 @@ function prep.scan(proj, cfg, b)
       "Leftovers from editing: they'd go out to the others as takes of nothing.", #clutter, clutter)
   end
 
-  -- ripple editing moves other people's parts, which BandSync then puts back
+  -- ripple editing moves other people's parts, which StudioSync then puts back
   if reaper.GetToggleCommandStateEx(0, 41990) == 1 or reaper.GetToggleCommandStateEx(0, 41991) == 1 then
     add("ripple", "Turn ripple editing off", "Ripple editing moves the clips after an edit, including collaborators', which StudioSync puts back: it fights you.", 1, true)
   end
 
-  -- BandSync's own setup
+  -- StudioSync's own setup
   local live = require("live")
   if b and b.role ~= "solo" and not live.fx(proj, false, live.SONOBUS) then
     add("sonobus", "Put SonoBus on the master (off until you Connect)", "For Real time: it joins your studio by itself when you switch that on.", 1, true)
@@ -330,7 +330,7 @@ function prep.apply(proj, cfg, b, rows, dir)
   local file = select(2, reaper.EnumProjects(-1))
   local backup
   if file ~= "" then
-    backup = file:gsub("%.[Rr][Pp][Pp]$", "") .. " - before BandSync " .. os.date("%Y%m%d-%H%M") .. ".rpp"
+    backup = file:gsub("%.[Rr][Pp][Pp]$", "") .. " - before StudioSync " .. os.date("%Y%m%d-%H%M") .. ".rpp"
     reaper.Main_SaveProjectEx(proj, backup, 0) -- 0: a copy; this tab keeps its own file
     done[#done + 1] = "Backup copy saved: " .. backup:match("[^/\\]+$")
   end
@@ -352,7 +352,7 @@ function prep.apply(proj, cfg, b, rows, dir)
   local media = reaper.GetProjectPathEx(proj, ""):gsub("\\", "/")
   if (on.flac or on.media) and media ~= "" then reaper.RecursiveCreateDirectory(media, 0) end
   if on.flac and media ~= "" then
-    local keep = project_dir(proj) .. "/BandSync originals"
+    local keep = project_dir(proj) .. "/StudioSync originals"
     local home = project_dir(proj)
     local n, bad, stuck, moved = 0, {}, 0, {}
     for _, f in ipairs(on.flac.todo) do
@@ -388,7 +388,7 @@ function prep.apply(proj, cfg, b, rows, dir)
       end
       band.write_atomic(backup, text)
     end
-    done[#done + 1] = string.format("Converted %d file(s) to FLAC (originals in 'BandSync originals')%s%s", n,
+    done[#done + 1] = string.format("Converted %d file(s) to FLAC (originals in 'StudioSync originals')%s%s", n,
       stuck > 0 and string.format("; %d original(s) couldn't be moved yet (in use): move them after closing REAPER", stuck) or "",
       #bad > 0 and ("; kept as they were: " .. table.concat(bad, "; ")) or "")
   end
@@ -473,7 +473,7 @@ function prep.apply(proj, cfg, b, rows, dir)
   reaper.PreventUIRefresh(-1)
   reaper.TrackList_AdjustWindows(false)
   reaper.UpdateArrange()
-  reaper.Undo_EndBlock2(proj, "BandSync: prepare this project", -1)
+  reaper.Undo_EndBlock2(proj, "StudioSync: prepare this project", -1)
 
   if on.sonobus then
     local ok, why = require("setup").sonobus(cfg, b, proj, false)

@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). What limit testing broke (0.42.3): deleting a bandmate's track brings it back with its
 -- items; a track only moved in the list isn't reported as put back; Hold renders no prints; a stuck job doesn't render in
 -- front. Two scratch tabs, a scratch shared folder; both saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "json", "bgrender" }) do package.loaded[m] = nil end
@@ -341,7 +341,7 @@ local ok, err = pcall(function()
     local gone = ch:gsub('<VST "VSTi: ReaSynth %(Cockos%)" [^\n]*', '<VST "VST3i: Nobody Has This (Nobody)" "Nobody Has This.vst3" 0 "" 123456789{ABCDEF0123456789ABCDEF0123456789} ""')
     reaper.SetTrackStateChunk(tm, gone, false)
     check(reaper.TrackFX_GetCount(tm) == 1 and not reaper.TrackFX_GetOffline(tm, 0), "REAPER shows the missing one, not as offline")
-    check(not prints.fx_here(tm, 0) and not prints.track_plays(tm), "but BandSync knows it isn't here: no silent print, and Auto plays the wet take")
+    check(not prints.fx_here(tm, 0) and not prints.track_plays(tm), "but StudioSync knows it isn't here: no silent print, and Auto plays the wet take")
     reaper.DeleteTrack(tm)
   end
 

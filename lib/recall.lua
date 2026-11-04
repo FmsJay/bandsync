@@ -402,7 +402,7 @@ function recall.restore_state(proj, cfg, song, room, st, label, saved)
       reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", p.icon or "", true)
     end
   end
-  reaper.Undo_EndBlock2(proj, "BandSync: restore " .. (st.label or file), -1)
+  reaper.Undo_EndBlock2(proj, "StudioSync: restore " .. (st.label or file), -1)
   reaper.UpdateArrange()
   return string.format("restored '%s': %d take(s) set, %d removed, %d brought back", st.label or file, moved, removed, revived)
 end

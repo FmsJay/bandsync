@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). A project saved before mirror sync gave its tracks ids, changed and sent since, then
 -- reopened from that older save (closed without saving, or a crash): its tracks and items must get their ids back,
 -- not come back twice, and what changed since must come back as the band has it. Scratch folder and scratch tabs only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests" -- scratch: never the shared folder
+local D = reaper.GetResourcePath() .. "/StudioSync/tests" -- scratch: never the shared folder
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

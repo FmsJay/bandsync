@@ -2,7 +2,7 @@
 -- plug-in a bandmate lacks gets a wet print, rendered by a second REAPER while this one carries on; the print has
 -- the track's plug-ins but not the item's own volume; while it plays, the track's FX are held off here only. Also:
 -- SWS auto-colouring off while a band song is in front, back on elsewhere. Scratch folder and tab, closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "bgrender", "json" }) do package.loaded[m] = nil end
@@ -171,7 +171,7 @@ local ok, err = pcall(function()
     check(reaper.GetToggleCommandState(sws_id) == 1 and reaper.GetExtState(band.SECTION, "sws colour off") == "", "and back on with another project in front")
     reaper.Main_OnCommand(40860, 0)
     reaper.SelectProjectInstance(pa)
-    reaper.Main_OnCommand(sws_id, 0) -- (switched off by hand, not by BandSync)
+    reaper.Main_OnCommand(sws_id, 0) -- (switched off by hand, not by StudioSync)
     reaper.Main_OnCommand(40859, 0); band.sws_colours(); reaper.Main_OnCommand(40860, 0)
     check(reaper.GetToggleCommandState(sws_id) == 0, "someone who switched it off themselves keeps it off")
     reaper.SetProjExtState(pa, band.SECTION, "song", "") -- (not a band song any more)

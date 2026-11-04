@@ -1,4 +1,4 @@
-// BandSync's background renders on a Mac (GPL-3.0-or-later): bandsync-launch <library> <program> [args...] starts the
+// StudioSync's background renders on a Mac (GPL-3.0-or-later): bandsync-launch <library> <program> [args...] starts the
 // program with the library loaded into it. It exists because a variable set for it in a script doesn't arrive: macOS
 // removes DYLD_ variables whenever a protected program (sh, nohup, env) starts anything. Build: tools/mac/build.sh
 #include <stdio.h>

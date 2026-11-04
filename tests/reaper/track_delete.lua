@@ -2,7 +2,7 @@
 -- own deletes (a receive pass runs out of time between them). The items went with the track, so the next look must
 -- not take them for our deletes and put them back (the Mac put back 226 of them after the laptop's restore, 0.34.4).
 -- Two scratch tabs, a scratch shared folder; both tabs saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

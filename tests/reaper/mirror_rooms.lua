@@ -1,5 +1,5 @@
 -- Run inside REAPER (ReaScript). Side room under mirror sync: main tab A, side tab S (a copy of A), scratch shared folder, then closed.
-local D = reaper.GetResourcePath() .. "/BandSync/tests" -- scratch: never the shared folder
+local D = reaper.GetResourcePath() .. "/StudioSync/tests" -- scratch: never the shared folder
 reaper.RecursiveCreateDirectory(D, 0)
 package.path = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "recall", "prints" }) do package.loaded[m] = nil end

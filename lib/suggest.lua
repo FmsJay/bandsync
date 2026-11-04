@@ -120,7 +120,7 @@ end
 local RANK = { track = 1, recv = 2, misc = 2, env = 2, item = 3 }
 
 -- Accept: every change lands here without being noted as the band's, so Live sync's next look sends it as this person's
--- own, prints and all. In one undo block not named after BandSync, so Ctrl+Z is REAPER's undo and takes the whole of it back.
+-- own, prints and all. In one undo block not named after StudioSync, so Ctrl+Z is REAPER's undo and takes the whole of it back.
 -- `may(name, pos)`: this person may change that. -> done, changed since, not theirs; or nil and why it can't go yet.
 function suggest.accept(proj, cfg, room_dir, h, may, local_mix)
   local band, mirror = require("band"), require("mirror")

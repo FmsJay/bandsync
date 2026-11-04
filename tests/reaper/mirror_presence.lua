@@ -1,6 +1,6 @@
 -- Run inside REAPER (ReaScript). Presence between two scratch tabs, "James" (A) and "Bee" (B): an edit hold, a ping
 -- and following a view, through the status files as Live sync writes them. Scratch folder and tabs only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

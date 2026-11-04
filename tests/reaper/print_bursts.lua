@@ -2,7 +2,7 @@
 -- a part being edited doesn't hold up the others; whichever changed longest ago goes first; several render at once; a
 -- job for a version that's gone is ended; going back to a printed state doesn't wait; every part ends on the print of
 -- its newest notes. One scratch tab, a scratch shared folder; saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "json", "bgrender" }) do package.loaded[m] = nil end

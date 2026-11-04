@@ -1,6 +1,6 @@
 -- Run inside REAPER (ReaScript). Tracks in the colour of who's working on them (0.38, lib/people.lua): each mode, a
 -- picked colour and the defaults, and the band's own colours kept aside (never sent, restored after). Scratch only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "mirror", "people", "json" }) do package.loaded[m] = nil end

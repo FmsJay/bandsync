@@ -1,5 +1,5 @@
--- @description BandSync: measure a guest's delay (they clap along to 8 clicks over SonoBus)
--- For a guest who joins with only SonoBus (lib/guest.lua). BandSync plays them a bar of count-in and 8 clicks, records
+-- @description StudioSync: measure a guest's delay (they clap along to 8 clicks over SonoBus)
+-- For a guest who joins with only SonoBus (lib/guest.lua). StudioSync plays them a bar of count-in and 8 clicks, records
 -- what comes back, and finds where their claps land: that's the whole round trip, which then lines up their takes
 -- and "their time". Only the Real time track records meanwhile (nothing else is armed, and the band doesn't follow
 -- this record press); the clicks and the recording are taken away after.

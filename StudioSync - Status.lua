@@ -1,4 +1,4 @@
--- @description BandSync: sync status window (who's online, and who has which takes, both ways)
+-- @description StudioSync: sync status window (who's online, and who has which takes, both ways)
 -- Every Live sync writes a receipt of the takes (and revisions) its project holds; this window compares
 -- them with the room's takes. Green = in sync, yellow = catching up, grey = offline. Esc closes.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -34,11 +34,11 @@ local function draw()
   local me_state = not running and "offline" or (view.my_missing == 0 and "synced" or "syncing")
   text(14, 40, string.format("You (%s): %d/%d takes here, %s.   Live sync %s.", cfg.user, view.total - view.my_missing,
     view.total, view.my_missing == 0 and "nothing waiting" or (view.my_missing .. " still arriving"),
-    running and "running" or "NOT running (start BandSync - Live sync)"), COLORS[me_state])
+    running and "running" or "NOT running (start StudioSync - Live sync)"), COLORS[me_state])
   local cols = { 14, 170, 290, 400, 500, 620 }
   local y = 72
   if view.newer then
-    text(14, 62, string.format("StudioSync %s is in use here; you have %s. Run 'BandSync - Update'.", view.newer, band.VERSION), COLORS["syncing"])
+    text(14, 62, string.format("StudioSync %s is in use here; you have %s. Run 'StudioSync - Update'.", view.newer, band.VERSION), COLORS["syncing"])
     y = 92
   end
   for i, h in ipairs({ "Collaborator", "State", "Last seen", "Has", "Missing yours", "Version" }) do text(cols[i], y, h, dim) end

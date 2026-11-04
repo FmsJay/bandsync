@@ -106,7 +106,7 @@ function pp.apply_drum_track(tr, root)
   if not t then drop_drum_fx(tr); return nil end
   local text = dm.jsfx(from, to, t)
   local file = "StudioSync drum map " .. require("mirror").hash(text):sub(1, 12) .. ".jsfx"
-  local dir = reaper.GetResourcePath() .. "/Effects/BandSync"
+  local dir = reaper.GetResourcePath() .. "/Effects/StudioSync"
   if band.read(dir .. "/" .. file) ~= text then
     reaper.RecursiveCreateDirectory(dir, 0)
     local f = io.open(dir .. "/" .. file, "wb")
@@ -117,7 +117,7 @@ function pp.apply_drum_track(tr, root)
   local i = drum_fx(tr)
   if i and select(2, reaper.TrackFX_GetNamedConfigParm(tr, i, "fx_ident")):find(file, 1, true) then return t end
   drop_drum_fx(tr)
-  local idx = reaper.TrackFX_AddByName(tr, "JS:BandSync/" .. file, false, -1000)
+  local idx = reaper.TrackFX_AddByName(tr, "JS:StudioSync/" .. file, false, -1000)
   if idx < 0 then return nil end
   band.set_track_ext(tr, "band_local_fx", band.track_ext(tr, "band_local_fx") .. reaper.TrackFX_GetFXGUID(tr, idx) .. DRUM_TAG)
   return t

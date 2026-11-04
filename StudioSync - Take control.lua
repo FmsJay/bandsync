@@ -1,4 +1,4 @@
--- @description BandSync: take control of the session (your deletes, moves and lane choices go to everyone)
+-- @description StudioSync: take control of the session (your deletes, moves and lane choices go to everyone)
 -- The driver is the one person whose edits to the shared takes propagate (for whatever nobody has claimed).
 -- Before switching, everyone online must hold every take and have applied every change, so the handover
 -- starts from one agreed state; you can wait for that (up to 2 minutes) or switch anyway.

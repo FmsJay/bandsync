@@ -124,7 +124,7 @@ function chat.draw(ctx, ImGui, cfg, b)
   ImGui.PopStyleVar(ctx)
   ImGui.SetItemTooltip(ctx, "What you see and who you're writing to. This room: only this room's. This project: the project's and all its rooms'. " ..
     "Studio: everything, from every project and room. What you write goes to the one picked here.")
-  do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
+  do -- drawing on the arrange view (StudioSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
     -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
     -- was open, the lag on this page: James, 0.42.28)
     local root = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or ""

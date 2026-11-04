@@ -1,9 +1,9 @@
 # When two people change the same thing
 
-This is how BandSync decides today, how other collaborative tools decide, and the choices left open. Nothing here
+This is how StudioSync decides today, how other collaborative tools decide, and the choices left open. Nothing here
 is settled for good: it's written down so the band can decide later with the facts in one place (James, 2026-10-31).
 
-## What BandSync does now
+## What StudioSync does now
 
 Most edits never clash. Each track, item, plug-in chain, envelope and send is its own object, so two people changing
 different things both land. A clash is two changes to **the same object** that neither saw before making theirs:
@@ -41,7 +41,7 @@ Known weak spots:
 - **Keep "more edits wins"** (now): automatic, the same on every machine, no waiting on anyone.
 - **Last change wins** (Figma): simple to explain, but "last" depends on clocks when there is no central server, and
   a quick tweak can replace an hour's work.
-- **Owner wins** (Pro Tools): the driver or the claimant's version always wins on what they own; BandSync's claims
+- **Owner wins** (Pro Tools): the driver or the claimant's version always wins on what they own; StudioSync's claims
   are halfway there already.
 - **Ask** (git): show both versions and let the person whose change lost pick. Safest, but it interrupts playing.
 

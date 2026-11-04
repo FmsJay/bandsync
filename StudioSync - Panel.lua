@@ -1,5 +1,5 @@
--- @description BandSync: control panel (sync, bandmates, who drives, who owns what, recall points)
--- One dockable window for everything BandSync does in the project in front: start/stop Live sync, hold
+-- @description StudioSync: control panel (sync, bandmates, who drives, who owns what, recall points)
+-- One dockable window for everything StudioSync does in the project in front: start/stop Live sync, hold
 -- it while you try things, see who has what, take control, claim tracks and regions, and save/restore
 -- recall points. Needs ReaImGui (ReaPack: "ReaImGui: ReaScript binding for Dear ImGui").
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -23,11 +23,11 @@ if not cfg then return end
 if reaper.set_action_options then reaper.set_action_options(1) end -- running it again closes it (no task dialog)
 local section, cmd = select(3, reaper.get_action_context())
 if cmd > 0 then reaper.SetToggleCommandState(section, cmd, 1); reaper.RefreshToolbar2(section, cmd) end
-reaper.DeleteExtState(band.SECTION, "panel_open", true) -- (0.21.5 kept this; Autostart now opens the panel with any BandSync session)
+reaper.DeleteExtState(band.SECTION, "panel_open", true) -- (0.21.5 kept this; Autostart now opens the panel with any StudioSync session)
 local restarting = false -- an update landed: a new panel took over, and its toolbar state is on
 reaper.atexit(function() if cmd > 0 and not restarting then reaper.SetToggleCommandState(section, cmd, 0); reaper.RefreshToolbar2(section, cmd) end end)
 
-local ctx = ImGui.CreateContext("BandSync")
+local ctx = ImGui.CreateContext("StudioSync")
 -- resizable from any edge (a window taller than the screen can still be shrunk from the top). The Window menu
 -- (top bar) fills a screen or half of one. Settings can give it the system's frame instead of ReaImGui's (ExtState
 -- panel_native = "on"; on Windows that's REAPER's tool-window frame: light caption, no maximize button)
@@ -41,7 +41,7 @@ local GREEN, YELLOW, GREY, RED = theme.GREEN, theme.YELLOW, theme.GREY, theme.RE
 local function rgba(c) local k = 255 * theme.STATUS; return math.floor(c[1] * k) << 24 | math.floor(c[2] * k) << 16 | math.floor(c[3] * k) << 8 | 0xFF end
 
 -- ---- the app look: sidebar pages, cards, pills and switches (the default). The classic panel (tabs, plain
--- widgets) is the backup: "BandSync - Classic panel", or the switch on the Settings page. Same sections underneath.
+-- widgets) is the backup: "StudioSync - Classic panel", or the switch on the Settings page. Same sections underneath.
 local ui_font = ImGui.CreateFont("sans-serif")
 ImGui.Attach(ctx, ui_font)
 local ui = {} -- (what's new goes here: the panel's main chunk is at Lua's limit of 200 locals)
@@ -321,7 +321,7 @@ local TIPS = {
   ["Release all claims"] = "Let go of all your claims: everything follows the driver again.",
   ["##label"] = "A name for this version, then Save this version.",
   ["Save this version"] = "Save how the session is now (takes, where they sit, what plays) as a version anyone can go back to.",
-  ["Update the folder now"] = "Send your plug-in list and rebuild the FX browser folder 'BandSync (everyone has)' now.",
+  ["Update the folder now"] = "Send your plug-in list and rebuild the FX browser folder 'StudioSync (everyone has)' now.",
   ["##drummap"] = "The drum map this drum track uses: notes arriving in another kit's map are translated to it.",
   ["Play along (synced to the project)"] = "Hear each other in time with the project, at any distance (a bar or two late). Needs the studio's NINJAM server.",
   ["Real time (SonoBus, lowest delay)"] = "Hear each other right away, peer to peer (best on wired internet, not too far apart).",
@@ -388,7 +388,7 @@ end
 -- Actions run as REAPER actions (so they see their own action context), registered on first use.
 local ids = {}
 local function action(name)
-  ids[name] = ids[name] or reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - " .. name .. ".lua", true)
+  ids[name] = ids[name] or reaper.AddRemoveReaScript(true, 0, dir .. "/StudioSync - " .. name .. ".lua", true)
   if ids[name] > 0 then reaper.Main_OnCommand(ids[name], 0) end
 end
 
@@ -487,11 +487,11 @@ local function section_sync()
   if not running and band.synced_elsewhere(proj) then -- (a second copy of the song: syncing it would work on a stale one)
     ImGui.SameLine(ctx)
     ImGui.TextColored(ctx, YELLOW, "this project is open and syncing in another tab: work there")
-  elseif not running then -- (no Stop: a BandSync project always syncs, or the band's copies drift apart)
+  elseif not running then -- (no Stop: a StudioSync project always syncs, or the band's copies drift apart)
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
-  if not tools.autostart_on() and not tools.autostart_tried then -- always on: BandSync projects start Live sync with REAPER
+  if not tools.autostart_on(dir) and not tools.autostart_tried then -- always on: StudioSync projects start Live sync with REAPER
     tools.autostart_tried = true
     if not tools.set_autostart(true, dir) then band.log("couldn't add StudioSync to Scripts/__startup.lua: Live sync won't start with REAPER") end
   end
@@ -1087,7 +1087,7 @@ local function section_recall()
     if #points == 0 then ImGui.TextDisabled(ctx, "None yet. Every handover saves one by itself.") end
     local before = select(2, reaper.GetProjExtState(proj, band.SECTION, "before_bandsync"))
     if before ~= "" and reaper.file_exists(before) then
-      if ImGui.SmallButton(ctx, "Open it as it was before BandSync") then reaper.Main_OnCommand(40859, 0); reaper.Main_openProject(before) end
+      if ImGui.SmallButton(ctx, "Open it as it was before StudioSync") then reaper.Main_OnCommand(40859, 0); reaper.Main_openProject(before) end
       ImGui.SetItemTooltip(ctx, "Opens the copy saved when this project was first published, in a new tab (it isn't shared).")
     end
     for i, p in ipairs(points) do
@@ -1146,7 +1146,7 @@ local function section_history()
     end
     for gi = #groups, 1, -1 do
       local g = groups[gi]
-      local shown = {} -- (prints BandSync refreshed by itself are left out: no one made them)
+      local shown = {} -- (prints StudioSync refreshed by itself are left out: no one made them)
       for i = g.first, g.last do if not entries[i].auto then shown[#shown + 1] = i end end
       if #shown == 0 then goto next_group end
       ImGui.PushID(ctx, gi)
@@ -1191,7 +1191,7 @@ local function section_history()
   end
 end
 
--- Drum map of the selected tracks. Changing it rewrites the BandSync MIDI on those tracks into the new map,
+-- Drum map of the selected tracks. Changing it rewrites the StudioSync MIDI on those tracks into the new map,
 -- so the notes keep hitting the same drums with the new instrument.
 -- Plug-ins everyone in the band has, as a folder in REAPER's FX browser (lib/plugins.lua).
 local plugins = require("plugins")
@@ -1220,7 +1220,7 @@ local LIVE_MODES = { { "synced", "Play along (synced to the project)" }, { "list
 
 local setup = require("setup")
 
--- Real time: SonoBus joins the band's group by itself (BandSync writes it into SonoBus's state).
+-- Real time: SonoBus joins the band's group by itself (StudioSync writes it into SonoBus's state).
 local sb_link
 local function sonobus_open()
   local link, m, i = setup.sonobus(cfg, b, proj, true)
@@ -1390,7 +1390,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
       if not live.toggle_click() then band.msg("Open ReaNINJAM's window first (Show it).") end
     end
     ImGui.SetItemTooltip(ctx, "NINJAM's own metronome ticks the whole time you're connected (at the server's tempo, not the project's).\n" ..
-      "BandSync turns it off for Play along and Real time; this flips it if it's on anyway.")
+      "StudioSync turns it off for Play along and Real time; this flips it if it's on anyway.")
     local cm = live.channel_mode()
     if live_mode == "synced" and cm and cm ~= "session" then
       ImGui.PushTextWrapPos(ctx, 0)
@@ -1411,7 +1411,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
 end
 
 local setup_at, st = 0, {}
--- What BandSync did lately (sends, what arrived, what was put back and why): it used to pop the console up
+-- What StudioSync did lately (sends, what arrived, what was put back and why): it used to pop the console up
 local function section_activity()
   local lines = band.activity()
   local newest = lines[1] and lines[1]:sub(7) or "nothing yet"
@@ -2244,7 +2244,7 @@ local function settings_look()
       end
     end
     if ImGui.Button(ctx, "Use the classic panel") then reaper.SetExtState(band.SECTION, "panel_ui", "classic", true) end
-    ImGui.SetItemTooltip(ctx, "The plain panel with tabs (everything is the same underneath). 'BandSync - Classic panel' opens it too.")
+    ImGui.SetItemTooltip(ctx, "The plain panel with tabs (everything is the same underneath). 'StudioSync - Classic panel' opens it too.")
     local ch, v = switch_row("##native", "System window frame", native,
       "On: the system's window frame instead of the panel's own title bar (no docking by dragging the title then: use Dock).\n" ..
       "Off (the default): the panel's own dark title bar; right-click it or use Dock to dock. The panel reopens to switch.\n" ..
@@ -2381,7 +2381,7 @@ local function page_setup()
   end
   if tab("Advanced") then body("s advanced", function() layout({ { ui.settings_advanced, 460 } }) end); ImGui.EndTabItem(ctx) end
   if tab("Console") then
-    -- BandSync's own log, newest first (REAPER's console only shows it while open)
+    -- StudioSync's own log, newest first (REAPER's console only shows it while open)
     if ImGui.SmallButton(ctx, "Clear") then reaper.DeleteExtState(band.SECTION, band.LOG_KEY, false) end
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Copy") then ImGui.SetClipboardText(ctx, table.concat(band.activity(), "\n")) end
@@ -2642,7 +2642,7 @@ local function frame_app()
   ImGui.TextDisabled(ctx, drives)
   ImGui.SetItemTooltip(ctx, "The driver's changes go to everyone, except on what someone has claimed.")
   -- (no buttons for these: Ctrl+Z and Ctrl+Shift+Z do it, and Edit > Undo: Live sync steps in. The radial menu still asks for them here.)
-  local function undo_redo(redo) -- (lib/undo.lua: the same as the BandSync - Undo / Redo actions, but always asks)
+  local function undo_redo(redo) -- (lib/undo.lua: the same as the StudioSync - Undo / Redo actions, but always asks)
     local res, why = require("undo").step(proj, cfg, b, redo, { ask = true, describe = describe })
     if res then band.log(res) elseif why then band.msg(why) end
     hist_at = 0
@@ -2712,7 +2712,7 @@ local function frame_app()
     ImGui.PopStyleVar(ctx)
     ImGui.SetCursorPosX(ctx, 16)
   end
-  -- what BandSync just did, under the bar for a few seconds (actions used to report only to the Console)
+  -- what StudioSync just did, under the bar for a few seconds (actions used to report only to the Console)
   local log = band.activity()
   local newest = log[1]
   if newest ~= tools.toast_newest then
@@ -3027,7 +3027,7 @@ local function banner()
   ImGui.PushStyleColor(ctx, ImGui.Col_WindowBg, theme.BANNER)
   local f = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_NoInputs | ImGui.WindowFlags_NoFocusOnAppearing | ImGui.WindowFlags_NoNav |
     ImGui.WindowFlags_NoDocking | ImGui.WindowFlags_AlwaysAutoResize | ImGui.WindowFlags_NoSavedSettings
-  if ImGui.Begin(ctx, "BandSync banner", nil, f) then
+  if ImGui.Begin(ctx, "StudioSync banner", nil, f) then
     ImGui.TextColored(ctx, YELLOW, banner_text)
     ImGui.End(ctx)
   end
@@ -3065,7 +3065,7 @@ local function pill_window()
   local keep = true
   local f = ImGui.WindowFlags_NoDecoration | ImGui.WindowFlags_AlwaysAutoResize | ImGui.WindowFlags_NoDocking | ImGui.WindowFlags_NoMove |
     ImGui.WindowFlags_NoSavedSettings | ImGui.WindowFlags_NoFocusOnAppearing | ImGui.WindowFlags_NoNav
-  if ImGui.Begin(ctx, "BandSync pill", nil, f) then
+  if ImGui.Begin(ctx, "StudioSync pill", nil, f) then
     local x, y = ImGui.GetCursorScreenPos(ctx)
     if strip then ui.strip_w = ImGui.GetWindowSize(ctx) end
     local problem = reaper.GetExtState(band.SECTION, "sync problem")
@@ -3150,7 +3150,7 @@ local function loop()
     band.log("the panel reloaded for StudioSync " .. tostring(seen_disk))
     restarting = true
     for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
-    return dofile(dir .. "/BandSync - Panel.lua")
+    return dofile(dir .. "/StudioSync - Panel.lua")
   end
   ImGui.SetNextWindowSize(ctx, 560, 640, ImGui.Cond_FirstUseEver)
   local wx, wy = ImGui.Viewport_GetWorkPos(ImGui.GetMainViewport(ctx)) -- first time: inside REAPER, below its menus
@@ -3182,7 +3182,7 @@ local function loop()
   if minimized then open = pill_window()
   else
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowTitleAlign, 0.5, 0.5) -- (the logo has the left corner)
-    visible, open = ImGui.Begin(ctx, "StudioSync###BandSync", true, flags)
+    visible, open = ImGui.Begin(ctx, "StudioSync###StudioSync", true, flags)
     ImGui.PopStyleVar(ctx)
   end
   if visible then

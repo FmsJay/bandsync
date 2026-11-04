@@ -1,6 +1,6 @@
 -- Run inside REAPER (ReaScript). A claim follows its track when the track is renamed (keeping its date), and the
 -- driver releasing someone's claims while they're away empties their claims file when they're back. Scratch only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

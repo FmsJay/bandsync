@@ -3,7 +3,7 @@
 -- under the old fingerprint stays current; a new track is claimed by its maker, whose claim shows and can be released;
 -- a maker no longer beats a bandmate's claim; and a bandmate's edit can open in the MIDI editor here.
 -- Two scratch tabs, a scratch shared folder; both saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "json", "midiview" }) do package.loaded[m] = nil end
@@ -115,7 +115,7 @@ local ok, err = pcall(function()
   check(print_of(it) == h0 and file_of(it) == f0, "put back with the note still selected: the first print, no new file")
   say(string.format("     going back took %.2f s", reaper.time_precise() - before))
 
-  -- Ctrl+Z reaches your own move on the first press: reading your own change back adds no undo point of BandSync's
+  -- Ctrl+Z reaches your own move on the first press: reading your own change back adds no undo point of StudioSync's
   reaper.SelectProjectInstance(pa)
   reaper.MIDI_SetNote(tk, 3, false, nil, nil, nil, nil, nil, nil, false)
   watch(pa, A)

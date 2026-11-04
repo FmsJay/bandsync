@@ -1,8 +1,8 @@
--- @description BandSync: render the current mix into the song's shared folder (mixes/), for everyone
+-- @description StudioSync: render the current mix into the song's shared folder (mixes/), for everyone
 -- Renders the whole project's master mix as this person hears it (their master is their own), with this project's own render
 -- format (File > Render sets it) to <shared folder>/<Song>/mixes/<Song> <date> <you>, which reaches every bandmate like any
 -- file in the folder, and to <Drive>/<Song>/mixes where this person uses Drive (named for them: each machine writes only its own there).
--- Only the band's mix: BandSync's own tracks (the Real time return, live placeholders) and tracks kept as yours are
+-- Only the band's mix: StudioSync's own tracks (the Real time return, live placeholders) and tracks kept as yours are
 -- muted for the render and put back after, and the render isn't added to the project (it would go to the band as
 -- a new item). Your render settings are put back as they were.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")

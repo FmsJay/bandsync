@@ -1,4 +1,4 @@
--- BandSync sync engine: printing and sending takes, reprinting them when their sound changes, and keeping
+-- StudioSync sync engine: printing and sending takes, reprinting them when their sound changes, and keeping
 -- everyone's project in step with the session driver's changes (deletes, moves/trims/lane moves, which
 -- take or lane plays). Changes travel as small event files; each person writes only files named after
 -- themselves, so a sync client never sees two people writing the same file.
@@ -537,7 +537,7 @@ function sync.remember(proj, id, it, tk, chunk_only)
   end
 end
 
--- One BandSync track per name speaks for it: our real "Vox", not the "Vox (band)" mirror beside it.
+-- One StudioSync track per name speaks for it: our real "Vox", not the "Vox (band)" mirror beside it.
 local function speaks_for_name(proj, tr)
   if band.track_ext(tr, "band_mirror") == "" then return true end
   local name = select(2, reaper.GetTrackName(tr))
@@ -891,7 +891,7 @@ end
 
 -- Delete a take and its dry twin; the whole item when nothing else is in it. Deleting one take can
 -- rebuild the item (SWS's NF_DeleteTakeFromItem left the old item pointer invalid), so after every
--- delete the item is found again by GUID and the next doomed take by its BandSync tags. Without SWS,
+-- delete the item is found again by GUID and the next doomed take by its StudioSync tags. Without SWS,
 -- single takes go through an action on the active tab only: false means retry later.
 local function delete_take(proj, it, tk, id)
   local lid = id:lower()
@@ -941,8 +941,8 @@ local function delete_take(proj, it, tk, id)
   return true
 end
 
--- Which BandSync takes are audible on a track: the active take of each item in a playing lane.
--- Returns whether the track holds any BandSync takes, and their sorted ids.
+-- Which StudioSync takes are audible on a track: the active take of each item in a playing lane.
+-- Returns whether the track holds any StudioSync takes, and their sorted ids.
 function sync.audible(tr)
   local lanes = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2
   local any, ids = false, {}
@@ -1248,7 +1248,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
           band.apply_tempo(proj, before[1])
           band.apply_project(proj, before[3])
           band.apply_markers(proj, before[2] or {})
-          reaper.Undo_EndBlock2(proj, "BandSync: put the studio's tempo map and markers back", -1)
+          reaper.Undo_EndBlock2(proj, "StudioSync: put the studio's tempo map and markers back", -1)
           sig = timeline_sig(proj)
           sync.put_back("the tempo map, markers and project settings are the driver's to change: put back (take control, or the driver can set Editing to Open)")
         else
@@ -1415,7 +1415,7 @@ function sync.receive(proj, cfg, song, room, can)
     end
     if next(orph) == nil then mirror.orphaned[tostring(proj)] = nil end
   end
-  if undo_open then reaper.Undo_EndBlock2(proj, "BandSync: changes from the others", -1) end
+  if undo_open then reaper.Undo_EndBlock2(proj, "StudioSync: changes from the others", -1) end
   for _, d in ipairs(done) do band.log(d) end
   return applied
 end

@@ -1,24 +1,24 @@
 ---
 name: bandsync-setup
-description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, and the studio's Google Drive folder. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
+description: Set up StudioSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the StudioSync scripts, pairs this machine with the band's host, and the studio's Google Drive folder. Use when someone says "set up StudioSync", "join my band's StudioSync", "install StudioSync", or "StudioSync isn't working on this machine".
 ---
 
-# BandSync setup
+# StudioSync setup
 
 **There is now a scripted installer that does steps 1-3 and most of 4-5:** `install_windows.ps1` (via
-`Install BandSync (Windows).cmd`) and `install_mac.sh` (via `Install BandSync (Mac).command`). Prefer running it,
+`Install StudioSync (Windows).cmd`) and `install_mac.sh` (via `Install StudioSync (Mac).command`). Prefer running it,
 answering its questions as parameters (`-User -Hosting yes|no -HostId -Root`, and `-Live no` / `-Solo no` only to leave out SonoBus / Google Drive, which otherwise always go in; on macOS the
 `BS_*` environment variables in its header), and use the steps below to explain prompts, repair, or finish what it
 lists as left for a human. Both have been run for real (Windows, and a Mac on 2026-10-31). They wait while the person signs in to Google Drive; any key (Return on a Mac) skips a wait.
 
-You are installing BandSync for a musician who is probably not technical. They are at the keyboard.
+You are installing StudioSync for a musician who is probably not technical. They are at the keyboard.
 Your job is to get them from nothing to "my take landed in the host's project", explaining each
 prompt before it appears. Everything here was learned from real first-time installs on Windows 11
 and macOS 26 (2026-10-26); the times quoted are from those runs.
 
 ## Ground rules
 
-- **Ask before every download, install, or settings change** that affects anything outside BandSync. Say what,
+- **Ask before every download, install, or settings change** that affects anything outside StudioSync. Say what,
   from where, and why, in one line.
 - **Never start a second REAPER.** If REAPER is running, drive the running one (below). A second
   instance can show a "reset configuration" prompt, and on exit it rewrites the shared `reaper.ini`
@@ -46,7 +46,7 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 ## 0. Interview (one message)
 
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
-runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 studios of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play/Jam tab (off by default) or a router that stops SonoBus needs it.
+runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 studios of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their StudioSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play/Jam tab (off by default) or a router that stops SonoBus needs it.
 
 ## 1. Syncthing (the shared folder)
 
@@ -59,9 +59,9 @@ Windows: `syncthing generate`, then start `syncthing serve --no-browser` detache
 it only syncs while running.
 
 **Before pairing, configure defaults, or folders land in the wrong place:**
-- `cli config defaults folder path set "<parent of the BandSync folder>"`. It was empty on Windows, which puts the folder in the home dir.
-- Pre-create the folder so it gets the right name and case: folder ID from the invitation (`BandId`; the first machine of a new studio makes its own, `bandsync-<name>-<4 hex digits>`; plain `bandsync` is only for a studio from before IDs), label `BandSync`, path
-  `<parent>/BandSync`. Auto-accept otherwise creates a lowercase `~/bandsync` on macOS.
+- `cli config defaults folder path set "<parent of the StudioSync folder>"`. It was empty on Windows, which puts the folder in the home dir.
+- Pre-create the folder so it gets the right name and case: folder ID from the invitation (`BandId`; the first machine of a new studio makes its own, `bandsync-<name>-<4 hex digits>`; plain `bandsync` is only for a studio from before IDs), label `StudioSync`, path
+  `<parent>/StudioSync`. Auto-accept otherwise creates a lowercase `~/bandsync` on macOS.
 - On that folder: `order set smallestFirst` and `fswatcher-delays set 1`. The default 10 s watcher delay added
   10 s to every take.
 - Set this device's name to the musician's name.
@@ -81,7 +81,7 @@ The first full sync of the folder took 4–40 s in testing.
   agreement**: open it for the user to click Agree (don't pipe `yes`), then copy REAPER.app to /Applications.
   REAPER is a 60-day evaluation; mention the license.
 - **First launch scans every plug-in on the machine**: ~16 min and 49 vendor activation popups on a
-  plug-in-heavy Mac. Warn first. BandSync needs no plug-ins, so a musician who just wants to record can
+  plug-in-heavy Mac. Warn first. StudioSync needs no plug-ins, so a musician who just wants to record can
   cancel the scan.
 - **macOS Microphone prompt** for REAPER: must be **Allow**, or takes record silence. Check a test recording's
   level (AudioAccessor peak) rather than assuming.
@@ -89,31 +89,31 @@ The first full sync of the folder took 4–40 s in testing.
   appears on the timeline until it's answered. Tell them to click **Save All**, or offer to turn it off in
   Preferences > Recording.
 
-## 3. Install the BandSync scripts
+## 3. Install the StudioSync scripts
 
 **Preferred: ReaPack** (pinned versions, updates via ReaPack, registers new actions automatically):
 1. If `reaper.APIExists("ReaPack_AddSetRepository")` is false, install ReaPack from reapack.com
    (the `reaper_reapack-<arch>` file into REAPER's `UserPlugins` folder), then **restart REAPER**.
-2. Run the helper (below) with `"mode": "reapack"` and `"repo_url": "https://github.com/FmsJay/bandsync/raw/main/index.xml"`.
+2. Run the helper (below) with `"mode": "reapack"` and `"repo_url": "https://github.com/FmsJay/studiosync/raw/main/index.xml"`.
 
 **Band-internal alternative: shared folder** (`"mode": "folder"`). This registers the scripts straight from
-`<shared folder>/_tools/bandsync`, so edits there reach everyone instantly. The trade-off: anyone who can write to the
+`<shared folder>/_tools/studiosync`, so edits there reach everyone instantly. The trade-off: anyone who can write to the
 folder changes the code everyone runs. Re-run after updates, because new scripts aren't registered by themselves.
 
-### The helper: `installer/bandsync_setup.lua`
+### The helper: `installer/studiosync_setup.lua`
 
-Write `bandsync_setup.json` next to it, run it in the live REAPER (see Ground rules), then read
-`bandsync_setup_result.json` next to it:
+Write `studiosync_setup.json` next to it, run it in the live REAPER (see Ground rules), then read
+`studiosync_setup_result.json` next to it:
 
 ```json
-{ "sync_root": "<absolute path to the BandSync folder>", "user": "<name>", "mode": "reapack", "repo_url": "<index.xml URL>" }
+{ "sync_root": "<absolute path to the StudioSync folder>", "user": "<name>", "mode": "reapack", "repo_url": "<index.xml URL>" }
 ```
 
 It checks the REAPER version, checks the folder is writable, stores the name and folder (no typing paths, no `~`
-mistakes), installs in the chosen mode, and counts registered BandSync actions. ReaPack's sync is
+mistakes), installs in the chosen mode, and counts registered StudioSync actions. ReaPack's sync is
 asynchronous: re-run with `"mode": "verify"` after a minute and expect `registered_actions` ≥ 12.
 
-**Install ReaImGui too.** `"reaimgui": false` in the result means **BandSync - Panel** won't open, and the Live,
+**Install ReaImGui too.** `"reaimgui": false` in the result means **StudioSync - Panel** won't open, and the Live,
 Solo edit (versions) and History & restore tabs only exist there. ReaPack's API can't install a package by itself, so
 walk them through *Extensions > ReaPack > Browse packages*, search **ReaImGui**, right-click > Install, Apply, then
 restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui": true`.
@@ -122,7 +122,7 @@ restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui"
 
 **Real time** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
 from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to
-join the band's studio under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
+join the band's studio under the musician's StudioSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.
 
 **Play along** and **Jam** (the Play/Jam tab: off by default, Settings > Advanced) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. Only set this up if the person asks for those.
@@ -145,7 +145,7 @@ Bandmates don't join the host's tailnet; the host **shares one machine** with th
   *Panel > Live*. The server is built for Windows; building it on a Mac needs the Xcode Command Line Tools, so ask
   first (see Ground rules).
 
-Then, in REAPER: **BandSync - Panel > Live**, pick a mode and click **Connect**; ReaNINJAM opens on the master track
+Then, in REAPER: **StudioSync - Panel > Live**, pick a mode and click **Connect**; ReaNINJAM opens on the master track
 with the server and name filled in, and needs one more **Connect** in its own window. macOS: the Microphone
 permission from step 2 covers it. If ReaNINJAM can't be added, it is missing from this REAPER install (Windows:
 re-run the REAPER installer with the ReaNINJAM component ticked).
@@ -158,12 +158,12 @@ always starts from the latest version.
 - Install **Google Drive for desktop** (Windows: `winget install --id Google.GoogleDrive --exact`; macOS: the dmg
   from google.com/drive/download). Sign-in is the musician's click. macOS asks to allow its File Provider / system
   extension: allow it.
-- **Host:** create a folder **BandSync** in *My Drive* and share it with each bandmate as **Editor**.
-- **Bandmate:** at drive.google.com, *Shared with me* > right-click **BandSync** > *Organize* > **Add shortcut** >
+- **Host:** create a folder **StudioSync** in *My Drive* and share it with each bandmate as **Editor**.
+- **Bandmate:** at drive.google.com, *Shared with me* > right-click **StudioSync** > *Organize* > **Add shortcut** >
   *My Drive*. Without the shortcut, Drive for desktop never puts the folder on this computer and Solo edit sees
-  nothing. Keep the shortcut's name `BandSync`.
-- The folder is then `G:/My Drive/BandSync` (Windows, Drive on G:) or
-  `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/BandSync` (macOS); BandSync finds both by itself. Anywhere
+  nothing. Keep the shortcut's name `StudioSync`.
+- The folder is then `G:/My Drive/StudioSync` (Windows, Drive on G:) or
+  `~/Library/CloudStorage/GoogleDrive-<email>/My Drive/StudioSync` (macOS); StudioSync finds both by itself. Anywhere
   else (another drive letter): *Panel > Solo edit*, type the path, **Use this folder**.
 - Check: the folder is visible in Explorer/Finder, and *Panel > Solo edit* shows "Nobody: '<song>' is free to check
   out" for a published song.
@@ -174,21 +174,21 @@ always starts from the latest version.
 
 ## 7. First session (proves it works)
 
-The host runs **BandSync - Publish session** and **BandSync - Live sync**. The joiner runs **BandSync - Open session**
-from the Action list (the song picker needs REAPER focused), starts **BandSync - Live sync**, and records 10–20 s on a
+The host runs **StudioSync - Publish session** and **StudioSync - Live sync**. The joiner runs **StudioSync - Open session**
+from the Action list (the song picker needs REAPER focused), starts **StudioSync - Live sync**, and records 10–20 s on a
 track named like one of the host's. The take goes out by itself when they stop, and the host's Live sync places it.
-**BandSync - Panel** (or **BandSync - Status**) shows both sides in sync. In testing, takes landed 1–14 s after stopping over Syncthing, with
+**StudioSync - Panel** (or **StudioSync - Status**) shows both sides in sync. In testing, takes landed 1–14 s after stopping over Syncthing, with
 sample-exact alignment.
 
 If they set up Live: with the host connected, they click **Connect** in *Panel > Live* and should hear the host. If
-they set up Solo edit: **BandSync - Solo edit** on a song nobody has checked out, then **BandSync - Check in**; the
+they set up Solo edit: **StudioSync - Solo edit** on a song nobody has checked out, then **StudioSync - Check in**; the
 others' Solo edit tab shows the new version.
 
 ## Updating later
 
-ReaPack installs: **BandSync - Update** (runs ReaPack's sync; new actions get registered). Folder installs: updates
-arrive with the shared folder; **BandSync - Update** registers any new scripts that came with it. Every
-published song and take records the BandSync version that made it, and opening a newer one tells the user to update.
+ReaPack installs: **StudioSync - Update** (runs ReaPack's sync; new actions get registered). Folder installs: updates
+arrive with the shared folder; **StudioSync - Update** registers any new scripts that came with it. Every
+published song and take records the StudioSync version that made it, and opening a newer one tells the user to update.
 
 ## Report back
 

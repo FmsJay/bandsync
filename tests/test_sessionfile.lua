@@ -19,7 +19,7 @@ local proj = table.concat({ "<REAPER_PROJECT", "  <EXTSTATE", "    <BANDSYNC", "
 local plain = sf.plain(proj, split)
 assert(not plain:find("SonoBus") and not plain:find("ReaNINJAM") and not plain:find("c2VjcmV0"), "no live plug-ins anywhere, nor their state")
 assert(plain:find("loser/limiter", 1, true) and plain:find("NAME \"Live in\"", 1, true), "the rest of the chains and tracks stay")
-assert(not plain:find("BANDSYNC") and not plain:find("SONG Saltmarsh") and plain:find("<OTHER", 1, true), "BandSync's state goes, other extensions' stay")
+assert(not plain:find("BANDSYNC") and not plain:find("SONG Saltmarsh") and plain:find("<OTHER", 1, true), "StudioSync's state goes, other extensions' stay")
 assert(select(2, ("\n" .. plain):gsub("\n%s*<", "")) == select(2, plain:gsub("\n%s*>", "")), "blocks still balance")
 assert(sf.plain(proj:gsub("\n", "\r\n"), split) == plain, "a Windows (CRLF) project comes out the same, whole")
 print("ok")

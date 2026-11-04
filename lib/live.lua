@@ -2,11 +2,11 @@
 -- ReaNINJAM's local channel has three modes (flags, from its source, ninjam/njclient.cpp):
 --   synced (4, "session mode"): audio is stamped with the sender's song position; you hear it when YOUR
 --           playhead reaches that position. Start playback a bar or two after the sender and you hear them
---           in time with the song. Each clip is also saved with its position, so BandSync drops it on the
+--           in time with the song. Each clip is also saved with its position, so StudioSync drops it on the
 --           timeline as a placeholder until the real take arrives.
 --   jam    (0): classic NINJAM: everyone hears everyone one interval (BPI bars) late.
 -- ReaNINJAM keeps its settings in reaninjam.ini, section [ninjam], next to reaper.exe or in the resource
--- folder; BandSync writes them there before ReaNINJAM opens, so connecting is one click.
+-- folder; StudioSync writes them there before ReaNINJAM opens, so connecting is one click.
 -- "Listen live" uses SonoBus instead (GPLv3, sonobus.net): peer-to-peer, far lower latency than NINJAM's
 -- voice-chat mode, and nobody has to host a server. Peers find each other through SonoBus's public
 -- connection server by the band's group name and password (lib/sonobus.lua writes them into its state).
@@ -122,12 +122,12 @@ function live.fx(proj, add, fx)
       end
     end
   end
-  -- the master first (where BandSync puts it), then any track (someone may listen on a track of their own)
+  -- the master first (where StudioSync puts it), then any track (someone may listen on a track of their own)
   for t = -1, reaper.CountTracks(proj) - 1 do
     local tr = t < 0 and master or reaper.GetTrack(proj, t)
     for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
       local _, name = reaper.TrackFX_GetFXName(tr, i)
-      -- (SonoBus: its VST3 only. BandSync reads and writes its saved state, and an AU (on a Mac) or VST2 keeps that in
+      -- (SonoBus: its VST3 only. StudioSync reads and writes its saved state, and an AU (on a Mac) or VST2 keeps that in
       -- another shape: it was found by name, then the join check could never see it join)
       if name:find(fx, 1, true) and not name:find("Instrument", 1, true) and (fx ~= live.SONOBUS or name:find("^VST3")) then
         if freed > 0 then reaper.TrackFX_SetOffline(tr, i, true); reaper.TrackFX_SetOffline(tr, i, false) end -- load it now that it may
@@ -153,11 +153,14 @@ end
 
 -- Real time mode's own track: SonoBus sits on it, it hears only what's armed here (sends from those tracks), and what
 -- SonoBus brings in (the bandmates' live playing) goes on to the master. This machine's alone: never mirrored.
-live.RT_NAME = "BandSync Real time"
+live.RT_NAME = "StudioSync Real time"
 function live.rt_track(proj, add)
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
-    if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) == "realtime" then return tr end
+    if select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) == "realtime" then
+      if select(2, reaper.GetTrackName(tr)):find("^BandSync") then reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", live.RT_NAME, true) end -- (from before the rename)
+      return tr
+    end
   end
   if not add then return nil end
   local tr = require("mirror").add_local_track(proj, live.RT_NAME, "realtime") -- (with the band's colours held: laptop, 2026-10-31)
@@ -201,7 +204,7 @@ function live.rt_sends(proj)
 end
 
 -- Did SonoBus join the band's group after going online (setup.sonobus notes when)? Its saved state gets a new recent
--- connection when it joins; a join written but never made keeps BandSync's (laptop, 2026-10-31: "Reconnect Last" did
+-- connection when it joins; a join written but never made keeps StudioSync's (laptop, 2026-10-31: "Reconnect Last" did
 -- nothing there, and only Connect by hand joined). Checked about once a second by Live sync: after 15 s without a join
 -- it's taken offline and on again (twice), then you're told. Returns "joined", "waiting", "gave up" or nil.
 live.JOIN_WAIT, live.JOIN_TRIES = 15, 2
@@ -269,7 +272,7 @@ function live.sonobus_group(data, id)
   math.randomseed(os.time() + math.floor(reaper.time_precise() * 1000))
   for i = 1, 18 do local k = math.random(#chars); pw[i] = chars:sub(k, k) end
   pw = table.concat(pw)
-  data.group = "BandSync " .. pw:sub(13) -- group names are global on the public server
+  data.group = "StudioSync " .. pw:sub(13) -- group names are global on the public server
   data.password = pw:sub(1, 12)
   return data.group, data.password
 end

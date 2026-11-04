@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). Catching up on a long history: "James" (A) makes 20 tracks of 25 items and moves
 -- every item three times (four revisions each); "Bee" (B) then joins from nothing. Times each receive pass, and checks
 -- B ends with what A has, having applied only the newest revision of each. Scratch tabs and folder only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

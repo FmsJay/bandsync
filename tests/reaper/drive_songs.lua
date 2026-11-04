@@ -2,7 +2,7 @@
 -- Google Drive copy (whose a recording is: the first change that used it), a machine with only a song's listing
 -- gets the whole room from Drive, changes the history trim took stay gone, and every song here in full keeps its
 -- Drive copy, not only the open one. Plain folders stand in for the shared folder and Drive; all scratch.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "drive", "json" }) do package.loaded[m] = nil end

@@ -19,7 +19,7 @@ function setup.sonobus_group(cfg)
   return group, pw
 end
 
--- SonoBus on Real time mode's own track (lib/live.lua rt_track), set to join the band's group by itself: BandSync
+-- SonoBus on Real time mode's own track (lib/live.lua rt_track), set to join the band's group by itself: StudioSync
 -- writes the group, password and your name into its saved state (lib/sonobus.lua), with "Reconnect Last" on, so
 -- SonoBus joins whenever it's on. It stays there once added, offline while not in use, so it never joins (or
 -- streams anything) until someone connects. With open: brings it online, which joins. Returns the join link (for

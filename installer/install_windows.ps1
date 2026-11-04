@@ -1,5 +1,5 @@
 # StudioSync setup for Windows: installs and sets up everything StudioSync needs, skipping whatever is already there.
-# Run it with "Install BandSync (Windows).cmd" (double-click). Windows PowerShell 5.1 compatible.
+# Run it with "Install StudioSync (Windows).cmd" (double-click). Windows PowerShell 5.1 compatible.
 #   REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), and optionally
 #   SonoBus (hearing each other) and Google Drive for desktop (the group's copy): -Live no / -Solo no leave them out.
 # A bandmate's panel (Invite a collaborator) hands out a one-line command that runs this with -HostId already in it.
@@ -7,13 +7,13 @@
 # Windows permission prompt. A Google Drive sign-in stays the musician's own click.
 # Every question can be answered up front (for an AI installer or a test run); anything not given is asked.
 param(
-  [string]$Tag = "main",          # which BandSync version's helper files to use (the .cmd passes its own)
+  [string]$Tag = "main",          # which StudioSync version's helper files to use (the .cmd passes its own)
   [string]$User = "", [string]$HostId = "", [string]$Root = "",
   [string]$BandId = "", [string]$BandName = "", # the band an invitation is for: its Syncthing folder id and name
   [ValidateSet("", "yes", "no")][string]$Hosting = "", [ValidateSet("", "yes", "no")][string]$Live = "", [ValidateSet("", "yes", "no")][string]$Solo = "",
   [ValidateSet("", "yes", "no")][string]$Plugins = "", # the band plug-in pack (free, open source)
   [ValidateSet("", "yes", "no")][string]$Extras = "", # the larger extras: amp modelers, Odin 2, sforzando + Salamander piano
-  [ValidateSet("reapack", "folder", "verify")][string]$Scripts = "reapack", # folder: band-internal copy in <root>/_tools/bandsync
+  [ValidateSet("reapack", "folder", "verify")][string]$Scripts = "reapack", # folder: band-internal copy in <root>/_tools/studiosync
   [string]$SyncthingHome = "",    # testing: drive a separate Syncthing instance (--home)
   [string]$ReaperExe = "",         # testing: this REAPER, as if the installer had just put it there
   [switch]$NoApps,                # testing: skip installing apps, only configure
@@ -21,7 +21,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue" # Invoke-WebRequest is 10x slower with the progress bar
-$Repo = "FmsJay/bandsync"
+$Repo = "FmsJay/studiosync"
 $ReaImGuiVer = "0.10.0.5" # shortcut: pinned; ReaPack keeps it updated only if later reinstalled through ReaPack
 $ReaPackVer = "v1.2.6"
 
@@ -43,7 +43,7 @@ if ($boxed) {
   $cmd = Join-Path $env:TEMP "bandsync_install_outside.cmd"
   Set-Content $cmd "@echo off`r`npowershell -NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" $quoted`r`npause" -Encoding ascii
   Start-Process explorer.exe -ArgumentList "`"$cmd`""
-  Write-Host "This window runs inside another app's sandbox; StudioSync setup continues in a new window. If none appears, double-click 'Install BandSync (Windows).cmd' yourself." -ForegroundColor Yellow
+  Write-Host "This window runs inside another app's sandbox; StudioSync setup continues in a new window. If none appears, double-click 'Install StudioSync (Windows).cmd' yourself." -ForegroundColor Yellow
   exit 0
 }
 
@@ -98,7 +98,7 @@ if (-not $folderId) {
   elseif (Get-ChildItem $root -Force -ErrorAction SilentlyContinue | Select-Object -First 1) { $folderId = "bandsync" }
   if (-not $folderId) {
     $slug = ($bandName.ToLower() -replace '[^a-z0-9]+', '-').Trim('-'); if (-not $slug) { $slug = "group" }
-    $folderId = "bandsync-$slug-" + ('{0:x4}' -f (Get-Random -Maximum 65536))
+    $folderId = "studiosync-$slug-" + ('{0:x4}' -f (Get-Random -Maximum 65536))
   }
 }
 $driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "StudioSync - $bandName" }
@@ -146,7 +146,7 @@ Ok "REAPER: $reaper (settings in $res)"
 
 # ---------- 1b. the band plug-in pack (optional) ----------
 # Free, open-source plug-ins every bandmate can have, each from its official release (never bundled here): what
-# everyone has shows in REAPER's FX browser folder "BandSync (everyone has)". Installers that come as .exe open for
+# everyone has shows in REAPER's FX browser folder "StudioSync (everyone has)". Installers that come as .exe open for
 # you to click through; a .zip of VST3 bundles goes into REAPER's own plug-in folder (UserPlugins\FX, scanned by
 # REAPER, no admin rights needed).
 function Release-Asset($repo, $pattern, $tag) {
@@ -228,7 +228,7 @@ if ($wantPlugins) {
     Install-Plugin "AIDA-X" "AidaDSP/AIDA-X" 'win64-installer\.exe$' $null (Join-Path $vst3 "AIDA-X*")
     Install-Plugin "Odin 2" "TheWaveWarden/odin2" 'WinInstaller\.exe$' "NightlyDevel" (Join-Path $vst3 "Odin2*")
     Install-App "plogue.sforzando" "sforzando (plays the piano below)"
-    $piano = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "BandSync Instruments\Salamander Grand Piano"
+    $piano = Join-Path ([Environment]::GetFolderPath("MyDocuments")) "StudioSync Instruments\Salamander Grand Piano"
     if (Test-Path $piano) { Ok "Salamander Grand piano is already there" } elseif (-not $NoApps) {
       Say "Downloading the Salamander Grand piano (about 715 MB) ..."
       $zip = Join-Path $env:TEMP "salamander.zip"
@@ -337,8 +337,8 @@ if (-not $isHost) {
   Ok "paired with your collaborator"
 }
 
-# ---------- 4. BandSync scripts, inside REAPER ----------
-$work = Join-Path $env:TEMP "bandsync_setup"
+# ---------- 4. StudioSync scripts, inside REAPER ----------
+$work = Join-Path $env:TEMP "studiosync_setup"
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $work | Out-Null
 if ($Tag -eq "main") { # the newest released version (what ReaPack serves), not whatever is on main right now
@@ -352,12 +352,12 @@ $zipRef = if ($Tag -eq "main") { "heads/main" } else { "tags/$Tag" }
 Invoke-WebRequest -UseBasicParsing "https://codeload.github.com/$Repo/zip/refs/$zipRef" -OutFile (Join-Path $work "bandsync.zip")
 Expand-Archive (Join-Path $work "bandsync.zip") $work
 $src = Get-ChildItem $work -Directory | Select-Object -First 1
-$helper = Join-Path $src.FullName "installer\bandsync_setup.lua"
+$helper = Join-Path $src.FullName "installer\studiosync_setup.lua"
 $utf8 = New-Object System.Text.UTF8Encoding($false) # no BOM: the Lua JSON reader wants plain UTF-8
 function Request($mode) {
   $req = @{ sync_root = ($root -replace '\\', '/'); user = $user; mode = $mode; repo_url = "https://github.com/$Repo/raw/main/index.xml"; open_panel = ($mode -eq "verify"); jsfx = [bool]$wantPlugins } | ConvertTo-Json
-  [IO.File]::WriteAllText((Join-Path (Split-Path $helper) "bandsync_setup.json"), $req, $utf8)
-  $result = Join-Path (Split-Path $helper) "bandsync_setup_result.json"
+  [IO.File]::WriteAllText((Join-Path (Split-Path $helper) "studiosync_setup.json"), $req, $utf8)
+  $result = Join-Path (Split-Path $helper) "studiosync_setup_result.json"
   Remove-Item $result -ErrorAction SilentlyContinue
   if ($script:Reopen -and -not (Get-Reaper)) {
     # we closed REAPER: start it the way you do, so it reopens your projects as it always does (started WITH the
@@ -417,10 +417,10 @@ if ($isHost) {
 } elseif ($peers -notcontains $hostId) {
   $left += "Tell the collaborator whose ID you used: their StudioSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
 }
-# Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds the
+# Google Drive: signed in, and the band's StudioSync folder in My Drive (the first one makes it; everyone else adds the
 # shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). A key skips.
 if ($wantSolo) {
-  # (one drive letter per Google account signed in: the one that has BandSync is the band's, as BandSync itself looks)
+  # (one drive letter per Google account signed in: the one that has StudioSync is the band's, as StudioSync itself looks)
   $myDrive = {
     $all = @(foreach ($l in [char[]](67..90)) { $d = [string]$l + ":\My Drive"; if (Test-Path $d) { $d } })
     $band = @($all | Where-Object { Test-Path "$_\$driveName" })

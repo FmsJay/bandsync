@@ -1,4 +1,4 @@
--- @description BandSync: join a published song, or refresh this project from the latest publish
+-- @description StudioSync: join a published song, or refresh this project from the latest publish
 -- Builds a local project with the host's sample rate, tempo map, markers and stems, so you record
 -- on the same timeline with no latency. Re-run any time to pick up a new publish.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -46,7 +46,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     end
     -- been here before: back into your own project. (It made another from nothing each time, "Sunset Drive - Laptop.rpp" beside
     -- the host's own, and took every change in again: laptop, 0.42.4.)
-    local here = reaper.GetResourcePath() .. "/BandSync/" .. song .. "/"
+    local here = band.home() .. "/" .. song .. "/"
     local own, as_guest = here .. song .. ".rpp", here .. song .. " - " .. cfg.user .. ".rpp"
     local files = { reaper.GetExtState(band.SECTION, "project file " .. song), s.host == cfg.user and own or as_guest, s.host == cfg.user and as_guest or own }
     if reaper.JS_File_Stat then -- (the one last worked on: with two files for a song it opened one 2 hours older, and sent its old comps: laptop, 0.42.9)
@@ -79,7 +79,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   -- First open: saved into a local (not synced) folder; recordings are copied to the room's media folder as they go out
   local first_open = projfile == ""
   if first_open then
-    local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
+    local local_dir = band.home() .. "/" .. song
     reaper.RecursiveCreateDirectory(local_dir, 0)
     reaper.Main_SaveProjectEx(proj, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", 8) -- &8: becomes this project's file
     reaper.SetExtState(band.SECTION, "project file " .. song, local_dir .. "/" .. song .. " - " .. cfg.user .. ".rpp", true)
@@ -101,7 +101,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
   reaper.PreventUIRefresh(-1)
   reaper.TrackList_AdjustWindows(false)
   reaper.UpdateArrange()
-  reaper.Undo_EndBlock2(proj, "BandSync: open " .. song .. " v" .. s.version, -1)
+  reaper.Undo_EndBlock2(proj, "StudioSync: open " .. song .. " v" .. s.version, -1)
 
   if first_open then reaper.Main_SaveProject(proj, false) end
 

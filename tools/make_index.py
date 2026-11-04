@@ -1,4 +1,4 @@
-"""Write/extend the ReaPack index.xml for BandSync.
+"""Write/extend the ReaPack index.xml for StudioSync.
 
 Usage (repo root):  python tools/make_index.py [--changelog "text"]
 Then commit, tag v<VERSION>, and push the tag: every <source> URL points at that tag, so a
@@ -8,7 +8,7 @@ can pin or roll back. (reapack-index needs Ruby + pandoc; one package doesn't ne
 import argparse, datetime, pathlib, re, urllib.parse
 import xml.etree.ElementTree as ET
 
-REPO = "FmsJay/bandsync"
+REPO = "FmsJay/studiosync"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 INDEX = ROOT / "index.xml"
 
@@ -24,10 +24,10 @@ if INDEX.exists():
     index = ET.parse(INDEX).getroot()
     pkg = index.find("category/reapack")
 else:
-    index = ET.Element("index", version="1", name="BandSync")
-    cat = ET.SubElement(index, "category", name="BandSync")
-    pkg = ET.SubElement(cat, "reapack", name="BandSync.lua", type="script",
-                        desc="BandSync: record together remotely over a shared folder")
+    index = ET.Element("index", version="1", name="StudioSync")
+    cat = ET.SubElement(index, "category", name="StudioSync")
+    pkg = ET.SubElement(cat, "reapack", name="StudioSync.lua", type="script",
+                        desc="StudioSync: record together remotely over a shared folder")
     meta = ET.SubElement(pkg, "metadata")
     ET.SubElement(meta, "link", rel="website").text = f"https://github.com/{REPO}"
 
@@ -38,7 +38,7 @@ ver = ET.SubElement(pkg, "version", name=version, author="James",
                     time=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
 if args.changelog:
     ET.SubElement(ver, "changelog").text = args.changelog
-for f in sorted(ROOT.glob("BandSync - *.lua")):
+for f in sorted(ROOT.glob("StudioSync - *.lua")):
     ET.SubElement(ver, "source", main="main", file=f.name).text = url(f.name)  # registered as actions
 for f in sorted((ROOT / "lib").glob("*.lua")):
     rel = f"lib/{f.name}"
@@ -49,4 +49,4 @@ for f in sorted((ROOT / "lib" / "mac").glob("*")):  # compiled helpers (tools/ma
 
 ET.indent(index)
 ET.ElementTree(index).write(INDEX, encoding="utf-8", xml_declaration=True)
-print(f"index.xml: BandSync {version}, {len(ver)} entries")
+print(f"index.xml: StudioSync {version}, {len(ver)} entries")

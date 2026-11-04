@@ -1,10 +1,10 @@
 -- @noindex
--- BandSync installer step that runs INSIDE the live REAPER, with no dialogs, so an AI installer can drive it:
+-- StudioSync installer step that runs INSIDE the live REAPER, with no dialogs, so an AI installer can drive it:
 --   Windows: reaper.exe -nonewinst "<this file>"      macOS: open -a /Applications/REAPER.app "<this file>"
--- It reads bandsync_setup.json next to itself and writes bandsync_setup_result.json next to itself.
+-- It reads studiosync_setup.json next to itself and writes studiosync_setup_result.json next to itself.
 -- Request: { "sync_root": "...", "user": "...", "mode": "reapack" | "folder", "repo_url": "..." }
---   reapack: add the BandSync repository and start a ReaPack sync (installs + registers actions)
---   folder:  register every "BandSync - *.lua" in <sync_root>/_tools/bandsync (re-run after updates)
+--   reapack: add the StudioSync repository and start a ReaPack sync (installs + registers actions)
+--   folder:  register every "StudioSync - *.lua" in <sync_root>/_tools/studiosync (re-run after updates)
 local here = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 -- chmaha's "DSP to JSFX": the effects and instruments REAPER 7.83 bundled and 7.84 removed (drum kits, MDA piano and
 -- e-piano, organ, channel strip, tuner, limiter...), GPL-3.0 with MIT/AGPL parts; new in Oct 2026, still changing
@@ -20,12 +20,12 @@ local function step(name, ok, detail)
   if not ok then out.ok = false end
 end
 local function finish()
-  local f = io.open(here .. "/bandsync_setup_result.json", "w")
+  local f = io.open(here .. "/studiosync_setup_result.json", "w")
   if f then f:write(json.encode(out, true)); f:close() end
 end
 
-local f = io.open(here .. "/bandsync_setup.json", "r")
-if not f then step("read request", false, here .. "/bandsync_setup.json missing"); return finish() end
+local f = io.open(here .. "/studiosync_setup.json", "r")
+if not f then step("read request", false, here .. "/studiosync_setup.json missing"); return finish() end
 local ok, req = pcall(json.decode, f:read("a"))
 f:close()
 if not ok or type(req) ~= "table" then step("read request", false, req); return finish() end
@@ -55,34 +55,34 @@ if probe and user ~= "" then
   reaper.SetExtState("BandSync", "user", user, true)
 end
 
--- The VERSION in a BandSync lib/band.lua, or nil.
+-- The VERSION in a StudioSync lib/band.lua, or nil.
 local function version_in(path)
   local vf = path and io.open(path, "r")
   local v = vf and vf:read("a"):match('VERSION%s*=%s*"([^"]+)"')
   if vf then vf:close() end
   return v
 end
--- This installer's BandSync (the copy it came in), and the one REAPER runs now (where its Live sync action points).
+-- This installer's StudioSync (the copy it came in), and the one REAPER runs now (where its Live sync action points).
 local WANT = version_in(here .. "/../lib/band.lua")
 local function installed_version()
   local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
   local text = kb and kb:read("a") or ""
   if kb then kb:close() end
-  local live = text:match('"[^"]*BandSync %- Live sync%.lua" "([^"]+)"')
+  local live = text:match('"[^"]*StudioSync %- Live sync%.lua" "([^"]+)"')
   if not live then return nil end
   live = live:gsub("\\", "/")
   if not live:match("^/") and not live:match("^%a:") then live = reaper.GetResourcePath() .. "/Scripts/" .. live end
   return version_in(live:match("^(.*)/") .. "/lib/band.lua")
 end
 
--- BandSync already up to date through ReaPack (the repository set, this installer's version installed, and every
+-- StudioSync already up to date through ReaPack (the repository set, this installer's version installed, and every
 -- requested JSFX repository there)? Then ReaPack is left alone: starting a ReaPack sync while its Transaction report
 -- window is open crashes REAPER on macOS (2026-10-28), and a re-run is exactly when that window may still be up.
--- (Until 0.34.4 any registered BandSync counted: a Mac on 0.13.4 re-ran the installer, was told OK, and stayed on
+-- (Until 0.34.4 any registered StudioSync counted: a Mac on 0.13.4 re-ran the installer, was told OK, and stayed on
 -- 0.13.4 without the plug-in pack's JSFX.)
 local function already_installed()
   if not reaper.APIExists("ReaPack_GetRepositoryInfo") then return false end
-  local ok, url = reaper.ReaPack_GetRepositoryInfo("BandSync")
+  local ok, url = reaper.ReaPack_GetRepositoryInfo("StudioSync")
   if not ok or url ~= req.repo_url then return false end
   if not WANT or installed_version() ~= WANT then return false end
   if req.jsfx then
@@ -91,7 +91,7 @@ local function already_installed()
   return true
 end
 
--- The plug-in pack's JSFX without BandSync's own ReaPack sync to ride along with: a sync of their own, only when
+-- The plug-in pack's JSFX without StudioSync's own ReaPack sync to ride along with: a sync of their own, only when
 -- one of them is missing (a re-run with all there leaves ReaPack alone, see above).
 local function jsfx_only()
   if not (req.jsfx and reaper.APIExists("ReaPack_AddSetRepository")) then return end
@@ -113,7 +113,7 @@ end
 -- This version already runs here from somewhere other than ReaPack (the band folder's staged copy, a checkout): a
 -- ReaPack copy beside it gave the laptop two of every action and two Live syncs to choose from (0.35.1).
 local function runs_elsewhere()
-  local ok = reaper.APIExists("ReaPack_GetRepositoryInfo") and reaper.ReaPack_GetRepositoryInfo("BandSync")
+  local ok = reaper.APIExists("ReaPack_GetRepositoryInfo") and reaper.ReaPack_GetRepositoryInfo("StudioSync")
   return not ok and WANT ~= nil and installed_version() == WANT
 end
 
@@ -121,15 +121,15 @@ if req.mode == "reapack" then
   if not reaper.APIExists("ReaPack_AddSetRepository") then
     step("ReaPack installed", false, "install ReaPack (reapack.com) and restart REAPER first")
   elseif already_installed() then
-    step("BandSync " .. WANT .. " already installed through ReaPack", true, "left as it is")
+    step("StudioSync " .. WANT .. " already installed through ReaPack", true, "left as it is")
     req.mode, req.open_panel = "verify", true -- nothing to wait for; land in the panel (it stayed shut, Mac 0.34.3)
   elseif runs_elsewhere() then
-    step("BandSync " .. WANT .. " already runs here (not through ReaPack)", true, "left as it is: no second copy")
+    step("StudioSync " .. WANT .. " already runs here (not through ReaPack)", true, "left as it is: no second copy")
     jsfx_only()
     req.mode, req.open_panel = "verify", true
   else
     local added, err = reaper.ReaPack_AddSetRepository("BandSync", req.repo_url or "", true, 1) -- 1: auto-install on sync
-    step("add BandSync repository", added, err ~= "" and err or req.repo_url)
+    step("add StudioSync repository", added, err ~= "" and err or req.repo_url)
     if req.jsfx then -- the plug-in pack's JSFX (both MIT): in this same ReaPack sync, never one of their own (see above)
       for _, r in ipairs(JSFX_REPOS) do
         local ok_r, e = reaper.ReaPack_AddSetRepository(r[1], r[2], true, 1)
@@ -142,17 +142,17 @@ if req.mode == "reapack" then
     step("ReaPack sync started", sync ~= 0, "asynchronous: re-run with mode \"verify\" in a minute")
   end
 elseif req.mode == "folder" then
-  local dir, scripts, i = root .. "/_tools/bandsync", {}, 0
+  local dir, scripts, i = root .. "/_tools/studiosync", {}, 0
   reaper.EnumerateFiles(dir, -1)
   while true do
     local name = reaper.EnumerateFiles(dir, i)
     if not name then break end
-    if name:match("^BandSync %- .+%.lua$") then scripts[#scripts + 1] = dir .. "/" .. name end
+    if name:match("^StudioSync %- .+%.lua$") then scripts[#scripts + 1] = dir .. "/" .. name end
     i = i + 1
   end
   for n, path in ipairs(scripts) do reaper.AddRemoveReaScript(true, 0, path, n == #scripts) end
   step("register actions from shared folder", #scripts > 0, #scripts .. " scripts in " .. dir)
-  jsfx_only() -- (BandSync came from the folder: no BandSync ReaPack sync for the JSFX to ride along with)
+  jsfx_only() -- (StudioSync came from the folder: no StudioSync ReaPack sync for the JSFX to ride along with)
 end
 
 -- What's registered now, autostart, the result file, and the panel. With ReaPack, run once its sync has brought the
@@ -164,19 +164,19 @@ local function conclude()
   -- optional: the control panel needs ReaImGui (ReaTeam Extensions repository, which ReaPack has by default)
   out.reaimgui = reaper.APIExists("ImGui_GetBuiltinPath")
 
-  -- verify: which BandSync actions does REAPER have registered right now?
+  -- verify: which StudioSync actions does REAPER have registered right now?
   local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
   local count, text = 0, kb and kb:read("a") or ""
   if kb then kb:close() end
-  for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do count = count + 1 end
+  for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*StudioSync %- [^"]*"') do count = count + 1 end
   out.registered_actions = count
   out.version = installed_version()
-  step("BandSync actions registered", count >= 5, count)
+  step("StudioSync actions registered", count >= 5, count)
 
-  -- Live sync starts again with REAPER for a session where it was running (Scripts/__startup.lua runs BandSync -
+  -- Live sync starts again with REAPER for a session where it was running (Scripts/__startup.lua runs StudioSync -
   -- Autostart, the panel's "Start Live sync with REAPER"). Without it, a REAPER restart (this installer does one)
   -- left Live sync off and changes silently stayed here (Mac, 2026-10-28). Same block as lib/tools.lua writes.
-  local live = text:match('"[^"]*BandSync %- Live sync%.lua" "([^"]+)"')
+  local live = text:match('"[^"]*StudioSync %- Live sync%.lua" "([^"]+)"')
   if live and count >= 5 then
     live = live:gsub("\\", "/")
     if not live:match("^/") and not live:match("^%a:") then live = reaper.GetResourcePath() .. "/Scripts/" .. live end
@@ -185,13 +185,17 @@ local function conclude()
     local sf = io.open(startup, "r")
     local cur = sf and sf:read("a") or ""
     if sf then sf:close() end
-    if not cur:find("-- BandSync autostart", 1, true) and reaper.file_exists(sdir .. "/BandSync - Autostart.lua") then
+    if not cur:find(sdir .. "/StudioSync - Autostart.lua", 1, true) and reaper.file_exists(sdir .. "/StudioSync - Autostart.lua") then
+      -- (a block from before the rename, or from another copy, makes way)
+      local a = cur:find("-- BandSync autostart", 1, true)
+      local z = a and cur:find("-- /BandSync autostart", a, true)
+      if z then cur = cur:sub(1, a - 1) .. cur:sub(z + #"-- /BandSync autostart" + 1) end
       local wf = io.open(startup, "w")
       if wf then
         wf:write(cur .. (cur ~= "" and not cur:match("\n$") and "\n" or "") .. "-- BandSync autostart\ndofile([[" .. sdir ..
-          "/BandSync - Autostart.lua]])\n-- /BandSync autostart\n")
+          "/StudioSync - Autostart.lua]])\n-- /BandSync autostart\n")
         wf:close()
-        dofile(sdir .. "/BandSync - Autostart.lua") -- and now, for this REAPER session (it just restarted without it)
+        dofile(sdir .. "/StudioSync - Autostart.lua") -- and now, for this REAPER session (it just restarted without it)
       end
     end
     local again = io.open(startup, "r")
@@ -203,7 +207,7 @@ local function conclude()
 
   -- open_panel: land the musician in the panel, whose first screen offers to publish or open a session
   if (req.open_panel or waiting) and count >= 5 and out.reaimgui then
-    local id = text:match('SCR %d+ %d+ (%S+) "[^"]*BandSync %- Panel%.lua"')
+    local id = text:match('SCR %d+ %d+ (%S+) "[^"]*StudioSync %- Panel%.lua"')
     local cmd = id and reaper.NamedCommandLookup("_" .. id) or 0
     if cmd ~= 0 and reaper.GetToggleCommandState(cmd) ~= 1 then reaper.Main_OnCommand(cmd, 0) end
   end
@@ -213,7 +217,7 @@ local function registered()
   local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
   local n, text = 0, kb and kb:read("a") or ""
   if kb then kb:close() end
-  for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*BandSync %- [^"]*"') do n = n + 1 end
+  for _ in text:gmatch('SCR %d+ %d+ %S+ "[^"]*StudioSync %- [^"]*"') do n = n + 1 end
   return n
 end
 if req.mode == "reapack" and out.ok then

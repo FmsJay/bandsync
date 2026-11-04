@@ -663,7 +663,7 @@ function mirror.last_mine(entries, user)
     if e.kind == "obj" and e.user == user then
       if e.undoes and not undone[e.id] then undone[e.undoes] = true
       elseif e.redoes then undone[e.redoes] = true -- (a redo undoes an undo: the change it undid counts again)
-      elseif not e.restored and not e.auto and not undone[e.id] then return i end -- (auto: a print BandSync refreshed)
+      elseif not e.restored and not e.auto and not undone[e.id] then return i end -- (auto: a print StudioSync refreshed)
     end
   end
 end
@@ -684,7 +684,7 @@ function mirror.last_undo(entries, user)
     if e.kind == "obj" and e.user == user then
       if e.redoes then redone[e.redoes] = true
       elseif e.undoes and not redone[e.id] then return i
-      elseif not e.restored and not e.auto then return nil end -- a new change since: nothing to redo (a print BandSync refreshed isn't one)
+      elseif not e.restored and not e.auto then return nil end -- a new change since: nothing to redo (a print StudioSync refreshed isn't one)
     end
   end
 end
@@ -881,7 +881,7 @@ mirror.remember = remember
 local function trk_oid(tr) return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_oid", "", false)):upper() end
 local function itm_oid(it) return select(2, reaper.GetSetMediaItemInfo_String(it, "P_EXT:band_oid", "", false)):upper() end
 mirror.track_oid, mirror.item_oid = trk_oid, itm_oid
--- BandSync's own helper tracks (the SonoBus return, stems) never mirror
+-- StudioSync's own helper tracks (the SonoBus return, stems) never mirror
 local function local_track(tr) -- (also live placeholders and live MIDI views: each machine draws its own)
   return select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_local", "", false)) ~= ""
     or select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_live_track", "", false)) ~= ""
@@ -1028,7 +1028,7 @@ end
 -- oids given back after an unsaved reopen whose state here is older than the band's: put back, never sent, until they
 -- match what this machine last knew (proj .. oid -> true)
 mirror.reopened = {}
-mirror.auto = {} -- proj .. oid -> its next send is a print BandSync refreshed (Undo skips those)
+mirror.auto = {} -- proj .. oid -> its next send is a print StudioSync refreshed (Undo skips those)
 mirror.unsent = {} -- proj .. oid -> changed here, not sent yet (settling, playing, Hold my changes): mirror.receive waits
 mirror.anchor_seen = {} -- proj .. oid .. known hash -> its event was checked against what's here (see watch)
 mirror.orphaned = {} -- proj -> { track oid = true }: changes skipped while that track was gone (sync.receive looks again)
@@ -1146,13 +1146,13 @@ end
 -- Find a track or item by oid.
 -- The master track travels as two parts only, F-MASTER (its plug-ins) and E-MASTER (its automation): its fader and
 -- pan are each person's listening level. ReaNINJAM and SonoBus on it are this machine's live link, never sent, and so
--- is BandSync's live mix (lib/hear.lua: who you hear, and in whose time).
+-- is StudioSync's live mix (lib/hear.lua: who you hear, and in whose time).
 mirror.MASTER = "T-MASTER"
 function mirror.live_fx(tr)
   local set = {}
   for i = 0, reaper.TrackFX_GetCount(tr) - 1 do
     local _, name = reaper.TrackFX_GetFXName(tr, i, "")
-    if name:find("ReaNINJAM", 1, true) or name:find("SonoBus", 1, true) or name:find("BandSync live mix", 1, true) then
+    if name:find("ReaNINJAM", 1, true) or name:find("SonoBus", 1, true) or name:find("StudioSync live mix", 1, true) or name:find("BandSync live mix", 1, true) then
       set[reaper.TrackFX_GetFXGUID(tr, i)] = true
     end
   end
@@ -1472,7 +1472,7 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
   if ok and midiview then midiview.show(proj, mirror.find(proj, "item", ev.oid), notes_before) end
   -- applied, but it isn't what they have: the projects differ (only when made the same way: a change from an older
-  -- BandSync hashed fewer of a track's settings, so it always reads as different; the laptop saw 4 on its first open)
+  -- StudioSync hashed fewer of a track's settings, so it always reads as different; the laptop saw 4 on its first open)
   -- (nor when the colour counts on one machine and not the other: SWS auto-colouring)
   local same_way = ev.obj ~= "track" or type(ev.state) ~= "table" or (ev.state.autocolour == true) == (mirror.own_colours() == true)
   if ok and ev.hash and ev.hv == mirror.HV and same_way and h ~= ev.hash and not ev.gone then
@@ -1962,7 +1962,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       end
       -- allowed where it is now, and where it was (moving an item off a claimed track, or renaming a claimed track,
       -- mustn't slip past the claim)
-      -- (a wet take BandSync just made: whoever is to print it may send it, whatever the claims: prints.printer)
+      -- (a wet take StudioSync just made: whoever is to print it may send it, whatever the claims: prints.printer)
       local auto = o.kind == "item" and mirror.auto[tostring(proj) .. o.oid]
       local ok_now = auto or allowed(o, name, o.pos) or (o.kind == "track" and last ~= nil and allowed(o, last.name or "", last.pos))
       local ok_before = auto or not last or last.gone or allowed(o, last.name or "", last.pos)
@@ -2107,7 +2107,7 @@ function mirror.watch(proj, cfg, song, room, opts)
             return f.print_key
           end
           local ok, did = pcall(prints.refresh, proj, o.ptr, media, sounds(fx), sounds(dfx), cfg)
-          if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is BandSync's, not theirs)
+          if ok and did then made = made + 1; mirror.auto[tostring(proj) .. o.oid] = true end -- (its next send is StudioSync's, not theirs)
         end
       end
     end
@@ -2387,7 +2387,7 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
       done = done + 1
     end
   end
-  reaper.Undo_EndBlock2(proj, "BandSync: go back", -1)
+  reaper.Undo_EndBlock2(proj, "StudioSync: go back", -1)
   reaper.UpdateArrange()
   -- a lane takes its name only now its items are in, and they came after the track: forward lost "Take 1", and sent that (Mac, 0.42.5)
   for _, p in ipairs(list) do

@@ -1,19 +1,19 @@
 -- Who you hear live, and in whose time. SonoBus (Real time mode's own track) sends each bandmate to their own output
 -- pair (lib/sonobus.lua set_outputs writes that into its per-person cache), the track passes all 16 channels on to the
--- master's channels 3-18, and BandSync's live mix there turns each person up, down or off and puts everything back on
+-- master's channels 3-18, and StudioSync's live mix there turns each person up, down or off and puts everything back on
 -- 1-2. "Their time" delays your own backing instead, so what arrives late lines up with it. Everything here is this
 -- machine's own: the mix is never sent (mirror.live_fx), and the switches live in the project, not in the band's files.
 local band = require("band")
 local hear = {}
 
-hear.NAME = "BandSync live mix"
+hear.NAME = "StudioSync live mix"
 hear.PAIRS = 8 -- SonoBus pairs on the Real time track: 1 for everyone without their own, 7 for bandmates
 hear.MAX_MS = 1000
 
 hear.JSFX = [[
-desc:BandSync live mix
-//tags: BandSync
-// Written by BandSync (lib/hear.lua) and rewritten when BandSync changes it: edits here don't last.
+desc:StudioSync live mix
+//tags: StudioSync
+// Written by StudioSync (lib/hear.lua) and rewritten when StudioSync changes it: edits here don't last.
 // Channels 1-2: your own backing and playing. 3-18: what SonoBus brings in, a pair per person (3-4: everyone without
 // their own pair). Out on 1-2: the backing (delayed by "their time") plus each person at their level.
 slider1:0<0,1000,1>Their time: your backing later by (ms)
@@ -80,8 +80,8 @@ spl2 = spl3 = spl4 = spl5 = spl6 = spl7 = spl8 = spl9 = spl10 = spl11 = spl12 = 
 
 -- The effect file, in REAPER's Effects folder (rewritten only when it differs). Returns its name for TrackFX_AddByName.
 function hear.install()
-  local dir = reaper.GetResourcePath() .. "/Effects/BandSync"
-  local path = dir .. "/BandSync live mix.jsfx"
+  local dir = reaper.GetResourcePath() .. "/Effects/StudioSync"
+  local path = dir .. "/StudioSync live mix.jsfx"
   if band.read(path) ~= hear.JSFX then
     reaper.RecursiveCreateDirectory(dir, 0)
     local f = io.open(path, "wb")
@@ -89,14 +89,20 @@ function hear.install()
     f:write(hear.JSFX)
     f:close()
   end
-  return "JS:BandSync/BandSync live mix.jsfx"
+  return "JS:StudioSync/StudioSync live mix.jsfx"
 end
 
 -- The live mix on the master (added when `add`), and its index.
 function hear.mix(proj, add)
   local m = reaper.GetMasterTrack(proj)
   for i = 0, reaper.TrackFX_GetCount(m) - 1 do
-    if select(2, reaper.TrackFX_GetFXName(m, i, "")):find(hear.NAME, 1, true) then return m, i end
+    local name = select(2, reaper.TrackFX_GetFXName(m, i, ""))
+    if name:find(hear.NAME, 1, true) then return m, i end
+    if name:find("BandSync live mix", 1, true) then -- (from before the rename: its levels are set again each look)
+      if not add then return m, i end
+      reaper.TrackFX_Delete(m, i)
+      break
+    end
   end
   if not add then return nil end
   local name = hear.install()

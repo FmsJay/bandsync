@@ -1,4 +1,4 @@
--- @description BandSync: live sync for this project (runs in the background whenever a BandSync project is open)
+-- @description StudioSync: live sync for this project (runs in the background whenever a StudioSync project is open)
 -- Keeps this project identical to the band's (mirror sync, docs/mirror-design.md): every track, item and plug-in
 -- chain you may change goes out a moment after you change it; the band's changes come in; a change you may not make
 -- (someone else's claim, or the driver's) is put back. Also plays/records together and runs the live modes.
@@ -93,7 +93,7 @@ for _, d in ipairs(band.subdirs(cfg.root)) do
   end
 end
 
--- which plug-ins this machine has goes to the band, and the FX browser's "BandSync (everyone has)" folder follows
+-- which plug-ins this machine has goes to the band, and the FX browser's "StudioSync (everyone has)" folder follows
 -- what everyone has (lib/plugins.lua); a failure here must never stop syncing
 do
   local plugins = require("plugins")
@@ -134,7 +134,7 @@ local function end_of_session(why)
   if sync.driver(cfg, b.song, b.room, s0) == cfg.user and reaper.GetExtState(band.SECTION, key) ~= os.date("!%Y-%m-%d") then
     reaper.SetExtState(band.SECTION, key, os.date("!%Y-%m-%d"), true)
     local ok, gone = pcall(require("trim").run, cfg, b.song, b.room, 30)
-    if ok and gone > 0 then band.log(string.format("trimmed %d change(s) older than 30 days that no saved version needs (kept in 'BandSync history archive')", gone))
+    if ok and gone > 0 then band.log(string.format("trimmed %d change(s) older than 30 days that no saved version needs (kept in 'StudioSync history archive')", gone))
     elseif not ok then band.log("couldn't trim old history: " .. tostring(gone)) end
   end
 end
@@ -262,7 +262,7 @@ local function poll()
   -- before the band's changes come in, so an edit still unsent is never overwritten unseen
   sync.local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1"
   if not (s and s.sync == "mirror") then -- made with the older take sync: left alone until it's published again
-    if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older StudioSync: publish it again (BandSync - Publish session) to sync it") end
+    if not sync.old_said then sync.old_said = true; band.log("'" .. b.song .. "' was made with an older StudioSync: publish it again (StudioSync - Publish session) to sync it") end
   else
     if not hold then
       local tok, terr = pcall(sync.watch_timeline, proj, cfg, b.song, b.room, my_can) -- (before the items: a tempo change moves them)
@@ -318,7 +318,7 @@ local function poll()
     if not nok then band.log("suggestions: " .. tostring(nerr)) end
   end
 
-  -- the host's project gathers the rooms bandmates record into (BandSync before side rooms), never a side room:
+  -- the host's project gathers the rooms bandmates record into (StudioSync before side rooms), never a side room:
   -- that's its own tab, brought in when someone chooses to (lib/rooms.lua)
   local rooms = { b.room }
   if host then
@@ -379,7 +379,7 @@ local function poll()
   if live_dir ~= "" and live.fx(proj, false) then
     live.note_clips(proj, live_dir) -- when each clip arrived, so only takes recorded then replace it
     local added, retired = live.place_clips(proj, live_dir), live.retire(proj)
-    if added + retired > 0 then reaper.Undo_OnStateChange2(proj, "BandSync: live placeholders") end -- one undo point, only when something changed
+    if added + retired > 0 then reaper.Undo_OnStateChange2(proj, "StudioSync: live placeholders") end -- one undo point, only when something changed
     if added > 0 then band.log(added .. " live clip(s) placed as placeholders") end
     if retired > 0 then band.log(retired .. " placeholder(s) replaced by the real takes") end
   end
@@ -515,7 +515,7 @@ do -- what's already there is history, not a cue
   reaper.EnumerateFiles(dir, -1)
   while true do local f = reaper.EnumerateFiles(dir, i); if not f then break end; seen_ev[f] = true; i = i + 1 end
 end
--- BandSync - Autostart.lua restarts us for this project after REAPER restarts, until the person stops us
+-- StudioSync - Autostart.lua restarts us for this project after REAPER restarts, until the person stops us
 -- (our tab's file, not the front one's: an update reloads every tab's Live sync while one tab is in front)
 local our_file = ""
 for i = 0, 512 do
@@ -528,7 +528,7 @@ if autokey ~= "autosync " then reaper.SetExtState(band.SECTION, autokey, "1", tr
 local tick
 local livemidi = require("livemidi")
 local midi_view_at, midi_view_err = 0, nil
-local undo_since, undo_said -- when you undid one of BandSync's own changes (tick_body waits a while)
+local undo_since, undo_said -- when you undid one of StudioSync's own changes (tick_body waits a while)
 local function tick_body() -- returns true to keep going
   if sync.tip_at and reaper.time_precise() - sync.tip_at > 6 then sync.tip_at = nil; reaper.TrackCtl_SetToolTip("", 0, 0, true) end
   if not reaper.ValidatePtr2(0, proj, "ReaProject*") then -- project closed: stop, and say so
@@ -669,14 +669,14 @@ local function tick_body() -- returns true to keep going
   local redo = reaper.Undo_CanRedo2(proj)
   -- REAPER's own undo (Edit > Undo, or a key not set to StudioSync's) just rolled back a change StudioSync made, a collaborator's or the group's:
   -- that would undo their work too. Put it back, and undo your own last change instead, as Ctrl+Z does.
-  if redo and redo:find("^BandSync") and redo ~= undo_top then
+  if redo and (redo:find("^StudioSync") or redo:find("^BandSync")) and redo ~= undo_top then
     reaper.Undo_DoRedo2(proj)
     local ok, res, why = pcall(function() return require("undo").step(proj, cfg, b, false, {}) end)
     if not ok then band.log("undo: " .. tostring(res)) elseif res then band.log(res) elseif why then band.log(why) end
     redo = reaper.Undo_CanRedo2(proj)
   end
   undo_top = redo
-  if redo and redo:find("^BandSync") then -- you just undid one of BandSync's changes: keep undoing if you like
+  if redo and (redo:find("^StudioSync") or redo:find("^BandSync")) then -- you just undid one of StudioSync's changes: keep undoing if you like
     undo_since = undo_since or now
     if not undo_said then undo_said = true; band.log("you undid a StudioSync change: Live sync waits 30 s (or until you do something else) so you can keep undoing") end
   else
@@ -718,7 +718,7 @@ tick = function()
     reaper.DeleteExtState(band.SECTION, "live " .. key, false)
     for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
     BANDSYNC_LIVE_PROJ = proj
-    return dofile(dir .. "/BandSync - Live sync.lua")
+    return dofile(dir .. "/StudioSync - Live sync.lua")
   end
   if reaper.time_precise() - sws_at > 1 then sws_at = reaper.time_precise(); pcall(band.sws_colours) end -- (lib/band.lua)
   local ok, go = pcall(tick_body)

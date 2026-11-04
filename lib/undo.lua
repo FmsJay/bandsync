@@ -1,13 +1,13 @@
 -- Undo / Redo of your own changes, for everyone (mirror sync): the top bar's arrows, the radial menu, and the
--- "BandSync - Undo" / "BandSync - Redo" actions (bind them to Ctrl+Z / Ctrl+Shift+Z). A bandmate's change is never
+-- "StudioSync - Undo" / "StudioSync - Redo" actions (bind them to Ctrl+Z / Ctrl+Shift+Z). A bandmate's change is never
 -- stepped over the way REAPER's own undo does (it restores a whole-project snapshot, theirs included).
 local band = require("band")
 local undo = {}
 
 -- What Ctrl+Z does in a band song, by what's on top of REAPER's undo list (`top`). Your own edit: REAPER's undo, which is that
--- one step and also covers what hasn't gone out yet, or never does. A change BandSync made, a bandmate's among them: your own last
+-- one step and also covers what hasn't gone out yet, or never does. A change StudioSync made, a bandmate's among them: your own last
 -- change instead, as REAPER's would roll theirs back (the Mac's 4 presses re-sent old parts as its own: 0.42.10). Pure.
-function undo.native(top) return (top or "") ~= "" and not top:find("^BandSync") end
+function undo.native(top) return (top or "") ~= "" and not top:find("^StudioSync") and not top:find("^BandSync") end
 
 -- Ctrl+Z and Ctrl+Shift+Z, in the main window and the MIDI editor (it has its own Ctrl+Z, and that's where notes get moved).
 -- REAPER reads shortcuts only when it starts, so undo.auto_keys sets them for the next start; Setup's button (REAPER's own box,
@@ -18,7 +18,7 @@ function undo.keys_left(dir)
   local left = {}
   for _, k in ipairs(KEYS) do
     local key = k[1] .. k[2]
-    ids[key] = ids[key] or reaper.AddRemoveReaScript(true, k[2], dir .. "/BandSync - " .. k[1] .. ".lua", true)
+    ids[key] = ids[key] or reaper.AddRemoveReaScript(true, k[2], dir .. "/StudioSync - " .. k[1] .. ".lua", true)
     if ids[key] ~= 0 and reaper.CountActionShortcuts(reaper.SectionFromUniqueID(k[2]), ids[key]) == 0 then
       left[#left + 1] = { what = k[1], section = k[2], where = k[3], id = ids[key], mod = k[4], key = key }
     end
@@ -30,26 +30,37 @@ end
 function undo.kb_lines(text, wants)
   local add = {}
   for _, w in ipairs(wants) do
-    local rs = text:match("SCR %d+ " .. w.section .. " (%S+) \"[^\"]*BandSync %- " .. w.what .. "%.lua\"")
+    local rs = text:match("SCR %d+ " .. w.section .. " (%S+) \"[^\"]*StudioSync %- " .. w.what .. "%.lua\"")
     if rs and not ("\n" .. text):find("\nKEY " .. w.mod .. " 90 %S+ " .. w.section .. "%f[%D]") then
       add[#add + 1] = string.format("KEY %d 90 _%s %d", w.mod, rs, w.section)
     end
   end
   return add
 end
+-- reaper-kb.ini without the keys of the scripts as they were called before the rename, or Ctrl+Z stays bound to a script that's gone,
+-- and that reads as someone's own choice of key. Pure.
+function undo.strip_old(text)
+  for rs in text:gmatch('SCR %d+ %d+ (%S+) "[^"]*BandSync %- [UR]%a+%.lua"') do
+    text = text:gsub("\nKEY %d+ %d+ _" .. rs:gsub("%p", "%%%0") .. " [^\n]*", "")
+  end
+  return text
+end
 -- Sets what's missing for the next time REAPER starts: at its start, and again as it quits (a new action registered meanwhile
 -- rewrites the file from REAPER's memory). A key once seen set and now gone was removed by its owner: not set again.
 -- shortcut: Windows only, as Cmd+Z's line is unverified on a Mac; Setup's button does it there until it's checked.
 function undo.auto_keys(dir)
   if not reaper.GetOS():find("^Win") then return end
-  local left, seen = undo.keys_left(dir), reaper.GetExtState(band.SECTION, "undo keys seen")
+  local kb_path = reaper.GetResourcePath() .. "/reaper-kb.ini"
+  local kb_text = band.read(kb_path)
+  if kb_text and undo.strip_old(kb_text) ~= kb_text then pcall(band.write_atomic, kb_path, undo.strip_old(kb_text)) end
+  local left, seen = undo.keys_left(dir), reaper.GetExtState(band.SECTION, "undo keys seen 2") -- (2: the actions are new since the rename)
   local missing = {}
   for _, k in ipairs(left) do missing[k.key] = true end
   for _, k in ipairs(KEYS) do
     local key = k[1] .. k[2]
     if not missing[key] and ids[key] ~= 0 and not seen:find(key, 1, true) then seen = seen .. key .. " " end
   end
-  reaper.SetExtState(band.SECTION, "undo keys seen", seen, true)
+  reaper.SetExtState(band.SECTION, "undo keys seen 2", seen, true)
   local wants = {}
   for _, k in ipairs(left) do
     if not seen:find(k.key, 1, true) then wants[#wants + 1] = k end

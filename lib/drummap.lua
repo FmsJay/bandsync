@@ -89,7 +89,7 @@ function drummap.jsfx(from, to, t)
   for n in pairs(t) do keys[#keys + 1] = n end
   table.sort(keys)
   for _, n in ipairs(keys) do lines[#lines + 1] = string.format("map[%d] = %d;", n, t[n]) end
-  return "desc:StudioSync drum map: " .. from .. " to " .. to .. "\n//tags: BandSync\n" ..
+  return "desc:StudioSync drum map: " .. from .. " to " .. to .. "\n//tags: StudioSync\n" ..
     "// Written by StudioSync (lib/drummap.lua): only on this computer, and never sent. Audio passes through.\n" ..
     "@init\nmap = 0;\ni = 0; loop(128, map[i] = i; i += 1);\n" .. table.concat(lines, "\n") .. "\n" ..
     "@block\nwhile (midirecv(ofs, m1, m2, m3)) (\n  s = m1 & 0xF0;\n  (s == 0x80 || s == 0x90 || s == 0xA0) ? m2 = map[m2];\n  midisend(ofs, m1, m2, m3);\n);\n"

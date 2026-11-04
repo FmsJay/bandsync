@@ -2,7 +2,7 @@
 -- auto-colouring colours tracks on that machine (then its colours are its own: not sent, and not set on others when
 -- it sends another change). A record from before 0.36, when colour never counted, is re-anchored, not sent.
 -- Two scratch tabs, a scratch shared folder; both tabs saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

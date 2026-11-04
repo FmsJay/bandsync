@@ -73,9 +73,9 @@ local function render_wavs(files, proj)
     end
     for t = reaper.CountTracks(tab) - 1, 0, -1 do reaper.DeleteTrack(reaper.GetTrack(tab, t)) end
   end
-  reaper.Main_SaveProjectEx(tab, reaper.GetResourcePath() .. "/BandSync/export-scratch.rpp", 8) -- (a saved tab closes without a question)
+  reaper.Main_SaveProjectEx(tab, band.home() .. "/export-scratch.rpp", 8) -- (a saved tab closes without a question)
   reaper.Main_OnCommand(40860, 0) -- File: Close current project tab
-  os.remove(reaper.GetResourcePath() .. "/BandSync/export-scratch.rpp")
+  os.remove(band.home() .. "/export-scratch.rpp")
   if front and reaper.ValidatePtr2(0, front, "ReaProject*") then reaper.SelectProjectInstance(front) end
   for _, f in ipairs(files) do if not reaper.file_exists(f.to) then bad[#bad + 1] = f.from end end
   return bad

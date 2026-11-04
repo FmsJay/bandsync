@@ -3,11 +3,11 @@
 -- out of the band. No preference covers the plug-ins, and scripts are paused while a box is up. So as REAPER quits, a song's tabs
 -- are noted and REAPER told to open none; at its next start they're opened from here, and a small hidden helper answers those
 -- two boxes for band songs only (never for a project of your own), leaving the files offline and changing nothing.
--- shortcut: Windows only: on a Mac a helper clicking another app's box needs an Accessibility permission, which BandSync won't ask for.
+-- shortcut: Windows only: on a Mac a helper clicking another app's box needs an Accessibility permission, which StudioSync won't ask for.
 local band = require("band")
 local startup = {}
 
-local DIR = reaper.GetResourcePath() .. "/BandSync"
+local DIR = band.home()
 local FILE = DIR .. "/reopen.json"
 local BAND_TAB, DONE, SAID = DIR .. "/reopen-band-tab", DIR .. "/reopen-done", DIR .. "/reopen-said.txt"
 local function usable() return reaper.GetOS():find("^Win") and reaper.SNM_GetIntConfigVar ~= nil and reaper.BR_Win32_WritePrivateProfileString ~= nil end
@@ -67,7 +67,7 @@ end
 
 local HELPER = [==[
 param([string]$BandTab, [string]$Done, [string]$Said)
-Add-Type -Name W -Namespace BandSync -MemberDefinition @"
+Add-Type -Name W -Namespace StudioSync -MemberDefinition @"
 public delegate bool EnumProc(System.IntPtr h, System.IntPtr l);
 [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, System.IntPtr l);
 [DllImport("user32.dll")] public static extern bool EnumChildWindows(System.IntPtr p, EnumProc f, System.IntPtr l);
@@ -76,29 +76,29 @@ public delegate bool EnumProc(System.IntPtr h, System.IntPtr l);
 [DllImport("user32.dll")] public static extern bool PostMessage(System.IntPtr h, int m, System.IntPtr w, System.IntPtr l);
 [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern System.IntPtr SendMessage(System.IntPtr h, int m, System.IntPtr w, System.Text.StringBuilder l);
 "@
-function T($h) { $b = New-Object System.Text.StringBuilder 4000; [void][BandSync.W]::SendMessage($h, 0x000D, [IntPtr]4000, $b); "$b" }
+function T($h) { $b = New-Object System.Text.StringBuilder 4000; [void][StudioSync.W]::SendMessage($h, 0x000D, [IntPtr]4000, $b); "$b" }
 $until = (Get-Date).AddSeconds(180)
 while ((Get-Date) -lt $until -and -not (Test-Path -LiteralPath $Done)) {
   if (Test-Path -LiteralPath $BandTab) {
     $ids = @(Get-Process reaper -ErrorAction SilentlyContinue | ForEach-Object Id)
-    $top = [BandSync.W+EnumProc]{ param($h, $l)
-      $p = 0; [void][BandSync.W]::GetWindowThreadProcessId($h, [ref]$p)
-      if ($ids -contains $p -and [BandSync.W]::IsWindowVisible($h)) {
+    $top = [StudioSync.W+EnumProc]{ param($h, $l)
+      $p = 0; [void][StudioSync.W]::GetWindowThreadProcessId($h, [ref]$p)
+      if ($ids -contains $p -and [StudioSync.W]::IsWindowVisible($h)) {
         $t = T $h
         if ($t -eq 'Replace missing file...' -or $t -eq 'Project Load Warning') {
           $want = if ($t -eq 'Project Load Warning') { 'OK' } else { 'Ignore all missing files' }
-          $kid = [BandSync.W+EnumProc]{ param($k, $m)
+          $kid = [StudioSync.W+EnumProc]{ param($k, $m)
             $x = T $k
             if ($t -eq 'Project Load Warning' -and $x.Length -gt 40) { Add-Content -LiteralPath $Said -Value $x -Encoding UTF8 }
-            if ($x -eq $want) { [void][BandSync.W]::PostMessage($k, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) }
+            if ($x -eq $want) { [void][StudioSync.W]::PostMessage($k, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) }
             $true
           }
-          [void][BandSync.W]::EnumChildWindows($h, $kid, [IntPtr]::Zero)
+          [void][StudioSync.W]::EnumChildWindows($h, $kid, [IntPtr]::Zero)
         }
       }
       $true
     }
-    [void][BandSync.W]::EnumWindows($top, [IntPtr]::Zero)
+    [void][StudioSync.W]::EnumWindows($top, [IntPtr]::Zero)
   }
   Start-Sleep -Milliseconds 400
 }

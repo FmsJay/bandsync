@@ -13,9 +13,9 @@ local drive = {}
 -- panel frame on two machines of one account ran into Drive's rate limit (2026-10-28: 600+ "userRateLimitExceeded"
 -- in an hour, uploads held back for many minutes, "Can't add file" messages).
 -- The band's folder is a Drive folder one person shares with everyone (Editor), each on their own Google account,
--- added to each person's My Drive as a shortcut named BandSync. It's only ever found, never made: making it in a My
+-- added to each person's My Drive as a shortcut named StudioSync. It's only ever found, never made: making it in a My
 -- Drive without the shortcut would copy everything into a private folder nobody else sees.
--- First My Drive (of `places`, in order) holding a BandSync folder -> its path; else nil, plus the first My Drive
+-- First My Drive (of `places`, in order) holding a StudioSync folder -> its path; else nil, plus the first My Drive
 -- seen (so the panel can say the shortcut is missing). `subdirs(dir)` lists folder names; `has(path)`, if given, says
 -- whether a folder is there even when a listing leaves it out (on a Mac the shortcut is a symlink into
 -- .shortcut-targets-by-id, 2026-10-31). Pure.
@@ -53,7 +53,7 @@ local function places()
 end
 
 local looked = {} -- per band (its Drive folder's name): { found, at, missing, away }
-drive.missing = nil -- a My Drive with no BandSync folder in it (the shared folder isn't added yet), for the panel
+drive.missing = nil -- a My Drive with no StudioSync folder in it (the shared folder isn't added yet), for the panel
 function drive.root(cfg)
   local r = reaper.GetExtState(band.SECTION, "drive_root")
   if r == "off" then return nil end

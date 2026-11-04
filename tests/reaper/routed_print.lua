@@ -2,7 +2,7 @@
 -- gets a print rendered through that track: a wet take with sound, made from this item alone (another MIDI track
 -- feeding Kit is kept out), and every mute, the selection and the playing take put back. Scratch tab, saved into the
 -- scratch folder and closed.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

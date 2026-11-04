@@ -1,4 +1,4 @@
--- @description BandSync: draw on the arrange view, for everyone (and see what the band drew)
+-- @description StudioSync: draw on the arrange view, for everyone (and see what the band drew)
 -- Shows every bandmate's drawings over the arrange view (clicks go straight through to REAPER). The Draw button in
 -- Chat (or this action with "draw" asked) turns drawing on, with a toolbar: Pen, Highlighter, Line, Arrow, Box,
 -- Text and Eraser, a colour, a size, Undo (your last one) and Clear mine; Done or Esc stops. A drawing sits on song
@@ -40,7 +40,7 @@ reaper.atexit(function()
 end)
 
 local theme = require("theme")
-local ctx = ImGui.CreateContext("BandSync drawings")
+local ctx = ImGui.CreateContext("StudioSync drawings")
 local function make_font()
   local f = ImGui.CreateFont("sans-serif")
   ImGui.Attach(ctx, f)
@@ -82,7 +82,7 @@ local function colours(b)
 end
 
 -- screen (native pixels) <-> song: time across the arrange view, track and height within it down it. A track's rows
--- reach down over its envelope lanes (a drawing there sits on the track's lower edge); BandSync's own tracks (Real
+-- reach down over its envelope lanes (a drawing there sits on the track's lower edge); StudioSync's own tracks (Real
 -- time, live views) are there with no oid: each machine has its own, so nothing drawn on them could be shared.
 local function layout(proj)
   local _, l, t, r, btm = reaper.JS_Window_GetClientRect(arrange)
@@ -102,7 +102,7 @@ local function layout(proj)
 end
 local function down(L, y) return L.flip and (L.t - y) or (y - L.t) end -- (pixels down from the arrange view's top)
 local function inside(L, x, y) local d = down(L, y); return x >= L.l and x <= L.r and d >= 0 and d <= L.h end
--- -> { time, track oid, height fraction }, or nil + "local" over one of BandSync's own tracks
+-- -> { time, track oid, height fraction }, or nil + "local" over one of StudioSync's own tracks
 local function to_song(L, x, y)
   if not inside(L, x, y) or L.z <= L.a then return nil end
   local time = L.a + (x - L.l) / (L.r - L.l) * (L.z - L.a)
@@ -156,10 +156,10 @@ local function loop()
   if reaper.GetExtState(band.SECTION, "draw quit") ~= "" then reaper.DeleteExtState(band.SECTION, "draw quit", false); return end -- (Hide drawings)
   local proj = reaper.EnumProjects(-1)
   local b = band.binding(proj)
-  if not b then return reaper.defer(loop) end -- (not a BandSync tab: nothing to show; keeps running for when one is)
+  if not b then return reaper.defer(loop) end -- (not a StudioSync tab: nothing to show; keeps running for when one is)
   -- ReaImGui lets go of a context that went a frame unused (the frames above, in another tab), so it's made again:
   -- the laptop's "expected a valid ImGui_Context*" after closing a second Mirror Test tab (block K)
-  if not ImGui.ValidatePtr(ctx, "ImGui_Context*") then ctx, placed = ImGui.CreateContext("BandSync drawings"), nil; ui_font = make_font() end
+  if not ImGui.ValidatePtr(ctx, "ImGui_Context*") then ctx, placed = ImGui.CreateContext("StudioSync drawings"), nil; ui_font = make_font() end
   reaper.SetExtState(band.SECTION, "draw alive", tostring(reaper.time_precise()), false) -- (the Chat page's Show or Hide)
   local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
   hold_mouse(drawing)
@@ -180,7 +180,7 @@ local function loop()
     (drawing and ImGui.WindowFlags_TopMost or (ImGui.WindowFlags_NoInputs | ImGui.WindowFlags_NoBackground | ImGui.WindowFlags_NoFocusOnAppearing))
   theme.follow(); theme.push(ctx, ImGui)
   ImGui.PushFont(ctx, ui_font, 14)
-  local visible = ImGui.Begin(ctx, "BandSync drawings", nil, flags)
+  local visible = ImGui.Begin(ctx, "StudioSync drawings", nil, flags)
   if visible then
     local dl = ImGui.GetWindowDrawList(ctx)
     local col = colours(b)

@@ -1,7 +1,7 @@
--- BandSync shared library: settings, song folders, session.json, stems and take placement.
+-- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.53.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.54.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -26,14 +26,14 @@ function band.age(iso, now)
   return os.time(t) - os.time({ year = y, month = m, day = d, hour = H, min = M, sec = S, isdst = false })
 end
 
--- Warn once per run when a bandmate's file was made with a newer BandSync than this one. Background loops
+-- Warn once per run when a bandmate's file was made with a newer StudioSync than this one. Background loops
 -- pass quiet = true: a modal dialog would pause every defer script until someone clicks it (it froze a
 -- Live sync for 3 minutes), so they log instead and the Status window shows a banner.
 local warned = {}
 function band.check_version(theirs, what, quiet)
   if theirs and band.compare_versions(theirs, band.VERSION) > 0 and not warned[theirs] then
     warned[theirs] = true
-    local text = string.format("%s was made with StudioSync %s; you have %s. Run 'BandSync - Update' so everyone stays compatible.",
+    local text = string.format("%s was made with StudioSync %s; you have %s. Run 'StudioSync - Update' so everyone stays compatible.",
       what, theirs, band.VERSION)
     if quiet then band.log(text) else band.msg(text) end
   end
@@ -47,20 +47,30 @@ band.norm = norm
 
 function band.msg(text) reaper.MB(text, "StudioSync", 0) end
 
+-- This computer's own StudioSync folder (projects as you work on them, reopen list). One that's been here since it was called BandSync keeps its
+-- folder: open tabs, recent projects and saved paths all point there.
+local home_dir
+function band.home()
+  if not home_dir then
+    local old = reaper.GetResourcePath() .. "/BandSync"
+    home_dir = reaper.EnumerateSubdirectories and (reaper.EnumerateSubdirectories(old, 0) or reaper.EnumerateFiles(old, 0)) and old or (reaper.GetResourcePath() .. "/StudioSync")
+  end
+  return home_dir
+end
 -- Start Live sync for the tab in front. REAPER runs a script action once at a time (Live sync sets
 -- set_action_options(2): triggered again while running, it quietly does nothing), so each further session tab
--- syncing at once gets a launcher action of its own: <resource>/Scripts/BandSync tabs/BandSync - Live sync (tab N).lua.
+-- syncing at once gets a launcher action of its own: <resource>/Scripts/StudioSync tabs/StudioSync - Live sync (tab N).lua.
 -- Live sync stamps "live cmd <action>" while it runs, so a free one is found. Returns true if one was started.
 function band.start_live(dir)
-  local main = dir .. "/BandSync - Live sync.lua"
+  local main = dir .. "/StudioSync - Live sync.lua"
   for n = 0, 16 do
     local path = main
     if n > 0 then
-      local d = reaper.GetResourcePath() .. "/Scripts/BandSync tabs"
-      path = d .. "/BandSync - Live sync (tab " .. n .. ").lua"
+      local d = reaper.GetResourcePath() .. "/Scripts/StudioSync tabs"
+      path = d .. "/StudioSync - Live sync (tab " .. n .. ").lua"
       if not reaper.file_exists(path) then
         reaper.RecursiveCreateDirectory(d, 0)
-        band.write_atomic(path, "-- BandSync: Live sync for one more session tab at once (see group.start_live)\ndofile([[" .. main .. "]])\n")
+        band.write_atomic(path, "-- StudioSync: Live sync for one more session tab at once (see group.start_live)\ndofile([[" .. main .. "]])\n")
       end
     end
     local cmd = reaper.AddRemoveReaScript(true, 0, path, true)
@@ -74,7 +84,7 @@ function band.start_live(dir)
   end
   return false
 end
--- What BandSync did, for the panel's Activity list (the last 80 lines, this REAPER session). It no longer opens the
+-- What StudioSync did, for the panel's Activity list (the last 80 lines, this REAPER session). It no longer opens the
 -- ReaScript console, which popped up in front on every send and read like an error (Mac, 2026-10-28). Nor does it copy
 -- a line there when the console is open: finding that out searched every window, 0.38 s a line, which froze REAPER on
 -- every change the band sent (PC, 0.42.2). Setup > Console shows them.
@@ -326,8 +336,8 @@ end
 
 -- SWS auto track colouring is off while a band song is in front (James, 2026-11-01): its rules recolour every
 -- track, so a machine with it on could neither send the band's colours nor keep them. It goes back on when another
--- project comes to the front (Live sync and Autostart both look). "sws colour off": BandSync switched it off, so
--- BandSync switches it back (and only then: someone who has it off themselves keeps it off).
+-- project comes to the front (Live sync and Autostart both look). "sws colour off": StudioSync switched it off, so
+-- StudioSync switches it back (and only then: someone who has it off themselves keeps it off).
 function band.sws_colours()
   local id = reaper.NamedCommandLookup and reaper.NamedCommandLookup("_SWSAUTOCOLOR_ENABLE") or 0
   if id <= 0 then return end
@@ -343,20 +353,20 @@ function band.sws_colours()
 end
 
 -- ---- bands: each band is its own shared folder (docs/bands-design.md) ----------------------------------------
--- The drawings over the arrange view (BandSync - Draw.lua), if they aren't showing. Running it again would close it.
+-- The drawings over the arrange view (StudioSync - Draw.lua), if they aren't showing. Running it again would close it.
 function band.start_draw(dir)
-  local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Draw.lua", true)
+  local id = reaper.AddRemoveReaScript(true, 0, dir .. "/StudioSync - Draw.lua", true)
   -- (a script that died keeps its toggle lit: its beat says whether it's really running)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "draw alive"))
   if id > 0 and (reaper.GetToggleCommandState(id) ~= 1 or not beat or reaper.time_precise() - beat > 3) then reaper.Main_OnCommand(id, 0) end
 end
 -- <root>/_band/band.json says which band a folder is: { name, id = its Syncthing folder id, drive = its Google Drive
--- folder's name }. A folder without one is the first band BandSync had: id "bandsync", Drive folder "BandSync".
+-- folder's name }. A folder without one is the first band StudioSync had: id "bandsync", Drive folder "StudioSync".
 function band.info(root)
   local j = (root and (band.read_json(root .. "/_band/band.json") or band.json_decode(reaper.GetExtState(band.SECTION, "joining " .. root)))) or {}
   local id = type(j.id) == "string" and j.id ~= "" and j.id or "bandsync"
   return { name = type(j.name) == "string" and j.name ~= "" and j.name or "the studio", id = id,
-    drive = type(j.drive) == "string" and j.drive ~= "" and j.drive or (id == "bandsync" and "BandSync" or ("BandSync - " .. (j.name or id))) }
+    drive = type(j.drive) == "string" and j.drive ~= "" and j.drive or (id == "bandsync" and "BandSync" or ("StudioSync - " .. (j.name or id))) }
 end
 -- The bands this computer is in (persistent ExtState "bands": their folders), the current one always among them:
 -- { { root, name, id, drive } }, by name.
@@ -459,7 +469,7 @@ function band.apply_tempo(proj, map)
   reaper.UpdateTimeline()
 end
 
--- Regions BandSync draws to show who claimed a stretch of time ("[claimed: James]") are this machine's
+-- Regions StudioSync draws to show who claimed a stretch of time ("[claimed: James]") are this machine's
 -- display only: they're never captured as the song's markers, and applying the band's markers keeps them.
 band.CLAIM_MARK = "[claimed: "
 function band.is_claim_mark(name) return (name or ""):sub(1, #band.CLAIM_MARK) == band.CLAIM_MARK end
@@ -752,14 +762,14 @@ end
 function band.take_state(proj, id) return select(2, reaper.GetProjExtState(proj, band.TAKES, id)) end
 function band.set_take_state(proj, id, v) reaper.SetProjExtState(proj, band.TAKES, id, v) end
 
--- A take's BandSync id: received takes carry band_take, our own sent takes band_sent.
+-- A take's StudioSync id: received takes carry band_take, our own sent takes band_sent.
 function band.take_id(tk)
   local id = band.take_ext(tk, "band_take")
   if id == "" then id = band.take_ext(tk, "band_sent") end
   return id ~= "" and id or nil
 end
 
--- lower(id) -> { item, take } for every BandSync take in proj. Lowercased because REAPER upper-cases
+-- lower(id) -> { item, take } for every StudioSync take in proj. Lowercased because REAPER upper-cases
 -- ProjExtState keys on save, so ids read back from state can differ in case from the takes' own.
 function band.take_index(proj)
   local idx = {}
@@ -785,7 +795,7 @@ end
 -- bandmate's passes stack as takes of one item. The item grows to fit; nothing already in it moves
 -- (REAPER honours negative take start offsets: silence until the source begins).
 -- The track a take for `name` belongs on. A wet print already carries the sender's FX, so it goes on a
--- BandSync mirror track (no FX of ours, never processed twice): `name` itself when we have no track by
+-- StudioSync mirror track (no FX of ours, never processed twice): `name` itself when we have no track by
 -- that name, else "name (band)" beside our own. Dry takes go on our real track, through our FX once.
 function band.dest_track(proj, name, wet)
   if not wet then return band.find_track(proj, name, true) or band.new_track(proj, name) end
@@ -875,15 +885,15 @@ local function mirror(proj, t, path)
 end
 
 -- Where a take lands. mode: "lanes" (new fixed lane on the matching track), "takes" (see above),
--- "person" ("Takes - <user>" track) or "inbox" (one muted "BandSync inbox" track).
+-- "person" ("Takes - <user>" track) or "inbox" (one muted "StudioSync inbox" track).
 local function target(proj, t, mode)
   if mode == "person" then
     local name = "Takes - " .. t.user
     return band.find_track(proj, name) or band.new_track(proj, name)
   elseif mode == "inbox" then
-    local tr = band.find_track(proj, "BandSync inbox")
+    local tr = band.find_track(proj, "StudioSync inbox")
     if not tr then
-      tr = band.new_track(proj, "BandSync inbox")
+      tr = band.new_track(proj, "StudioSync inbox")
       if tr then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", 1) end
     end
     return tr

@@ -1,5 +1,5 @@
 -- End-of-session projects on Google Drive: a real REAPER project file for each session's end, which opens in plain
--- REAPER (no BandSync needed) from anyone's Drive.
+-- REAPER (no StudioSync needed) from anyone's Drive.
 --   <drive>/<Song>/sessions/<stamp>-<user>-<room>.rpp      the project as it was at the end of the session
 --   <drive>/<Song>/sessions/media/<user>/<file>              your own recordings it uses (copied once, never removed)
 -- Bandmates' takes aren't copied again: the project points at the room's own copies on Drive
@@ -45,7 +45,7 @@ local function settled_size(p)
 end
 
 -- A project's text as a plain project: SonoBus / ReaNINJAM out of every plug-in chain (master, tracks, input FX:
--- they carry this machine's identity, and opening the file elsewhere warned about ReaNINJAM), and BandSync's own
+-- they carry this machine's identity, and opening the file elsewhere warned about ReaNINJAM), and StudioSync's own
 -- project state (<BANDSYNC...> under EXTSTATE) gone, so it doesn't open as a session tab. `split` = mixlayer.split_live.
 -- Pure.
 function sessionfile.plain(text, split)

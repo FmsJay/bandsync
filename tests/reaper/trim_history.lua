@@ -1,13 +1,13 @@
 -- Run inside REAPER (ReaScript). History trim: after trimming every change nothing needs (a cutoff in the future),
 -- a machine opening the song fresh still ends up with exactly the project, a major saved version's changes are all
 -- still there, and the trimmed files are in the archive, not lost. Scratch tabs and folders only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "recall", "trim", "json" }) do package.loaded[m] = nil end
 local band, sync, mirror, recall, trim = require("band"), require("sync"), require("mirror"), require("recall"), require("trim")
-local base = D .. "/troot_trim_" .. os.time() .. "/BandSync"
+local base = D .. "/troot_trim_" .. os.time() .. "/StudioSync"
 local song, room = "TrimLab", "main"
 local A, B = { user = "James", root = base }, { user = "Mac", root = base }
 local events = sync.room_dir(A, song, room) .. "/events"
@@ -42,7 +42,7 @@ local ok, err = pcall(function()
   local after = #band.files(events, ".json")
   say(string.format("events %d -> %d (%d trimmed)", before, after, n))
   check(n > 0 and after == before - n, "trimmed files left the events folder")
-  local archive = base:match("^(.*)/[^/]+$") .. "/BandSync history archive/" .. song .. "/" .. room
+  local archive = base:match("^(.*)/[^/]+$") .. "/StudioSync history archive/" .. song .. "/" .. room
   check(#band.files(archive, ".json") == n, "and every one is in the archive")
   local lists = band.files(sync.room_dir(A, song, room) .. "/trimmed", ".json")
   local listed = #lists == 1 and band.read_json(sync.room_dir(A, song, room) .. "/trimmed/" .. lists[1]) or {}

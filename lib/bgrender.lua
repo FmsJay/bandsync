@@ -42,7 +42,7 @@ end
 -- master's switched offline (BYPASS <bypass> <offline> ...). A stem of the selected track (RENDER_STEMS 2: a
 -- routed MIDI print, sync.print_routed) finds "Nothing to render!" from the command line (PC, 0.37.0), so that one
 -- renders the master mix instead: every other track muted, no folders (a parent's plug-ins and fader stay out, as
--- in a stem), the kept tracks sent to the master, the master's fader at 0 dB. BandSync's own project state goes
+-- in a stem), the kept tracks sent to the master, the master's fader at 0 dB. StudioSync's own project state goes
 -- (<EXTSTATE>'s BANDSYNC blocks): the copy isn't the band's song, so opened from Recent projects it's just a project.
 -- Pure.
 function bg.prepare(text, keep)
@@ -89,7 +89,7 @@ local LAUNCH = [==[
 param($exe, $job, $res, $profile, $ini)
 Add-Type @"
 using System; using System.Runtime.InteropServices;
-public static class BandSyncDesk {
+public static class StudioSyncDesk {
   [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct SI { public int cb; public string reserved; public string desktop; public string title;
     public int x, y, w, h, xc, yc, fill, flags; public short show, reserved2; public IntPtr reserved3, stdin, stdout, stderr; }
   [StructLayout(LayoutKind.Sequential)] public struct PI { public IntPtr process, thread; public int pid, tid; }
@@ -109,15 +109,15 @@ if (-not (Test-Path $fx) -and (Test-Path (Join-Path $res "UserPlugins\FX"))) { N
 # job folders done with: empty ones, and any an hour old (its item went before its print was picked up: laptop, 0.40.0)
 Get-ChildItem (Split-Path $dir) -Directory -ErrorAction SilentlyContinue | Where-Object { $_.FullName -ne $dir -and $_.Name -ne "profile" -and -not $_.LinkType -and
   (-not (Get-ChildItem $_.FullName -Force) -or $_.LastWriteTime -lt (Get-Date).AddHours(-1)) } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-$desk = [BandSyncDesk]::CreateDesktop("BandSyncRender", [IntPtr]::Zero, [IntPtr]::Zero, 0, 0x10000000, [IntPtr]::Zero)
-$si = New-Object BandSyncDesk+SI
+$desk = [StudioSyncDesk]::CreateDesktop("StudioSyncRender", [IntPtr]::Zero, [IntPtr]::Zero, 0, 0x10000000, [IntPtr]::Zero)
+$si = New-Object StudioSyncDesk+SI
 $si.cb = [Runtime.InteropServices.Marshal]::SizeOf($si)
-$si.desktop = "BandSyncRender"
-$pi = New-Object BandSyncDesk+PI
+$si.desktop = "StudioSyncRender"
+$pi = New-Object StudioSyncDesk+PI
 $cmd = '"' + $exe + '" -newinst -nosplash -ignoreerrors -noactivate -cfgfile "' + (Join-Path $profile $ini) + '" "' + $job + '"'
 $env:BANDSYNC_RENDER = "1" # (inherited: Scripts/__startup.lua's guard skips the person's startup scripts in it)
 # ([NullString]::Value, not $null: PowerShell passes $null to a string parameter as "", and CreateProcess refuses "")
-if ($desk -ne [IntPtr]::Zero -and [BandSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
+if ($desk -ne [IntPtr]::Zero -and [StudioSyncDesk]::CreateProcess([NullString]::Value, $cmd, [IntPtr]::Zero, [IntPtr]::Zero, $false, 0, [IntPtr]::Zero, [NullString]::Value, [ref]$si, [ref]$pi)) {
   Set-Content (Join-Path $dir "pid.txt") $pi.pid
   try { Wait-Process -Id $pi.pid -Timeout 600 -ErrorAction SilentlyContinue } catch {}
   if (Test-Path $dir) { Set-Content (Join-Path $dir "done.txt") "1" }
@@ -164,7 +164,7 @@ end
 bg.PASSES, bg.PASS_WAIT, bg.PASS_SAME = 10, 3, 0.10
 local function pass_script()
   return string.format([==[
--- BandSync's background render (written by lib/bgrender.lua; only the hidden REAPER runs this)
+-- StudioSync's background render (written by lib/bgrender.lua; only the hidden REAPER runs this)
 if not os.getenv("BANDSYNC_RENDER") then return end
 local PASSES, WAIT, SAME = %d, %d, %.2f
 local function flac_size(dir)
@@ -269,7 +269,7 @@ mkdir -p "$P/UserPlugins"; [ -e "$P/UserPlugins/FX" ] || [ ! -d "$R/UserPlugins/
 export BANDSYNC_RENDER=1
 [ -s "$P/reaper-jsfx.ini" ] || { echo failed > "$D/pid.txt"; exit 1; } # (the profile went just now: the next job makes it whole)
 if [ -n "$H" ]; then
-  C="$HOME/Library/Caches/BandSync"; A="$C/REAPER-render.app"; S="${X%/Contents/MacOS/*}"; B="${X##*/}"
+  C="$HOME/Library/Caches/StudioSync"; A="$C/REAPER-render.app"; S="${X%/Contents/MacOS/*}"; B="${X##*/}"
   W="$(stat -f '%m %z' "$X" "$H/bandsync-hide.dylib" "$H/bandsync-launch" | tr '\n' ' ')"
   mkdir -p "$C"
   find "$C/build.lock" -maxdepth 0 -mmin +5 -exec rmdir {} + 2>/dev/null

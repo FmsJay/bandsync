@@ -1,7 +1,7 @@
--- @description BandSync: start Live sync with REAPER (run from Scripts/__startup.lua; the panel's toggle adds it)
--- Watches the open projects. A BandSync session whose Live sync was running when REAPER closed (and that nobody
+-- @description StudioSync: start Live sync with REAPER (run from Scripts/__startup.lua; the panel's toggle adds it)
+-- Watches the open projects. A StudioSync session whose Live sync was running when REAPER closed (and that nobody
 -- stopped) gets Live sync started again, so a restart doesn't silently drop you out of the band, in front or not.
--- It also runs the installer's setup step when the installer leaves a request (<resource>/BandSync/install-request):
+-- It also runs the installer's setup step when the installer leaves a request (<resource>/StudioSync/install-request):
 -- on macOS any Apple Event reaching REAPER while ReaPack's report window is open crashes it (2026-10-28), so an
 -- installer talking to a running REAPER leaves a file here instead of "open -a REAPER".
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
@@ -11,11 +11,11 @@ local band = require("band")
 do -- every action of this version is in the Actions list: an update through the shared folder brings new scripts,
   -- which REAPER doesn't know until they're registered (laptop, 2026-10-31: the radial menu wasn't there)
   local list = {}
-  for _, f in ipairs(band.files(dir, ".lua")) do if f:match("^BandSync %- .+%.lua$") then list[#list + 1] = dir .. "/" .. f end end
+  for _, f in ipairs(band.files(dir, ".lua")) do if f:match("^StudioSync %- .+%.lua$") then list[#list + 1] = dir .. "/" .. f end end
   for i, path in ipairs(list) do reaper.AddRemoveReaScript(true, 0, path, i == #list) end
 end
 
-local REQUEST = reaper.GetResourcePath() .. "/BandSync/install-request"
+local REQUEST = band.home() .. "/install-request"
 local tried = {} -- project key -> when we last started it (don't hammer a Live sync that refuses to run)
 local at, seen_disk = 0, nil
 local keys_set = false
@@ -29,7 +29,7 @@ local function say_problem(words)
   local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
   if not (beat and reaper.time_precise() - beat < 10) then
     reaper.SetExtState(band.SECTION, "panel minimized", "1", true)
-    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Panel.lua", true)
+    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/StudioSync - Panel.lua", true)
     if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
   end
 end
@@ -61,12 +61,12 @@ local function loop()
   local disk = (band.read(dir .. "/lib/band.lua") or ""):match('VERSION = "([^"]+)"')
   if disk and disk ~= band.VERSION and disk == seen_disk then
     for _, f in ipairs(band.files(dir .. "/lib", ".lua")) do package.loaded[f:sub(1, -5)] = nil end
-    return dofile(dir .. "/BandSync - Autostart.lua")
+    return dofile(dir .. "/StudioSync - Autostart.lua")
   end
   seen_disk = disk
   reaper.defer(loop)
-  -- a BandSync session that opens (or is open when REAPER starts) opens the panel, once per opening: closing the panel
-  -- keeps it closed until another BandSync session opens. (Marks aren't persisted, and survive an Autostart reload.)
+  -- a StudioSync session that opens (or is open when REAPER starts) opens the panel, once per opening: closing the panel
+  -- keeps it closed until another StudioSync session opens. (Marks aren't persisted, and survive an Autostart reload.)
   local opened = false
   for i = 0, 512 do
     local proj, fn = reaper.EnumProjects(i)
@@ -79,7 +79,7 @@ local function loop()
   end
   local beat = tonumber(reaper.GetExtState(band.SECTION, "panel alive"))
   if opened and not (beat and reaper.time_precise() - beat < 10) then
-    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Panel.lua", true)
+    local id = reaper.AddRemoveReaScript(true, 0, dir .. "/StudioSync - Panel.lua", true)
     if id > 0 and reaper.GetToggleCommandState(id) ~= 1 then reaper.Main_OnCommand(id, 0) end
   end
   local helper = band.read(REQUEST)
@@ -112,7 +112,7 @@ local function loop()
       -- (30 s, not 5: a dialog left open a few seconds pauses every script, and isn't a Live sync that stopped)
       local alive = beat and reaper.time_precise() - beat < 30
       -- Only the tab in front is (re)started: starting a background tab meant flipping it to the front, and with more
-      -- BandSync tabs open than Live sync has slots (17) the flipping never stopped and REAPER couldn't be clicked
+      -- StudioSync tabs open than Live sync has slots (17) the flipping never stopped and REAPER couldn't be clicked
       -- (PC, 2026-10-30, 38 tabs). A background tab starts when you switch to it. Three tries, then it says so once.
       local n = tried[key] or { at = -1e9, n = 0 }
       tried[key] = n

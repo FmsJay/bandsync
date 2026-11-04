@@ -64,11 +64,11 @@ offline, rendered with -renderproject) and are picked up by a later pass; where 
 Every revision is History: "undo this change" re-applies the object's previous revision; "restore selection's
 state" re-applies the selected tracks' (and their items') revisions as of that moment; "restore project state"
 does it for every object. Each restore is itself a set of new revisions, so it can be undone the same way.
-The project as it was before BandSync (the first publish/open) is kept as recall point zero.
+The project as it was before StudioSync (the first publish/open) is kept as recall point zero.
 
 ## Offline and solo editing
 
-Live sync is always on for BandSync projects. Work done while disconnected keeps each object's `base` (the rev it
+Live sync is always on for StudioSync projects. Work done while disconnected keeps each object's `base` (the rev it
 started from). On reconnect, per object: only you changed it → yours goes out; only they did → theirs comes in;
 both → theirs wins in the room, yours is kept as a recall point ("your offline version") with a one-click
 "bring mine in". Solo work is a side room (rooms already do this).

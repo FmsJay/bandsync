@@ -23,7 +23,7 @@ local item = [[<ITEM
   TAKE SEL
   NAME print
   <SOURCE WAVE
-    FILE "J:\Portable Workstation\BandSync\Lantern\rooms\main\media\bass1.flac"
+    FILE "J:\Portable Workstation\StudioSync\Lantern\rooms\main\media\bass1.flac"
   >
   GUID {BBBB}
   <SOURCE MIDI
@@ -134,14 +134,14 @@ assert(mirror.merge3("a", "b", "c") == "both")
 assert(mirror.merge3("a", "b", "b") == "same")
 
 -- media tokens: Windows path in, Mac path out
-local tok = mirror.tokenize_media(item, "J:/Portable Workstation/BandSync/Lantern/rooms/main/media")
+local tok = mirror.tokenize_media(item, "J:/Portable Workstation/StudioSync/Lantern/rooms/main/media")
 assert(tok:find('FILE "{media:main}/bass1.flac"'), "tokenized: " .. tok:match('FILE "[^"]*"'))
-local mac = mirror.resolve_media(tok, "/Volumes/X/BandSync/Lantern/rooms/main/media/")
-assert(mac:find('FILE "/Volumes/X/BandSync/Lantern/rooms/main/media/bass1.flac"'), "resolved")
-assert(mirror.media_needed(tok, "/V/BandSync/Lantern/rooms/main/media")[1] == "/V/BandSync/Lantern/rooms/main/media/bass1.flac", "needed list")
+local mac = mirror.resolve_media(tok, "/Volumes/X/StudioSync/Lantern/rooms/main/media/")
+assert(mac:find('FILE "/Volumes/X/StudioSync/Lantern/rooms/main/media/bass1.flac"'), "resolved")
+assert(mirror.media_needed(tok, "/V/StudioSync/Lantern/rooms/main/media")[1] == "/V/StudioSync/Lantern/rooms/main/media/bass1.flac", "needed list")
 assert(mirror.tokenize_media('FILE "C:/elsewhere/x.wav"', "J:/m/rooms/main/media"):find("C:/elsewhere"), "outside the song stays")
 -- a side room's copy of main's item keeps pointing at main's media: the same token from either room (not a change)
-local side_tok = mirror.tokenize_media(item, "J:/Portable Workstation/BandSync/Lantern/rooms/try this/media")
+local side_tok = mirror.tokenize_media(item, "J:/Portable Workstation/StudioSync/Lantern/rooms/try this/media")
 assert(side_tok == tok, "same token from a side room")
 assert(mirror.resolve_media(side_tok, "J:/B/Lantern/rooms/try this/media"):find('FILE "J:/B/Lantern/rooms/main/media/bass1.flac"'), "resolves to main's media")
 assert(mirror.resolve_media('FILE "{media}/old.flac"', "J:/B/S/rooms/main/media"):find('J:/B/S/rooms/main/media/old.flac'), "older token: this room")
@@ -197,7 +197,7 @@ assert(mirror.item_hash("T-1", item1) ~= mirror.item_hash("T-1", (item1:gsub("ZX
 assert(mirror.item_hash("T-1", item1) ~= mirror.item_hash("T-2", item1), "the track still counts")
 local plain = "POSITION 1\nLENGTH 2\n<SOURCE WAVE\nFILE \"a.flac\"\n>"
 assert(mirror.item_hash("T-1", plain) == mirror.hash("T-1\n" .. plain), "no VST: the hash it always had (no resend after updating)")
--- a print BandSync refreshed by itself isn't the person's change: Undo reaches past it to the copy they made
+-- a print StudioSync refreshed by itself isn't the person's change: Undo reaches past it to the copy they made
 local P = { { kind = "obj", user = "J", id = "copy" }, { kind = "obj", user = "J", id = "reprint", auto = true } }
 assert(mirror.last_mine(P, "J") == 1, "Undo skips an automatic print refresh")
 -- side room into its parent: only-side changes come in (tracks first), both-changed are clashes

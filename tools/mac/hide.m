@@ -1,4 +1,4 @@
-// BandSync's background renders on a Mac (GPL-3.0-or-later). Loaded only into the private renderer copy of REAPER that
+// StudioSync's background renders on a Mac (GPL-3.0-or-later). Loaded only into the private renderer copy of REAPER that
 // lib/bgrender.lua makes, never the person's REAPER: every window of that process stays fully transparent and ignores
 // the mouse. Windows still open, so REAPER's own render logic runs as normal; nothing is ever seen. No macOS setting
 // does this: LSBackgroundOnly stops the focus change but REAPER still draws, and it pulls off-screen windows back.

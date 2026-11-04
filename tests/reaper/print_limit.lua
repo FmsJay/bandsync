@@ -1,6 +1,6 @@
 -- Run inside REAPER (ReaScript). A part too hot for FLAC: its print is limited and not clipped, in front and in the background; a part that
 -- isn't hot is left alone; and a project's own render settings come back. Scratch folder and tab, closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "bgrender", "json" }) do package.loaded[m] = nil end

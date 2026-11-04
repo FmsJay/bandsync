@@ -1,7 +1,7 @@
--- The background programs BandSync leans on, started when a session needs them (never at login):
+-- The background programs StudioSync leans on, started when a session needs them (never at login):
 --   Syncthing   moves the shared folder; Live sync makes sure it runs on every machine
 --   ninjamsrv   the NINJAM server for Live; the host's Connect (panel: Live) starts it
--- Paths can be set in ExtState (section BandSync: syncthing_path, ninjam_dir); otherwise the usual install
+-- Paths can be set in ExtState (section StudioSync: syncthing_path, ninjam_dir); otherwise the usual install
 -- locations are tried.
 local band = require("band")
 local services = {}
@@ -215,7 +215,7 @@ end
 -- With the band (band.info): its folder id and name ride along, so the installer joins that band.
 function services.invite_text(id, info)
   info = info or { id = "bandsync", name = "the studio" }
-  local base = "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/"
+  local base = "https://raw.githubusercontent.com/FmsJay/studiosync/main/installer/"
   local q1 = function(s) return "'" .. tostring(s):gsub("'", "") .. "'" end -- (band names are plain: band.clean)
   return "Join " .. info.name .. " on StudioSync.\n\n" ..
     "Already have StudioSync? In its panel, open your studios, press Paste join code, and paste this message:\n" ..
@@ -225,7 +225,7 @@ function services.invite_text(id, info)
     'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " BS_BAND_ID=" .. info.id ..
     " BS_BAND_NAME=" .. q1(info.name) .. " bash\n\n" ..
     "Windows (in PowerShell):\n" ..
-    '$f="$env:TEMP\\bandsync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
+    '$f="$env:TEMP\\studiosync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
     "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. " -BandId " .. info.id .. " -BandName " .. q1(info.name) .. "\n\n" ..
     "When it's done, tell me: I let you in from my StudioSync panel."
 end
@@ -324,10 +324,10 @@ end
 -- A band's Syncthing folder id from its name: "bandsync-" and the name in lower case, letters, digits and dashes. Pure.
 function services.band_id(name)
   local slug = (name or ""):lower():gsub("[^%w]+", "-"):gsub("^%-+", ""):gsub("%-+$", "")
-  return "bandsync-" .. (slug ~= "" and slug or "band")
+  return "studiosync-" .. (slug ~= "" and slug or "band")
 end
 
--- Start a band (docs/bands-design.md): its own shared folder beside this band's (<parent>/BandSync <Name>), with
+-- Start a band (docs/bands-design.md): its own shared folder beside this band's (<parent>/StudioSync <Name>), with
 -- _band/band.json saying who it is, and its own Syncthing folder (shared with nobody yet: Invite a bandmate). This
 -- computer then works in it. Returns its folder, or nil + why.
 function services.new_band(cfg, name)

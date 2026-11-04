@@ -43,11 +43,12 @@ function tools.dismiss_ideas(proj, who)
   return n
 end
 
--- ---- Live sync with REAPER: a block in Scripts/__startup.lua runs BandSync - Autostart.lua -------------------
+-- ---- Live sync with REAPER: a block in Scripts/__startup.lua runs StudioSync - Autostart.lua -------------------
 local MARK_A, MARK_Z = "-- BandSync autostart", "-- /BandSync autostart"
 local function startup_path() return reaper.GetResourcePath() .. "/Scripts/__startup.lua" end
-function tools.autostart_on()
-  return (band.read(startup_path()) or ""):find(MARK_A, 1, true) ~= nil
+function tools.autostart_on(dir)
+  local text = band.read(startup_path()) or ""
+  return text:find(MARK_A, 1, true) ~= nil and (not dir or text:find(dir .. "/StudioSync - Autostart.lua", 1, true) ~= nil) -- (dir: and it's this copy)
 end
 function tools.set_autostart(on, dir)
   local text = band.read(startup_path()) or ""
@@ -58,14 +59,14 @@ function tools.set_autostart(on, dir)
   end
   if on then
     text = text .. (text ~= "" and not text:match("\n$") and "\n" or "") ..
-      MARK_A .. "\ndofile([[" .. dir .. "/BandSync - Autostart.lua]])\n" .. MARK_Z .. "\n"
+      MARK_A .. "\ndofile([[" .. dir .. "/StudioSync - Autostart.lua]])\n" .. MARK_Z .. "\n"
   end
   reaper.RecursiveCreateDirectory(reaper.GetResourcePath() .. "/Scripts", 0)
   return pcall(band.write_atomic, startup_path(), text) -- (write_atomic returns nothing: it raises when it can't)
 end
 
 -- The hidden REAPER that renders wet takes (lib/bgrender.lua) would run everything in Scripts/__startup.lua too (on
--- James's PC: Chordbox, Adaptive grid, Gridbox, the Reaper Daemon bridge, BandSync's Autostart). A guard at the top
+-- James's PC: Chordbox, Adaptive grid, Gridbox, the Reaper Daemon bridge, StudioSync's Autostart). A guard at the top
 -- of that file stops it there: the render REAPER is started with BANDSYNC_RENDER set. Added once; the rest of the
 -- file is the person's and stays as it is.
 local GUARD_A, GUARD_Z = "-- BandSync render guard", "-- /BandSync render guard"

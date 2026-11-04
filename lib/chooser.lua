@@ -173,7 +173,7 @@ function chooser.open(cfg, opts, done)
   end
   package.path = reaper.ImGui_GetBuiltinPath() .. "/?.lua;" .. package.path
   local ImGui = require "imgui" "0.10"
-  local ctx = ImGui.CreateContext("BandSync: choose")
+  local ctx = ImGui.CreateContext("StudioSync: choose")
   local theme = require("theme")
   local ui_font = ImGui.CreateFont("sans-serif")
   ImGui.Attach(ctx, ui_font)

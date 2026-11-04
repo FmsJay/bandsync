@@ -231,7 +231,7 @@ function copy.tick()
     if j.at > #j.files and not j.drive_bad then j.places[#j.places + 1] = "Google Drive"; j.step = "ask"
     elseif j.drive_bad then j.step = "ask" end
   elseif j.step == "ask" then
-    local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
+    local local_dir = band.home() .. "/" .. song
     if #j.places == 0 then
       j.skipped[#j.skipped + 1] = song .. " (no other copy confirmed: nobody else has said they hold exactly this" ..
         (j.drive_young and ", and Drive only got its files in the last half hour, so they may not be uploaded yet" or j.drive_bad and (", and Drive lacks " .. j.drive_bad:match("[^/]+$")) or "") .. ". If someone does, open REAPER there, wait a minute or two, and try again)"

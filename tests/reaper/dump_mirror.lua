@@ -1,12 +1,12 @@
 -- Diagnostic: write this machine's mirror of the song in the front tab to <room>/debug/<you>-mirror.json, so two
 -- machines' "project differs" can be compared object by object. Run it from REAPER (Actions > Load ReaScript, or
--- the dev hook); it finds BandSync's lib through the installed Live sync action, so it runs from any folder.
+-- the dev hook); it finds StudioSync's lib through the installed Live sync action, so it runs from any folder.
 -- known: what this machine recorded per object (rev|hash|event|order); live: each object as scanned now.
 local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
 local text = kb and kb:read("a") or ""
 if kb then kb:close() end
-local live = text:match('"[^"]*BandSync %- Live sync%.lua" "([^"]+)"')
-if not live then return reaper.MB("BandSync's Live sync action isn't registered here.", "dump mirror", 0) end
+local live = text:match('"[^"]*StudioSync %- Live sync%.lua" "([^"]+)"')
+if not live then return reaper.MB("StudioSync's Live sync action isn't registered here.", "dump mirror", 0) end
 live = live:gsub("\\", "/")
 if not live:match("^/") and not live:match("^%a:") then live = reaper.GetResourcePath() .. "/Scripts/" .. live end
 package.path = live:match("^(.*)/") .. "/lib/?.lua;" .. package.path

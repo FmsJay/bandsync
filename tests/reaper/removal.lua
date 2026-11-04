@@ -1,7 +1,7 @@
 -- Run inside REAPER (ReaScript). Taking someone out of a group: the minute to change your mind, every computer cutting them off once,
 -- their claims and driver's seat freed by whoever removed them, what it says on their own computer, and letting them back in.
 -- A scratch folder, and Syncthing stood in for: nothing here touches the real one.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "rooms", "removal", "services" }) do package.loaded[m] = nil end

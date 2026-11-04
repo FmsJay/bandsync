@@ -2,7 +2,7 @@
 -- both machines, tempo goes back from before the first tempo change, a claim survives the Back, collapsing lanes is nobody
 -- else's business, and a pass on a lane nobody hears isn't printed until it plays.
 -- Two scratch tabs, a scratch shared folder; both saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "recall", "prints", "plugins", "json" }) do package.loaded[m] = nil end

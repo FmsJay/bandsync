@@ -7,7 +7,7 @@ especially on a first run". Both change the shared folder's layout, so they're d
 ## Today
 
 One Syncthing folder (id `bandsync`) holds everything: every song, `_band/names.json`, `plugins/`, `drummaps/`,
-`sonobus.json`. Every machine that's let in gets all of it. The Google Drive copy is one `BandSync` folder in My Drive.
+`sonobus.json`. Every machine that's let in gets all of it. The Google Drive copy is one `StudioSync` folder in My Drive.
 
 ## Bands
 
@@ -20,7 +20,7 @@ A band is its own shared folder, nothing more. Everything band-wide moves with i
   group, the Drive copy.
 - **Per machine (unchanged):** your name, audio settings, latency, MIDI plays as.
 - **Google Drive:** one Drive folder per band, `StudioSync - <Band>`, shared with that band only (Drive shares whole
-  folders, so bands can't nest inside one shared folder). The existing `BandSync` folder stays as the first band's.
+  folders, so bands can't nest inside one shared folder). The existing `StudioSync` folder stays as the first band's.
 - **Panel:** the start screen and Setup show the band you're in, with a switch when you're in more than one. Each song
   tab remembers its band, so two bands' songs can be open at once.
 - **Invite a bandmate** invites to the current band: the line carries the band's folder id as well as your
@@ -29,7 +29,7 @@ A band is its own shared folder, nothing more. Everything band-wide moves with i
 
 ## Per-song sync
 
-Syncthing's ignore file (`.stignore`, kept on each machine, never shared) decides what a machine downloads. BandSync
+Syncthing's ignore file (`.stignore`, kept on each machine, never shared) decides what a machine downloads. StudioSync
 writes it:
 
 - **Always:** `_band/`, `plugins/`, `drummaps/`, and from every song only what the song list needs:

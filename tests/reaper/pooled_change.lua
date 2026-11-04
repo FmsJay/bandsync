@@ -2,7 +2,7 @@
 -- pool; "Bee" gets them as separate parts and edits one. Coming back it rewrites that one here. REAPER's MIDI code has crashed on a freed list entry on a
 -- later tab close after a rewrite like that (the kept copy in lib/mirror.lua); this checks the band's edit lands, the other part keeps its notes, and it's safe
 -- to close. Scratch tabs and folder only.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 reaper.RecursiveCreateDirectory(D, 0)
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path

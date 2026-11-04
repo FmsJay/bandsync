@@ -67,7 +67,7 @@ assert(bg.prepare(plain, {}) == plain, "an item render (RENDER_STEMS 32) keeps i
 local ext = table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '    <BANDSYNC', '      SONG Lantern', '    >', '    <BANDSYNC.MIRROR', '      X 1', '    >',
   '    <OTHER', '      Y 2', '    >', '  >', '>', '' }, "\n")
 assert(bg.prepare(ext, {}) == table.concat({ '<REAPER_PROJECT', '  <EXTSTATE', '    <OTHER', '      Y 2', '    >', '  >', '>', '' }, "\n"),
-  "BandSync's project state left out of the copy, anyone else's kept")
+  "StudioSync's project state left out of the copy, anyone else's kept")
 -- the render profile's reaper.ini: no MIDI devices, surfaces, splash or recent projects; the device closed while inactive
 local ini = bg.profile_ini(table.concat({ "[REAPER]", "splash=1", "midiins=19954", "midiouts_clock=344388", "midiins_x_h=0",
   "csurf_cnt=1", "csurf_0=HTTP 0 8080 '' 'index.html' 0 ''", "recent01=C:/a.rpp", "lastproject=C:/a.rpp", "audiocloseinactive=0",
@@ -84,8 +84,8 @@ do
 end
 -- the Mac's job script (bash -n checks its syntax from the release steps)
 local helped = bg.mac_script({ tmp = "/t/r", profile = "/t/r/profile", res = "/res", exe = "/Applications/REAPER.app/Contents/MacOS/REAPER",
-  ini = "job3.ini", job = "/t/r/print-1/job.rpp", helpers = "/res/Scripts/BandSync/lib/mac" })
-assert(helped:find("LSBackgroundOnly", 1, true) and helped:find("H='/res/Scripts/BandSync/lib/mac'", 1, true), "makes the private copy")
+  ini = "job3.ini", job = "/t/r/print-1/job.rpp", helpers = "/res/Scripts/StudioSync/lib/mac" })
+assert(helped:find("LSBackgroundOnly", 1, true) and helped:find("H='/res/Scripts/StudioSync/lib/mac'", 1, true), "makes the private copy")
 assert(helped:find('"$P/job3.ini"', 1, true) and helped:find("J='/t/r/print-1/job.rpp'", 1, true) and not helped:find("@%u+@"), "every value filled in")
 assert(helped:find('echo "$?" > "$D/done.txt"', 1, true) and helped:find('echo "$p" > "$D/pid.txt"', 1, true), "says when it's done, and its process")
 local plain = bg.mac_script({ tmp = "/t", profile = "/p", res = "/r", exe = "/x", ini = "job1.ini", job = "/j/job.rpp" })

@@ -11,8 +11,8 @@ assert(sonobus.b64decode("TWFu") == "Man" and sonobus.b64encode("Ma") == "TWE=" 
 
 assert(sonobus.state_group(b64) == "BandSync SessionTest 4xt2", tostring(sonobus.state_group(b64)))
 
-local joined = assert(sonobus.join_state(b64, { user = "Mary Jo", group = "BandSync abcd", password = "pw", now = 1793000000 }))
-assert(sonobus.state_group(joined) == "BandSync abcd", "joins the band's group")
+local joined = assert(sonobus.join_state(b64, { user = "Mary Jo", group = "StudioSync abcd", password = "pw", now = 1793000000 }))
+assert(sonobus.state_group(joined) == "StudioSync abcd", "joins the band's group")
 local s = sonobus.b64decode(joined)
 local len = string.unpack("<I4", s)
 assert(8 + len + 8 == #s, "header length matches the new component state")
@@ -20,20 +20,20 @@ assert(s:find("userName\0\1\9\5Mary Jo\0", 1, true), "user name written as SonoB
 assert(s:find("serverPort\0\1\5\1" .. string.pack("<i4", 10998), 1, true), "default server port")
 assert(s:find("reconnectlast\0value\0\1\9\4" .. string.pack("<d", 1), 1, true), "Reconnect Last on")
 assert(s:sub(-8 - 15 - 8, -9):find("JUCEPrivateData", 1, true), "JUCE's private data still at the end")
-assert(#s - #raw == (#"Mary Jo" - #"admin 2") + (#"BandSync abcd" - #"BandSync SessionTest 4xt2") + (#"pw" - #"xjaqdnnap3u4"),
+assert(#s - #raw == (#"Mary Jo" - #"admin 2") + (#"StudioSync abcd" - #"BandSync SessionTest 4xt2") + (#"pw" - #"xjaqdnnap3u4"),
   "only the changed strings changed size")
-assert(sonobus.join_state(joined, { user = "x", group = "BandSync abcd", password = "pw", now = 1 }), "re-joinable")
+assert(sonobus.join_state(joined, { user = "x", group = "StudioSync abcd", password = "pw", now = 1 }), "re-joinable")
 assert(s:find("defnetauto\0value\0\1\9\4" .. string.pack("<d", 0), 1, true), "jitter buffer: fixed")
 assert(s:find("defnetbuf\0value\0\1\9\4" .. string.pack("<d", 0.15), 1, true), "jitter buffer: 150 ms")
-assert(sonobus.is_set_up(joined, "BandSync abcd") and not sonobus.is_set_up(joined, "BandSync other"), "set up for its group")
+assert(sonobus.is_set_up(joined, "StudioSync abcd") and not sonobus.is_set_up(joined, "StudioSync other"), "set up for its group")
 assert(sonobus.state_user(joined) == "Mary Jo", tostring(sonobus.state_user(joined)))
-assert(sonobus.is_set_up(joined, "BandSync abcd", "Mary Jo") and not sonobus.is_set_up(joined, "BandSync abcd", "Mary"), "set up as this bandmate")
+assert(sonobus.is_set_up(joined, "StudioSync abcd", "Mary Jo") and not sonobus.is_set_up(joined, "StudioSync abcd", "Mary"), "set up as this bandmate")
 assert(not sonobus.is_set_up(b64, "BandSync SessionTest 4xt2"), "right group but SonoBus's own buffer defaults: not set up")
 assert(not sonobus.join_state("bm90IGEgc3RhdGU=", { user = "x", group = "g", password = "p" }), "garbage refused")
 assert(sonobus.same_user("Laptop 5", "Laptop") and sonobus.same_user("Laptop", "Laptop") and not sonobus.same_user("Laptop 5b", "Laptop")
   and not sonobus.same_user("Laptops", "Laptop") and not sonobus.same_user(nil, "Laptop") and not sonobus.same_user("Mary", "Mary Jo"), "server renames")
 
--- joined: a join puts a newer entry on top; BandSync's own written entry has the time it was written
+-- joined: a join puts a newer entry on top; StudioSync's own written entry has the time it was written
 assert(sonobus.joined_since(joined, 1792999999 * 1000) and not sonobus.joined_since(joined, 1793000000 * 1000), "joined after a time")
 
 -- output pairs per bandmate, in SonoBus's own per-person cache (a real one: the laptop's, with "James" and "Laptop 4")

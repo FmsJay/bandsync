@@ -1,7 +1,7 @@
--- @description BandSync: prepare this project for BandSync (lanes, FLAC, names, media, tidy-up), as a checklist
+-- @description StudioSync: prepare this project for StudioSync (lanes, FLAC, names, media, tidy-up), as a checklist
 -- For a project that's already busy, before it's published or joined: shows what it would change, each a checkbox,
 -- then, on Continue, saves a backup copy and does the ticked ones as one undo (file conversions keep their originals in a
--- 'BandSync originals' folder next to the project).
+-- 'StudioSync originals' folder next to the project).
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
 local band = require("band")
@@ -19,14 +19,14 @@ local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
 if b and b.role == "solo" then return band.msg("This is a Solo edit copy: prepare the project itself, not the copy.") end
 local rows = prep.scan(proj, cfg, b)
-local ctx = ImGui.CreateContext("BandSync: prepare")
+local ctx = ImGui.CreateContext("StudioSync: prepare")
 local result -- summary lines once applied
 local sharing = reaper.GetExtState(band.SECTION, "share after prepare") ~= "" -- (Share sent us: the last button goes on to it)
 reaper.DeleteExtState(band.SECTION, "share after prepare", false)
 local function share_now(ImGui_ctx)
   if not (sharing and ImGui.Button(ImGui_ctx, "Share it")) then return false end
   reaper.SetExtState(band.SECTION, "prepared " .. tostring(proj), "1", false)
-  local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Publish session.lua", true)
+  local id = reaper.AddRemoveReaScript(true, 0, dir .. "/StudioSync - Publish session.lua", true)
   if id > 0 then reaper.defer(function() reaper.Main_OnCommand(id, 0) end) end
   return true
 end
@@ -45,7 +45,7 @@ local function loop()
       ImGui.TextColored(ctx, GREEN, "Done:")
       for _, l in ipairs(result) do ImGui.Bullet(ctx); ImGui.TextWrapped(ctx, l) end
       ImGui.Spacing(ctx)
-      ImGui.TextWrapped(ctx, "Undo (Ctrl+Z; Cmd+Z on a Mac) takes back the project changes; converted files' originals are in 'BandSync originals'.")
+      ImGui.TextWrapped(ctx, "Undo (Ctrl+Z; Cmd+Z on a Mac) takes back the project changes; converted files' originals are in 'StudioSync originals'.")
       if share_now(ctx) then close = true end
       if sharing then ImGui.SameLine(ctx) end
       if ImGui.Button(ctx, sharing and "Not now" or "Close") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then close = true end
@@ -68,7 +68,7 @@ local function loop()
           if r.todo ~= nil then
             local _, v = ImGui.Checkbox(ctx, r.title, r.on)
             r.on = v
-          else -- a note: nothing BandSync can change for you
+          else -- a note: nothing StudioSync can change for you
             ImGui.TextColored(ctx, GREY, "-  " .. r.title)
           end
           ImGui.Indent(ctx, 28)

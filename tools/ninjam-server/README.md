@@ -1,9 +1,9 @@
-# NINJAM server for BandSync Live
+# NINJAM server for StudioSync Live
 
-BandSync's Live tab uses REAPER's built-in ReaNINJAM, which talks to a NINJAM server. One person (usually
+StudioSync's Live tab uses REAPER's built-in ReaNINJAM, which talks to a NINJAM server. One person (usually
 the host, on the machine that stays on) runs the server; everyone connects to its address over Tailscale.
 
-NINJAM is © Cockos, GPL v2: source at https://github.com/justinfrankel/ninjam. Nothing in BandSync links
+NINJAM is © Cockos, GPL v2: source at https://github.com/justinfrankel/ninjam. Nothing in StudioSync links
 against it; the server is a separate program.
 
 ## Build
@@ -29,5 +29,5 @@ Bandmates reach the server through a Tailscale **share** of this machine (admin 
 *Share*), so they don't need to join the host's tailnet. Shared-in users arrive from 100.x addresses, which the
 ACL above already accepts.
 
-Then, in **BandSync - Panel > Live**, the host enters `<this machine's Tailscale IP>:2049` and clicks
+Then, in **StudioSync - Panel > Live**, the host enters `<this machine's Tailscale IP>:2049` and clicks
 **Save for the band**; everyone else's panel picks the address up from the shared folder.

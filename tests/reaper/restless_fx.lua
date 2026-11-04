@@ -2,7 +2,7 @@
 -- Kilohearts Disperser): found restless, its chain goes out once, its parts get prints, both machines end on the same
 -- fingerprint, it sends nothing more, and moving its knob or another plug-in's still counts.
 -- Two scratch tabs, a scratch shared folder; both saved there and closed at the end.
-local D = reaper.GetResourcePath() .. "/BandSync/tests"
+local D = reaper.GetResourcePath() .. "/StudioSync/tests"
 local lib = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]tests[/\\]reaper[/\\]") .. "/lib/"
 package.path = lib .. "?.lua;" .. package.path
 for _, m in ipairs({ "band", "sync", "mirror", "prints", "plugins", "json" }) do package.loaded[m] = nil end
@@ -27,10 +27,10 @@ local function sent(who, obj)
   return n
 end
 local yes = function() return true end
-local fxdir = reaper.GetResourcePath() .. "/Effects/BandSyncTest"
+local fxdir = reaper.GetResourcePath() .. "/Effects/StudioSyncTest"
 reaper.RecursiveCreateDirectory(fxdir, 0)
 local fxfile = fxdir .. "/restless.jsfx"
-band.write_atomic(fxfile, "desc:BandSync test restless\nslider1:0<0,1,0.01>knob\n@init\nc = 1;\n@serialize\nc += 1;\nfile_var(0, c);\n@sample\nspl0 = spl0; spl1 = spl1;\n")
+band.write_atomic(fxfile, "desc:StudioSync test restless\nslider1:0<0,1,0.01>knob\n@init\nc = 1;\n@serialize\nc += 1;\nfile_var(0, c);\n@sample\nspl0 = spl0; spl1 = spl1;\n")
 local front = reaper.EnumProjects(-1)
 local was_bg = reaper.GetExtState(band.SECTION, "bg render")
 local was_list = reaper.GetExtState("BandSync", "restless plugins")
@@ -57,7 +57,7 @@ local ok, err = pcall(function()
   local tr = reaper.GetTrack(pa, 0)
   reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "Keys", true)
   reaper.TrackFX_AddByName(tr, "ReaSynth", false, -1)
-  check(reaper.TrackFX_AddByName(tr, "BandSyncTest/restless.jsfx", false, -1) >= 0, "the restless stand-in loads")
+  check(reaper.TrackFX_AddByName(tr, "StudioSyncTest/restless.jsfx", false, -1) >= 0, "the restless stand-in loads")
   local it = reaper.CreateNewMIDIItemInProj(tr, 0, 2, false)
   local tk = reaper.GetActiveTake(it)
   for n = 0, 3 do reaper.MIDI_InsertNote(tk, false, false, n * 480, n * 480 + 400, 0, 50 + n, 100, true) end
@@ -91,7 +91,7 @@ local ok, err = pcall(function()
   check(sent("James") == n2, "and sends nothing back")
   check(mirror.root(pa) == mirror.root(pb), "both on the same fingerprint")
   local _, c3 = reaper.GetTrackStateChunk(reaper.GetTrack(pb, 0), "", false)
-  check(c3:find("BandSyncTest/restless.jsfx", 1, true) ~= nil, "the bandmate has the plug-in")
+  check(c3:find("StudioSyncTest/restless.jsfx", 1, true) ~= nil, "the bandmate has the plug-in")
 
   -- its knob moving still counts
   reaper.SelectProjectInstance(pa)

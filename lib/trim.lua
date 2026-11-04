@@ -6,7 +6,7 @@
 --   someone saved by hand), each object's newest change at or before it, so it still restores exactly;
 --   handovers, notes and likes (who drove when decides old changes' authority; notes are people's words).
 -- Minor points (the snapshot before a handover) may lose their exact past. Trimmed files leave the band folder (so
--- every machine's copy goes) into <band folder's parent>/BandSync history archive/<song>/<room>/ on the machine that
+-- every machine's copy goes) into <band folder's parent>/StudioSync history archive/<song>/<room>/ on the machine that
 -- trimmed, so nothing is lost for good.
 local band = require("band")
 local trim = {}
@@ -67,7 +67,7 @@ function trim.run(cfg, song, room, days)
   local gone = trim.plan(evs, recall.list(cfg, song, room), cutoff)
   if #gone == 0 then return 0 end
   local root = cfg.root:gsub("[/\\]+$", "")
-  local archive = (root:match("^(.*)[/\\][^/\\]+$") or root) .. "/BandSync history archive/" .. song .. "/" .. room
+  local archive = (root:match("^(.*)[/\\][^/\\]+$") or root) .. "/StudioSync history archive/" .. song .. "/" .. room
   reaper.RecursiveCreateDirectory(archive, 0)
   local n, took = 0, {}
   for _, id in ipairs(gone) do

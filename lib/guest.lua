@@ -1,6 +1,6 @@
 -- A guest: someone who joins with only SonoBus (a singer at home, no REAPER, no copy of the song). They hear your mix
 -- through SonoBus (every band track feeds it while a guest is on: lib/live.lua rt_sends), and what they sing comes
--- back on SonoBus's shared pair, late by the whole round trip: out to them, their interface, back to you. BandSync
+-- back on SonoBus's shared pair, late by the whole round trip: out to them, their interface, back to you. StudioSync
 -- measures that once (they clap along to 8 clicks it plays them), then lines their takes up by it, and "their time"
 -- (lib/hear.lua) delays your own backing by the same amount so you hear them in time while they sing.
 -- The idea of measuring the real SonoBus delay is from ReaConnect (AtmanActive, unlicensed: re-implemented, no code).
@@ -70,14 +70,14 @@ end
 -- The clicks to clap along to on a track of this machine's own ("click": it feeds SonoBus, lib/live.lua), from `at`.
 -- Returns the clapped beats' times (after the count-in) and the track.
 function guest.click_track(proj, at)
-  local path = reaper.GetResourcePath() .. "/BandSync/measure-clicks-" .. guest.BPM .. ".wav"
+  local path = band.home() .. "/measure-clicks-" .. guest.BPM .. ".wav"
   if not reaper.file_exists(path) then
-    reaper.RecursiveCreateDirectory(reaper.GetResourcePath() .. "/BandSync", 0)
+    reaper.RecursiveCreateDirectory(band.home(), 0)
     local f = assert(io.open(path, "wb"))
     f:write(guest.click_wav())
     f:close()
   end
-  local tr = require("mirror").add_local_track(proj, "BandSync click (measuring)", "click")
+  local tr = require("mirror").add_local_track(proj, "StudioSync click (measuring)", "click")
   local it = reaper.AddMediaItemToTrack(tr)
   reaper.SetMediaItemTake_Source(reaper.AddTakeToMediaItem(it), reaper.PCM_Source_CreateFromFile(path))
   reaper.SetMediaItemInfo_Value(it, "D_POSITION", at)
@@ -136,7 +136,7 @@ function guest.line_up(proj, name)
     reaper.SetMediaItemInfo_Value(it, "D_POSITION", math.max(0, reaper.GetMediaItemInfo_Value(it, "D_POSITION") - ms / 1000))
     moved = moved + 1
   end
-  reaper.Undo_EndBlock2(proj, "BandSync: line up the guest's takes", -1)
+  reaper.Undo_EndBlock2(proj, "StudioSync: line up the guest's takes", -1)
   return moved, label
 end
 

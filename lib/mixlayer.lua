@@ -41,7 +41,7 @@ function mix.split_live(block)
   return table.concat(out, "\n"), live, head
 end
 
--- Tracks BandSync made (copies of parts, stems, MIDI copies, live placeholders) aren't part of the mix layer.
+-- Tracks StudioSync made (copies of parts, stems, MIDI copies, live placeholders) aren't part of the mix layer.
 local function made_by_bandsync(tr)
   if band.track_ext(tr, "band_stem") ~= "" or band.track_ext(tr, "band_midi_track") ~= "" or band.track_ext(tr, "band_mirror") ~= ""
       or band.track_ext(tr, "band_live_track") ~= "" then return true end
@@ -49,7 +49,7 @@ local function made_by_bandsync(tr)
   return n:find(" %(band%)$") ~= nil or n:find(" %(MIDI%)$") ~= nil
 end
 
--- A mix track: one without recordings that BandSync didn't make (a bus, an effects return, a track set up ahead).
+-- A mix track: one without recordings that StudioSync didn't make (a bus, an effects return, a track set up ahead).
 function mix.is_mix_track(tr)
   return not made_by_bandsync(tr) and reaper.CountTrackMediaItems(tr) == 0
 end

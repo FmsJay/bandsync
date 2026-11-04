@@ -1,6 +1,6 @@
--- @description BandSync: update to the latest version
+-- @description StudioSync: update to the latest version
 -- ReaPack installs: runs ReaPack's sync (installs updates and registers new actions).
--- Shared-folder installs: updates already arrive with the folder; this registers any new BandSync
+-- Shared-folder installs: updates already arrive with the folder; this registers any new StudioSync
 -- scripts that came with it, which REAPER would otherwise not show.
 local dir = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]")
 package.path = dir .. "/lib/?.lua;" .. package.path
@@ -20,18 +20,21 @@ reaper.EnumerateFiles(dir, -1)
 while true do
   local name = reaper.EnumerateFiles(dir, i)
   if not name then break end
-  if name:match("^BandSync %- .+%.lua$") then scripts[#scripts + 1] = name end
+  if name:match("^StudioSync %- .+%.lua$") then scripts[#scripts + 1] = name end
   i = i + 1
 end
--- scripts removed or renamed in an update leave dead actions behind: unregister any BandSync action that
+-- scripts removed or renamed in an update leave dead actions behind: unregister any StudioSync action that
 -- points into this folder at a file that's gone
 local gone = {}
 local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
 if kb then
   local here = band.norm(dir):lower()
-  for path in kb:read("a"):gmatch('SCR %d+ %d+ %S+ "[^"]*" "([^"]*BandSync %- [^"]*%.lua)"') do
-    local p = band.norm(path)
-    if p:lower():sub(1, #here) == here and not reaper.file_exists(p) then gone[#gone + 1] = p end
+  local text = kb:read("a")
+  for _, name in ipairs({ "StudioSync", "BandSync" }) do
+    for path in text:gmatch('SCR %d+ %d+ %S+ "[^"]*" "([^"]*' .. name .. ' %- [^"]*%.lua)"') do
+      local p = band.norm(path)
+      if p:lower():sub(1, #here) == here and not reaper.file_exists(p) then gone[#gone + 1] = p end
+    end
   end
   kb:close()
 end

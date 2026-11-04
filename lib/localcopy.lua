@@ -156,28 +156,40 @@ end
 function copy.bin(paths, label)
   if #paths == 0 then return 0 end
   local tmp = (os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"):gsub("\\", "/"):gsub("/+$", "") .. "/bandsync-bin-" .. os.time()
-  local q = function(s) return "'" .. s:gsub("'", "''") .. "'" end
-  local cmd
-  if WIN then
-    local lines = { "Add-Type -AssemblyName Microsoft.VisualBasic", "$fs = [Microsoft.VisualBasic.FileIO.FileSystem]" }
+  local function left_now()
+    local left = 0
     for _, p in ipairs(paths) do
-      local w = p:gsub("/", "\\")
-      lines[#lines + 1] = "if (Test-Path -LiteralPath " .. q(w) .. " -PathType Container) { $fs::DeleteDirectory(" .. q(w) .. ", 'OnlyErrorDialogs', 'SendToRecycleBin') } " ..
-        "elseif (Test-Path -LiteralPath " .. q(w) .. ") { $fs::DeleteFile(" .. q(w) .. ", 'OnlyErrorDialogs', 'SendToRecycleBin') }"
+      if reaper.file_exists(p) or reaper.EnumerateFiles(p, 0) or reaper.EnumerateSubdirectories(p, 0) then left = left + 1 end
     end
+    return left
+  end
+  if WIN then
+    -- In the background, with no error boxes: a big folder takes minutes, and a file in use raised a box nobody could see on a hidden PowerShell, with REAPER
+    -- stopped until it was killed (PC, 0.54.1, 17 minutes). shortcut: what doesn't go in 20 s is reported as left, though it may still be on its way.
+    local q = function(s) return "'" .. s:gsub("'", "''") .. "'" end
+    local lines = { "Add-Type @'", "using System; using System.Runtime.InteropServices;", "public static class StudioSyncBin {",
+      "  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)] public struct Op { public IntPtr hwnd; public uint func; public string from; public string to; public ushort flags; public bool aborted; public IntPtr maps; public string title; }",
+      '  [DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SHFileOperation(ref Op op);', "}", "'@" }
+    for _, p in ipairs(paths) do
+      lines[#lines + 1] = "$op = New-Object StudioSyncBin+Op; $op.func = 3; $op.flags = 0x0654; $op.from = " .. q((p:gsub("/", "\\"))) .. ' + [char]0 + [char]0; [void][StudioSyncBin]::SHFileOperation([ref]$op)'
+    end
+    lines[#lines + 1] = "Set-Content -LiteralPath " .. q((tmp:gsub("/", "\\")) .. ".done") .. " 1"
     band.write_atomic(tmp .. ".ps1", "\239\187\191" .. table.concat(lines, "\r\n") .. "\r\n")
-    cmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' .. tmp .. '.ps1"'
-  else
-    band.write_atomic(tmp .. ".sh", copy.trash_script(paths, label, os.date("%Y-%m-%d %H.%M.%S")))
-    cmd = "/bin/sh '" .. tmp .. ".sh'"
+    band.write_atomic(tmp .. ".cmd", '@powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' .. tmp .. '.ps1"\r\n')
+    band.write_atomic(tmp .. ".vbs", 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n')
+    reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s.vbs" "%s.cmd"', tmp, tmp), -1)
+    local t0 = reaper.time_precise()
+    while not reaper.file_exists(tmp .. ".done") and reaper.time_precise() - t0 < 20 do
+      if reaper.time_precise() - t0 > 1 and left_now() == 0 then break end
+    end
+    os.remove(tmp .. ".done"); os.remove(tmp .. ".cmd"); os.remove(tmp .. ".vbs")
+    if reaper.file_exists(tmp .. ".ps1") then os.remove(tmp .. ".ps1") end
+    return left_now()
   end
-  reaper.ExecProcess(cmd, 300000)
-  os.remove(tmp .. (WIN and ".ps1" or ".sh"))
-  local left = 0
-  for _, p in ipairs(paths) do
-    if reaper.file_exists(p) or reaper.EnumerateFiles(p, 0) or reaper.EnumerateSubdirectories(p, 0) then left = left + 1 end
-  end
-  return left
+  band.write_atomic(tmp .. ".sh", copy.trash_script(paths, label, os.date("%Y-%m-%d %H.%M.%S")))
+  reaper.ExecProcess("/bin/sh '" .. tmp .. ".sh'", 300000)
+  os.remove(tmp .. ".sh")
+  return left_now()
 end
 
 -- One step of the job. Returns nothing; the job's fields say where it stands. Called each frame by the Projects page.
@@ -267,7 +279,7 @@ function copy.tick()
     if reaper.EnumerateFiles(j.local_dir, 0) or reaper.EnumerateSubdirectories(j.local_dir, 0) then list[#list + 1] = j.local_dir end
     reaper.DeleteExtState(band.SECTION, "project file " .. song, true)
     local left = copy.bin(list, song)
-    j.done[#j.done + 1] = song .. (left > 0 and string.format(" (%d still in use: restart REAPER and delete again to free them)", left) or "")
+    j.done[#j.done + 1] = song .. (left > 0 and string.format(" (%d not gone yet: still on its way to the Recycle Bin, or in use. If it stays, restart REAPER and delete again)", left) or "")
     band.log("deleted this computer's copy of '" .. song .. "': confirmed on " .. table.concat(j.places, ", ") .. ". Open it to bring it back")
     j.i, j.step = j.i + 1, "scan"
   end

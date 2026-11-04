@@ -6,7 +6,7 @@ local groups, chooser, theme = require("groups"), require("chooser"), require("t
 local pg = { root = nil } -- pg.root: the group the Projects page shows (nil: where you're working)
 
 local WHAT_IS = "A group/session is its own shared folder, with its own projects, collaborators and chat.\n\n" ..
-  "Use one for a band, or for one song with one person: name it what it is. Nobody in your other groups sees it.\n\n" ..
+  "Use one for a band, or for one song with one person: name it what it is. Nobody in your other groups/sessions sees it.\n\n" ..
   "Next you'll share a project with it and invite people. You can close it whenever you're done, and everyone keeps their copy."
 local new_name, why_not = "", nil
 
@@ -23,7 +23,7 @@ end
 function pg.start_button(env, label)
   local ctx, ImGui = env.ctx, env.ImGui
   if ImGui.Button(ctx, label) then new_name, why_not = "", nil; ImGui.OpenPopup(ctx, "Start a group or session") end
-  ImGui.SetItemTooltip(ctx, "Its own shared folder, projects and collaborators.")
+  ImGui.SetItemTooltip(ctx, "Its own shared folder, projects and collaborators. You only need another for different people or a project of its own.")
   ImGui.SetNextWindowSize(ctx, 440, 0)
   if ImGui.BeginPopupModal(ctx, "Start a group or session", nil, ImGui.WindowFlags_NoResize) then
     ImGui.PushTextWrapPos(ctx, 0)
@@ -186,7 +186,7 @@ function pg.draw_groups(env)
         band.log(left > 0 and ("some of " .. tostring(o.name) .. " is still in use: restart REAPER and delete what's left of " .. tostring(o.root)) or ("deleted this computer's copy of " .. tostring(o.name)))
       end
       ImGui.EndDisabled(ctx)
-      ImGui.SetItemTooltip(ctx, can and tostring(o.root) or "This computer is still set to it: start or join another group first.")
+      ImGui.SetItemTooltip(ctx, can and tostring(o.root) or "This computer is still set to it: start or join another group/session first.")
       ImGui.SameLine(ctx)
       if ImGui.SmallButton(ctx, "Keep it, hide this") then groups.forget_old(o.root) end
       ImGui.SameLine(ctx)
@@ -235,13 +235,13 @@ local function local_copy_job(env)
   if j.ask then
     local q = j.ask
     copy.answer(reaper.MB(q, "StudioSync", 4) == 6)
-    rows = nil
+    rows_at = -math.huge
   elseif j.finished then
     local lines = {}
     if #j.done > 0 then lines[#lines + 1] = "Deleted this computer's copy of:\n  " .. table.concat(j.done, "\n  ") end
     if #j.skipped > 0 then lines[#lines + 1] = "Left as it was:\n  " .. table.concat(j.skipped, "\n  ") end
     copy.cancel()
-    rows = nil
+    rows_at = -math.huge
     if #lines > 0 then band.msg(table.concat(lines, "\n\n")) end
   else
     ImGui.TextColored(ctx, theme.YELLOW, tostring(j.words) .. "...")
@@ -294,8 +294,10 @@ function pg.draw_projects(env)
   local cfg = { root = root, user = base.user }
   local info = band.info(root)
   local ss = require("songsync")
-  if rows_root ~= root or not rows or reaper.time_precise() - rows_at > 5 then
+  -- (not under an open menu; and by name, not last worked on: two active projects swapped places every few seconds, under the mouse: Mac, 0.50.4)
+  if rows_root ~= root or not rows or (reaper.time_precise() - rows_at > 5 and not ImGui.IsPopupOpen(ctx, "", ImGui.PopupFlags_AnyPopup)) then
     rows_root, rows_at, rows = root, reaper.time_precise(), chooser.songs(cfg)
+    table.sort(rows, function(a, z) return a.song:lower() < z.song:lower() end)
   end
   back_button(env)
   -- the tab in front, if it isn't in a group yet, whatever's in it: an empty new tab showed no way to share at all (James)
@@ -320,7 +322,7 @@ function pg.draw_projects(env)
   end
   env.heading("Projects")
   if ImGui.Button(ctx, "New folder") then new_folder = ""; ImGui.OpenPopup(ctx, "New folder") end
-  ImGui.SetItemTooltip(ctx, "A folder for projects, seen by the whole group. Projects with no folder stay at the top level.")
+  ImGui.SetItemTooltip(ctx, "A folder for projects, seen by everyone in this group/session. Projects with no folder stay at the top level.")
   if ImGui.BeginPopup(ctx, "New folder") then
     if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
     ImGui.SetNextItemWidth(ctx, 220)
@@ -336,7 +338,7 @@ function pg.draw_projects(env)
   local_copy_job(env)
   if #rows == 0 then
     if reaper.file_exists(root .. "/_band/band.json") then ImGui.TextDisabled(ctx, "Nothing's shared here yet.")
-    else ImGui.TextDisabled(ctx, "Nothing from the group has arrived yet: it comes once a collaborator lets you in.") end
+    else ImGui.TextDisabled(ctx, "Nothing has arrived yet: it comes once a collaborator lets you in.") end
   end
   local names = known_folders(root, rows)
   local shown = {}
@@ -352,14 +354,13 @@ function pg.draw_projects(env)
       local got, song = ImGui.AcceptDragDropPayload(ctx, "SS_PROJECT")
       if got then
         chooser.set_folder(cfg, song, folder)
-        rows = nil
+        rows_at = -math.huge
       end
       ImGui.EndDragDropTarget(ctx)
     end
   end
   local function row(r, id)
-    if not rows then return end
-    ImGui.PushID(ctx, id)
+    ImGui.PushID(ctx, r.song) -- (by name, not by place: a menu open on one project mustn't become another's)
     local avail = ImGui.GetContentRegionAvail(ctx)
     local here = ss.is_here(cfg, r.song)
     local x, y = ImGui.GetCursorScreenPos(ctx)
@@ -414,7 +415,7 @@ function pg.draw_projects(env)
   local all = ss.keep_all()
   local ch, v = ImGui.Checkbox(ctx, "Keep every project on this computer", all)
   if ch then reaper.SetExtState(band.SECTION, "projects keep all", v and "1" or "", true); ss.apply(cfg) end
-  ImGui.SetItemTooltip(ctx, "On: every project of this group comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
+  ImGui.SetItemTooltip(ctx, "On: every project of this group/session comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
     "Off: every project's listing comes, and a project in full once you open it here.")
 end
 

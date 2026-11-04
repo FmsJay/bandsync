@@ -214,6 +214,10 @@ function live.join_check(proj)
   local _, chunk = reaper.TrackFX_GetNamedConfigParm(m, i, "vst_chunk")
   local tries = tonumber(select(2, reaper.GetProjExtState(proj, band.SECTION, "sonobus tries"))) or 0
   if sonobus.joined_since(chunk, (since - 2) * 1000) then
+    if select(2, reaper.GetProjExtState(proj, band.SECTION, "sonobus shown")) ~= "" then
+      reaper.SetProjExtState(proj, band.SECTION, "sonobus shown", "")
+      reaper.TrackFX_Show(m, i, 2) -- (it joined: the window we opened for it goes)
+    end
     reaper.SetProjExtState(proj, band.SECTION, "sonobus online", "")
     reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", "")
     band.log("SonoBus joined your group's live audio" .. (tries > 0 and " (after " .. tries .. " retr" .. (tries == 1 and "y" or "ies") .. ")" or "") ..
@@ -232,6 +236,10 @@ function live.join_check(proj)
   reaper.SetProjExtState(proj, band.SECTION, "sonobus online", tostring(os.time()))
   reaper.TrackFX_SetOffline(m, i, true) -- (loading it again is what makes "Reconnect Last" join)
   reaper.TrackFX_SetOffline(m, i, false)
+  if tries + 1 == live.JOIN_TRIES then -- (seen on the laptop, 2026-11-04: reloads did nothing until its window had been open once)
+    reaper.TrackFX_Show(m, i, 3)
+    reaper.SetProjExtState(proj, band.SECTION, "sonobus shown", "1")
+  end
   band.log("SonoBus hasn't joined your group's live audio yet: trying again")
   return "waiting"
 end

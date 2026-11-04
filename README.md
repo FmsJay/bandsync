@@ -17,15 +17,15 @@ For a band, or for one song with someone: it's the same thing, so name it what i
 
 1. Run the installer: **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (see
    [Setup](#setup-each-person-once) if macOS blocks it). Answer *n* to "Is someone in the group already set up?" and
-   give it a name. Already have StudioSync? Press **Start a new group/session** on the panel's **Groups** page.
-2. In REAPER, open your project and press **Share** on the **Projects** page. It goes through the Prepare checklist first.
-3. On the Groups or Home page, press **Invite**. It copies a line for them to paste: send it to each person.
+   give it a name. Already have StudioSync? Click the group pill at the top of the panel, then **Start a new group/session**.
+2. In REAPER, open your project, or a new empty tab: the panel shows **Projects**, with **Share** at the top. It goes through the Prepare checklist first.
+3. On the group's card or on Home, press **Invite**. It copies a line for them to paste: send it to each person.
 4. When they've run it, your panel shows **Let *them* in**: press it.
-5. Finished? **Close** on the Groups page stops it on every computer. Everyone keeps their copy, and its projects stay
+5. Finished? **Close** on its card (click the group pill) stops it on every computer. Everyone keeps their copy, and its projects stay
    open as ordinary projects.
 
 Syncing needs no account: only your two computers and the shared folder, and files move while both are online. The
-optional Google Drive copy uses a Google account. *Play along* and *Jam* (the Play tab, hidden until you switch it on) need
+optional Google Drive copy uses a Google account. *Play along* and *Jam* (the Play/Jam tab, hidden until you switch it on) need
 a NINJAM server the others can reach, most easily over Tailscale; nothing else does. REAPER keeps its own licence (reaper.fm).
 
 ## Collaborators: start here
@@ -166,15 +166,11 @@ By hand:
      registers any new scripts that arrive later. The trade-off: anyone who can write to the shared folder can
      change everyone's scripts. Only share it with your group.
 3. Run **BandSync - Settings**: choose the shared folder and enter your name.
-4. **Calibrate recording latency** (important): connect a cable from your interface's output 1 to an
-   input and run **BandSync - Calibrate latency**. It plays three clicks, records them back in a temporary
-   project, and tells you how many samples early or late your recordings land. Under 1 ms is fine. If it says
-   LATE N, add +N to *Preferences > Audio > Recording > Input manual offset* (EARLY: subtract) and run it again.
-5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
+4. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
    Restore pages, needs it.
-6. Optional extras:
+5. Optional extras:
    - **Tailscale** isn't part of setup. Only *Play along* and *Jam* want it (they reach the NINJAM server on the host's
-     machine; show the Play tab in Settings > Options), or someone whose router stops SonoBus (Settings > Advanced >
+     machine; show the Play/Jam tab in Settings > Advanced), or someone whose router stops SonoBus (Settings > Advanced >
      Can't hear each other?). Simplest: everyone signs in to one Tailscale account.
    - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**, each person signed in
      with their **own** Google account (two computers on one account lose files: "Lost and Found"). The host makes a
@@ -308,8 +304,9 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
   needs for BandSync (takes into fixed lanes, 24-bit FLAC at one sample rate, unnamed or duplicate track names,
   files from outside the project, ripple editing off...), applied after a backup copy as one undo. Publish asks for
   it first.
-- **Drum maps** (Settings > Advanced): rewrite a drum track's MIDI into another drum VST's notes (named drum sounds,
-  General MIDI plus articulations). Maps are JSON files in `<shared folder>/drummaps`.
+- **Drum maps** (Plugins page, this computer only): every drum plug-in has kick, snare and hats on its own notes. Say what a track
+  was written for and what plays it here, and a small effect ahead of your instrument moves the notes. The part stays as written and
+  nobody else's project changes. Maps are JSON files in `<shared folder>/drummaps`; General MIDI is built in, and **Make a map** adds one.
 
 ### Working alone, and the Google Drive copy
 
@@ -419,7 +416,7 @@ that for whoever's driving. **Listen** on someone's card: you hear only them, th
 playing over your own copy of the song. Their computer turns SonoBus on by itself for as long as someone's listening, and says who. SonoBus
 carries sound; the notes and the take arrive through the shared folder and are swapped in when they stop, so MIDI is never sent live.
 
-The **Play** page (Settings > Options shows it) has the NINJAM ways to hear each other:
+The **Play/Jam** page (Settings > Advanced shows it) has starting together and the NINJAM ways to hear each other:
 
 - **Play along (synced)**, the default: your audio is stamped with its project position; listeners start playback
   a bar or two after you and hear you in time with the project, at any distance. What you play also lands on their

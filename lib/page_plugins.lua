@@ -248,7 +248,11 @@ local function browse_tick(cfg)
     browsing = nil
   elseif reaper.time_precise() - h.since > 1.5 and reaper.TrackFX_GetChainVisible(h.tr) == -1
       -- (the Add FX window doesn't count as the chain being open: the helper track went from under it, and its Add button greyed out)
-      and (reaper.JS_Window_Find and not (reaper.JS_Window_Find("Browse FX", true) or reaper.JS_Window_Find("Add FX to", false)) or reaper.time_precise() - h.since > 300) then
+      -- (on a Mac, Cancel only hides it: visible or not is what counts. Mac, 0.50.4)
+      and (reaper.JS_Window_Find and not (function()
+          local w = reaper.JS_Window_Find("Browse FX", true) or reaper.JS_Window_Find("Add FX to", false)
+          return w and reaper.JS_Window_IsVisible(w)
+        end)() or reaper.time_precise() - h.since > 300) then
     reaper.DeleteTrack(h.tr)
     browsing = nil
   end

@@ -23,8 +23,8 @@ assert(s:sub(-8 - 15 - 8, -9):find("JUCEPrivateData", 1, true), "JUCE's private 
 assert(#s - #raw == (#"Mary Jo" - #"admin 2") + (#"BandSync abcd" - #"BandSync SessionTest 4xt2") + (#"pw" - #"xjaqdnnap3u4"),
   "only the changed strings changed size")
 assert(sonobus.join_state(joined, { user = "x", group = "BandSync abcd", password = "pw", now = 1 }), "re-joinable")
-assert(s:find("defnetauto\0value\0\1\9\4" .. string.pack("<d", 1), 1, true), "jitter buffer: Auto-Increase")
-assert(s:find("defnetbuf\0value\0\1\9\4" .. string.pack("<d", 0.04), 1, true), "jitter buffer: 40 ms start")
+assert(s:find("defnetauto\0value\0\1\9\4" .. string.pack("<d", 0), 1, true), "jitter buffer: fixed")
+assert(s:find("defnetbuf\0value\0\1\9\4" .. string.pack("<d", 0.15), 1, true), "jitter buffer: 150 ms")
 assert(sonobus.is_set_up(joined, "BandSync abcd") and not sonobus.is_set_up(joined, "BandSync other"), "set up for its group")
 assert(sonobus.state_user(joined) == "Mary Jo", tostring(sonobus.state_user(joined)))
 assert(sonobus.is_set_up(joined, "BandSync abcd", "Mary Jo") and not sonobus.is_set_up(joined, "BandSync abcd", "Mary"), "set up as this bandmate")

@@ -1,6 +1,6 @@
 ---
 name: bandsync-setup
-description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, and the group's Google Drive folder, and runs the latency check. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
+description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, and the group's Google Drive folder. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
 ---
 
 # BandSync setup
@@ -46,8 +46,7 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 ## 0. Interview (one message)
 
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
-runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they have a **loopback cable** (output → input)
-for the latency check; whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play tab (off by default) or a router that stops SonoBus needs it.
+runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play/Jam tab (off by default) or a router that stops SonoBus needs it.
 
 ## 1. Syncthing (the shared folder)
 
@@ -126,7 +125,7 @@ from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel'
 join the band's group under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.
 
-**Play along** and **Jam** (the Play tab: off by default, Settings > Options) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. Only set this up if the person asks for those.
+**Play along** and **Jam** (the Play/Jam tab: off by default, Settings > Advanced) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. Only set this up if the person asks for those.
 Bandmates don't join the host's tailnet; the host **shares one machine** with them.
 
 | OS | Install | CLI |
@@ -169,13 +168,7 @@ always starts from the latest version.
 - Check: the folder is visible in Explorer/Finder, and *Panel > Solo edit* shows "Nobody: '<song>' is free to check
   out" for a published song.
 
-## 6. Latency check
-
-With a loopback cable (output 1 → an input), the musician runs **BandSync - Calibrate latency** from the
-Action list. It reports "Recordings land N samples LATE/EARLY". For LATE N, add **+N** to
-*Preferences > Audio > Recording > Input manual offset* (verified: a ToneX at 44.1 kHz needed +203 samples,
-4.6 ms), then run it again until it reads under 1 ms. Re-run after changing interface, sample rate or buffer size.
-No cable: skip it, and tell them their takes may land a few ms off until they do it.
+## 6. Headphones
 
 **Feedback warning:** a record-armed track with monitoring on and laptop speakers will howl. Use headphones.
 
@@ -200,5 +193,5 @@ published song and take records the BandSync version that made it, and opening a
 ## Report back
 
 End with a short summary: what was installed (versions), the device ID exchange status, and whether
-the Drive shortcut are in place, the latency result,
+the Drive shortcut are in place,
 and any step the user skipped, plus anything that surprised you, so the next install goes better.

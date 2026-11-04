@@ -6,7 +6,7 @@
 --   publishes that itself (_band/holds/<name>.json: copy.publish_holds), as Syncthing can't tell: /rest/db/remoteneed, completion and even a
 --   file's availability all read as "has it" for a computer that's ignoring it and hasn't got one byte. Found the hard way on 0.50.0.
 local band = require("band")
-local copy = {}
+local copy = { DRIVE_SETTLED = 1800 }
 
 local WIN = reaper.GetOS():find("^Win") ~= nil
 -- What stays of a project, as the ignore list keeps it (songsync.LISTING).
@@ -201,8 +201,17 @@ function copy.tick()
       local rel = j.files[j.at]
       if copy.drive_needs(rel) then
         local found = false
-        for _, p in ipairs(copy.drive_paths(rel)) do found = found or reaper.file_exists(j.droot .. "/" .. song .. "/" .. p) end
+        for _, p in ipairs(copy.drive_paths(rel)) do
+          local there = j.droot .. "/" .. song .. "/" .. p
+          if not found and reaper.file_exists(there) then
+            found = true
+            -- (on Drive's mount doesn't mean uploaded yet. Half an hour there is as near as a script can tell: Mac, 0.50.4)
+            local status, _, _, modified = reaper.JS_File_Stat and reaper.JS_File_Stat(there)
+            if status == 0 and tostring(modified) > os.date("%Y.%m.%d %H:%M:%S", os.time() - copy.DRIVE_SETTLED) then j.drive_young = true end
+          end
+        end
         if not found then j.drive_bad = rel; break end
+        if j.drive_young then j.drive_bad = rel; break end
       end
       j.at = j.at + 1
     end
@@ -212,7 +221,7 @@ function copy.tick()
     local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
     if #j.places == 0 then
       j.skipped[#j.skipped + 1] = song .. " (no other copy confirmed: nobody else has said they hold exactly this" ..
-        (j.drive_bad and (", and Drive lacks " .. j.drive_bad:match("[^/]+$")) or "") .. ". If someone does, open REAPER there, wait a minute or two, and try again)"
+        (j.drive_young and ", and Drive only got its files in the last half hour, so they may not be uploaded yet" or j.drive_bad and (", and Drive lacks " .. j.drive_bad:match("[^/]+$")) or "") .. ". If someone does, open REAPER there, wait a minute or two, and try again)"
       j.i, j.step = j.i + 1, "scan"
       return
     end

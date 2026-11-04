@@ -53,6 +53,7 @@ function setup.sonobus(cfg, b, proj, open)
   local hear = require("hear")
   local outs = hear.order(hear.bandmates(cfg, b), cfg.user) -- each bandmate on an output pair of their own (who you hear)
   local new = chunk
+  sonobus.use_buffer(reaper.GetExtState(band.SECTION, "rt buffer"))
   if not sonobus.is_set_up(chunk, group, cfg.user) then
     local why
     new, why = sonobus.join_state(chunk, { user = cfg.user, group = group, password = pw })
@@ -60,6 +61,9 @@ function setup.sonobus(cfg, b, proj, open)
   end
   for name, start in pairs(outs) do
     if sonobus.output_of(new, name) ~= start then new = sonobus.set_outputs(new, outs) or new; break end
+  end
+  if not sonobus.buffer_ok(new, sonobus.BUFFER.defnetbuf * 1000, sonobus.BUFFER.defnetauto) then
+    new = sonobus.set_buffer(new, sonobus.BUFFER.defnetbuf * 1000, sonobus.BUFFER.defnetauto) or new
   end
   if new ~= chunk then
     reaper.TrackFX_SetNamedConfigParm(m, i, "vst_chunk", new)

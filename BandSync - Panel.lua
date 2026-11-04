@@ -2316,6 +2316,21 @@ function ui.settings_advanced()
     if ch0 then reaper.SetExtState(band.SECTION, "show play", v0 and "1" or "", true) end
     card_end()
   end
+  if card("rt buffer") then
+    heading("Real time buffer", 17)
+    ImGui.TextDisabled(ctx, "How much sound SonoBus keeps in hand, on this computer. More holds steadier and arrives later.")
+    local sonobus = require("sonobus")
+    local cur = reaper.GetExtState(band.SECTION, "rt buffer")
+    cur = cur ~= "" and cur or "steady"
+    for _, o in ipairs(sonobus.BUFFERS) do
+      if ImGui.RadioButton(ctx, o[2], cur == o[1]) and cur ~= o[1] then
+        reaper.SetExtState(band.SECTION, "rt buffer", o[1], true)
+        if b and same_room_on() then setup.sonobus(cfg, b, proj, true) end
+      end
+    end
+    ImGui.SetItemTooltip(ctx, "If Their time won't stay lined up, or it crackles, go up one. Over the internet nothing's instant: Real time on Wi-Fi landed about 200-300 ms behind in our tests.")
+    card_end()
+  end
   if card("cant hear") then
     heading("Can't hear each other?", 17)
     ImGui.TextDisabled(ctx, "Real time goes straight between your computers: SonoBus's public server only introduces you. StudioSync tells you when SonoBus can't join at all, or when someone's playing and nothing's arriving. Then, in this order:")
@@ -2492,6 +2507,14 @@ function ui.go_settings(tab)
   reaper.SetExtState(band.SECTION, "setup tab", tab, false)
 end
 -- Something stopped syncing, said by Autostart (with the panel closed it brings back the tiny box to say so).
+function ui.page_body(fn)
+  local cards = open_cards
+  local ok, e = pcall(fn)
+  if ok then return end
+  err = tostring(e)
+  for _ = cards + 1, open_cards do ImGui.PopTextWrapPos(ctx); ImGui.EndChild(ctx) end
+  open_cards = cards
+end
 function ui.sync_problem()
   local words = reaper.GetExtState(band.SECTION, "sync problem")
   if words == "" then return end
@@ -2657,7 +2680,11 @@ local function frame_app()
   end
   tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)
   -- (the line keeps its height when it clears: what's under it mustn't jump as you go to click it)
-  if tools.toast_line and reaper.time_precise() - tools.toast_at < 6 then ImGui.TextColored(ctx, theme.TOAST, tools.toast_line:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
+  if tools.toast_line and reaper.time_precise() - tools.toast_at < 6 then
+    ImGui.PushTextWrapPos(ctx, 0) -- (a long one ran off the edge of a narrow panel: Mac, 0.50.4)
+    ImGui.TextColored(ctx, theme.TOAST, tools.toast_line:sub(7))
+    ImGui.PopTextWrapPos(ctx)
+  else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
   tools.removed_bar(ctx, ImGui)
   ui.sync_problem()
   require("leave").draw(ctx, ImGui)
@@ -2712,8 +2739,8 @@ local function frame_app()
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
     ImGui.PushTextWrapPos(ctx, 0) -- text wraps to the page, whatever its width
     if page == "Play/Jam" and not ui.play_shown() then page = "Home" end
-    if page == "Groups" then require("page_groups").draw_groups(ui.env)
-    elseif page == "Projects" then require("page_groups").draw_projects(ui.env)
+    if page == "Groups" then ui.page_body(function() require("page_groups").draw_groups(ui.env) end)
+    elseif page == "Projects" then ui.page_body(function() require("page_groups").draw_projects(ui.env) end)
     elseif page == "Home" then page_home()
     elseif page == "Rooms" then layout({ { rooms_squares, 560 }, { rooms_actions, 560 } })
     elseif page == "Play/Jam" then
@@ -2783,8 +2810,8 @@ function ui.frame_lobby()
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
     ImGui.PushTextWrapPos(ctx, 0)
-    if page == "Groups" then pg.draw_groups(ui.env)
-    elseif page == "Projects" then pg.draw_projects(ui.env)
+    if page == "Groups" then ui.page_body(function() pg.draw_groups(ui.env) end)
+    elseif page == "Projects" then ui.page_body(function() pg.draw_projects(ui.env) end)
     else page_setup() end
     ImGui.PopTextWrapPos(ctx)
     ImGui.EndChild(ctx)

@@ -65,6 +65,7 @@ function presence.holder(list, oid)
 end
 
 -- Follow: this machine's arrange view goes where `name`'s is (when it's more than a little off).
+local followed_cursor = {} -- proj .. name -> where their cursor last was: only when it moves does yours (you can still put yours elsewhere meanwhile)
 function presence.follow(proj, list, name)
   for _, st in ipairs(list) do
     if st.user == name and type(st.view) == "table" and tonumber(st.view[1]) and tonumber(st.view[2]) then
@@ -72,6 +73,12 @@ function presence.follow(proj, list, name)
       if math.abs(a - st.view[1]) > 0.5 or math.abs(z - st.view[2]) > 0.5 then
         reaper.GetSet_ArrangeView2(proj, true, 0, 0, st.view[1], st.view[2])
       end
+    end
+    if st.user == name then
+      -- stopped, your cursor goes where theirs is: after a stop, and when they jump somewhere (Mac, 0.50.4: it stayed at your own catch-up start, and a jump never came)
+      local key, cur = tostring(proj) .. name, tonumber(st.cursor)
+      if cur and reaper.GetPlayStateEx(proj) == 0 and followed_cursor[key] ~= cur then reaper.SetEditCurPos2(proj, cur, false, false) end
+      if cur then followed_cursor[key] = cur end
       return
     end
   end

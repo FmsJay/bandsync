@@ -3,7 +3,7 @@
 local band = require("band")
 local chat = {}
 
-local SCOPES = { { "room", "This room" }, { "song", "This project" }, { "band", "Group" } }
+local SCOPES = { { "room", "This room" }, { "song", "This project" }, { "band", "Group/session" } }
 local scope, draft, todo_text, link_title, link_url = "song", "", "", "", ""
 local cache, cache_at, cache_key = nil, -math.huge, ""
 
@@ -117,7 +117,7 @@ function chat.draw(ctx, ImGui, cfg, b)
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
   ImGui.SetItemTooltip(ctx, "What you see and who you're writing to. This room: only this room's. This project: the project's and all its rooms'. " ..
-    "Group: everything, from every project and room. What you write goes to the one picked here.")
+    "Group/session: everything, from every project and room. What you write goes to the one picked here.")
   do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
     -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
     -- was open, the lag on this page: James, 0.42.28)

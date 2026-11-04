@@ -111,7 +111,16 @@ end
 -- Jitter buffer defaults for new peers. SonoBus's own default (Auto-Full from 1 ms) also shrinks the buffer, and
 -- each change jumps the delay: on Wi-Fi that was 5-9 jumps of up to ~110 ms per 30 s (2026-10-28 test). Auto-
 -- Increase from 40 ms only ever grows, so after the first seconds the delay holds still.
-sonobus.BUFFER = { defnetauto = 1, defnetbuf = 0.04 } -- 1 = "Auto-Increase"; seconds
+sonobus.BUFFER = { defnetauto = 0, defnetbuf = 0.15 } -- 0 = fixed; seconds
+-- Measured 2026-11-04, laptop on Wi-Fi to PC, clicks against the PC's grid over 46 s: growing from 40 ms wandered 162-221 ms; fixed 60, 173-243; fixed 100, 218-231
+-- with one 327; fixed 150, 278 for 30 s and then a step to 303; fixed 250, 486.8 and not a millisecond off, nothing lost. A fixed one holds still, so Their
+-- time can stay set; too small for the connection and it only wanders. This computer's choice: Settings > Advanced.
+sonobus.BUFFERS = { { "lowest", "Lowest delay (it wanders)", 1, 0.04 }, { "steady", "Steady (150 ms)", 0, 0.15 }, { "solid", "Rock steady (250 ms)", 0, 0.25 } }
+function sonobus.use_buffer(name)
+  for _, b in ipairs(sonobus.BUFFERS) do
+    if b[1] == name then sonobus.BUFFER = { defnetauto = b[3], defnetbuf = b[4] } end
+  end
+end
 
 local function param_value(tree, id)
   for _, pc in ipairs(tree.children) do
@@ -172,7 +181,8 @@ function sonobus.join_state(b64, info)
     { "userName", v_str(info.user) }, { "userPassword", v_str("") },
     { "groupName", v_str(info.group) }, { "groupPassword", v_str(info.password) },
     { "serverHost", v_str(info.host or "aoo.sonobus.net") }, { "serverPort", v_int(info.port or 10998) },
-    { "timestamp", v_int64((info.now or os.time()) * 1000) }, { "groupIsPublic", V_FALSE },
+    -- (older than now: SonoBus writes the time when it really joins, and written as now it read as joined when it hadn't: joined_since)
+    { "timestamp", v_int64((info.now or os.time() - 3600) * 1000) }, { "groupIsPublic", V_FALSE },
   } } }
   local want = { reconnectlast = 1 } -- "Reconnect Last" on: SonoBus rejoins on every load
   for id, v in pairs(sonobus.BUFFER) do want[id] = v end
@@ -242,6 +252,34 @@ function sonobus.set_outputs(b64, outs)
       e.children = { { type = "ChannelGroups", props = {}, children = { channel_group(start) } }, { type = "MultiChannelGroups", props = {}, children = {} } }
       map.children[#map.children + 1] = e
     end
+  end
+  return pack_chunk(c)
+end
+
+-- Whether what's remembered for each bandmate has the buffer `ms`, `auto`.
+function sonobus.buffer_ok(b64, ms, auto)
+  local c = unpack_chunk(b64)
+  local map = c and child(c.tree, "PeerStateCacheMap")
+  for _, e in ipairs(map and map.children or {}) do
+    local nb, na = prop(e, "netbuf"), prop(e, "netbufauto")
+    if not nb or not na or nb[2] ~= v_double(ms) or na[2] ~= v_int(auto) then return false end
+  end
+  return true
+end
+-- Every bandmate's jitter buffer and the default for new ones: `ms`, and `auto` (0 fixed, 1 grows only). -> the new state, or nil + why.
+function sonobus.set_buffer(b64, ms, auto)
+  local c = unpack_chunk(b64)
+  if not c then return nil, "not a SonoBus state StudioSync understands" end
+  for id, value in pairs({ defnetauto = auto, defnetbuf = ms / 1000 }) do
+    local _, pc = param_value(c.tree, id)
+    local v = pc and prop(pc, "value")
+    if v then v[2] = v_double(value) elseif pc then pc.props[#pc.props + 1] = { "value", v_double(value) } end
+  end
+  local map = child(c.tree, "PeerStateCacheMap")
+  for _, e in ipairs(map and map.children or {}) do
+    local nb, na = prop(e, "netbuf"), prop(e, "netbufauto")
+    if nb then nb[2] = v_double(ms) else e.props[#e.props + 1] = { "netbuf", v_double(ms) } end
+    if na then na[2] = v_int(auto) else e.props[#e.props + 1] = { "netbufauto", v_int(auto) } end
   end
   return pack_chunk(c)
 end

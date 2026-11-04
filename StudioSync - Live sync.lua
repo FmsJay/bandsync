@@ -446,7 +446,8 @@ local function poll()
     editing = require("presence").editing(proj), view = require("presence").view(proj), ping = require("presence").my_ping(proj),
     last_track = select(2, reaper.GetProjExtState(proj, band.SECTION, "last_track")),
     follow = reaper.GetExtState(band.SECTION, "follow " .. tostring(proj)), follow_driver = reaper.GetExtState(band.SECTION, "follow driver") ~= "" or nil,
-    listen = reaper.GetExtState(band.SECTION, "listen " .. tostring(proj)) }
+    listen = reaper.GetExtState(band.SECTION, "listen " .. tostring(proj)),
+    produce = require("producer").who(proj), produce_via = require("producer").who(proj) and require("producer").via(proj) or nil, stamping = reaper.GetExtState(band.SECTION, "stamping " .. tostring(proj)) ~= "" or nil }
   if info.follow == "" then info.follow = nil end
   if not info.playing then info.cursor = math.floor(reaper.GetCursorPositionEx(proj) * 1000 + 0.5) / 1000 end -- (followers' cursors go here: lib/presence.lua)
   do
@@ -479,6 +480,7 @@ local key = tostring(proj)
 local fired, seen_ev, quick_at = {}, {}, 0
 -- The newest cue wins: an older one (a second copy arriving through the regular poll, say) is ignored.
 local cue_at = -math.huge
+local produce_lag, stamp_seen -- (producing someone: how far behind this pass really runs; the stream's start already acted on)
 -- Whose play, pause and stop this tab follows: "follow <proj>" holds a name, "follow driver" (kept) means whoever drives. Real time mode's
 -- side by side follows everyone. (lib/presence.lua moves the view along too.)
 local function follows(name)
@@ -569,10 +571,24 @@ local function tick_body() -- returns true to keep going
   if not transport and reaper.time_precise() - quick_at > 0.25 then -- a start/stop can't wait for the 2 s poll
     quick_at = reaper.time_precise()
     take_cue(quick_transport())
+    local producing = require("producer").who(proj)
+    if not transport and producing and require("producer").via(proj) == "stamp" then -- (the stream says it's started before the shared folder can)
+      local st = require("stamp").status()
+      if not st.active then stamp_seen = nil
+      elseif not stamp_seen then
+        local cue = require("producer").fast_cue(st, stamp_seen, producing, together.now(), require("producer").lag(proj), reaper.GetPlayStateEx(proj) & 1 == 1)
+        stamp_seen = st.count
+        if cue then transport, cue_at = cue, cue.at end
+      end
+    end
   end
   if transport then
     local tnow = together.now()
     local theirs = transport.lead and transport.lead ~= cfg.user
+    local behind = transport.follow and theirs and require("producer").behind(proj, transport.lead)
+    if behind then -- (a lag this computer chose; a stop comes as far behind as the pass really was)
+      transport.behind, transport.lag = true, transport.type == "stop" and math.max(behind, produce_lag or 0) or behind
+    end
     local fire = transport.type == "stop" and ((transport.at or 0) + (theirs and (transport.lag or 0) or 0)) or together.plan(transport, cfg.user, nil)
     if transport.type == "stop" and transport.follow and theirs and transport.pos then fire = fire + 2 end -- the position decides; time is a backstop
     if transport.type == "start" and tnow < fire then reaper.SetExtState(band.SECTION, "together_at " .. key, tostring(fire), false) end
@@ -593,6 +609,7 @@ local function tick_body() -- returns true to keep going
         end
       else
         local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone
+        if transport.behind then produce_lag = tnow - (transport.at or tnow) end
         if reaper.GetPlayStateEx(proj) ~= 0 then reaper.OnStopButtonEx(proj) end
         reaper.SetEditCurPos2(proj, from, false, false)
         if transport.click and (transport.countin or 0) > 0 then click_until(transport.pos or from) end
@@ -656,6 +673,8 @@ local function tick_body() -- returns true to keep going
     pcall(require("hear").watch_silence, proj, cfg, require("presence").peers(cfg, b.song, b.room), now)
     pcall(require("hear").check, proj, cfg, require("presence").peers(cfg, b.song, b.room), now)
     pcall(live.rt_sends, proj); pcall(live.join_check, proj); pcall(sync.follow_claims, proj, cfg, b.song, b.room)
+    local okp, ep = pcall(require("producer").tick, proj, cfg, b, require("presence").peers(cfg, b.song, b.room))
+    if not okp then band.log("producer: " .. tostring(ep)) end
   end
   -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs
   if reaper.EnumProjects(-1) == proj then livemidi.send_tick(proj, cfg, b, st & 4 ~= 0) end -- (input goes to the tab in front)

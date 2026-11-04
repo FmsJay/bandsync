@@ -15,7 +15,15 @@ local people = {}
 people.PALETTE = { 0xFF5A5A, 0x4CC2FF, 0x7BE07B, 0xFFC24C, 0xC88BFF, 0xFF8BD0, 0x5AE0D0, 0xFF9F5A }
 people.MODES = { { "band", "Studio colours", "Tracks keep the colours the studio gave them." },
   { "working", "Studio colours + show who's working", "The studio's colours, but a track someone else is editing or has claimed shows their colour until they're done." },
-  { "people", "Whose track", "Every track in the colour of whoever is editing it, claimed it, or made it." } }
+  { "people", "Whose track", "Every track in the colour of whoever is editing it, claimed it, or made it." },
+  { "new", "Studio colours + what's new", "A track somebody changed in the last hour shows in their colour, fading back to the studio's as it gets older. It keeps itself up to date." } }
+people.NEW_FOR = 3600
+-- How strongly a change this old shows: full for 5 minutes, then fading to nothing. Pure.
+function people.fade(age)
+  if age < 300 then return 1 end
+  if age >= people.NEW_FOR then return 0 end
+  return 1 - (age - 300) / (people.NEW_FOR - 300)
+end
 
 local function file(root, user) return root .. "/_band/colours/" .. (user:gsub("[^%w%-_ ]", "")) .. ".json" end
 
@@ -102,6 +110,34 @@ function people.who(tr, mode, editing, claims, cfg)
   return nil
 end
 
+-- What's new: each track's newest change. -> track -> { user, age }. Read every 20 s: it looks at every item.
+local new_at, new_of = {}, {}
+local function newest_changes(proj, names)
+  if new_of[proj] and reaper.time_precise() - new_at[proj] < 20 then return new_of[proj] end
+  local mirror, out = require("mirror"), {}
+  local now = os.time(os.date("!*t"))
+  local prefix = {}
+  for u in pairs(names) do prefix[(u:gsub(" ", "_"):upper()) .. "-"] = u end
+  for i = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, i)
+    local best, who = "", nil
+    local function look(oid)
+      local _, _, ev = mirror.known(proj, oid)
+      local stamp = (ev or ""):match("%d%d%d%d%d%d%d%d%-%d%d%d%d%d%dZ")
+      if stamp and stamp > best then
+        best, who = stamp, nil
+        for p, u in pairs(prefix) do if ev:upper():sub(1, #p) == p then who = u end end
+      end
+    end
+    look(mirror.track_oid(tr))
+    for k = 0, reaper.CountTrackMediaItems(tr) - 1 do look(mirror.item_oid(reaper.GetTrackMediaItem(tr, k))) end
+    local y, mo, d, h, mi, s = best:match("(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)(%d%d)")
+    if y and who then out[tr] = { user = who, age = now - os.time({ year = y, month = mo, day = d, hour = h, min = mi, sec = s, isdst = false }) } end
+  end
+  new_at[proj], new_of[proj] = reaper.time_precise(), out
+  return out
+end
+
 -- Show it: each mirrored track in its person's colour, or the band's. `peers`: bandmates' status files.
 function people.paint(proj, cfg, peers, claims)
   local mode, editing, others = people.mode(), {}, {}
@@ -113,11 +149,18 @@ function people.paint(proj, cfg, peers, claims)
   end
   local colours = mode ~= "band" and people.colours(cfg.root, others) or {}
   local mirror = require("mirror")
+  local new = mode == "new" and newest_changes(proj, people.colours(cfg.root, { cfg.user, table.unpack(others) }))
   for i = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, i)
     if not mirror.local_track(tr) then
       local u = people.who(tr, mode, editing, claims or {}, cfg)
       local rgb = u and (colours[u] or people.colours(cfg.root, { u })[u])
+      local fresh = new and not rgb and new[tr]
+      if fresh and people.fade(fresh.age) > 0 then
+        local base, c = band.track_colour(tr), colours[fresh.user] or people.colours(cfg.root, { fresh.user })[fresh.user]
+        local from = base and base ~= 0 and (function() local r, g, b = reaper.ColorFromNative(base & 0xFFFFFF); return (r << 16) | (g << 8) | b end)() or 0x808080
+        rgb = require("colours").mix(from, c, people.fade(fresh.age))
+      end
       band.show_colour(tr, rgb and (reaper.ColorToNative(rgb >> 16, (rgb >> 8) & 0xFF, rgb & 0xFF) | 0x1000000) or nil)
     end
   end

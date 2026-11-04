@@ -193,6 +193,72 @@ function colours.apply_marks(proj, mode, stops)
   return #idx
 end
 
+colours.ITEM_SCHEMES = {
+  { "section", "By section", "Everything in a verse one colour, everything in a chorus another, from the region it starts in." },
+  { "song", "Along the song", "Start of the song to the end, through the palette." },
+  { "person", "By who recorded it", "Each item in the colour of the person who made it." },
+  { "lane", "By lane", "Each fixed lane its own colour: comps and alternatives stand apart." },
+  { "take", "By takes", "One-take items one colour, the more takes the warmer: where there's a choice still to make." },
+  { "clear", "As its track", "Takes item colours off, so items follow their track again." },
+}
+-- The colour of each item (false: none). items: { { pos, section (a name, or nil), maker (a colour, or nil), lane, takes } }. opt: { stops, last (the song's end) }. Pure.
+function colours.plan_items(items, scheme, opt)
+  local out, stops = {}, opt.stops
+  local keys, n = {}, 0
+  if scheme == "section" then
+    for _, it in ipairs(items) do
+      local k = colours.section_key(it.section or "")
+      if not keys[k] then keys[k] = n; n = n + 1 end
+    end
+  end
+  for i, it in ipairs(items) do
+    if scheme == "section" then
+      out[i] = it.section and colours.ramp(stops, n > 1 and keys[colours.section_key(it.section)] / (n - 1) or 0) or colours.OTHER
+    elseif scheme == "song" then out[i] = colours.ramp(stops, (opt.last or 0) > 0 and it.pos / opt.last or 0)
+    elseif scheme == "person" then out[i] = it.maker or colours.OTHER
+    elseif scheme == "lane" then out[i] = colours.ramp(stops, ((it.lane or 0) % 5) / 4)
+    elseif scheme == "take" then out[i] = colours.ramp(stops, math.min((it.takes or 1) - 1, 4) / 4)
+    else out[i] = false end
+  end
+  return out
+end
+
+-- Every item on tracks this person may change gets its colour. -> how many, how many left. They go out like any change, a burst at a time.
+function colours.apply_items(proj, cfg, scheme, stops, may)
+  local mirror, people = require("mirror"), require("people")
+  local marks = {}
+  for i = 0, reaper.CountProjectMarkers(proj) - 1 do
+    local _, region, pos, rend, name = reaper.EnumProjectMarkers3(proj, i)
+    if region and not band.is_local_mark(name) then marks[#marks + 1] = { pos = pos, rend = rend, name = name } end
+  end
+  local who, by_tag, last = people.colours(cfg.root, { cfg.user }), {}, 0
+  for u, c in pairs(who) do by_tag[mirror.user_tag(u)] = c end
+  local list, left = {}, 0
+  for t = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, t)
+    if not mirror.local_track(tr) then
+      local name = select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", ""):gsub(" %(studio%)$", "")
+      for k = 0, reaper.CountTrackMediaItems(tr) - 1 do
+        local it = reaper.GetTrackMediaItem(tr, k)
+        if may(name) then
+          local pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
+          last = math.max(last, pos)
+          local section
+          for _, m in ipairs(marks) do if pos >= m.pos - 0.001 and pos < m.rend then section = m.name end end
+          list[#list + 1] = { ptr = it, pos = pos, section = section, maker = by_tag[mirror.creator(mirror.item_oid(it))],
+            lane = math.floor(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE")), takes = reaper.CountTakes(it) }
+        else left = left + 1 end
+      end
+    end
+  end
+  local plan = colours.plan_items(list, scheme, { stops = stops, last = last })
+  reaper.Undo_BeginBlock2(proj)
+  for i, x in ipairs(list) do reaper.SetMediaItemInfo_Value(x.ptr, "I_CUSTOMCOLOR", plan[i] and native(plan[i]) or 0) end
+  reaper.Undo_EndBlock2(proj, "Colour items", 4)
+  reaper.UpdateArrange()
+  return #list, left
+end
+
 -- The Settings card. (In this file: the panel is near Lua's 200-locals limit.) may(name): this person may change that track. timeline_ok: the driver, or anyone in Anyone.
 local cache = { at = -math.huge }
 function colours.draw(ctx, ImGui, proj, cfg, may, timeline_ok)
@@ -263,6 +329,18 @@ function colours.draw(ctx, ImGui, proj, cfg, may, timeline_ok)
   if ImGui.Button(ctx, "Regions along the song") then band.log(string.format("coloured %d regions and markers along the song", colours.apply_marks(proj, "song", stops))) end
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, timeline_ok and "Start to end, through the palette." or "The timeline is the driver's: they do this.")
+  ImGui.SetNextItemWidth(ctx, 170)
+  if ImGui.BeginCombo(ctx, "##colouritems", "Colour items...") then
+    for _, s in ipairs(colours.ITEM_SCHEMES) do
+      if ImGui.Selectable(ctx, s[2]) then
+        local n, left = colours.apply_items(proj, cfg, s[1], stops, may)
+        band.log(string.format("coloured %d item%s%s", n, n == 1 and "" or "s", left > 0 and string.format(": %d of someone else's left as they are", left) or ""))
+      end
+      ImGui.SetItemTooltip(ctx, s[3])
+    end
+    ImGui.EndCombo(ctx)
+  end
+  ImGui.SetItemTooltip(ctx, "Items on the tracks you may change, in the palette above. Goes to everyone.")
   ImGui.TextDisabled(ctx, "Goes to everyone, and Ctrl+Z takes it back. Who's working still shows on top.")
 end
 function colours.run(proj, cfg, may, only_selected)

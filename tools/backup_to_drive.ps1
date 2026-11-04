@@ -7,8 +7,8 @@
   Usage: pwsh -File backup_to_drive.ps1 [-Source <folders>] [-Dest <backup folder>]
 #>
 param(
-  [string[]]$Source = @('J:\Portable Workstation\BandSync', 'J:\Portable Workstation\DAW\REAPER\BandSync'),
-  [string]$Dest = 'G:\My Drive\BandSync backup'
+  [string[]]$Source = @('J:\Portable Workstation\StudioSync', 'J:\Portable Workstation\DAW\REAPER\StudioSync'),
+  [string]$Dest = 'G:\My Drive\StudioSync backup'
 )
 
 $drive = Split-Path -Qualifier $Dest

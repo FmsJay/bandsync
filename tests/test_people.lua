@@ -15,3 +15,8 @@ for i = 1, #P + 2 do many[#many + 1] = "P" .. string.format("%02d", i) end
 c = people.assign({}, many)
 assert(c.P01 == P[1] and c[many[#P + 1]] ~= nil, "more people than colours: everyone still gets one")
 print("ok")
+
+-- what's new fades
+assert(people.fade(0) == 1 and people.fade(299) == 1, "full at first")
+assert(people.fade(1950) > 0.4 and people.fade(1950) < 0.6, "half way")
+assert(people.fade(3600) == 0 and people.fade(90000) == 0, "gone after the hour")

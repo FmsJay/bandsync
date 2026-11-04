@@ -25,6 +25,7 @@ slider6:1<0,2,0.01>Bandmate 4
 slider7:1<0,2,0.01>Bandmate 5
 slider8:1<0,2,0.01>Bandmate 6
 slider9:1<0,2,0.01>Bandmate 7
+slider10:0<0,255,1>Pairs whose right channel is a position stamp (bits)
 in_pin:backing L
 in_pin:backing R
 in_pin:everyone else L
@@ -72,6 +73,11 @@ buf[pos * 2] = spl0; buf[pos * 2 + 1] = spl1;
 rp = pos - d; rp < 0 ? rp += maxd;
 l = buf[rp * 2]; r = buf[rp * 2 + 1];
 pos += 1; pos >= maxd ? pos = 0;
+stamped = slider10 | 0;
+stamped ? (
+  stamped & 1 ? spl3 = spl2; stamped & 2 ? spl5 = spl4; stamped & 4 ? spl7 = spl6; stamped & 8 ? spl9 = spl8;
+  stamped & 16 ? spl11 = spl10; stamped & 32 ? spl13 = spl12; stamped & 64 ? spl15 = spl14; stamped & 128 ? spl17 = spl16;
+);
 l += slider2 * spl2 + slider3 * spl4 + slider4 * spl6 + slider5 * spl8 + slider6 * spl10 + slider7 * spl12 + slider8 * spl14 + slider9 * spl16;
 r += slider2 * spl3 + slider3 * spl5 + slider4 * spl7 + slider5 * spl9 + slider6 * spl11 + slider7 * spl13 + slider8 * spl15 + slider9 * spl17;
 spl0 = l; spl1 = r;
@@ -308,6 +314,12 @@ function hear.check(proj, cfg, peers, now)
     reaper.SetExtState(band.SECTION, key, say, false)
     band.log(say)
   else reaper.DeleteExtState(band.SECTION, key, false) end
+end
+
+-- Whose right channel is stamps right now (bits, by pair): you hear their voice in both ears, not the bursts.
+function hear.set_stamped(proj, mask)
+  local m, i = hear.mix(proj, false)
+  if m and reaper.TrackFX_GetParam(m, i, 9) ~= mask then reaper.TrackFX_SetParam(m, i, 9, mask) end
 end
 
 -- Their time: your backing later by ms (0 = your own time).

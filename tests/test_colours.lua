@@ -41,3 +41,20 @@ assert(m[5] == m[6], "and one nobody planned for")
 local song = colours.plan_marks({ { name = "a", region = true }, { name = "b", region = true }, { name = "c", region = true } }, "song", stops)
 assert(song[1] == 0x000000 and song[2] == 0xFF0000 and song[3] == 0xFFFFFF, "along the song")
 print("ok")
+
+-- items
+do
+  local stops = { 0x000000, 0xFFFFFF }
+  local p = colours.plan_items({ { pos = 0, section = "Verse 1" }, { pos = 10, section = "Chorus" }, { pos = 20, section = "Verse 2" }, { pos = 30 } }, "section", { stops = stops })
+  assert(p[1] == p[3] and p[1] ~= p[2], "verses match, the chorus doesn't")
+  assert(p[4] == colours.OTHER, "outside any region")
+  p = colours.plan_items({ { pos = 0 }, { pos = 50 }, { pos = 100 } }, "song", { stops = stops, last = 100 })
+  assert(p[1] == 0 and p[3] == 0xFFFFFF and p[2] ~= p[1] and p[2] ~= p[3])
+  p = colours.plan_items({ { maker = 0x112233 }, {} }, "person", { stops = stops })
+  assert(p[1] == 0x112233 and p[2] == colours.OTHER)
+  p = colours.plan_items({ { lane = 0 }, { lane = 1 }, { lane = 5 } }, "lane", { stops = stops })
+  assert(p[1] == p[3] and p[1] ~= p[2])
+  p = colours.plan_items({ { takes = 1 }, { takes = 9 } }, "take", { stops = stops })
+  assert(p[1] == 0 and p[2] == 0xFFFFFF)
+  assert(colours.plan_items({ {} }, "clear", { stops = stops })[1] == false, "takes the colour off")
+end

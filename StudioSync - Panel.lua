@@ -1999,6 +1999,7 @@ local function home_play()
       or "Off: changes still sync, but you don't hear each other live or follow each other's play and stop.")
   end
   if on then require("page_hear").realtime(ctx, ImGui, proj) end
+  require("page_hear").producer(ctx, ImGui, proj, cfg, b, view and view.rows or {})
   local silent = reaper.GetExtState(band.SECTION, "rt silent " .. tostring(proj))
   if silent ~= "" then ImGui.TextColored(ctx, YELLOW, silent) end
   local trouble = reaper.GetExtState(band.SECTION, "rt trouble " .. tostring(proj))
@@ -2058,7 +2059,10 @@ local function home_who()
         elseif settled_apart(p, view.my_mirror) then ImGui.TextColored(ctx, RED, "project differs")
         else ImGui.TextDisabled(ctx, "settling") end
       end
-      if p.state ~= "here" and p.state ~= "offline" then next_to("Following"); tools.follow_button(p.name); next_to("Listen"); ui.listen_button(p) end
+      if p.state ~= "here" and p.state ~= "offline" then
+        next_to("Following"); tools.follow_button(p.name); next_to("Listen"); ui.listen_button(p); next_to("Producing")
+        require("page_hear").produce_button(ctx, ImGui, proj, cfg, b, p.user)
+      end
       if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
       ui.person_claims(p.user, p.last_track)
       ui.leaving_row(p)

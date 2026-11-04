@@ -15,7 +15,10 @@ function together.plan(ev, me, now)
   local fire = ev.at + ((ev.lead and ev.lead ~= me) and (ev.lag or 0) or 0)
   local from = (ev.pos or 0) - (ev.countin or 0)
   if from < 0 then fire, from = fire - from, 0 end -- can't play before 0: start at 0, that much later
-  if now and now > fire then return now, from + (now - fire) end
+  if now and now > fire then
+    if ev.behind then return now, from end -- (producing someone: by position it lines up at any lag, so nothing's missed by being late)
+    return now, from + (now - fire)
+  end
   return fire, from
 end
 

@@ -102,4 +102,63 @@ function page.realtime(ctx, ImGui, proj)
   end
 end
 
+-- Beside a person, in Who's here.
+function page.produce_button(ctx, ImGui, proj, cfg, b, name)
+  local producer = require("producer")
+  local on = producer.who(proj) == name
+  if on then ImGui.PushStyleColor(ctx, ImGui.Col_Button, require("theme").ACCENT) end
+  if ImGui.SmallButton(ctx, (on and "Producing" or "Produce") .. "##produce" .. name) then
+    if on then producer.stop(proj, cfg, b) else
+      if producer.who(proj) then producer.stop(proj, cfg, b) end
+      local ok, why = producer.start(proj, cfg, b, name)
+      if not ok then band.msg(tostring(why)) end
+    end
+  end
+  if on then ImGui.PopStyleColor(ctx) end
+  ImGui.SetItemTooltip(ctx, on and ("You're producing " .. name .. ". Click to stop.") or
+    ("Hear " .. name .. " record, on your grid, as it happens: your song plays a moment behind theirs, from your own copy, so they land right on it.\nYou can talk to them between takes. They needn't do anything."))
+end
+
+-- On Home, while producing or being produced.
+function page.producer(ctx, ImGui, proj, cfg, b, rows)
+  local producer, theme = require("producer"), require("theme")
+  local by = reaper.GetExtState(band.SECTION, "produced by " .. tostring(proj))
+  if by ~= "" then
+    ImGui.TextColored(ctx, theme.ACCENT, by .. " is producing you")
+    ImGui.SetItemTooltip(ctx, "They hear what you record on their grid, a moment behind you. Nothing changes for you: record as usual.")
+    for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
+      if st.produce == cfg.user and st.playing and reaper.GetPlayStateEx(proj) & 1 == 0 then
+        ImGui.TextDisabled(ctx, st.user .. " is still listening to the end of that")
+      end
+    end
+  end
+  local name = producer.who(proj)
+  if not name then return end
+  local them
+  for _, r in ipairs(rows) do if r.user == name or r.name == name then them = r end end
+  local playing = reaper.GetPlayStateEx(proj) & 1 == 1
+  ImGui.SeparatorText(ctx, "Producing")
+  local colour = { ok = theme.GREEN, wait = theme.YELLOW, bad = theme.RED }
+  for _, l in ipairs(producer.lines(proj, name, them, require("stamp").status(), playing)) do ImGui.TextColored(ctx, colour[l[2]] or theme.GREEN, l[1]) end
+  local talking = producer.talking(proj)
+  if talking then ImGui.PushStyleColor(ctx, ImGui.Col_Button, theme.RED) end
+  if ImGui.SmallButton(ctx, talking and "Talking" or "Talk") then producer.talk(proj, not talking) end
+  if talking then ImGui.PopStyleColor(ctx) end
+  ImGui.SetItemTooltip(ctx, "Your first input goes to " .. name .. " right away, while you press this. It reaches them in a moment, even mid-take: \"hold on\" stops them.")
+  page.fit(ctx, ImGui, "", 110)
+  ImGui.SetNextItemWidth(ctx, 110)
+  local ch, v = ImGui.DragDouble(ctx, "##producelag", producer.lag(proj), 0.05, producer.MIN_LAG, producer.MAX_LAG, "%.1f s behind")
+  if ch then producer.set_lag(proj, v) end
+  ImGui.SetItemTooltip(ctx, "How far behind them your song runs. More gives a bad connection room; less is closer to them. It takes effect on their next start.")
+  page.fit(ctx, ImGui, "Through a NINJAM server")
+  local via = producer.via(proj)
+  if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
+    producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
+  end
+  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route if you have one both of you can reach; connect it on the Play tab first.")
+  page.fit(ctx, ImGui, "Stop")
+  if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
+  ImGui.SetItemTooltip(ctx, "Back to your own transport.")
+end
+
 return page

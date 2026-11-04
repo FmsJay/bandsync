@@ -922,6 +922,8 @@ function mirror.track_state(proj, tr, local_mix)
     solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO"), phase = reaper.GetMediaTrackInfo_Value(tr, "B_PHASE"),
     color = require("band").color_out(require("band").track_colour(tr)), icon = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_ICON", "", false)),
     autocolour = mirror.own_colours() or nil, freemode = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE"), lanes = reaper.GetMediaTrackInfo_Value(tr, "I_NUMFIXEDLANES") } -- (not lanes collapsed: a view, each person's own. It was put back as a bandmate's edit: Mac, 0.42.5)
+  local held_mute = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_quiet", "", false)) -- (quiet only here, for now: lib/producer.lua)
+  if held_mute ~= "" then t.mute = tonumber(held_mute) or 0 end
   local plays, names = {}, {}
   for l = 0, t.lanes - 1 do
     plays[#plays + 1] = math.floor(reaper.GetMediaTrackInfo_Value(tr, "C_LANEPLAYS:" .. l))

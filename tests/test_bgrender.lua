@@ -78,7 +78,7 @@ assert(bg.profile_ini("[reaper]\nfoo=1\n") == "[reaper]\naudiocloseinactive=1\nr
 -- printing mustn't leave an undo point on top of the edit: SelectAllMediaItems does, when the part is selected (a step
 -- across passes shows it, which one in-REAPER suite can't: undo points only settle between script passes)
 do
-  local f = assert(io.open("lib/sync.lua", "rb")); local text = f:read("a"):gsub("", ""); f:close()
+  local f = assert(io.open("lib/sync.lua", "rb")); local text = f:read("a"):gsub("\r", ""); f:close()
   local body = text:match("function sync%.print_item.-\nend\n")
   assert(body and not body:find("SelectAllMediaItems(", 1, true), "print_item keeps clear of SelectAllMediaItems")
 end

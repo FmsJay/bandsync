@@ -1,7 +1,7 @@
 -- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.54.1", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.54.2", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -361,7 +361,7 @@ function band.start_draw(dir)
   if id > 0 and (reaper.GetToggleCommandState(id) ~= 1 or not beat or reaper.time_precise() - beat > 3) then reaper.Main_OnCommand(id, 0) end
 end
 -- <root>/_band/band.json says which band a folder is: { name, id = its Syncthing folder id, drive = its Google Drive
--- folder's name }. A folder without one is the first band StudioSync had: id "bandsync", Drive folder "StudioSync".
+-- folder's name }. A folder without one is the first band StudioSync had: id "bandsync", Drive folder "BandSync".
 function band.info(root)
   local j = (root and (band.read_json(root .. "/_band/band.json") or band.json_decode(reaper.GetExtState(band.SECTION, "joining " .. root)))) or {}
   local id = type(j.id) == "string" and j.id ~= "" and j.id or "bandsync"

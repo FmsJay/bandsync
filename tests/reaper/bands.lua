@@ -16,7 +16,7 @@ local base = D .. "/broot_" .. os.time() .. "/StudioSync"
 local ok, err = pcall(function()
   reaper.RecursiveCreateDirectory(base .. "/Lantern/rooms/main", 0)
   reaper.RecursiveCreateDirectory(base .. "/_band", 0)
-  band.write_json(base .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "StudioSync" })
+  band.write_json(base .. "/_band/band.json", { name = "Chilio", id = "bandsync", drive = "BandSync" })
   band.write_json(base .. "/Lantern/session.json", { song = "Lantern", host = "James", sync = "mirror" })
   reaper.SetExtState(band.SECTION, "sync_root", base, false)
   reaper.SetExtState(band.SECTION, "bands", "", false)
@@ -28,7 +28,7 @@ local ok, err = pcall(function()
   reaper.ExecProcess = real_exec
   check(root == D .. "/broot_" .. base:match("broot_(%d+)") .. "/StudioSync Night Shift", "its folder beside the first band's (" .. tostring(root or why) .. ")")
   local info = band.info(root)
-  check(info.name == "Night Shift" and info.id:match("^bandsync%-night%-shift%-%x%x%x%x$") and info.drive == "StudioSync - Night Shift", "band.json says who it is")
+  check(info.name == "Night Shift" and info.id:match("^studiosync%-night%-shift%-%x%x%x%x$") and info.drive == "StudioSync - Night Shift", "band.json says who it is")
   local added = false
   for _, c in ipairs(cmds) do if c:find("folders add --id " .. info.id, 1, true) and c:find("StudioSync Night Shift", 1, true) then added = true end end
   check(added, "Syncthing gets a folder of its own for it")

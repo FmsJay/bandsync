@@ -14,7 +14,7 @@ function setup.sonobus_group(cfg)
   local file = cfg.root .. "/sonobus.json"
   local data = band.read_json(file) or {}
   local had = data.group
-  local group, pw = live.sonobus_group(data)
+  local group, pw = live.sonobus_group(data, band.info(cfg.root).id)
   if not had then band.write_json(file, data) end
   return group, pw
 end

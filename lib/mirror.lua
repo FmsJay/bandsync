@@ -1080,6 +1080,7 @@ function mirror.scan(proj, user, media_dir, local_mix)
     local master = reaper.GetMasterTrack(proj)
     local _, mch = reaper.GetTrackStateChunk(master, "", false)
     local mfx = mirror.fxchain(mch, mirror.live_fx(master)) or ""
+    if mfx:match("^<FXCHAIN[^\n]*\n>%s*$") then mfx = "" end -- (only this computer's live mix on it: Real time mode read as "changed the plug-ins on the master")
     local menv = mirror.track_parts(mch, oid_at) .. mirror.ai_lines(master)
     for _, p in ipairs({ { "F-MASTER", "fx", mfx }, { "E-MASTER", "env", menv } }) do
       local po = { kind = p[2], oid = p[1], ptr = master, track = mirror.MASTER, state = p[3], hash = p[2] == "fx" and mirror.fx_hash(p[3]) or mirror.hash(p[3]) }

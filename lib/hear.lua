@@ -228,6 +228,37 @@ function hear.answer_listeners(proj, cfg, b)
   end
 end
 
+-- Someone's playing, SonoBus is on at both ends, and nothing's arriving: SonoBus doesn't say so anywhere you'd look. `peers`: their status files.
+-- (About once a second.) What's said stays under Real time mode on Home until sound arrives.
+hear.SILENT_AFTER = 15
+local silent_since
+function hear.watch_silence(proj, cfg, peers, now)
+  local live = require("live")
+  local rt = live.rt_track(proj, false)
+  local sm, si = live.fx(proj, false, live.SONOBUS)
+  local key = "rt silent " .. tostring(proj)
+  local expecting
+  if rt and sm and not reaper.TrackFX_GetOffline(sm, si) then
+    local listen = reaper.GetExtState(band.SECTION, "listen " .. tostring(proj))
+    for _, st in ipairs(peers) do
+      if st.rt and st.playing and ((type(st.armed) == "table" and #st.armed > 0) or listen == st.user) then expecting = st.user end
+    end
+  end
+  local heard = false
+  if expecting then for ch = 0, 15 do heard = heard or reaper.Track_GetPeakInfo(rt, ch) > 0.0001 end end
+  if not expecting or heard then
+    silent_since = nil
+    if heard then reaper.DeleteExtState(band.SECTION, key, false) end
+    return
+  end
+  silent_since = silent_since or now
+  if now - silent_since >= hear.SILENT_AFTER and reaper.GetExtState(band.SECTION, key) == "" then
+    local words = expecting .. " is playing, and no sound's arriving from them. Settings > Advanced > Can't hear each other? says what to try."
+    reaper.SetExtState(band.SECTION, key, words, false)
+    band.log(words)
+  end
+end
+
 -- Their time: your backing later by ms (0 = your own time).
 function hear.delay(proj)
   local m, i = hear.mix(proj, false)

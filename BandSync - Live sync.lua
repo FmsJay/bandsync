@@ -456,8 +456,12 @@ local function poll()
     follow = reaper.GetExtState(band.SECTION, "follow " .. tostring(proj)), follow_driver = reaper.GetExtState(band.SECTION, "follow driver") ~= "" or nil,
     listen = reaper.GetExtState(band.SECTION, "listen " .. tostring(proj)) }
   if info.follow == "" then info.follow = nil end
+  do
+    local sm, si = live.fx(proj, false, live.SONOBUS)
+    info.rt = sm and not reaper.TrackFX_GetOffline(sm, si) or nil
+  end
   if info.listen == "" then info.listen = nil end
-  local fingerprint = tostring(info.follow) .. tostring(info.follow_driver) .. tostring(info.listen) .. band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
+  local fingerprint = tostring(info.follow) .. tostring(info.follow_driver) .. tostring(info.listen) .. tostring(info.rt) .. band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
     tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror) ..
     band.json_encode({ info.editing, info.view, info.ping or false }) .. info.last_track
   if fingerprint ~= status_json or now - last_status > 15 then
@@ -651,6 +655,7 @@ local function tick_body() -- returns true to keep going
     rt_at = now
     local ok, e = pcall(require("hear").answer_listeners, proj, cfg, b)
     if not ok then band.log("listen: " .. tostring(e)) end
+    pcall(require("hear").watch_silence, proj, cfg, require("presence").peers(cfg, b.song, b.room), now)
     pcall(live.rt_sends, proj); pcall(live.join_check, proj); pcall(sync.follow_claims, proj, cfg, b.song, b.room)
   end
   -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs

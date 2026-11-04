@@ -2046,6 +2046,8 @@ local function home_play()
       or "Off: changes still sync, but you don't hear each other live or follow each other's play and stop.")
   end
   if on then require("page_hear").realtime(ctx, ImGui, proj) end
+  local silent = reaper.GetExtState(band.SECTION, "rt silent " .. tostring(proj))
+  if silent ~= "" then ImGui.TextColored(ctx, YELLOW, silent) end
   local who_listens = reaper.GetExtState(band.SECTION, "listeners " .. tostring(proj))
   if who_listens ~= "" then ImGui.TextColored(ctx, ACCENT, who_listens .. " is listening to you") end
 end

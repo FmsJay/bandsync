@@ -238,8 +238,25 @@ end
 
 -- The band's SonoBus group: { group, password }, made once and kept in <shared folder>/sonobus.json for everyone
 -- (one group for the band, so it's the same in every song). Pure apart from the random password.
-function live.sonobus_group(data)
+-- `id`: the group's own ID, from which every computer works out the same name: two switching Real time on at once in a new group each made
+-- their own, the file kept one, and they sat in different groups waiting for each other (0.50.0, PC and laptop).
+function live.sonobus_group(data, id)
   if data.group and data.password then return data.group, data.password end
+  if id then
+    local function word(seed, n)
+      local h, out = seed, {}
+      local chars = "abcdefghjkmnpqrstuvwxyz23456789"
+      for i = 1, #id do h = (h ~ id:byte(i)) * 1099511628211 end
+      for i = 1, n do
+        h = (h ~ i) * 1099511628211
+        local k = ((h >> 20) & 0xFFFF) % #chars + 1
+        out[i] = chars:sub(k, k)
+      end
+      return table.concat(out)
+    end
+    data.group, data.password = "StudioSync " .. word(-3750763034362895579, 8), word(7046029254386353087, 14)
+    return data.group, data.password
+  end
   local chars, pw = "abcdefghjkmnpqrstuvwxyz23456789", {}
   math.randomseed(os.time() + math.floor(reaper.time_precise() * 1000))
   for i = 1, 18 do local k = math.random(#chars); pw[i] = chars:sub(k, k) end

@@ -154,6 +154,7 @@ check(hold and not hold.songs[SONG], "and comes off once it isn't")
 for k, v in pairs(saved) do reaper.SetExtState(band.SECTION, k, v, true) end
 check(copy.is_young("2026.11.04 03:44:00", "2026.11.04 03:00:00") and not copy.is_young("2026.11.04 02:44:00", "2026.11.04 03:00:00"), "a file on Drive counts by its date")
 check(not copy.is_young("nil", "2026.11.04 03:00:00"), "no date isn't new")
+check(not copy.drive_needs("rooms/main/media/peaks/a.flac.reapeaks"), "Drive doesn't need peaks")
 -- ---- Sync and exit: when it's all out
 local leave, hear = require("leave"), require("hear")
 check(not leave.settled(nil), "no answer from Syncthing isn't done")

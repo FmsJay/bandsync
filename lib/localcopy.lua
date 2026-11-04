@@ -107,6 +107,7 @@ function copy.drive_paths(rel)
 end
 -- What the Drive copy doesn't carry, so it isn't asked of it: working files, and each computer's own bits.
 function copy.drive_needs(rel)
+  if rel:find("/peaks/", 1, true) or rel:find("%.reapeaks$") then return false end -- (REAPER remakes them, and Drive never gets them: a project that had been opened could never count: Mac, 0.51.15)
   local sub = rel:match("^rooms/[^/]+/([^/]+)/")
   return sub == "takes" or sub == "_trash" or sub == "media" or sub == "events" or sub == "midi" or sub == "recall"
 end

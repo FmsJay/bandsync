@@ -410,6 +410,10 @@ Spitfire LABS, MeldaProduction MFreeFXBundle.
 
 ### Live: hear each other while it happens
 
+**Real time buffer** (Settings > Advanced, this computer's choice): how much sound SonoBus keeps in hand. Steady (150 ms, the default) holds still, so Their time can stay set; Rock steady (250 ms) for a rough connection; Lowest delay wanders. Measured laptop on Wi-Fi to PC, against the PC's grid: 278 ms holding with one 25 ms step at Steady, 486.8 ms and no movement at Rock steady, 162-221 ms wandering at Lowest. It doesn't line up by itself.
+
+**Sync and exit** (top row): saves, waits until what you changed has gone out, says who has it, then closes the project or quits REAPER.
+
 **Real time mode**, **Follow** and **Listen** are on Home and need nothing but SonoBus. **Follow** on someone's card: your
 playhead goes with theirs (play, pause, stop, jumps; when they record, you play along), and your view too. **Always follow the driver** does
 that for whoever's driving. **Listen** on someone's card: you hear only them, their whole mix, or with Follow on just what they're

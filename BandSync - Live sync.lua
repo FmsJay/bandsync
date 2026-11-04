@@ -359,36 +359,18 @@ local function poll()
     end
   end
 
-  -- new band machines: a bandmate's installer pairs with whoever's ID it was given (any bandmate: Invite a
-  -- bandmate), whose Syncthing then asks here, and the panel shows "Let them in". (Until 0.35 only the host looked,
-  -- so an invite from anyone else never showed the button.) On the host of a computer in one band, a machine asking
-  -- over the band's Tailscale (only band machines are on it) is let in at once; with several bands, never on its own.
-  do
+  -- new band machines: on the host of a computer in one band, a machine asking over the band's Tailscale (only band
+  -- machines are on it) is let in at once; with several bands, never on its own. The rest ask in the panel (tools.join_requests).
+  if host and #band.bands() <= 1 and require("groups").may_manage(cfg.root, cfg.user) then
     local services = require("services")
-    local ask = {}
-    local auto = host and #band.bands() <= 1
     for _, d in ipairs(services.pending_devices()) do
-      if auto and services.on_tailnet(d.address) and not joined[d.id] and require("groups").may_manage(cfg.root, cfg.user) then
+      if services.on_tailnet(d.address) and not joined[d.id] then
         joined[d.id] = true
         local ok, why = services.add_device(d.id, d.name, band.info(cfg.root).id)
         band.log(ok and string.format("'%s' (%s) joined the studio folder: it asked over the studio's Tailscale", d.name, d.id:sub(1, 7))
           or ("couldn't add '" .. d.name .. "': " .. tostring(why)))
-      elseif not joined[d.id] then
-        ask[#ask + 1] = d
       end
     end
-    -- a bandmate already known here joining another of your bands: they offer that band's folder (0.35: without
-    -- this, their second band never came back to them)
-    local mine = {}
-    for _, x in ipairs(band.bands()) do mine[x.id] = x.name end
-    for _, f in ipairs(services.pending_folders()) do
-      if mine[f.folder] then
-        joined.names = joined.names or {}
-        joined.names[f.id] = joined.names[f.id] or services.device_name(f.id)
-        ask[#ask + 1] = { id = f.id, name = joined.names[f.id], folder = f.folder, band = mine[f.folder] }
-      end
-    end
-    reaper.SetExtState(band.SECTION, "pending_join", band.json_encode(ask), false)
   end
 
   -- live (ReaNINJAM synced mode): received clips land as placeholders until the real takes replace them

@@ -2699,7 +2699,7 @@ local function frame_app()
   ui.sync_problem()
   require("leave").draw(ctx, ImGui)
   section_invites()
-  tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
+  tools.join_requests(ctx, ImGui) -- (someone asking to join the band folder)
   if b and can then -- (an edit touching a claim, before the rest: lib/suggest.lua)
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
   end
@@ -2815,7 +2815,7 @@ function ui.frame_lobby()
   if tools.toast_line and reaper.time_precise() - (tools.toast_at or 0) < 6 then ImGui.TextColored(ctx, theme.TOAST, tools.toast_line:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
   tools.removed_bar(ctx, ImGui)
   ui.sync_problem()
-  tools.join_requests(ctx, ImGui, { root = root })
+  tools.join_requests(ctx, ImGui)
   ImGui.Separator(ctx)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
@@ -2884,7 +2884,7 @@ local function frame()
       if #list == 0 then
         ImGui.TextColored(ctx, GREY, "nothing from the others has arrived yet")
         ImGui.SetItemTooltip(ctx, "The studio's projects arrive in your shared folder (" .. cfg.root .. ") once a collaborator lets you in: " ..
-          "their panel shows a 'Let you in' button for your computer. Settings > Health shows whether the folder is connected.")
+          "their panel shows a button with your name on it, 'Let ... in'. Settings > Health shows whether the folder is connected.")
       else
         ImGui.TextColored(ctx, GREY, string.format("%d project%s in the studio folder, worked on last: %s", #list, #list == 1 and "" or "s", list[1]))
       end
@@ -2910,7 +2910,7 @@ local function frame()
   if app then ImGui.Unindent(ctx, 16); return frame_app() end
   if ImGui.SmallButton(ctx, "Switch to the new look") then reaper.DeleteExtState(band.SECTION, "panel_ui", true) end
   section_invites()
-  tools.join_requests(ctx, ImGui, b) -- (someone asking to join the band folder)
+  tools.join_requests(ctx, ImGui) -- (someone asking to join the band folder)
   if ImGui.BeginTabBar(ctx, "tabs") then
     if ImGui.BeginTabItem(ctx, "Session") then
       section_room()

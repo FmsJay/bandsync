@@ -80,42 +80,47 @@ end
 -- A machine asking to join the band folder (the host's Syncthing has it waiting; one on the band's Tailscale is let in
 -- by Live sync by itself). On every page of the panel, at the top: in the classic panel only, a new bandmate who
 -- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).
-local let_at = {} -- (who was just let in: Syncthing's own list says they're asking for up to 20 s more, and the row stayed)
-function tools.join_requests(ctx, ImGui, b)
-  if not b then return end -- (any bandmate's invite brings a request here: not only the host's)
-  if not require("groups").may_manage(b.root or reaper.GetExtState(band.SECTION, "sync_root"), reaper.GetExtState(band.SECTION, "user")) then return end
-  local binfo = band.info(b.root or reaper.GetExtState(band.SECTION, "sync_root"))
-  local asking = band.json_decode(reaper.GetExtState(band.SECTION, "pending_join"))
-  local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}
-  for _, d in ipairs(type(asking) == "table" and asking or {}) do
-    if type(d) == "table" and d.id and not skip[d.id] and reaper.time_precise() - (let_at[d.id .. (d.folder or "")] or -math.huge) > 40 then
-      -- (buttons first: the words pushed them off a narrow panel)
-      if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id .. (d.folder or "")) then
-        local services = require("services")
-        local ok, why
-        if d.folder then ok, why = services.share_folder(d.folder, d.id) -- (already a bandmate: just this band's folder)
-        else ok, why = services.add_device(d.id, d.name, binfo.id) end
-        if ok then
-          require("removal").let_in(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id) -- (taken out before, and back)
-          do -- a kept version of what's open, from before they arrived
-            local root = b.root or reaper.GetExtState(band.SECTION, "sync_root")
-            local recall = require("recall")
-            local base = { root = reaper.GetExtState(band.SECTION, "sync_root"), user = reaper.GetExtState(band.SECTION, "user") }
-            for i = 0, math.huge do
-              local p = reaper.EnumProjects(i)
-              if not p then break end
-              local tb = band.binding(p)
-              if tb and band.for_tab(base, tb).root == root then
-                pcall(recall.save, p, { root = root, user = base.user }, tb.song, tb.room, "before " .. tostring(d.name) .. " joined", true)
-              end
-            end
+local let_at, let_device, asked_at, asking = {}, {}, -math.huge, {} -- (let_at, who was just let in: Syncthing's own list says they're asking for up to 20 s more, and the row stayed)
+local function let_in(d, me)
+  local services = require("services")
+  local ok, why
+  if d.folder then
+    ok, why = services.share_folder(d.folder, d.id)
+    if ok then
+      require("removal").let_in(d.root, d.id) -- (taken out before, and back)
+      do -- a kept version of what's open, from before they arrived
+        local recall = require("recall")
+        local base = { root = reaper.GetExtState(band.SECTION, "sync_root"), user = me }
+        for i = 0, math.huge do
+          local p = reaper.EnumProjects(i)
+          if not p then break end
+          local tb = band.binding(p)
+          if tb and band.for_tab(base, tb).root == d.root then
+            pcall(recall.save, p, { root = d.root, user = me }, tb.song, tb.room, "before " .. tostring(d.name) .. " joined", true)
           end
-          let_at[d.id .. (d.folder or "")] = reaper.time_precise()
         end
-        band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the projects reach them now")
-          or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
-        reaper.DeleteExtState(band.SECTION, "pending_join", false)
       end
+    end
+  else
+    ok, why = services.add_device(d.id, d.name)
+    if ok then let_device[d.id] = true end
+  end
+  if ok then let_at[d.id .. (d.folder or "")] = reaper.time_precise() end
+  band.log(ok and (d.folder and ("let '" .. tostring(d.name) .. "' into " .. d.band .. ": the projects reach them now") or ("let '" .. tostring(d.name) .. "' connect: the studio they were invited to follows in a moment"))
+    or ("couldn't add '" .. tostring(d.name) .. "': " .. tostring(why)))
+end
+function tools.join_requests(ctx, ImGui)
+  local me = reaper.GetExtState(band.SECTION, "user")
+  if reaper.time_precise() - asked_at > 2 then asked_at, asking = reaper.time_precise(), require("services").join_asks(me) end
+  if not asking[1] then return end
+  local skip = band.json_decode(reaper.GetExtState(band.SECTION, "join skipped")) or {}
+  for _, d in ipairs(asking) do
+    if not skip[d.id] and reaper.time_precise() - (let_at[d.id .. (d.folder or "")] or -math.huge) > 40 and d.folder and let_device[d.id] then
+      let_device[d.id] = nil -- (the one press covers the studio they were invited to; another one later asks again)
+      let_in(d, me)
+    elseif not skip[d.id] and reaper.time_precise() - (let_at[d.id .. (d.folder or "")] or -math.huge) > 40 then
+      -- (buttons first: the words pushed them off a narrow panel)
+      if ImGui.SmallButton(ctx, "Let " .. tostring(d.name) .. " in##" .. d.id .. (d.folder or "")) then let_in(d, me) end
       ImGui.SetItemTooltip(ctx, "Only if you know this computer: anyone who has your Syncthing ID can ask.")
       ImGui.SameLine(ctx)
       if ImGui.SmallButton(ctx, "Not my collaborator##" .. d.id) then
@@ -126,9 +131,14 @@ function tools.join_requests(ctx, ImGui, b)
       ImGui.SetItemTooltip(ctx, "Dismiss this request. Nothing is shared with it. It only comes back if that computer asks again.")
       ImGui.SameLine(ctx)
       ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
-      local out = require("removal").who_was(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id)
-      ImGui.TextWrapped(ctx, out and string.format("%s was taken out of %s, and their computer is still asking. Leave it unless you've invited them back.", out, d.band or binfo.name)
-        or string.format("%s's computer wants to join %s.", tostring(d.name), d.band or binfo.name))
+      local out, from
+      for _, x in ipairs(d.folder and { { root = d.root, name = d.band } } or band.bands()) do
+        out = out or require("removal").who_was(x.root, d.id)
+        from = from or (out and x.name)
+      end
+      ImGui.TextWrapped(ctx, out and string.format("%s was taken out of %s, and their computer is still asking. Leave it unless you've invited them back.", out, from)
+        or d.folder and string.format("%s's computer wants to join %s.", tostring(d.name), d.band)
+        or string.format("%s's computer is asking to join a studio of yours. It says which once it's let in.", tostring(d.name)))
       ImGui.PopStyleColor(ctx)
       ImGui.SetItemTooltip(ctx, string.format("Syncthing device %s, from %s.", d.id:sub(1, 7), tostring(d.address)))
     end

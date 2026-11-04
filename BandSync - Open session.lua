@@ -67,6 +67,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
           band.start_live(dir)
           return band.log(string.format("opened your project for '%s'", song))
         end
+        reaper.Main_OnCommand(40860, 0) -- File: Close current project tab
         break
       end
     end

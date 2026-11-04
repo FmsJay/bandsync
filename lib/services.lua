@@ -437,10 +437,30 @@ function services.add_device(id, name, folder)
   if not services.is_device_id(id) then return nil, "not a device ID: " .. tostring(id) end
   name = (name or ""):gsub("[^%w%-_ ]", "")
   local r1 = reaper.ExecProcess(q(st) .. " cli config devices add --device-id " .. id .. (name ~= "" and (" --name " .. q(name)) or ""), 15000) or ""
-  local r2 = reaper.ExecProcess(q(st) .. " cli config folders " .. (folder or "bandsync") .. " devices add --device-id " .. id, 15000) or ""
+  local r2 = folder and reaper.ExecProcess(q(st) .. " cli config folders " .. folder .. " devices add --device-id " .. id, 15000) or "0\n"
   if not r1:match("^0\n") then return nil, "Syncthing didn't add it: " .. r1:gsub("^%d+\n", "") end
   if not r2:match("^0\n") then return nil, "added, but the studio folder wasn't shared with it: " .. r2:gsub("^%d+\n", "") end
   return true
+end
+-- Who's asking to join, among the studios `me` may let people into. A computer not known here yet can't say which studio it wants: Syncthing shows that
+-- only once it's known, as a folder it offers. So letting one in adds just the computer, and the studio comes after. (It went into whichever studio the
+-- tab in front was in, invited or not, and a person with no tab or a tab in a studio they don't run never saw the request: 0.52.4.)
+local asker_names = {}
+function services.join_asks(me)
+  local groups = require("groups")
+  local ask, mine, any = {}, {}, false
+  for _, x in ipairs(band.bands()) do
+    if not groups.is_old(x.root) and groups.may_manage(x.root, me) then mine[x.id], any = x, true end
+  end
+  if any then for _, d in ipairs(services.pending_devices()) do ask[#ask + 1] = d end end
+  for _, f in ipairs(services.pending_folders()) do
+    local x = mine[f.folder]
+    if x then
+      asker_names[f.id] = asker_names[f.id] or services.device_name(f.id)
+      ask[#ask + 1] = { id = f.id, name = asker_names[f.id], folder = f.folder, band = x.name, root = x.root }
+    end
+  end
+  return ask
 end
 
 -- This machine's Tailscale address (100.x.y.z), or nil when Tailscale isn't installed or signed in.

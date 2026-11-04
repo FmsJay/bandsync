@@ -30,6 +30,20 @@ assert(code and code.band == "bandsync-y" and code.name == "Old Two", "an old Ma
 assert(services.parse_join("") == nil and services.parse_join("hello") == nil and services.parse_join("studiosync-join:ABC:x:y") == nil, "not a code")
 code = services.parse_join("studiosync-join:" .. inv_id .. ":bandsync-z:Bad \"; rm -rf ~\n")
 assert(code and code.name == "Bad  rm -rf", "a name can't carry anything into a command")
+-- who's asking: only the studios you may let people into, and a new computer with no studio named
+local bands_stub, groups_stub = { { id = "a", name = "Mine", root = "/a" }, { id = "b", name = "Theirs", root = "/b" }, { id = "c", name = "Closed", root = "/c" } }, nil
+package.loaded.band.bands = function() return bands_stub end
+groups_stub = { is_old = function(r) return r == "/c" end, may_manage = function(r, me) return me == "Owner" or (me == "Half" and r == "/a") end }
+package.loaded.groups = groups_stub
+services.pending_devices = function() return { { id = "NEW", name = "New", address = "x" } } end
+services.pending_folders = function() return { { folder = "a", id = "K1" }, { folder = "b", id = "K2" }, { folder = "c", id = "K3" }, { folder = "stranger", id = "K4" } } end
+services.device_name = function(id) return "name of " .. id end
+local asks = services.join_asks("Half")
+assert(#asks == 2 and asks[1].id == "NEW" and asks[1].folder == nil, "a new computer asks, with no studio named")
+assert(asks[2].id == "K1" and asks[2].root == "/a" and asks[2].band == "Mine" and asks[2].name == "name of K1", "the one studio this person runs, not the others")
+assert(#services.join_asks("Member") == 0, "someone who runs nothing is asked nothing")
+asks = services.join_asks("Owner")
+assert(#asks == 3 and asks[2].band == "Mine" and asks[3].band == "Theirs", "a closed studio and one that isn't here don't ask")
 -- a band's Syncthing folder id from its name
 assert(services.band_id("The Night Shift") == "bandsync-the-night-shift" and services.band_id("  Chilio ") == "bandsync-chilio", "ids")
 assert(services.band_id("") == "bandsync-band" and services.band_id("Jazz--Trio") == "bandsync-jazz-trio", "empty, repeats")

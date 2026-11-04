@@ -1,7 +1,7 @@
 -- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.55.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.56.0", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -796,14 +796,14 @@ end
 -- (REAPER honours negative take start offsets: silence until the source begins).
 -- The track a take for `name` belongs on. A wet print already carries the sender's FX, so it goes on a
 -- StudioSync mirror track (no FX of ours, never processed twice): `name` itself when we have no track by
--- that name, else "name (band)" beside our own. Dry takes go on our real track, through our FX once.
+-- that name, else "name (studio)" beside our own. Dry takes go on our real track, through our FX once.
 function band.dest_track(proj, name, wet)
   if not wet then return band.find_track(proj, name, true) or band.new_track(proj, name) end
-  for _, n in ipairs({ name, name .. " (band)" }) do
+  for _, n in ipairs({ name, name .. " (studio)", name .. " (band)" }) do
     local tr = band.find_track(proj, n, true)
     if tr and band.track_ext(tr, "band_mirror") ~= "" then return tr end
   end
-  local tr = band.new_track(proj, band.find_track(proj, name, true) and (name .. " (band)") or name)
+  local tr = band.new_track(proj, band.find_track(proj, name, true) and (name .. " (studio)") or name)
   if tr then reaper.GetSetMediaTrackInfo_String(tr, "P_EXT:band_mirror", "1", true) end
   return tr
 end

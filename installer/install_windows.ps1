@@ -299,7 +299,7 @@ if (-not $running) {
   Ok "Syncthing started (StudioSync's Live sync starts it from now on)"
 }
 $up = $false
-for ($i = 0; $i -lt 30 -and -not $up; $i++) { $null = STcli show system; $up = $LASTEXITCODE -eq 0; if (-not $up) { Start-Sleep 1 } }
+for ($i = 0; $i -lt 60 -and -not $up; $i++) { $null = STcli show system; $up = $LASTEXITCODE -eq 0; if (-not $up) { Start-Sleep 1 } }
 if (-not $up) { Warn "Syncthing didn't answer; finish its setup by hand (see installer/SKILL.md)"; exit 1 }
 $myId = (ST device-id | Select-Object -Last 1).ToString().Trim()
 

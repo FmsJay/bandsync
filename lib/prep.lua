@@ -70,7 +70,7 @@ function prep.scan(proj, cfg, b)
   local lanes, multi = { set = {}, explode = {} }, 0
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
-    local own, folder = band.track_ext(tr, "band_stem") == "" and not track_name(tr):find(" %(band%)$"), reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH") == 1
+    local own, folder = band.track_ext(tr, "band_stem") == "" and not track_name(tr):find(" %(band%)$") and not track_name(tr):find(" %(studio%)$"), reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH") == 1
     if own and not folder and mine(tr) then
       local n = 0
       for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
@@ -104,7 +104,7 @@ function prep.scan(proj, cfg, b)
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
     local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
-    if band.track_ext(tr, "band_stem") == "" and not name:find(" %(band%)$") and mine(tr) then
+    if band.track_ext(tr, "band_stem") == "" and not name:find(" %(band%)$") and not name:find(" %(studio%)$") and mine(tr) then
       local l = name:lower():match("^%s*(.-)%s*$")
       if l == "" then blank[#blank + 1] = tr
       else

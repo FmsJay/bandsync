@@ -23,11 +23,20 @@ suggest.note = nil -- the last thing to say on the bar (why Accept can't go ahea
 -- What it does, in words. Pure.
 function suggest.words(h)
   local bits = {}
-  if (h.changes or 0) > 0 then bits[#bits + 1] = "changes " .. h.changes end
-  if (h.adds or 0) > 0 then bits[#bits + 1] = "adds " .. h.adds end
-  if (h.removes or 0) > 0 then bits[#bits + 1] = "removes " .. h.removes end
+  if (h.changes or 0) > 0 then bits[#bits + 1] = h.changes .. (h.changes == 1 and " change" or " changes") end
+  if (h.adds or 0) > 0 then bits[#bits + 1] = h.adds .. " new" end
+  if (h.removes or 0) > 0 then bits[#bits + 1] = h.removes .. " removed" end
   return table.concat(bits, ", ") .. " on " .. table.concat(h.names or {}, ", ")
 end
+-- How long ago, in a few words. `now`: os.time() of UTC as a table's fields go. Pure.
+function suggest.age(iso, now)
+  local y, mo, d, hh, mi, ss = tostring(iso or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)")
+  if not y then return "" end
+  local secs = now - os.time({ year = y, month = mo, day = d, hour = hh, min = mi, sec = ss, isdst = false })
+  if secs < 90 then return "just now" elseif secs < 5400 then return math.floor(secs / 60 + 0.5) .. " min ago" elseif secs < 129600 then return math.floor(secs / 3600 + 0.5) .. " h ago" end
+  return math.floor(secs / 86400 + 0.5) .. " days ago"
+end
+suggest.FADER_TIP = "A grouped fader moves their track too, so it waits for them. To mix across someone's parts, use a folder's fader or a VCA: those go straight through."
 function suggest.count(h) return #(h.oids or {}) end
 
 -- Into the act this person is making for this owner (or a new one). false: not added (it keeps coming back by itself).
@@ -50,6 +59,7 @@ function suggest.add(room_dir, me, owner, c)
   end
   a.last = now
   local h = a.head
+  h.grouped = h.grouped or c.grouped or nil
   reaper.RecursiveCreateDirectory(parts_of(room_dir, h.id), 0)
   band.write_json(parts_of(room_dir, h.id) .. "/" .. c.oid .. ".json", c)
   if not a.seen[c.oid] then
@@ -212,7 +222,8 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
   sig = table.concat(sig, ",")
   if sig ~= suggest.bar_sig then suggest.bar_sig, suggest.bar_at = sig, reaper.time_precise() end
   ImGui.BeginDisabled(ctx, suggest.settling())
-  for _, h in ipairs(mine) do
+  local now = os.time(os.date("!*t"))
+  local function answer_row(h)
     ImGui.PushID(ctx, h.id)
     if ImGui.SmallButton(ctx, "Accept") then
       local did, stale, refused = suggest.accept(proj, cfg, room_dir, h, function(name, pos) return can(cfg.user, name, pos) end, local_mix)
@@ -232,9 +243,21 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
     ImGui.SetItemTooltip(ctx, "Your tracks stay as they are. " .. tostring(h.from) .. " keeps a copy of anything new on a track of their own.")
     ImGui.SameLine(ctx)
     ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
-    ImGui.TextWrapped(ctx, string.format("%s's edit touches your parts: %s", tostring(h.from), suggest.words(h)))
+    ImGui.TextWrapped(ctx, string.format("%s's edit touches your parts: %s (%s)", tostring(h.from), suggest.words(h), suggest.age(h.time, now)))
     ImGui.PopStyleColor(ctx)
     ImGui.PopID(ctx)
+  end
+  if #mine == 1 then answer_row(mine[1])
+  elseif #mine > 1 then -- (several: one line, or they took a short panel's whole height, and the page with it: design review)
+    if ImGui.SmallButton(ctx, "Review##suggestions") then ImGui.OpenPopup(ctx, "suggestions") end
+    ImGui.SameLine(ctx)
+    ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
+    ImGui.TextWrapped(ctx, string.format("%d edits touch your parts: they're waiting for your answer", #mine))
+    ImGui.PopStyleColor(ctx)
+    if ImGui.BeginPopup(ctx, "suggestions") then
+      for _, h in ipairs(mine) do answer_row(h) end
+      ImGui.EndPopup(ctx)
+    end
   end
   for _, h in ipairs(waiting) do
     ImGui.PushID(ctx, h.id)
@@ -242,6 +265,7 @@ function suggest.bar(ctx, ImGui, proj, cfg, room_dir, can, local_mix)
     ImGui.SetItemTooltip(ctx, "Take the suggestion back. Anything new you added stays on your '(yours, not sent)' tracks.")
     ImGui.SameLine(ctx)
     ImGui.TextWrapped(ctx, string.format("Waiting on %s: %s", tostring(h.owner), suggest.words(h)))
+    if h.grouped then ImGui.TextDisabled(ctx, suggest.FADER_TIP) end
     ImGui.PopID(ctx)
   end
   ImGui.EndDisabled(ctx)

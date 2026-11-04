@@ -188,9 +188,13 @@ function pg.draw_groups(env)
   env.heading("Your studios")
   if #list == 0 then ImGui.TextDisabled(ctx, "You're not in a studio yet. Start one, or paste the join code someone sent you.") end
   local base = (cfg.base or cfg).root
+  local room = ImGui.GetContentRegionAvail(ctx)
+  local per = math.max(1, math.floor((room + 8) / 448)) -- (one card filled a wide docker, its buttons cut off: design review)
+  local card_w = per > 1 and math.floor((room - 8 * (per - 1)) / per) or nil
   for i, g in ipairs(list) do
+    if (i - 1) % per ~= 0 then ImGui.SameLine(ctx, 0, 8) end
     ImGui.PushID(ctx, i)
-    if env.card("group") then
+    if env.card("group", card_w) then
       env.heading(g.name, 17)
       local role = groups.role(g.root, me)
       ImGui.SameLine(ctx)
@@ -437,13 +441,20 @@ function pg.draw_projects(env)
   end
   local function row(r, id)
     ImGui.PushID(ctx, r.song) -- (by name, not by place: a menu open on one project mustn't become another's)
-    local avail = ImGui.GetContentRegionAvail(ctx)
+    local avail = math.min(ImGui.GetContentRegionAvail(ctx), 900) -- (the time was 1800 px from its name on a wide docker)
     local here = ss.is_here(cfg, r.song)
     local x, y = ImGui.GetCursorScreenPos(ctx)
     local clicked = ImGui.Selectable(ctx, "##p", false, ImGui.SelectableFlags_AllowDoubleClick, avail, ImGui.GetTextLineHeightWithSpacing(ctx))
     if clicked and ImGui.IsMouseDoubleClicked(ctx, 0) then open_project(env, root, r.song, r.rooms[1]) end
     local others = {}
     for _, m in ipairs(r.members) do if m ~= r.host then others[#others + 1] = m end end
+    if ImGui.IsItemHovered(ctx) then -- (whoever holds a copy counts too, though they've never published: Mac, 0.52.5)
+      local seen = { [tostring(r.host)] = true }
+      for _, m in ipairs(others) do seen[m] = true end
+      for _, l in ipairs(require("localcopy").read_holds(root)) do
+        if type(l.songs) == "table" and l.songs[r.song] and not seen[l.user] then seen[l.user] = true; others[#others + 1] = l.user end
+      end
+    end
     ImGui.SetItemTooltip(ctx, "Double-click to open it. Right-click for its rooms, folders and your local copy. Drag it onto a folder.\n" ..
       "Hosted by " .. tostring(r.host) .. (#others > 0 and (", with " .. table.concat(others, ", ")) or "") .. (here and "" or "\nOnly its listing is on this computer: opening it brings the rest."))
     if ImGui.BeginDragDropSource(ctx) then

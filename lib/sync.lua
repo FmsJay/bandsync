@@ -216,7 +216,7 @@ end
 -- writers on one file). A take may be changed by the owner of its track; else by the owner of the region
 -- it starts in; else by the driver. The newest claim on a track or region wins.
 
-local function base_name(track) return track and (track:gsub(" %(band%)$", "")) end
+local function base_name(track) return track and (track:gsub(" %(band%)$", ""):gsub(" %(studio%)$", "")) end
 sync.base_name = base_name
 
 function sync.claims_path(cfg, song, room, user)
@@ -983,7 +983,7 @@ local function apply_plays(proj, trackname, list, local_only)
     -- wait until every take it names is here (unless deleted), or the lanes it names don't exist yet
     if not idx[id:lower()] and band.take_state(proj, id) ~= "deleted" then return false end
   end
-  for _, n in ipairs({ trackname, trackname .. " (band)" }) do -- wet prints may sit on a mirror track
+  for _, n in ipairs({ trackname, trackname .. " (studio)", trackname .. " (band)" }) do -- wet prints may sit on a mirror track
     local tr = band.find_track(proj, n, true)
     if tr then
       local lanes = reaper.GetMediaTrackInfo_Value(tr, "I_FREEMODE") == 2
@@ -1045,7 +1045,7 @@ local function apply_track(proj, ev)
     local tr = reaper.GetTrack(proj, t)
     local name = select(2, reaper.GetTrackName(tr))
     if band.track_ext(tr, "band_stem") == "" and base_name(name):lower() == from:lower() then
-      local suffix = name:match(" %(band%)$") or ""
+      local suffix = name:match(" %(band%)$") or name:match(" %(studio%)$") or ""
       reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", ev.track .. suffix, true)
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", ev.mute or 0)
       reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", ev.solo or 0)

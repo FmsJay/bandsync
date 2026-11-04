@@ -4,8 +4,14 @@ local mirror = require("mirror")
 local suggest = require("suggest")
 
 -- what a suggestion says it does
-assert(suggest.words({ changes = 2, adds = 30, removes = 1, names = { "Keys", "Guitar" } }) == "changes 2, adds 30, removes 1 on Keys, Guitar")
-assert(suggest.words({ changes = 0, adds = 1, removes = 0, names = { "Keys" } }) == "adds 1 on Keys")
+assert(suggest.words({ changes = 2, adds = 30, removes = 1, names = { "Keys", "Guitar" } }) == "2 changes, 30 new, 1 removed on Keys, Guitar")
+assert(suggest.words({ changes = 0, adds = 1, removes = 0, names = { "Keys" } }) == "1 new on Keys")
+local now = os.time({ year = 2026, month = 11, day = 4, hour = 12, min = 0, sec = 0, isdst = false })
+assert(suggest.age("2026-11-04T11:59:30Z", now) == "just now")
+assert(suggest.age("2026-11-04T11:48:00Z", now) == "12 min ago")
+assert(suggest.age("2026-11-04T09:00:00Z", now) == "3 h ago")
+assert(suggest.age("2026-11-01T12:00:00Z", now) == "3 days ago")
+assert(suggest.age("", now) == "")
 
 -- what runs through a track: its folder's tracks, what it receives, and what runs through those
 local f = mirror.feeders({

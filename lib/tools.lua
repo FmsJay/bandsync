@@ -79,8 +79,7 @@ function tools.render_guard()
 end
 
 -- A machine asking to join the band folder (the host's Syncthing has it waiting; one on the band's Tailscale is let in
--- by Live sync by itself). On every page of the panel, at the top: in the classic panel only, a new bandmate who
--- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).
+-- by Live sync by itself). On every page of the panel, at the top.
 -- What StudioSync just did, for a few seconds. Exactly one line is held for it: a toast that wrapped moved the page under the mouse and back (Mac, 0.51.9),
 -- so a longer one lies over the page, on its own background, and what's under it stays put and clickable.
 function tools.toast_show(ctx, ImGui, line, place)

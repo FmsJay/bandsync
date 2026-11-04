@@ -89,7 +89,7 @@ function people.who(tr, mode, editing, claims, cfg)
     local u = editing[mirror.item_oid(reaper.GetTrackMediaItem(tr, i))]
     if u and u ~= me then return u end
   end
-  local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)):gsub(" %(band%)$", ""):lower()
+  local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)):gsub(" %(band%)$", ""):gsub(" %(studio%)$", ""):lower()
   if claims[name] then return claims[name].user end
   if mode == "people" then
     local tag = mirror.creator(oid)

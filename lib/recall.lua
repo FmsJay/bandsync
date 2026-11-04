@@ -394,7 +394,7 @@ function recall.restore_state(proj, cfg, song, room, st, label, saved)
   end
   for name, list in pairs(st.plays or {}) do sync.set_plays(proj, name, list) end
   for name, p in pairs(st.tracks or {}) do
-    local tr = band.find_track(proj, name, true) or band.find_track(proj, name .. " (band)", true)
+    local tr = band.find_track(proj, name, true) or band.find_track(proj, name .. " (studio)", true) or band.find_track(proj, name .. " (band)", true)
     if tr then
       reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", p.mute or 0)
       reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", p.solo or 0)

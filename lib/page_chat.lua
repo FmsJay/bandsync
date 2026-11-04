@@ -220,7 +220,7 @@ function chat.draw(ctx, ImGui, cfg, b)
               ImGui.SameLine(ctx)
             end
             ImGui.TextDisabled(ctx, when(m.time))
-            ImGui.SameLine(ctx)
+            if ImGui.GetContentRegionAvail(ctx) >= 420 then ImGui.SameLine(ctx) end -- (narrow, they took half the column from the words: design review)
             ImGui.TextWrapped(ctx, tostring(m.user) .. ": " .. tostring(m.text))
             delete_mine(ctx, ImGui, cfg, m)
             ImGui.PopID(ctx)

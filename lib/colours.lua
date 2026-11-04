@@ -154,7 +154,7 @@ function colours.read(proj, cfg)
       end
       look(oid)
       for k = 0, reaper.CountTrackMediaItems(tr) - 1 do look(mirror.item_oid(reaper.GetTrackMediaItem(tr, k))) end
-      list[#list + 1] = { ptr = tr, name = (select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", "")), family = family, maker = by_tag[mirror.creator(oid)], newest = newest }
+      list[#list + 1] = { ptr = tr, name = (select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", ""):gsub(" %(studio%)$", "")), family = family, maker = by_tag[mirror.creator(oid)], newest = newest }
     end
     depth = depth + math.floor(reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH"))
     if depth < 0 then depth = 0 end

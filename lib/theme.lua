@@ -27,7 +27,7 @@ local function solid(c) return c << 8 | 0xFF end
 
 local cols, vars
 local cols_for -- (which theme `cols` was built for)
--- Which theme this script draws in: the classic panel stays Dark, whatever's picked for the rest.
+-- Which theme this script draws in.
 function theme.use(name)
   local p = PALETTES[name] or PALETTES.Dark
   theme.name = PALETTES[name] and name or "Dark"

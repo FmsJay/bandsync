@@ -7,9 +7,9 @@ local band = require("band")
 local sync = require("sync")
 local mix = {}
 
-local function name_of(tr) return (select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)):gsub(" %(band%)$", "")) end
+local function name_of(tr) return (select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)):gsub(" %(band%)$", ""):gsub(" %(studio%)$", "")) end
 -- The part a track plays: "Keys", "Keys (band)" and "Keys (MIDI)" (its notes, heard in the Dry modes) are all Keys.
-local function part_of_name(n) return (n:gsub(" %(band%)$", ""):gsub(" %(MIDI%)$", "")) end
+local function part_of_name(n) return (n:gsub(" %(band%)$", ""):gsub(" %(studio%)$", ""):gsub(" %(MIDI%)$", "")) end
 local function part_of(tr) return part_of_name(name_of(tr)) end
 
 -- A FXCHAIN block without SonoBus / ReaNINJAM, and those plug-ins on their own (each "BYPASS" line at the chain's
@@ -46,7 +46,7 @@ local function made_by_bandsync(tr)
   if band.track_ext(tr, "band_stem") ~= "" or band.track_ext(tr, "band_midi_track") ~= "" or band.track_ext(tr, "band_mirror") ~= ""
       or band.track_ext(tr, "band_live_track") ~= "" then return true end
   local n = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
-  return n:find(" %(band%)$") ~= nil or n:find(" %(MIDI%)$") ~= nil
+  return n:find(" %(band%)$") ~= nil or n:find(" %(studio%)$") ~= nil or n:find(" %(MIDI%)$") ~= nil
 end
 
 -- A mix track: one without recordings that StudioSync didn't make (a bus, an effects return, a track set up ahead).

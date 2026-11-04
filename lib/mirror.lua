@@ -1785,6 +1785,9 @@ function mirror.watch(proj, cfg, song, room, opts)
   local function propose(o, rev, who, claim_name, pos, name, gone)
     if o.kind == "fx" or not who or who == me or opts.mode == "driver" or not (sync.is_claimed and sync.is_claimed(claim_name, pos)) then return false end
     local c = { obj = o.kind, oid = o.oid, rev = rev or 0, track = o.track, name = name, pos = pos, gone = gone or nil }
+    if o.kind == "track" and o.ptr and not gone then -- (a normal group's fader moves the owner's track too: that's why this is a suggestion, and there's a better way)
+      for _, g in ipairs({ "VOLUME_LEAD", "VOLUME_FOLLOW" }) do c.grouped = c.grouped or reaper.GetSetTrackGroupMembership(o.ptr, g, 0, 0) ~= 0 end
+    end
     if not gone then
       c.state = o.state
       if o.kind == "item" then

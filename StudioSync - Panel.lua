@@ -543,7 +543,7 @@ local MODE_INFO = {
   { "claims", "Driver + claims", "The driver, and everyone on what they've claimed (a track, a region, a stretch of time). Other changes are put back." },
   { "admins", "Admins only", "Only the studio's owner and admins change what the studio has, and anyone on what an admin gave them (right-click their name). Other changes are put back." },
   { "open", "Anyone", "Anyone changes anything nobody has claimed, the tempo map and markers too. If two change one thing at once,\n" ..
-    "whoever changed it more wins (the other's is on Restore)." },
+    "whoever changed it more wins, and the other person gets Use mine." },
 }
 local function section_driver()
   local driving = view.driver == cfg.user
@@ -2276,6 +2276,7 @@ local function settings_sync()
     prints.options(ctx, ImGui) -- rendering in the background
     require("midiview").options(ctx, ImGui)
     require("people").track_options(ctx, ImGui) -- whose colours tracks show here
+    if b and can then require("colours").draw(ctx, ImGui, proj, cfg, function(name) return can(cfg.user, name) end, view.driver == cfg.user or (who and who.mode) == "open") end
     card_end()
   end
 end
@@ -2745,7 +2746,10 @@ local function frame_app()
   if b and can then -- (an edit touching a claim, before the rest: lib/suggest.lua)
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
   end
-  tools.put_back_bar(ctx, ImGui, b and b.song) -- (an edit of yours that was undone, and why: stays until dismissed)
+  tools.put_back_bar(ctx, ImGui, b and b.song, b and can and function(mine) -- (an edit of yours that was undone, and why: stays until dismissed)
+    band.log(tostring(require("mirror").use_mine(proj, cfg, b.song, b.room, mine, { can = can, mode = who and who.mode,
+      local_mix = select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1" })))
+  end, function(name) return can(cfg.user, name) end)
   if bars_open then ImGui.Unindent(ctx, 16); ImGui.EndChild(ctx) end
   local _, bars_h = ImGui.GetItemRectSize(ctx)
   if bars_h < 2 then ImGui.SetCursorPosY(ctx, bars_at) end -- (nothing in them: no gap)

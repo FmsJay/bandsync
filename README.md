@@ -259,7 +259,7 @@ Who may change what:
 - **Editing modes** (Home; the driver picks): **Only the driver**, **Driver + claims** (default: the driver, and
   everyone on what they've claimed; a track you make is claimed for you once it has a name, unless you drive, and
   a track you made stays yours to change until someone claims it, listed on the Claims card) or **Anyone** (anything unclaimed;
-  the tempo map, markers and project settings too; a clash goes to whoever changed it more: docs/clashes.md).
+  the tempo map, markers and project settings too; a clash goes to whoever owns it, else whoever changed it more: docs/clashes.md).
 - **Claims**: *Claim selected tracks*, *Claim region at cursor* or *Claim time selection* (shown to everyone as a
   `[claimed: you]` region). A track claim beats a time claim, which beats a region claim, which beats the driver.
 - **Suggestions**: an edit that reaches someone's claim (a section copied or moved across the project, say) goes out for
@@ -314,7 +314,7 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
 
 - **Alone = full control.** While nobody else is in the room, everything you change goes out (the others get it when
   they're back), whatever the claims.
-- **Both changed something while apart**: whoever changed it more times since you split wins (a tie: the later
+- **Both changed something while apart**: whoever owns it wins (they've claimed it, or they drive and it's unclaimed), and the other person gets **Use mine** where it's theirs to take. With no owner, whoever changed it more times since you split wins (a tie: the later
   one), on every machine alike ([docs/clashes.md](docs/clashes.md) explains, and how other tools decide). If yours was replaced, StudioSync
   says so: yours is still on the Restore page (*Undo* on theirs brings it back).
 - **The Google Drive copy** (Settings > Options): Syncthing only moves files while two machines are on at the same time.

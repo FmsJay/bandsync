@@ -12,12 +12,13 @@ both were apart (offline, or Syncthing hadn't caught up), or both changed it wit
 1. **Rules come first.** In *Only the driver* and *Driver + claims*, a change you may not make is put back on your
    machine at once, with the reason, so most would-be clashes never reach the band. In *Anyone*, everything
    unclaimed is open, the tempo map and markers too.
-2. **More edits wins.** Every object carries a version number that goes up by one with each change to it. Of two
+2. **The owner wins** (James, 2026-11-04). A change by whoever has claimed it, or by the driver on what's unclaimed, takes a version number far past anything made meanwhile (`mirror.next_rev`), so it stands however often someone else changed it, and every computer agrees without being told who owned what.
+3. **Otherwise, more edits wins.** Every object carries a version number that goes up by one with each change to it. Of two
    clashing versions, the one with the higher number wins: whoever changed that object more times since the two
    split. A tie goes to the later clock time, then to the name that sorts last, so every machine picks the same
    one without asking anyone (`mirror.newer` in `lib/mirror.lua`).
-3. **Nothing is lost.** The losing version stays in History. Its owner is told ("X also changed ... while you were
-   apart: theirs is in"), and **Undo** on the winning change on the Restore page brings theirs back. When both
+4. **Nothing is lost, and yours is a click away.** The losing version stays in History. Its owner is told ("X also changed ... while you were
+   apart: theirs is in") with a **Use mine** button that puts it straight back for everyone, unless the other person owns it. When both
    worked alone, a saved version of the loser's whole project is kept first.
 
 Known weak spots:

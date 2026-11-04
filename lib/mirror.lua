@@ -469,6 +469,10 @@ function mirror.hash(s)
   return mirror.memo("h\0" .. s, function() return fnv(s) end)
 end
 
+-- The next revision number. An owner's change (they've claimed it, or they drive and it's unclaimed) steps far past anything made meanwhile, so it stands however many
+-- times someone else changed it while apart, and every computer agrees without being told who owned what. Whoever has seen it follows it with a higher number still.
+mirror.OWNER_STEP = 1000
+function mirror.next_rev(rev, owned) return (rev or 0) + 1 + (owned and mirror.OWNER_STEP or 0) end
 -- Which of two revisions of one object wins: higher rev, then later time, then the larger user name (so every
 -- machine picks the same one).
 function mirror.newer(a, b)
@@ -1461,9 +1465,8 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
     local mine = secs(kev:match("%-(%d%d%d%d)(%d%d)(%d%d)%-(%d%d)(%d%d)(%d%d)Z"))
     local theirs = secs((ev.time or ""):match("(%d+)-(%d+)-(%d+)T(%d+):(%d+):(%d+)"))
     local race = mine and theirs and math.abs(mine - theirs) <= 10
-    require("sync").put_back(string.format("%s also changed %s %s: theirs is in. Yours is on the Restore page " ..
-      "(Undo on theirs brings yours back)", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing",
-      race and "at the same moment as you" or "while you were apart"))
+    require("sync").put_back(string.format("%s also changed %s %s: theirs is in.", tostring(ev.user), (ev.name or "") ~= "" and ("something on " .. ev.name) or "the same thing",
+      race and "at the same moment as you" or "while you were apart"), { oid = ev.oid, ev = kev, name = ev.name })
   end
   local midiview = ev.obj == "item" and not ev.gone and require("midiview")
   if midiview and not (midiview.on() and midiview.recent(ev.time)) then midiview = nil end
@@ -1981,7 +1984,8 @@ function mirror.watch(proj, cfg, song, room, opts)
             o.hash = mirror.item_hash(o.track, state)
           end
         end
-        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = (rev or 0) + 1, base = rev or 0, state = state, track = o.track,
+        local owned = (sync.is_claimed and sync.is_claimed(name, o.pos) and opts.can(me, name, o.pos)) or (opts.mode ~= "open" and me == sync.driver_name)
+        local ev = { type = "obj", obj = o.kind, oid = o.oid, rev = mirror.next_rev(rev, owned), base = rev or 0, state = state, track = o.track,
           name = name, pos = o.pos, hash = o.hash, hv = mirror.HV } -- (hash: what it is here; every receiver checks it came out the same)
         if o.kind == "track" and o.ptr and (tonumber(o.state.lanes) or 0) > 1 then
           -- (the first comp area: REAPER's new lane holds only that piece, and the rest of the part goes silent, with no word: Mac, 0.42.10)
@@ -2404,6 +2408,17 @@ function mirror.revert(proj, cfg, song, room, plan, opts)
   if done == 0 and there > 0 and refused == 0 and kept == 0 then return "it's already back: REAPER rebuilt it from its pass, so nothing changed" end
   return string.format("%d change(s) brought back and sent to the others%s%s", done, refused > 0 and string.format(" (%d not yours to change, left as they are)", refused) or "",
     kept > 0 and string.format(" (kept what collaborators added since: %s)", table.concat(names, ", ")) or "")
+end
+
+-- Use mine: what lost a clash comes back at once, for everyone. mine: { { oid, ev (the event id of your version) } }. -> what happened in words, or nil with nothing to do.
+function mirror.use_mine(proj, cfg, song, room, mine, opts)
+  local dir, plan = require("sync").room_dir(cfg, song, room), {}
+  for _, m in ipairs(mine or {}) do
+    local ev = type(m.ev) == "string" and event_file(dir, m.ev)
+    if ev and m.oid then plan[m.oid] = (not ev.gone) and ev or false end
+  end
+  if not next(plan) then return nil end
+  return mirror.revert(proj, cfg, song, room, plan, opts)
 end
 
 -- Local mixing on: each track's record here is redone without its fader and pan.

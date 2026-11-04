@@ -113,6 +113,7 @@ function chat.draw(ctx, ImGui, cfg, b)
     ImGui.SameLine(ctx, 0, gap or 8)
     if ImGui.GetContentRegionAvail(ctx) < w then ImGui.NewLine(ctx) end
   end
+  local t = load(cfg, b)
   local short = select(2, ImGui.GetContentRegionAvail(ctx)) < 170
   local function switches()
   for i, sc in ipairs(SCOPES) do
@@ -179,7 +180,6 @@ function chat.draw(ctx, ImGui, cfg, b)
     ImGui.SetItemTooltip(ctx, "Show only one person's messages, to-dos, links, notes and drawings, on this computer.")
   end
   end
-  local t = load(cfg, b)
   if short then
     if ImGui.SmallButton(ctx, "Show...") then ImGui.OpenPopup(ctx, "chat switches") end
     ImGui.SetItemTooltip(ctx, "What you see and who you're writing to, and drawing on the tracks.")

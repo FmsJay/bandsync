@@ -163,6 +163,7 @@ local function logo(s)
   for _, cx in ipairs({ 18, 46 }) do
     local own = cx == 18 and 0 or 1
     for _, f in ipairs(FLAMES) do -- all turning the same way round, so the portal spins
+      if s < 40 or (s < 80 and f[5] < 0.7) then goto next_flame end -- (small, the faint ones and then all of them only scribble)
       local x0, y0 = rim(cx, f[1], 5.2, 26.5)
       local x1, y1 = rim(cx, f[1] + f[2], 5.2 + f[3], 26.5 + f[3] * 0.45)
       local n = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
@@ -177,6 +178,7 @@ local function logo(s)
         if ax then ImGui.DrawList_AddQuadFilled(dl, X(ax), Y(ay), X(nax), Y(nay), X(nbx), Y(nby), X(bx), Y(by), col) end
         ax, ay, bx, by = nax, nay, nbx, nby
       end
+      ::next_flame::
     end
     for i = 0, 2 do ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), (9.5 - i * 1.6) * k, (30 - i) * k, ui.blue_orange(own, 0x24)) end -- its glow
     ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 4.6 * k, 26.5 * k, ui.blue_orange(own, 0x90))
@@ -206,12 +208,14 @@ end
 -- The wordmark: Studio, then Sync in blue to orange.
 local function wordmark(size)
   ImGui.PushFont(ctx, nil, size)
+  local _, y = ImGui.GetCursorScreenPos(ctx) -- (each piece on the same baseline: SameLine goes back to the line's top)
   ImGui.Text(ctx, "Studio")
   ImGui.SameLine(ctx, 0, 0)
-  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local x = ImGui.GetCursorScreenPos(ctx)
+  ImGui.SetCursorScreenPos(ctx, x, y)
   local w, h = ImGui.CalcTextSize(ctx, "Sync")
-  local dl = ImGui.GetWindowDrawList(ctx)
-  ui.gradient(dl, x, y, x + w, y + h, x, x + w, function(col) ImGui.DrawList_AddText(dl, x, y, col, "Sync") end)
+  local dl, font = ImGui.GetWindowDrawList(ctx), ImGui.GetFont(ctx)
+  ui.gradient(dl, x, y, x + w, y + h, x, x + w, function(col) ImGui.DrawList_AddTextEx(dl, font, size, x, y, col, "Sync") end)
   ImGui.Dummy(ctx, w, h)
   ImGui.PopFont(ctx)
 end
@@ -1866,9 +1870,9 @@ local function maint_upkeep()
   ImGui.Dummy(ctx, 0, 12)
   local w = ImGui.GetContentRegionAvail(ctx)
   ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + math.max(0, (w - 150) / 2))
-  logo(48)
+  logo(60)
   ImGui.SameLine(ctx, 0, 10)
-  ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 8)
+  ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 14)
   ImGui.BeginGroup(ctx)
   wordmark(20)
   ImGui.TextDisabled(ctx, "version " .. band.VERSION)

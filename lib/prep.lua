@@ -54,6 +54,16 @@ function prep.scan(proj, cfg, b)
   local saved = select(2, reaper.EnumProjects(-1)) ~= ""
   local home = saved and (select(2, reaper.EnumProjects(-1)):gsub("\\", "/"):match("^(.*)/")) or nil -- the project's folder
   local root = cfg and band.norm(cfg.root) or nil
+  -- A shared project: only what this person may change. The rest would only be put back, with what it made kept on "(yours, not sent)" tracks.
+  local can = b and cfg and b.song and require("sync").authority(cfg, b.song, b.room)
+  local left_out = {}
+  local function mine(tr)
+    if not can or band.track_ext(tr, "band_local") ~= "" then return true end
+    local name = track_name(tr)
+    if can(cfg.user, name) then return true end
+    left_out[name] = true
+    return false
+  end
 
   -- takes -> lanes (and lanes for every track that records)
   -- (a track already in lane mode can still hold multi-take items: REAPER can make every new track a lane track)
@@ -61,7 +71,7 @@ function prep.scan(proj, cfg, b)
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
     local own, folder = band.track_ext(tr, "band_stem") == "" and not track_name(tr):find(" %(band%)$"), reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH") == 1
-    if own and not folder then
+    if own and not folder and mine(tr) then
       local n = 0
       for j = 0, reaper.CountTrackMediaItems(tr) - 1 do
         local it = reaper.GetTrackMediaItem(tr, j)
@@ -94,7 +104,7 @@ function prep.scan(proj, cfg, b)
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
     local name = select(2, reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false))
-    if band.track_ext(tr, "band_stem") == "" and not name:find(" %(band%)$") then
+    if band.track_ext(tr, "band_stem") == "" and not name:find(" %(band%)$") and mine(tr) then
       local l = name:lower():match("^%s*(.-)%s*$")
       if l == "" then blank[#blank + 1] = tr
       else
@@ -122,7 +132,7 @@ function prep.scan(proj, cfg, b)
   local files, outside, offline, kept = {}, {}, {}, {}
   for i = 0, reaper.CountMediaItems(proj) - 1 do
     local it = reaper.GetMediaItem(proj, i)
-    if not bands(it) then
+    if not bands(it) and mine(reaper.GetMediaItem_Track(it)) then
       for k = 0, reaper.CountTakes(it) - 1 do
         local tk = reaper.GetTake(it, k)
         local file, src = src_file(tk)
@@ -166,7 +176,14 @@ function prep.scan(proj, cfg, b)
     local it = reaper.GetMediaItem(proj, i)
     local tk = reaper.GetActiveTake(it)
     local empty = not tk or (not reaper.TakeIsMIDI(tk) and src_file(tk) == "")
-    if not bands(it) and (empty or reaper.GetMediaItemInfo_Value(it, "D_LENGTH") < 0.05) then clutter[#clutter + 1] = it end
+    if not bands(it) and (empty or reaper.GetMediaItemInfo_Value(it, "D_LENGTH") < 0.05) and mine(reaper.GetMediaItem_Track(it)) then clutter[#clutter + 1] = it end
+  end
+  if next(left_out) then
+    local names = {}
+    for n in pairs(left_out) do names[#names + 1] = n end
+    table.sort(names)
+    add("others", string.format("%d track(s) left out: they aren't yours", #names),
+      "Not changed: " .. table.concat(names, ", ") .. ". Claim a track, or take control, and open this again to include it.", #names, nil, false)
   end
   if #clutter > 0 then
     add("clutter", string.format("Remove %d empty item(s) and slivers under 50 ms", #clutter),

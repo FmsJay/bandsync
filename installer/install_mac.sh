@@ -326,7 +326,7 @@ stcli config folders "$FOLDER_ID" order set smallestFirst >/dev/null
 stcli config folders "$FOLDER_ID" fswatcher-delays set 1 >/dev/null  # the default 10 s delay added 10 s to every take
 stcli config devices "$MY_ID" name set "$USERNAME_BS" >/dev/null
 if ! yes "$HOSTING"; then
-  stcli config devices list | grep -qx "$HOST_ID" || stcli config devices add --device-id "$HOST_ID" --name "Bandmate" --introducer --auto-accept-folders >/dev/null
+  stcli config devices list | grep -qx "$HOST_ID" || stcli config devices add --device-id "$HOST_ID" --name "Collaborator" --introducer --auto-accept-folders >/dev/null
   stcli config folders "$FOLDER_ID" devices list | grep -qx "$HOST_ID" || stcli config folders "$FOLDER_ID" devices add --device-id "$HOST_ID" >/dev/null
   CONNECTED=""
   stcli show connections 2>/dev/null | tr -d '\n ' | grep -q "\"$HOST_ID\":{[^}]*\"connected\":true" && CONNECTED=1
@@ -404,9 +404,9 @@ else
   fi
 fi
 if yes "$SOLO" && yes "$HOSTING" && [ -n "${DRIVE_OK:-}" ]; then
-  echo "  - Google Drive: share the BandSync folder in your My Drive with each collaborator (Editor), at drive.google.com."
+  echo "  - Google Drive: share the '$DRIVE_NAME' folder in your My Drive with each collaborator (Editor), at drive.google.com."
 elif yes "$SOLO" && [ -z "${DRIVE_OK:-}" ]; then
-  echo "  - Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync >"
+  echo "  - Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click '$DRIVE_NAME' >"
   echo "    Organize > Add shortcut > My Drive."
 fi
 if yes "$HOSTING"; then

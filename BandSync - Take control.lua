@@ -13,7 +13,7 @@ local cfg = band.settings()
 if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
+if not b then return band.msg("This project isn't shared yet: share it, or open it from Projects in the StudioSync panel.") end
 local s = band.read_json(band.session_path(cfg, b.song))
 local now = sync.driver(cfg, b.song, b.room, s)
 if now == cfg.user then return band.msg("You're already driving '" .. b.song .. "' (room " .. b.room .. ").") end
@@ -38,7 +38,7 @@ end
 local c = status.handover_check(cfg, b, proj)
 if #c.problems == 0 then
   if reaper.MB((now or "Nobody") .. " is driving '" .. b.song .. "' (room " .. b.room .. ")" ..
-      (away and ", but isn't here.\n\nTake control so the session can carry on? " or ".\n\nTake control? Tell them first: ") ..
+      (away and ", but isn't here.\n\nTake control so everyone can carry on? " or ".\n\nTake control? Tell them first: ") ..
       "from now on your deletes, moves and lane choices reach everyone (except on tracks or regions someone owns)." ..
       (away and " They can take it back when they return." or ""), "StudioSync", 4) ~= 6 then return end
   return handover()

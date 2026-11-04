@@ -84,7 +84,7 @@ function pg.join_button(env)
       local root, why = services.join_band(env.cfg(), code)
       if root then
         band.log(why == "already" and ("you're already in " .. band.info(root).name) or
-          ("joined " .. band.info(root).name .. ": ask whoever invited you to press Let you in. Its projects arrive after that."))
+          ("joined " .. band.info(root).name .. ": ask whoever invited you to let you in. Its projects arrive after that."))
         pg.root = root
         env.reload_cfg()
         ImGui.CloseCurrentPopup(ctx)

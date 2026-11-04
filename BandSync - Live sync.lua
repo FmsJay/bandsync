@@ -26,7 +26,7 @@ local function reached(t, theirs)
   return past >= 2
 end
 local b = band.binding(proj)
-if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
+if not b then return band.msg("This project isn't shared yet: share it, or open it from Projects in the StudioSync panel.") end
 cfg = band.for_tab(cfg, b) -- (this tab's own band, whichever band this computer is working in now)
 require("sync").current_song = b.song -- (whose notices these are: a tab's own)
 if not b.root then reaper.SetProjExtState(proj, band.SECTION, "root", cfg.root); b.root = cfg.root end -- (a tab from before bands: its band, from now on)

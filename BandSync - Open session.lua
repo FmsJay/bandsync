@@ -14,7 +14,7 @@ elseif reaper.GetExtState(band.SECTION, "open_other") ~= "" then -- the panel's 
   b = nil
 end
 if b and b.role == "host" then
-  return band.msg("This is the host project for '" .. b.song .. "'. Open the session in a new project tab instead.")
+  return band.msg("This is the host project for '" .. b.song .. "'. Open it in a new project tab instead.")
 end
 
 local function open_song(song, room) -- room: for a new tab (nil when refreshing a bound one)

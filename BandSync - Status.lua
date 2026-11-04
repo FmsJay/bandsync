@@ -9,7 +9,7 @@ local cfg = band.settings()
 if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("Publish (host) or open (guest) a session in this project first.") end
+if not b then return band.msg("This project isn't shared yet: share it, or open it from Projects in the StudioSync panel.") end
 
 local status = require("status")
 local ago, COLORS = status.ago, status.COLORS

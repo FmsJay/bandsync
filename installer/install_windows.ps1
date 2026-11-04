@@ -432,13 +432,13 @@ if ($wantSolo) {
   if ($md -and (Test-Path "$md\$driveName")) { Ok "Google Drive: the studio's '$driveName' folder is there"; $driveOk = $true }
   elseif ($md -and $isHost) { New-Item -ItemType Directory "$md\$driveName" | Out-Null; Ok "Google Drive: made '$driveName' in your My Drive"; $driveOk = $true }
   elseif ($md) {
-    Say "Add the studio's Drive folder: in the page that opens, right-click BandSync > Organize > Add shortcut > My Drive."
+    Say "Add the studio's Drive folder: in the page that opens, right-click '$driveName' > Organize > Add shortcut > My Drive."
     Say "(If it isn't there yet, whoever set up first shares it with you.) Waiting; press any key to skip."
     Start-Process "https://drive.google.com/drive/shared-with-me"
     if (Wait-Until { Test-Path "$md\$driveName" }) { Ok "Google Drive: the studio's '$driveName' folder is there"; $driveOk = $true }
   }
-  if ($isHost -and $driveOk) { $left += "Google Drive: share the BandSync folder in your My Drive with each collaborator (Editor), at drive.google.com." }
-  elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive." }
+  if ($isHost -and $driveOk) { $left += "Google Drive: share the '$driveName' folder in your My Drive with each collaborator (Editor), at drive.google.com." }
+  elseif (-not $driveOk) { $left += "Google Drive (skipped above): sign in, then at drive.google.com: Shared with me > right-click '$driveName' > Organize > Add shortcut > My Drive." }
 }
 if ($isHost) { $left += "In REAPER, open your song's project: the StudioSync panel offers 'Share this project with the studio'." }
 else { $left += "In REAPER, the StudioSync panel offers 'Join the studio's project' once your collaborator has let you in: the studio's projects arrive by themselves, and the panel lists them." }

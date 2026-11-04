@@ -1081,7 +1081,7 @@ local function section_recall()
     local before = select(2, reaper.GetProjExtState(proj, band.SECTION, "before_bandsync"))
     if before ~= "" and reaper.file_exists(before) then
       if ImGui.SmallButton(ctx, "Open it as it was before BandSync") then reaper.Main_OnCommand(40859, 0); reaper.Main_openProject(before) end
-      ImGui.SetItemTooltip(ctx, "Opens the copy saved when this project was first published, in a new tab (it isn't a studio session).")
+      ImGui.SetItemTooltip(ctx, "Opens the copy saved when this project was first published, in a new tab (it isn't shared).")
     end
     for i, p in ipairs(points) do
       ImGui.PushID(ctx, i)
@@ -1249,7 +1249,7 @@ local SAME_ROOM_TIP = "Real time mode. On: you hear each other right away throug
   "(MIDI notes appear a few seconds behind) and lands as a take when they stop. Off: both off; edits keep syncing."
 local function section_room()
   local on = same_room_on()
-  local ch, v = ImGui.Checkbox(ctx, "Real time mode: hear everyone and follow the session together", on)
+  local ch, v = ImGui.Checkbox(ctx, "Real time mode: hear everyone and follow along together", on)
   if ch then set_same_room(v) end
   ImGui.SetItemTooltip(ctx, SAME_ROOM_TIP)
   if on then ImGui.SameLine(ctx); ImGui.TextColored(ctx, GREEN, "on") end

@@ -17,7 +17,7 @@ local cfg = band.settings()
 if not cfg then return end
 local proj = reaper.EnumProjects(-1)
 local b = band.binding(proj)
-if not b then return band.msg("This project isn't a StudioSync session yet: publish (host) or open (guest) one first.") end
+if not b then return band.msg("This project isn't shared yet: share it, or open it from Projects in the StudioSync panel.") end
 if reaper.set_action_options then reaper.set_action_options(1) end -- the shortcut again closes it
 
 local live = require("live")

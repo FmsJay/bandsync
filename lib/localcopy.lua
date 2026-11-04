@@ -141,8 +141,19 @@ local function idle(id)
   local a = require("services").ask("/rest/db/status?folder=" .. id, 5)
   return a and a:find('"state":%s*"idle"') ~= nil
 end
+-- The script that moves paths into the Mac's Trash, each named for the project it came from (label, if any). Pure.
+-- shortcut: a plain move, so Finder's Put Back stays greyed out; going through Finder would add an automation prompt, opening the project brings it back anyway.
+function copy.trash_script(paths, label, stamp)
+  local sq = function(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
+  local lines = {}
+  for i, p in ipairs(paths) do
+    local name = "StudioSync - " .. (label and label .. " - " or "") .. stamp .. " - " .. i .. " " .. p:match("[^/]+$")
+    lines[#lines + 1] = "[ -e " .. sq(p) .. " ] && mv " .. sq(p) .. ' "$HOME/.Trash/"' .. sq(name)
+  end
+  return table.concat(lines, "\n") .. "\n"
+end
 -- Into the Recycle Bin or Trash. Returns how many paths couldn't go (a file REAPER still has open, usually).
-function copy.bin(paths)
+function copy.bin(paths, label)
   if #paths == 0 then return 0 end
   local tmp = (os.getenv("TEMP") or os.getenv("TMPDIR") or "/tmp"):gsub("\\", "/"):gsub("/+$", "") .. "/bandsync-bin-" .. os.time()
   local q = function(s) return "'" .. s:gsub("'", "''") .. "'" end
@@ -157,12 +168,7 @@ function copy.bin(paths)
     band.write_atomic(tmp .. ".ps1", "\239\187\191" .. table.concat(lines, "\r\n") .. "\r\n")
     cmd = 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "' .. tmp .. '.ps1"'
   else
-    local lines = { 'T="$HOME/.Trash"' }
-    local sq = function(s) return "'" .. s:gsub("'", "'\\''") .. "'" end
-    for i, p in ipairs(paths) do
-      lines[#lines + 1] = string.format('[ -e %s ] && mv %s "$T/StudioSync-%d-%d-$(basename %s)"', sq(p), sq(p), os.time(), i, sq(p))
-    end
-    band.write_atomic(tmp .. ".sh", table.concat(lines, "\n") .. "\n")
+    band.write_atomic(tmp .. ".sh", copy.trash_script(paths, label, os.date("%Y-%m-%d %H.%M.%S")))
     cmd = "/bin/sh '" .. tmp .. ".sh'"
   end
   reaper.ExecProcess(cmd, 300000)
@@ -260,7 +266,7 @@ function copy.tick()
     for _, p in ipairs(j.paths) do list[#list + 1] = dir .. "/" .. p end
     if reaper.EnumerateFiles(j.local_dir, 0) or reaper.EnumerateSubdirectories(j.local_dir, 0) then list[#list + 1] = j.local_dir end
     reaper.DeleteExtState(band.SECTION, "project file " .. song, true)
-    local left = copy.bin(list)
+    local left = copy.bin(list, song)
     j.done[#j.done + 1] = song .. (left > 0 and string.format(" (%d still in use: restart REAPER and delete again to free them)", left) or "")
     band.log("deleted this computer's copy of '" .. song .. "': confirmed on " .. table.concat(j.places, ", ") .. ". Open it to bring it back")
     j.i, j.step = j.i + 1, "scan"

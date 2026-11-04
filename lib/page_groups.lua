@@ -413,8 +413,10 @@ function pg.draw_projects(env)
     local x, y = ImGui.GetCursorScreenPos(ctx)
     local clicked = ImGui.Selectable(ctx, "##p", false, ImGui.SelectableFlags_AllowDoubleClick, avail, ImGui.GetTextLineHeightWithSpacing(ctx))
     if clicked and ImGui.IsMouseDoubleClicked(ctx, 0) then open_project(env, root, r.song, r.rooms[1]) end
+    local others = {}
+    for _, m in ipairs(r.members) do if m ~= r.host then others[#others + 1] = m end end
     ImGui.SetItemTooltip(ctx, "Double-click to open it. Right-click for its rooms, folders and your local copy. Drag it onto a folder.\n" ..
-      "Hosted by " .. tostring(r.host) .. (#r.members > 0 and ("; " .. table.concat(r.members, ", ")) or "") .. (here and "" or "\nOnly its listing is on this computer: opening it brings the rest."))
+      "Hosted by " .. tostring(r.host) .. (#others > 0 and (", with " .. table.concat(others, ", ")) or "") .. (here and "" or "\nOnly its listing is on this computer: opening it brings the rest."))
     if ImGui.BeginDragDropSource(ctx) then
       ImGui.SetDragDropPayload(ctx, "SS_PROJECT", r.song)
       ImGui.Text(ctx, r.song)

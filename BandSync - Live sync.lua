@@ -559,7 +559,7 @@ local function tick_body() -- returns true to keep going
     return band.log("live sync stopped: this tab is now " .. (now_b and now_b.role == "solo" and "a Solo edit working copy" or "no longer this session"))
   end
   if reaper.GetExtState(band.SECTION, "live owner " .. key) ~= my_token then -- a newer Live sync took this tab over
-    return band.log("a newer Live sync took over '" .. b.song .. "' (room " .. b.room .. "): this one stops")
+    return band.log("Live sync restarted for '" .. b.song .. "' (room " .. b.room .. "): nothing to do")
   end
   if reaper.GetExtState(band.SECTION, "stop " .. key) ~= "" then
     reaper.DeleteExtState(band.SECTION, "stop " .. key, false)

@@ -159,12 +159,18 @@ function leave.draw(ctx, ImGui)
       if ImGui.Button(ctx, "Close this project") then
         leave.job = nil
         ImGui.CloseCurrentPopup(ctx)
+        reaper.Main_SaveProject(j.proj, false) -- (a change can land while this box is up: REAPER would ask again)
         reaper.Main_OnCommand(40860, 0) -- Close current project tab
       end
       ImGui.SameLine(ctx)
       if ImGui.Button(ctx, "Quit REAPER") then
         leave.job = nil
         ImGui.CloseCurrentPopup(ctx)
+        for i = 0, 512 do -- (every group project: anything else may be someone's to decide, and REAPER asks about those)
+          local p, f = reaper.EnumProjects(i)
+          if not p then break end
+          if f ~= "" and band.binding(p) then reaper.Main_SaveProject(p, false) end
+        end
         reaper.Main_OnCommand(40004, 0) -- File: Quit REAPER
       end
       ImGui.SameLine(ctx)

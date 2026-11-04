@@ -38,6 +38,8 @@ function copy.contents(dir)
   return files, paths
 end
 
+-- A file's date newer than `since`, both as "2026.11.04 03:44:00". Pure.
+function copy.is_young(modified, since) return modified:match("^%d%d%d%d%.") ~= nil and modified > since end
 -- One word for a set of files: their names, whatever order they're read in. Pure. (A file that's there is whole: Syncthing moves it in when it's done.)
 function copy.digest(files)
   local names = {}
@@ -206,8 +208,10 @@ function copy.tick()
           if not found and reaper.file_exists(there) then
             found = true
             -- (on Drive's mount doesn't mean uploaded yet. Half an hour there is as near as a script can tell: Mac, 0.50.4)
-            local status, _, _, modified = reaper.JS_File_Stat and reaper.JS_File_Stat(there)
-            if status == 0 and tostring(modified) > os.date("%Y.%m.%d %H:%M:%S", os.time() - copy.DRIVE_SETTLED) then j.drive_young = true end
+            if reaper.JS_File_Stat then -- (not `a and f()`: that keeps one return value, and every file read as new, so Drive never counted: Mac, 0.51.12)
+              local status, _, _, modified = reaper.JS_File_Stat(there)
+              if status == 0 and modified and copy.is_young(tostring(modified), os.date("%Y.%m.%d %H:%M:%S", os.time() - copy.DRIVE_SETTLED)) then j.drive_young = true end
+            end
           end
         end
         if not found then j.drive_bad = rel; break end

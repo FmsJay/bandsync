@@ -1060,7 +1060,7 @@ local function section_recall()
   ImGui.SameLine(ctx, 0, 4)
   if ImGui.SmallButton(ctx, "Back up") then recall.back_up(proj, cfg, b); last = 0 end
   ImGui.SetItemTooltip(ctx, "Keeps the project as it stands now: a saved version here that's never trimmed, and the project on Google Drive if you use it. No audio is rendered.")
-  ImGui.SameLine(ctx, 0, 4)
+  next_to("Save a copy outside the group")
   if ImGui.SmallButton(ctx, "Save a copy outside the group") then
     local keep, wav = "As it is (FLAC, as recorded)", "With WAV files"
     local pick = band.pick({ "#A plain project of its own, with all its media", keep, wav })
@@ -1866,6 +1866,12 @@ local function layout(parts) -- { { fn, width } }
     return
   end
   local _, h = ImGui.GetContentRegionAvail(ctx)
+  if h < 170 and reaper.GetExtState(band.SECTION, "dock_hint") == "" then -- once: a short docker hides most of each page (above the columns: beside them it could be off the edge)
+    ImGui.TextColored(ctx, YELLOW, "Short on room: drag the thin line just above the docker's tabs upward to see more.")
+    ImGui.SameLine(ctx)
+    if ImGui.SmallButton(ctx, "Got it") then reaper.SetExtState(band.SECTION, "dock_hint", "1", true) end
+    _, h = ImGui.GetContentRegionAvail(ctx)
+  end
   for i, part in ipairs(parts) do
     if i > 1 then ImGui.SameLine(ctx, 0, 10) end
     ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, theme.COLUMN)
@@ -1889,13 +1895,6 @@ local function layout(parts) -- { { fn, width } }
     else
       ImGui.Dummy(ctx, 1, fh - 4)
     end
-    ImGui.EndGroup(ctx)
-  end
-  if h < 170 and reaper.GetExtState(band.SECTION, "dock_hint") == "" then -- once: a short docker hides most of each page
-    ImGui.SameLine(ctx, 0, 10)
-    ImGui.BeginGroup(ctx)
-    ImGui.TextColored(ctx, YELLOW, "Short on room: drag the thin line just above the docker's tabs upward to see more.")
-    if ImGui.SmallButton(ctx, "Got it") then reaper.SetExtState(band.SECTION, "dock_hint", "1", true) end
     ImGui.EndGroup(ctx)
   end
 end
@@ -1966,8 +1965,12 @@ local function maint_rows()
     rows[#rows + 1] = { "offline when inactive", false, "yellow", "", "REAPER takes your media offline whenever another app is in front, so parts show OFFLINE then: turn off 'Set media items offline when application is not active' in Preferences > Media." }
   end
   if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "StudioSync " .. view.newer .. " is in use in the group; you have " .. band.VERSION .. ": press Update below." } end
+  pcall(require("drive").root, cfg) -- (what it says next is about the group it last looked at: this tab's, then. Mac, 0.51.12)
   local dmiss = reaper.GetExtState(band.SECTION, "drive_root") ~= "off" and require("drive").missing
-  if dmiss then rows[#rows + 1] = { "drive", false, "yellow", "", "Google Drive: no shared BandSync folder in " .. dmiss .. " (at drive.google.com: Shared with me > right-click BandSync > Organize > Add shortcut > My Drive)." } end
+  if dmiss then
+    local dname = band.info(cfg.root).drive
+    rows[#rows + 1] = { "drive", false, "yellow", "", "Google Drive: no shared " .. dname .. " folder in " .. dmiss .. " (at drive.google.com: Shared with me > right-click " .. dname .. " > Organize > Add shortcut > My Drive)." }
+  end
   for _, m in ipairs(s.routed or {}) do
     rows[#rows + 1] = { "routed " .. m.track, false, "yellow", "", string.format("'%s' plays %s on '%s', which doesn't load on this computer: " ..
       "you hear the group's print (the wet take) where there is one, and nothing where there isn't. Installing %s brings the notes back here.",

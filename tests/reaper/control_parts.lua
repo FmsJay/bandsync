@@ -13,7 +13,7 @@ end
 local root = D .. "/group"
 local SONG, ROOM = "Tune", "main"
 local saved = {}
-for _, k in ipairs({ "projects gone", "track colours" }) do saved[k] = reaper.GetExtState(band.SECTION, k) end
+for _, k in ipairs({ "projects gone", "track colours", "projects here", "projects here checked", "projects keep all" }) do saved[k] = reaper.GetExtState(band.SECTION, k) end
 
 -- ---- who controls
 reaper.RecursiveCreateDirectory(root .. "/_band", 0)
@@ -81,9 +81,13 @@ local whole = {}
 for _, p in ipairs(paths) do whole[p] = true end
 check(whole["rooms/main/media"] and whole.stems and not whole.rooms and not whole["rooms/main"], "it removes folders inside the rooms, never a room itself")
 -- every path it removes must be ignored by the listing rules, or Syncthing would send the delete out
-check(copy.lacks('{"files":[{"name":"Tune/rooms/main/media/a.flac"}]}', "Tune"), "a computer lacking part of it doesn't count")
-check(not copy.lacks('{"files":[{"name":"Tuneful/a.flac"}]}', "Tune"), "another project with a longer name isn't mixed up")
-check(not copy.lacks('{"files":[]}', "Tune"), "a computer lacking nothing counts")
+local d1 = copy.digest({ "a/b.flac", "c/d.json" })
+check(d1 == copy.digest({ "c/d.json", "a/b.flac" }), "the same files read in another order say the same")
+check(d1 ~= copy.digest({ "a/b.flac" }), "a file short says something else")
+check(d1 == copy.digest({ "a/b.flac", "c/d.json", "a/.syncthing.x.tmp", "a/~tmp", "a/x.sync-conflict-1.json" }), "half-arrived files and conflict copies don't count")
+local who_holds = copy.holders({ { user = "Me", songs = { Tune = { digest = d1 } } }, { user = "Sam", songs = { Tune = { digest = d1 } } },
+  { user = "Lee", songs = { Tune = { digest = "other" } } }, { user = "Kim", songs = { Other = { digest = d1 } } }, { user = "Nil" } }, "Tune", d1, "Me")
+check(#who_holds == 1 and who_holds[1] == "Sam", "only someone else saying they hold exactly this counts")
 local dp = copy.drive_paths("rooms/main/takes/t.flac")
 check(dp[1] == "rooms/main/takes/t.flac" and dp[2] == "rooms/main/_trash/t.flac", "a take may be in takes or _trash on Drive")
 check(copy.drive_paths("rooms/main/media/x.flac")[2] == nil, "media has one place")
@@ -136,7 +140,18 @@ check(t2:find("Keys", 1, true) and not t2:find("Real time", 1, true), "a track t
 check(t2:find('<SOURCE WAVE\n        FILE "Media/a.wav"', 1, true) ~= nil, "a file turned to WAV is read as WAV")
 check(select(2, t2:gsub("<TRACK", "")) == 1 and t2:find(">\n>\n$") ~= nil, "the project's blocks still close")
 
-for k, v in pairs(saved) do reaper.SetExtState(band.SECTION, k, v, false) end
+-- what a computer says it holds: only what's here, and it goes when it's gone
+reaper.SetExtState(band.SECTION, "projects keep all", "", false)
+reaper.SetExtState(band.SECTION, "projects here", SONG, false)
+reaper.SetExtState(band.SECTION, "projects here checked", "2", false)
+copy.publish_holds(root, "Owner")
+local hold = band.read_json(root .. "/_band/holds/Owner.json")
+check(hold and hold.songs[SONG] and hold.songs[SONG].digest == copy.digest((copy.contents(sdir))), "a project here is published with what it holds")
+reaper.SetExtState(band.SECTION, "projects here", "|", false)
+copy.publish_holds(root, "Owner")
+hold = band.read_json(root .. "/_band/holds/Owner.json")
+check(hold and not hold.songs[SONG], "and comes off once it isn't")
+for k, v in pairs(saved) do reaper.SetExtState(band.SECTION, k, v, true) end
 -- (scratch: the group's folder, for the next run)
 for _, f in ipairs(files) do os.remove(sync.room_dir(cfg, SONG, ROOM) .. "/claims/" .. f) end
 out[#out + 1] = string.format("control_parts: fails %d of %d", fails, #out)

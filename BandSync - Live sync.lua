@@ -585,7 +585,10 @@ local function tick_body() -- returns true to keep going
         band.log(string.format("stopped together (%s) at %.3f s, %s", tostring(transport.user), at_pos,
           tnow >= fire and "by time" or string.format("by position (theirs: %.3f s)", transport.pos)))
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. "stopped together (" .. tostring(transport.user) .. ")", false)
-        if transport.pause and transport.pos then reaper.SetEditCurPos2(proj, transport.pos, false, false) end -- (paused: you're where they paused)
+        if transport.pause and transport.pos then -- (paused: you're where they paused, paused too)
+          reaper.SetEditCurPos2(proj, transport.pos, false, false)
+          reaper.OnPauseButtonEx(proj)
+        end
       else
         local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone
         if reaper.GetPlayStateEx(proj) ~= 0 then reaper.OnStopButtonEx(proj) end

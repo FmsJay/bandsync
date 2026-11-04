@@ -2,8 +2,9 @@
 -- anything. The danger is Syncthing: a file deleted in a shared folder is deleted for everyone. So the project goes on this computer's
 -- ignore list first (lib/songsync.lua), Syncthing is seen to have read that, and only then do the files go, to the Recycle Bin or Trash.
 -- Its listing stays (session.json, chat and the like), so it's still on the Projects page; opening it brings it back.
---   Elsewhere means: Google Drive holds every file of it, or Syncthing says another computer of the group needs nothing of it.
---   /rest/db/remoteneed lists what a computer lacks of what's in the folder, whatever the reason, so one that never downloaded it fails.
+--   Elsewhere means: Google Drive holds every file of it, or another computer of the group has said it holds exactly these files. Each computer
+--   publishes that itself (_band/holds/<name>.json: copy.publish_holds), as Syncthing can't tell: /rest/db/remoteneed, completion and even a
+--   file's availability all read as "has it" for a computer that's ignoring it and hasn't got one byte. Found the hard way on 0.50.0.
 local band = require("band")
 local copy = {}
 
@@ -37,9 +38,64 @@ function copy.contents(dir)
   return files, paths
 end
 
--- Whether `song` shows up in a remoteneed answer. Pure.
-function copy.lacks(answer, song)
-  return answer:find('"name":"' .. song .. '/', 1, true) ~= nil or answer:find('"name": "' .. song .. '/', 1, true) ~= nil
+-- One word for a set of files: their names, whatever order they're read in. Pure. (A file that's there is whole: Syncthing moves it in when it's done.)
+function copy.digest(files)
+  local names = {}
+  for _, f in ipairs(files) do
+    local base = f:match("[^/]+$")
+    if not base:find("^%.") and not base:find("^~") and not base:find("sync%-conflict", 1) then names[#names + 1] = f end
+  end
+  table.sort(names)
+  local h = -3750763034362895579 -- (FNV-1a, 64 bits)
+  local text = table.concat(names, "\n")
+  for i = 1, #text do h = (h ~ text:byte(i)) * 1099511628211 end
+  return string.format("%016x", h), #names
+end
+-- Who else says they hold exactly this: their names. `lists`: { { user, songs = { [song] = { digest } } } }. Pure.
+function copy.holders(lists, song, digest, me)
+  local out = {}
+  for _, l in ipairs(lists) do
+    local e = type(l.songs) == "table" and l.songs[song]
+    if l.user ~= me and type(e) == "table" and e.digest == digest then out[#out + 1] = tostring(l.user) end
+  end
+  table.sort(out)
+  return out
+end
+local function holds_file(root, user) return root .. "/_band/holds/" .. (user:gsub("[^%w%-_ ]", "")) .. ".json" end
+function copy.read_holds(root)
+  local out = {}
+  for _, f in ipairs(band.files(root .. "/_band/holds", ".json")) do
+    local l = band.read_json(root .. "/_band/holds/" .. f)
+    if type(l) == "table" and type(l.user) == "string" then out[#out + 1] = l end
+  end
+  return out
+end
+-- This computer says what it holds, one project of each group per look (about every 30 s: lib/removal.lua, with any tab or none).
+local turn = {}
+function copy.publish_holds(root, me)
+  local ss = require("songsync")
+  local here = ss.here({ root = root, user = me })
+  local path = holds_file(root, me)
+  local mine = band.read_json(path)
+  mine = type(mine) == "table" and type(mine.songs) == "table" and mine or { songs = {} }
+  local changed, is_here = false, {}
+  for _, s in ipairs(here) do is_here[s] = true end
+  for s in pairs(mine.songs) do if not is_here[s] then mine.songs[s], changed = nil, true end end
+  if #here > 0 then
+    turn[root] = (turn[root] or 0) % #here + 1
+    local song = here[turn[root]]
+    local dir = root .. "/" .. song
+    if reaper.file_exists(dir .. "/session.json") then
+      local d, n = copy.digest((copy.contents(dir)))
+      local e = mine.songs[song]
+      if n > 0 and not (type(e) == "table" and e.digest == d) then mine.songs[song], changed = { digest = d, n = n }, true end
+    end
+  end
+  if changed then
+    mine.user, mine.time = me, os.date("!%Y-%m-%dT%H:%M:%SZ")
+    reaper.RecursiveCreateDirectory(root .. "/_band/holds", 0)
+    band.write_json(path, mine)
+  end
 end
 -- Where Drive keeps a room's file: a take may sit in takes or _trash, whichever the group has it in. Everything else at its own path.
 function copy.drive_paths(rel)
@@ -80,18 +136,6 @@ local function idle(id)
   local a = require("services").ask("/rest/db/status?folder=" .. id, 5)
   return a and a:find('"state":%s*"idle"') ~= nil
 end
-local function peer_list(id)
-  local services, out = require("services"), {}
-  local me = services.my_device_id()
-  local a = services.ask("/rest/config/folders/" .. id, 5)
-  for d in (a or ""):gmatch('"deviceID":%s*"([%w%-]+)"') do if d ~= me then out[#out + 1] = d end end
-  return out
-end
-local function device_name(id)
-  local a = require("services").ask("/rest/config/devices/" .. id, 5)
-  return a and a:match('"name":%s*"([^"]*)"') or id:sub(1, 7)
-end
-
 -- Into the Recycle Bin or Trash. Returns how many paths couldn't go (a file REAPER still has open, usually).
 function copy.bin(paths)
   if #paths == 0 then return 0 end
@@ -141,23 +185,12 @@ function copy.tick()
       j.i, j.step = j.i + 1, "scan"
       return
     end
-    services.rescan(info.id)
-    j.since, j.step, j.at, j.places = reaper.time_precise(), "settle", 1, {}
-  elseif j.step == "settle" then -- Syncthing has seen every file here (a recording from a minute ago, say)
-    if reaper.time_precise() - j.since < 2 then return end
-    if idle(info.id) then j.step = "peers"
-    elseif reaper.time_precise() - j.since > 30 then j.step = "peers"; j.unsure = true end
+    j.step, j.at, j.places = "peers", 1, {}
   elseif j.step == "peers" then
-    j.words = "Checking the group's other computers for '" .. song .. "'"
-    if not j.unsure then
-      for _, d in ipairs(peer_list(info.id)) do
-        local a = services.ask("/rest/db/remoteneed?folder=" .. info.id .. "&device=" .. d .. "&perpage=100000", 15)
-        -- (and that it has told us what it has at all: a computer never connected lacks everything, and that's not always how the list reads)
-        local c = services.ask("/rest/db/completion?folder=" .. info.id .. "&device=" .. d, 5)
-        local pct = c and tonumber(c:match('"completion":%s*([%d%.e%-%+]+)'))
-        if a and a:find('"files"', 1, true) and not copy.lacks(a, song) and pct and pct > 0 then j.places[#j.places + 1] = device_name(d) end
-      end
-    end
+    j.words = "Looking for who else holds '" .. song .. "'"
+    local digest = copy.digest(j.files)
+    local holders = copy.holders(copy.read_holds(j.root), song, digest, j.user)
+    for _, h in ipairs(holders) do j.places[#j.places + 1] = h end
     j.step = "drive"
   elseif j.step == "drive" then
     j.droot = j.droot or require("drive").root({ root = j.root }) or false
@@ -178,8 +211,8 @@ function copy.tick()
   elseif j.step == "ask" then
     local local_dir = reaper.GetResourcePath() .. "/BandSync/" .. song
     if #j.places == 0 then
-      j.skipped[#j.skipped + 1] = song .. " (no other copy confirmed" ..
-        (j.unsure and ": Syncthing was still busy" or j.drive_bad and (": Drive lacks " .. j.drive_bad:match("[^/]+$")) or "") .. ")"
+      j.skipped[#j.skipped + 1] = song .. " (no other copy confirmed: nobody else has said they hold exactly this" ..
+        (j.drive_bad and (", and Drive lacks " .. j.drive_bad:match("[^/]+$")) or "") .. ". If someone does, open REAPER there, wait a minute or two, and try again)"
       j.i, j.step = j.i + 1, "scan"
       return
     end
@@ -191,6 +224,7 @@ function copy.tick()
     gone[song] = true
     ss.save_gone(gone)
     ss.drop({ root = j.root, user = j.user }, song)
+    pcall(copy.publish_holds, j.root, j.user) -- (nobody counts on this copy from now on)
     services.rescan(info.id)
     j.step, j.since = "ignored", reaper.time_precise()
     j.words = "Telling Syncthing to leave '" .. song .. "' alone"

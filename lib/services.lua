@@ -149,13 +149,21 @@ local function st_api(path, method)
     key, tls and "https" or "http", addr, path)
 end
 -- Syncthing's REST answer, now: for what someone just asked for, not for every frame. -> the text, or nil.
-function services.ask(path, secs)
-  local cmd = st_api(path)
-  if not cmd then return nil end
-  local r = reaper.ExecProcess((cmd:gsub("%-m 3 ", "-m " .. (secs or 3) .. " ", 1)), ((secs or 3) + 1) * 1000) or ""
+local function run_now(cmd, secs)
+  if not WIN then
+    local sh = TMP .. "/bandsync-ask.sh"
+    band.write_atomic(sh, cmd .. "\n")
+    cmd = "/bin/sh '" .. sh .. "'"
+  end
+  local r = reaper.ExecProcess(cmd, (secs + 1) * 1000) or ""
   if not r:match("^0\n") then return nil end
   local out = r:gsub("^0\n", "")
   return out ~= "" and out or nil
+end
+function services.ask(path, secs)
+  local cmd = st_api(path)
+  if not cmd then return nil end
+  return run_now((cmd:gsub("%-m 3 ", "-m " .. (secs or 3) .. " ", 1)), secs or 3)
 end
 -- Have Syncthing scan a folder now (it reads a changed .stignore then: lib/songsync.lua). In the background.
 function services.rescan(folder)

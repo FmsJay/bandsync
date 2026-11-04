@@ -98,6 +98,7 @@ function removal.tick(now)
   local told = ""
   for _, g in ipairs(band.bands()) do
     if id and me ~= "" then removal.publish(g.root, me, id) end
+    if me ~= "" and not require("groups").is_old(g.root) then pcall(require("localcopy").publish_holds, g.root, me) end
     for _, m in ipairs(all_marks(g.root)) do
       if m.user == me or (id and m.device == id) then
         if not m.left then told = string.format("%s took you out of %s: nothing syncs with the group any more, and your copy stays here. Ask to be invited again to come back.", tostring(m.by), g.name) end

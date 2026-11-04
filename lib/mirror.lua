@@ -2043,6 +2043,7 @@ function mirror.watch(proj, cfg, song, room, opts)
         local to = propose(o, rev, who, ok_before and name or (last and last.name or ""), pos, name)
         local how = to and ("it's claimed by " .. who .. ": put back, and suggested to them")
           or (who and who ~= me and who ~= sync.driver_name) and ("it's claimed by " .. who .. ": put back (ask them to release it)")
+          or sync.room_mode == "admins" and "admins only here: put back (an admin can give it to you)"
           or (who and who ~= me) and (who .. " drives: put back (claim it, or take control)")
           or "it isn't yours to change right now: put back (claim it, or take control)"
         put_back(o, rev, evid, { name = ok_before and name or (last.name or ""), to = to and who or nil, text = string.format("%s: %s",

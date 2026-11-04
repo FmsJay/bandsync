@@ -78,6 +78,19 @@ function drive.root(cfg)
   return l.found
 end
 
+-- Whoever starts a studio makes its folder (James, 2026-11-04): the others add it as a shortcut once it's shared with them, so this is never done for someone joining.
+-- -> its path, or nil when there's no My Drive here. shortcut: the first My Drive found, with several Google accounts signed in; it can be moved at drive.google.com.
+function drive.wanted() return reaper.GetExtState(band.SECTION, "drive make") ~= "off" and reaper.GetExtState(band.SECTION, "drive_root") ~= "off" end
+function drive.make(name)
+  for _, md in ipairs(places()) do
+    if reaper.EnumerateSubdirectories(md, 0) ~= nil or reaper.EnumerateFiles(md, 0) ~= nil then
+      reaper.RecursiveCreateDirectory(md .. "/" .. name, 0)
+      looked[name] = nil
+      return md .. "/" .. name
+    end
+  end
+end
+
 -- A take file's name -> take id, revision (1 for the first print), and whether it's the manifest. Pure.
 --   James-20261028-032515Z-2.flac / -dry.flac / -r6.opus / -dry-r6.flac / .json / .midibuf
 function drive.parse(name)

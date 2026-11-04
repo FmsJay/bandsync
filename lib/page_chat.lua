@@ -113,6 +113,8 @@ function chat.draw(ctx, ImGui, cfg, b)
     ImGui.SameLine(ctx, 0, gap or 8)
     if ImGui.GetContentRegionAvail(ctx) < w then ImGui.NewLine(ctx) end
   end
+  local short = select(2, ImGui.GetContentRegionAvail(ctx)) < 170
+  local function switches()
   for i, sc in ipairs(SCOPES) do
     if i > 1 then fits(ImGui.CalcTextSize(ctx, sc[2]) + 36) end
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
@@ -154,7 +156,6 @@ function chat.draw(ctx, ImGui, cfg, b)
     end
     ImGui.SetItemTooltip(ctx, running and "Stop showing the others' drawings on this computer. They stay for everyone else." or "Show what the others drew, over the arrange view (clicks still go to REAPER).")
   end
-  local t = load(cfg, b)
   do -- whose: messages, to-dos, links, notes and drawings, one person's or everyone's
     local names, seen, only = { cfg.user }, { [cfg.user] = true }, chat.only()
     for _, list in pairs(t) do
@@ -177,6 +178,13 @@ function chat.draw(ctx, ImGui, cfg, b)
     end
     ImGui.SetItemTooltip(ctx, "Show only one person's messages, to-dos, links, notes and drawings, on this computer.")
   end
+  end
+  local t = load(cfg, b)
+  if short then
+    if ImGui.SmallButton(ctx, "Show...") then ImGui.OpenPopup(ctx, "chat switches") end
+    ImGui.SetItemTooltip(ctx, "What you see and who you're writing to, and drawing on the tracks.")
+    if ImGui.BeginPopup(ctx, "chat switches") then switches(); ImGui.EndPopup(ctx) end
+  else switches() end
   local only = chat.only()
   local function shown(v) return only == "" or v.user == only end
   if ImGui.BeginTabBar(ctx, "chat") then
@@ -184,8 +192,19 @@ function chat.draw(ctx, ImGui, cfg, b)
       local newest = t.msgs[#t.msgs] and t.msgs[#t.msgs].file:match("[/\\]([^/\\]+)$"):sub(1, 15) or ""
       if reaper.GetExtState(band.SECTION, seen_key(b, scope)) < newest then reaper.SetExtState(band.SECTION, seen_key(b, scope), newest, true) end
       local _, h = ImGui.GetContentRegionAvail(ctx)
+      local function typing()
+        ImGui.SetNextItemWidth(ctx, -60)
+        local enter
+        enter, draft = chat.input(ctx, ImGui, "##draft", "message", draft)
+        if enter then ImGui.SetKeyboardFocusHere(ctx, -1) end -- (the next one straight away)
+        ImGui.SameLine(ctx)
+        if (ImGui.Button(ctx, "Send") or enter) and draft:match("%S") then add(cfg, b, "msgs", { text = draft }); draft = "" end
+      end
+      -- (with no room for the list and the box, the box comes first: to reach Send in a short docker meant scrolling down to it: Mac, 0.51.9)
+      local tight = h < 40 + ImGui.GetFrameHeightWithSpacing(ctx)
+      if tight then typing() end
       -- (what's under this is one row: at some scales a row is taller than the 34 this was, and in a short docker the box and Send went out of reach: James)
-      if ImGui.BeginChild(ctx, "msgs", 0, math.max(40, h - ImGui.GetFrameHeightWithSpacing(ctx)), ImGui.ChildFlags_Borders) then
+      if ImGui.BeginChild(ctx, "msgs", 0, tight and 60 or (h - ImGui.GetFrameHeightWithSpacing(ctx)), ImGui.ChildFlags_Borders) then
         if #t.msgs == 0 then ImGui.TextDisabled(ctx, "No messages yet.") end
         for _, m in ipairs(t.msgs) do
           if shown(m) then
@@ -204,12 +223,7 @@ function chat.draw(ctx, ImGui, cfg, b)
         if ImGui.GetScrollY(ctx) >= ImGui.GetScrollMaxY(ctx) - 20 then ImGui.SetScrollHereY(ctx, 1) end -- follow new ones
         ImGui.EndChild(ctx)
       end
-      ImGui.SetNextItemWidth(ctx, -60)
-      local enter
-      enter, draft = chat.input(ctx, ImGui, "##draft", "message", draft)
-      if enter then ImGui.SetKeyboardFocusHere(ctx, -1) end -- (the next one straight away)
-      ImGui.SameLine(ctx)
-      if (ImGui.Button(ctx, "Send") or enter) and draft:match("%S") then add(cfg, b, "msgs", { text = draft }); draft = "" end
+      if not tight then typing() end
       ImGui.EndTabItem(ctx)
     end
     if ImGui.BeginTabItem(ctx, "To-do") then

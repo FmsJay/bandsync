@@ -592,6 +592,9 @@ local function section_drive()
   local off = reaper.GetExtState(band.SECTION, "drive_root") == "off"
   local dch, don = check("Keep the studio's copy on Google Drive", drive_root ~= nil)
   if dch then reaper.SetExtState(band.SECTION, "drive_root", don and "" or "off", true); drive_at = -math.huge end
+  local mch, mon = check("Make a Drive folder for each studio I start", require("drive").wanted(),
+    "On, each studio you start gets its folder in your My Drive. You share it with the others at drive.google.com. Off: nothing's made, and you can make one here later.")
+  if mch then reaper.SetExtState(band.SECTION, "drive make", mon and "" or "off", true) end
   ImGui.SetItemTooltip(ctx, drive_root and ("Each room is copied to " .. drive_root .. " (every few minutes, while stopped): what someone " ..
     "does alone reaches the studio whenever they next open the project, and every end-of-session point is kept there.")
     or off and "Off on this machine." or "No Google Drive for desktop here (My Drive not found).")
@@ -607,6 +610,11 @@ local function section_drive()
       "(Shared with me), right-click > Organize > Add shortcut > My Drive, and keep the name " .. folder .. ". You started this studio? " ..
       "Make a folder called " .. folder .. " in My Drive and share it with everyone as Editor.")
     ImGui.PopTextWrapPos(ctx)
+    if require("groups").role(cfg.root, cfg.user) == "owner" and ImGui.SmallButton(ctx, "Make it now") then
+      local made = require("drive").make(folder)
+      band.log(made and ("made " .. folder .. " in your Google Drive: share it with the others at drive.google.com, as Editor") or "no My Drive found here")
+      drive_at = -math.huge
+    end
   end
 end
 -- Two computers' fingerprints differ for 10-15 s after any edit (each publishes its own every few seconds, and the
@@ -2652,6 +2660,12 @@ local function frame_app()
       nav_item(p, ImGui.CalcTextSize(ctx, p[1]) + 28, fh)
     end
     ImGui.PopStyleVar(ctx)
+    if wh < y0 + fh + 60 then
+      local words = "Too short to show a page: drag the line above the docker's tabs up."
+      ImGui.SameLine(ctx, 0, 16)
+      ImGui.SetCursorPosY(ctx, y0 + 3)
+      if ImGui.GetContentRegionAvail(ctx) > ImGui.CalcTextSize(ctx, words) + 240 then ImGui.TextColored(ctx, YELLOW, words) else ImGui.Dummy(ctx, 0, 0) end
+    end
   end
   local docked = ImGui.IsWindowDocked(ctx)
   -- the window's own buttons sit at the right end of the bar (when they fit there), apart from the session's
@@ -2689,12 +2703,7 @@ local function frame_app()
     end
   end
   tools.toast_seen = true -- (opening the panel doesn't replay the old newest line)
-  -- (the line keeps its height when it clears: what's under it mustn't jump as you go to click it)
-  if tools.toast_line and reaper.time_precise() - tools.toast_at < 6 then
-    ImGui.PushTextWrapPos(ctx, 0) -- (a long one ran off the edge of a narrow panel: Mac, 0.50.4)
-    ImGui.TextColored(ctx, theme.TOAST, tools.toast_line:sub(7))
-    ImGui.PopTextWrapPos(ctx)
-  else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
+  tools.toast_show(ctx, ImGui, tools.toast_line and reaper.time_precise() - tools.toast_at < 6 and tools.toast_line or nil)
   tools.removed_bar(ctx, ImGui)
   ui.sync_problem()
   require("leave").draw(ctx, ImGui)
@@ -2812,7 +2821,7 @@ function ui.frame_lobby()
   local log = band.activity()
   if log[1] ~= tools.toast_newest then tools.toast_line, tools.toast_at = tools.toast_seen and log[1] or nil, reaper.time_precise(); tools.toast_newest = log[1] end
   tools.toast_seen = true
-  if tools.toast_line and reaper.time_precise() - (tools.toast_at or 0) < 6 then ImGui.TextColored(ctx, theme.TOAST, tools.toast_line:sub(7)) else ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx)) end
+  tools.toast_show(ctx, ImGui, tools.toast_line and reaper.time_precise() - (tools.toast_at or 0) < 6 and tools.toast_line or nil)
   tools.removed_bar(ctx, ImGui)
   ui.sync_problem()
   tools.join_requests(ctx, ImGui)

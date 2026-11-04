@@ -35,6 +35,16 @@ function pg.start_button(env, label)
     local _, v = ImGui.InputTextWithHint(ctx, "##newgroup", "its name (a band, a song, whoever it's with)", new_name)
     new_name = v
     if why_not then ImGui.TextColored(ctx, theme.YELLOW, why_not) end
+    do
+      local drive = require("drive")
+      local ch, on = ImGui.Checkbox(ctx, "Keep a copy on Google Drive", drive.wanted())
+      if ch then
+        reaper.SetExtState(band.SECTION, "drive make", on and "" or "off", true)
+        if on and reaper.GetExtState(band.SECTION, "drive_root") == "off" then reaper.SetExtState(band.SECTION, "drive_root", "", true) end
+      end
+      ImGui.SetItemTooltip(ctx, "Makes the studio's folder in your My Drive. What someone does alone then reaches the others whenever they next open the project. " ..
+        "You share the folder with them at drive.google.com. Change it any time in Settings.")
+    end
     local go = ImGui.Button(ctx, "Start") or ImGui.IsKeyPressed(ctx, ImGui.Key_Enter) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadEnter)
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, "Cancel") or ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then ImGui.CloseCurrentPopup(ctx) end
@@ -42,6 +52,9 @@ function pg.start_button(env, label)
       local root, why = require("services").new_band(env.cfg(), new_name)
       if root then
         band.log("started " .. band.info(root).name .. " in " .. root)
+        local drive = require("drive")
+        local made = drive.wanted() and drive.make(band.info(root).drive)
+        if made then band.log("made " .. band.info(root).drive .. " in your Google Drive: share it with the others at drive.google.com, as Editor") end
         pg.root = root
         env.reload_cfg()
         ImGui.CloseCurrentPopup(ctx)
@@ -52,6 +65,7 @@ function pg.start_button(env, label)
   end
 end
 
+local just_cleared = false
 -- Someone with StudioSync joining with what they were sent. (What's on the clipboard is filled in when it's a code.)
 function pg.join_button(env)
   local ctx, ImGui = env.ctx, env.ImGui
@@ -69,11 +83,23 @@ function pg.join_button(env)
     ImGui.Text(ctx, "Paste the message they sent you, or just the line starting studiosync-join. Only use one from someone you know: it connects this computer to theirs.")
     ImGui.PopTextWrapPos(ctx)
     ImGui.Spacing(ctx)
-    if ImGui.IsWindowAppearing(ctx) then ImGui.SetKeyboardFocusHere(ctx) end
-    local _, v = ImGui.InputTextMultiline(ctx, "##joincode", join_text, -1, ImGui.GetTextLineHeight(ctx) * 4)
-    join_text = v
     local code = services.parse_join(join_text)
-    if code and join_text:find("\n", 1, true) then join_text = services.join_code(code.id, { id = code.band, name = code.name }) end
+    if code then
+      if ImGui.BeginChild(ctx, "##joinshown", -1, ImGui.GetTextLineHeight(ctx) * 4 + 8, ImGui.ChildFlags_FrameStyle) then
+        ImGui.PushTextWrapPos(ctx, 0)
+        ImGui.TextDisabled(ctx, services.join_code(code.id, { id = code.band, name = code.name }))
+        ImGui.PopTextWrapPos(ctx)
+        ImGui.EndChild(ctx)
+      end
+      if ImGui.SmallButton(ctx, "Clear") then join_text, code, just_cleared = "", nil, true end
+      ImGui.SetItemTooltip(ctx, "Paste a different one.")
+    else
+      if ImGui.IsWindowAppearing(ctx) or just_cleared then ImGui.SetKeyboardFocusHere(ctx) end
+      local _, v = ImGui.InputTextMultiline(ctx, "##joincode", join_text, -1, ImGui.GetTextLineHeight(ctx) * 4)
+      join_text = v
+      code = services.parse_join(join_text)
+    end
+    just_cleared = join_text == "" and code == nil and not ImGui.IsAnyItemActive(ctx) and just_cleared or false
     if why_not then ImGui.TextColored(ctx, theme.YELLOW, why_not)
     elseif code then ImGui.TextColored(ctx, theme.GREEN, "Join " .. (code.name ~= "" and code.name or code.band))
     elseif join_text ~= "" then ImGui.TextColored(ctx, theme.YELLOW, "That isn't a join code: ask them to press Invite and send it again.") end

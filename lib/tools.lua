@@ -80,6 +80,20 @@ end
 -- A machine asking to join the band folder (the host's Syncthing has it waiting; one on the band's Tailscale is let in
 -- by Live sync by itself). On every page of the panel, at the top: in the classic panel only, a new bandmate who
 -- wasn't on Tailscale never got in, and nobody saw why (review, 2026-10-31).
+-- What StudioSync just did, for a few seconds. Exactly one line is held for it: a toast that wrapped moved the page under the mouse and back (Mac, 0.51.9),
+-- so a longer one lies over the page, on its own background, and what's under it stays put and clickable.
+function tools.toast_show(ctx, ImGui, line)
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local w, lh = (ImGui.GetContentRegionAvail(ctx)), ImGui.GetTextLineHeight(ctx)
+  ImGui.Dummy(ctx, 0, lh)
+  if not line then return end
+  local theme, text = require("theme"), line:sub(7)
+  local dl = ImGui.GetForegroundDrawList(ctx)
+  local _, th = ImGui.CalcTextSize(ctx, text, nil, nil, false, w)
+  if th > lh + 1 then ImGui.DrawList_AddRectFilled(dl, x - 6, y - 3, x + w + 6, y + th + 5, theme.BG, 4) end
+  ImGui.DrawList_AddTextEx(dl, nil, ImGui.GetFontSize(ctx), x, y, theme.TOAST, text, w)
+end
+
 local let_at, let_device, asked_at, asking = {}, {}, -math.huge, {} -- (let_at, who was just let in: Syncthing's own list says they're asking for up to 20 s more, and the row stayed)
 local function let_in(d, me)
   local services = require("services")

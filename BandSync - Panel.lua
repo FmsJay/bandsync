@@ -131,38 +131,90 @@ local function card(id, w, h)
 end
 local function card_end() ImGui.PopTextWrapPos(ctx); ImGui.EndChild(ctx); open_cards = open_cards - 1 end
 
--- The logo (James's idea): a sink dripping through a portal into another sink, drawn, so it's sharp at any size.
--- `s` = its height; it's 0.8 s wide. Drawn at the cursor, taking that space.
+local ui = {} -- (what's new goes here: the panel's main chunk is at Lua's limit of 200 locals)
+-- Blue to orange, by way of violet: straight across, the middle goes grey. t = 0 to 1.
+function ui.blue_orange(t, alpha)
+  t = math.max(0, math.min(1, t)) * 2
+  local from, to = t < 1 and { 0x1E, 0x9B, 0xFF } or { 0xC2, 0x6B, 0xD6 }, t < 1 and { 0xC2, 0x6B, 0xD6 } or { 0xFF, 0x8A, 0x1E }
+  local f, c = t < 1 and t or t - 1, 0
+  for i = 1, 3 do c = c << 8 | math.floor(from[i] + (to[i] - from[i]) * f + 0.5) end
+  return c << 8 | (alpha or 255)
+end
+-- ReaImGui has no gradient fill, so `draw(colour)` is drawn once per pixel column, clipped to that column.
+function ui.gradient(dl, x0, y0, x1, y1, from, to, draw)
+  for x = math.floor(x0), math.ceil(x1) - 1 do
+    ImGui.DrawList_PushClipRect(dl, x, y0, x + 1, y1, true)
+    draw(ui.blue_orange((x + 0.5 - from) / (to - from)))
+    ImGui.DrawList_PopClipRect(dl)
+  end
+end
+-- The logo: two linked faders whose slots are portals, blue into orange. Drawn, so it's sharp at any size (docs/logo has it as SVG).
+-- `s` = its height; it's 0.93 s wide. Drawn at the cursor, taking that space.
+local FLAMES = { { -70, 26, 7, 2.2, .9 }, { -35, 30, 6, 2, .6 }, { -5, 34, 8, 2.6, .85 }, { 32, 30, 5.5, 1.9, .55 }, { 62, 30, 7, 2.3, .9 },
+  { 110, 26, 7, 2.2, .85 }, { 145, 30, 5.5, 2, .6 }, { 178, 34, 7.5, 2.5, .85 }, { 214, 30, 5.5, 1.9, .55 }, { 245, 28, 6.5, 2.1, .85 } } -- angle on the rim, how far round, how far out, width, opacity
 local function logo(s)
   local dl = ImGui.GetWindowDrawList(ctx)
   local x, y = ImGui.GetCursorScreenPos(ctx)
-  local w = s * 0.8
-  local cx = x + w / 2
-  local steel, water, ring1, ring2 = theme.STEEL, 0x7CC4FFFF, ACCENT, 0x9B7BF2FF
-  ImGui.DrawList_AddLine(dl, x + w * 0.2, y + s * 0.05, cx, y + s * 0.05, steel, s * 0.06) -- the tap
-  ImGui.DrawList_AddLine(dl, cx, y + s * 0.05, cx, y + s * 0.13, steel, s * 0.06)
-  ImGui.DrawList_AddQuadFilled(dl, x, y + s * 0.17, x + w, y + s * 0.17, x + w * 0.8, y + s * 0.35, x + w * 0.2, y + s * 0.35, steel) -- sink
-  ImGui.DrawList_AddEllipse(dl, cx, y + s * 0.43, w * 0.27, s * 0.05, ring1, 0, 0, s * 0.05) -- under its drain: a portal...
-  ImGui.DrawList_AddEllipse(dl, cx, y + s * 0.6, w * 0.27, s * 0.05, ring2, 0, 0, s * 0.05) -- ...that opens over the other
-  ImGui.DrawList_AddTriangleFilled(dl, cx, y + s * 0.64, cx - s * 0.045, y + s * 0.73, cx + s * 0.045, y + s * 0.73, water) -- the drop
-  ImGui.DrawList_AddCircleFilled(dl, cx, y + s * 0.74, s * 0.045, water)
-  ImGui.DrawList_AddQuadFilled(dl, x, y + s * 0.82, x + w, y + s * 0.82, x + w * 0.8, y + s, x + w * 0.2, y + s, steel) -- the other sink
-  ImGui.Dummy(ctx, w, s)
+  local k = s / 60
+  local function X(u) return x + (u - 4) * k end
+  local function Y(v) return y + (v - 2) * k end
+  local function tint(u, a) return ui.blue_orange((u - 12) / 40, a) end
+  local function rim(cx, deg, rx, ry) local t = math.rad(deg); return cx + rx * math.cos(t), 32 + ry * math.sin(t) end
+  for _, cx in ipairs({ 18, 46 }) do
+    local own = cx == 18 and 0 or 1
+    for _, f in ipairs(FLAMES) do -- all turning the same way round, so the portal spins
+      local x0, y0 = rim(cx, f[1], 5.2, 26.5)
+      local x1, y1 = rim(cx, f[1] + f[2], 5.2 + f[3], 26.5 + f[3] * 0.45)
+      local n = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
+      local px, py, mx, my = -(y1 - y0) / n, (x1 - x0) / n, (x0 + x1) / 2, (y0 + y1) / 2
+      local col, ax, ay, bx, by = tint((x0 + x1) / 2, math.floor(f[5] * 255))
+      for i = 0, 6 do
+        local t, u = i / 6, 1 - i / 6
+        local cxa, cya = mx + px * (-2.2 + f[4] / 2), my + py * (-2.2 + f[4] / 2)
+        local cxb, cyb = mx + px * (-2.2 - f[4] / 2), my + py * (-2.2 - f[4] / 2)
+        local nax, nay = u * u * x0 + 2 * u * t * cxa + t * t * x1, u * u * y0 + 2 * u * t * cya + t * t * y1
+        local nbx, nby = u * u * x0 + 2 * u * t * cxb + t * t * x1, u * u * y0 + 2 * u * t * cyb + t * t * y1
+        if ax then ImGui.DrawList_AddQuadFilled(dl, X(ax), Y(ay), X(nax), Y(nay), X(nbx), Y(nby), X(bx), Y(by), col) end
+        ax, ay, bx, by = nax, nay, nbx, nby
+      end
+    end
+    for i = 0, 2 do ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), (9.5 - i * 1.6) * k, (30 - i) * k, ui.blue_orange(own, 0x24)) end -- its glow
+    ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 4.6 * k, 26.5 * k, ui.blue_orange(own, 0x90))
+    ImGui.DrawList_AddEllipse(dl, X(cx), Y(32), 4.6 * k, 26.5 * k, ui.blue_orange(own), 0, 0, math.max(1, 1.7 * k))
+    ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 2.2 * k, 24 * k, 0xFFFFFF50) -- the fader's own line, where the portal comes from
+    ImGui.DrawList_AddEllipseFilled(dl, X(cx), Y(32), 0.9 * k, 23 * k, 0xFFFFFFFF)
+  end
+  local px, py
+  for i = 0, 16 do -- the link: 18,20 to 46,44, as one S
+    local t, u = i / 16, 1 - i / 16
+    local bx = u * u * u * 18 + 3 * u * u * t * 32 + 3 * u * t * t * 32 + t * t * t * 46
+    local by = u * u * u * 20 + 3 * u * u * t * 20 + 3 * u * t * t * 44 + t * t * t * 44
+    if px then
+      ImGui.DrawList_AddLine(dl, X(px), Y(py), X(bx), Y(by), tint(bx, 0x50), 5.5 * k)
+      ImGui.DrawList_AddLine(dl, X(px), Y(py), X(bx), Y(by), tint(bx), 3.4 * k)
+    end
+    px, py = bx, by
+  end
+  for _, c in ipairs({ { 8, 14 }, { 36, 38 } }) do -- the fader caps
+    ui.gradient(dl, X(c[1]), Y(c[2]), X(c[1] + 20), Y(c[2] + 12), X(12), X(52), function(col)
+      ImGui.DrawList_AddRectFilled(dl, X(c[1]), Y(c[2]), X(c[1] + 20), Y(c[2] + 12), col, 3.5 * k)
+    end)
+    ImGui.DrawList_AddRectFilled(dl, X(c[1] + 2), Y(c[2] + 5), X(c[1] + 18), Y(c[2] + 7), 0xFFFFFFFF, k)
+  end
+  ImGui.Dummy(ctx, s * 0.93, s)
 end
--- The wordmark: StudioSync, its "y" in the accent colour.
+-- The wordmark: Studio, then Sync in blue to orange.
 local function wordmark(size)
   ImGui.PushFont(ctx, nil, size)
-  local y = ImGui.GetCursorPosY(ctx) -- (each piece on the same baseline: SameLine goes back to the line's top)
-  ImGui.Text(ctx, "StudioS")
+  ImGui.Text(ctx, "Studio")
   ImGui.SameLine(ctx, 0, 0)
-  ImGui.SetCursorPosY(ctx, y)
-  ImGui.TextColored(ctx, ACCENT, "y")
-  ImGui.SameLine(ctx, 0, 0)
-  ImGui.SetCursorPosY(ctx, y)
-  ImGui.Text(ctx, "nc")
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local w, h = ImGui.CalcTextSize(ctx, "Sync")
+  local dl = ImGui.GetWindowDrawList(ctx)
+  ui.gradient(dl, x, y, x + w, y + h, x, x + w, function(col) ImGui.DrawList_AddText(dl, x, y, col, "Sync") end)
+  ImGui.Dummy(ctx, w, h)
   ImGui.PopFont(ctx)
 end
-local ui = {} -- (what's new goes here: the panel's main chunk is at Lua's limit of 200 locals)
 -- The panel as a small square over REAPER (pill_window), kept across restarts.
 function ui.set_minimized(on)
   if on then reaper.SetExtState(band.SECTION, "panel minimized", "1", true)
@@ -2681,7 +2733,7 @@ local function pill_window()
     end
     local dl = ImGui.GetWindowDrawList(ctx)
     if hovered then ImGui.DrawList_AddRectFilled(dl, x, y, x + S, y + S, theme.BUTTON, 10) end
-    ImGui.SetCursorScreenPos(ctx, x + (S - 24) / 2, y + 5)
+    ImGui.SetCursorScreenPos(ctx, x + (S - 30 * 0.93) / 2, y + (S - 30) / 2)
     logo(30)
     ImGui.DrawList_AddRect(dl, x + 1, y + 1, x + S - 1, y + S - 1, live_on and GREEN or RED, 10, 0, 2)
     if waiting > 0 then -- what's waiting, in the corner

@@ -2,7 +2,7 @@
 -- behind, from their own copy of the song. Their transport follows (never records), and the take itself replaces the stream when it lands.
 -- Two ways to carry the sound, both by song position:
 --   stamp: SonoBus with position bursts (lib/stamp.lua). No server. The default.
---   ninjam: ReaNINJAM's session mode on a mic-only feed. Needs a NINJAM server both can reach.
+--   ninjam: ReaNINJAM's session mode on a mic-only feed. Needs a NINJAM server both can reach, over Tailscale.
 -- Producing someone is this computer's own business; their computer sees it in your status file and sends what's needed (producer.answer).
 local band = require("band")
 local producer = {}
@@ -59,7 +59,11 @@ end
 local function ninjam_on(proj, cfg, b, send)
   local live, setup = require("live"), require("setup")
   local server = (band.read_json(setup.live_file(cfg, b)) or {}).server or ""
-  if server == "" then return nil, "There's no NINJAM server set for this song: put one in on the Play tab, or use the SonoBus route." end
+  if server == "" then return nil, "There's no NINJAM server set for this song: turn on the Play tab (Settings > Advanced) and set it there, or use the SonoBus route." end
+  if b.role == "host" then
+    local up, why = require("services").ensure_ninjam() -- (as the Play tab's Connect does)
+    if not up then return nil, "NINJAM server: " .. why end
+  end
   local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
   reaper.RecursiveCreateDirectory(sdir, 0)
   reaper.SetProjExtState(proj, band.SECTION, "live_dir", sdir)

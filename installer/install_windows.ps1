@@ -1,10 +1,10 @@
 # StudioSync setup for Windows: installs and sets up everything StudioSync needs, skipping whatever is already there.
 # Run it with "Install StudioSync (Windows).cmd" (double-click). Windows PowerShell 5.1 compatible.
 #   REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), and optionally
-#   SonoBus (hearing each other) and Google Drive for desktop (the group's copy): -Live no / -Solo no leave them out.
+#   SonoBus + Tailscale (hearing each other) and Google Drive for desktop (the group's copy): -Live no / -Solo no leave them out.
 # A bandmate's panel (Invite a collaborator) hands out a one-line command that runs this with -HostId already in it.
 # Each app comes from its official source (winget, or the extension's own release); each installer may show a
-# Windows permission prompt. A Google Drive sign-in stays the musician's own click.
+# Windows permission prompt. Sign-ins (Tailscale, Google Drive) stay the musician's own clicks.
 # Every question can be answered up front (for an AI installer or a test run); anything not given is asked.
 param(
   [string]$Tag = "main",          # which StudioSync version's helper files to use (the .cmd passes its own)
@@ -102,8 +102,8 @@ if (-not $folderId) {
   }
 }
 $driveName = if ($folderId -eq "bandsync") { "BandSync" } else { "StudioSync - $bandName" }
-# SonoBus (hearing each other) and Google Drive (the group's copy) are part of StudioSync, not asked. Tailscale isn't any more (James, 2026-11-03):
-# only the Play tab's NINJAM wants it, or someone whose router stops SonoBus (Settings > Advanced says how).
+# SonoBus + Tailscale (hearing each other) and Google Drive (the group's copy) are part of StudioSync, not asked. Tailscale left in 0.50 and came back
+# (James, 2026-11-04: "should not be optional"): the NINJAM route needs it, and it gets round a router that stops SonoBus.
 # (James, 2026-10-31: "it feels like a core feature"); -Live no / -Solo no still leave them out.
 $wantLive = $Live -ne "no"
 $wantSolo = $Solo -ne "no"
@@ -135,7 +135,7 @@ function Find-Reaper {
 }
 if (-not (Find-Reaper)) { Install-App "Cockos.REAPER" "REAPER" } else { Ok "REAPER is already installed" }
 Install-App "Syncthing.Syncthing" "Syncthing"
-if ($wantLive) { Install-App "Sonosaurus.SonoBus" "SonoBus" }
+if ($wantLive) { Install-App "Sonosaurus.SonoBus" "SonoBus"; Install-App "Tailscale.Tailscale" "Tailscale" }
 if ($wantSolo) { Install-App "Google.GoogleDrive" "Google Drive for desktop" }
 
 $reaper = Find-Reaper
@@ -416,6 +416,66 @@ if ($isHost) {
   $left += "(Your Syncthing device ID, if they ask for it:  $myId)"
 } elseif ($peers -notcontains $hostId) {
   $left += "Tell the collaborator whose ID you used: their StudioSync panel shows 'Let $user in' (or they add your Syncthing ID by hand: $myId). The shared folder then arrives by itself."
+}
+if ($wantLive) {
+  $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
+  # sign in as a tagged group machine: a tagged machine's key never expires, so nobody has to sign in again before a
+  # session (untagged ones sign out every 180 days). Needs the host's one-time tagOwners line (below).
+  $tsSt = $null
+  $tagged = $false
+  if (Test-Path $ts) {
+    try { $ErrorActionPreference = "Continue"; $tsSt = & $ts status --json 2>$null | ConvertFrom-Json } catch { } finally { $ErrorActionPreference = "Stop" }
+    # tagged, or its key expiry was turned off by hand (then it has no KeyExpiry)
+    $tagged = $tsSt -and (@($tsSt.Self.Tags) -contains "tag:bandsync" -or ($tsSt.BackendState -eq "Running" -and -not $tsSt.Self.KeyExpiry))
+    if ($tagged) { Ok "Tailscale signed in, and stays signed in" }
+    elseif ($tsSt -and $tsSt.BackendState -eq "Running") {
+      # already signed in: left exactly as it is. Re-signing in with the tag logged a Mac OUT when the tag wasn't
+      # allowed yet, and the refused tag stuck in its settings so signing in again kept failing (2026-10-28)
+      Ok "Tailscale is signed in (it signs out by itself every few months: see below to keep it signed in)"
+    } else {
+      function Ts-Up($argv) { # runs tailscale up, opens its sign-in page; returns the exit code
+        $out = Join-Path $env:TEMP "bandsync_ts_up.txt"
+        Set-Content $out ""
+        $p = Start-Process -FilePath $ts -ArgumentList (@("up") + $argv) -RedirectStandardError $out -NoNewWindow -PassThru
+        $null = $p.Handle # (so ExitCode is readable afterwards)
+        $url = $null
+        for ($i = 0; $i -lt 30 -and -not $url -and -not $p.HasExited; $i++) {
+          Start-Sleep 1
+          $m = Select-String -Path $out -Pattern 'https://login\.tailscale\.com/\S+' | Select-Object -First 1
+          if ($m) { $url = $m.Matches[0].Value }
+        }
+        if ($url) { Start-Process $url }
+        $p.WaitForExit()
+        return $p.ExitCode
+      }
+      Say "Signing in to Tailscale: a browser page opens; sign in with the group's account there."
+      if ((Ts-Up @("--advertise-tags=tag:bandsync", "--timeout=300s")) -eq 0) { Ok "Tailscale signed in as a group machine (it stays signed in)"; $tagged = $true }
+      # the refused tag stays in Tailscale's settings and every later sign-in fails on it: clear it, then sign in plainly
+      elseif ((Ts-Up @("--reset", "--advertise-tags=", "--timeout=120s")) -eq 0) { Ok "Tailscale signed in (without the group tag: it signs out by itself every few months; see below)" }
+      else { Warn "Tailscale sign-in didn't finish: open Tailscale from the Start menu (or its taskbar icon) and sign in." }
+    }
+  }
+  if (Test-Path $ts) {
+    $tsNow = { try { $ErrorActionPreference = "Continue"; & $ts status --json 2>$null | ConvertFrom-Json } catch { $null } finally { $ErrorActionPreference = "Stop" } }
+    if (-not $tagged -and -not ((& $tsNow).BackendState -eq "Running")) {
+      Say "Sign in to Tailscale now (its taskbar icon > Log in). Waiting for it; press any key to skip and do it later."
+      if (Wait-Until { (& $tsNow).BackendState -eq "Running" }) { Ok "Tailscale signed in" }
+    }
+    if (-not $tagged -and (& $tsNow).BackendState -eq "Running" -and (& $tsNow).Self.KeyExpiry) {
+      Say "One click keeps this PC signed in to Tailscale for good. In the page that opens: this PC's ... menu >"
+      Say "Disable key expiry. Waiting for it; press any key to skip (it then signs out by itself every few months)."
+      Start-Process "https://login.tailscale.com/admin/machines"
+      if (Wait-Until { -not (& $tsNow).Self.KeyExpiry }) { Ok "Tailscale stays signed in"; $tagged = $true }
+    }
+  }
+  if (-not $tagged) {
+    $left += "Tailscale (skipped above): sign in from its taskbar icon, then at login.tailscale.com/admin/machines > this PC > ... > Disable key expiry (otherwise it signs out every few months, maybe right before a session)."
+  }
+  if ($isHost) { # the host's job, once: then bandmates' installers sign their machines in for good
+    $left += "Tailscale, once for the whole group (if not done yet): at login.tailscale.com/admin/acls add this line inside the policy's { }:"
+    $left += "    `"tagOwners`": { `"tag:bandsync`": [`"autogroup:member`"] },"
+    $left += "  Then each collaborator's installer signs their machine in as a group machine that never has to sign in again."
+  }
 }
 # Google Drive: signed in, and the band's StudioSync folder in My Drive (the first one makes it; everyone else adds the
 # shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). A key skips.

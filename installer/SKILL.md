@@ -7,7 +7,7 @@ description: Set up StudioSync (remote band recording in REAPER) on this compute
 
 **There is now a scripted installer that does steps 1-3 and most of 4-5:** `install_windows.ps1` (via
 `Install StudioSync (Windows).cmd`) and `install_mac.sh` (via `Install StudioSync (Mac).command`). Prefer running it,
-answering its questions as parameters (`-User -Hosting yes|no -HostId -Root`, and `-Live no` / `-Solo no` only to leave out SonoBus / Google Drive, which otherwise always go in; on macOS the
+answering its questions as parameters (`-User -Hosting yes|no -HostId -Root`, and `-Live no` / `-Solo no` only to leave out SonoBus + Tailscale / Google Drive, which otherwise always go in; on macOS the
 `BS_*` environment variables in its header), and use the steps below to explain prompts, repair, or finish what it
 lists as left for a human. Both have been run for real (Windows, and a Mac on 2026-10-31). They wait while the person signs in to Google Drive; any key (Return on a Mac) skips a wait.
 
@@ -46,7 +46,7 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 ## 0. Interview (one message)
 
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
-runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 studios of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their StudioSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play/Jam tab (off by default) or a router that stops SonoBus needs it.
+runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 studios of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their StudioSync panel's invitation, or in Syncthing: Actions > Show ID); whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus, Tailscale or Google Drive: they're core, and installed without asking (James). Each waits for its own sign-in.
 
 ## 1. Syncthing (the shared folder)
 
@@ -118,15 +118,15 @@ Solo edit (versions) and History & restore tabs only exist there. ReaPack's API 
 walk them through *Extensions > ReaPack > Browse packages*, search **ReaImGui**, right-click > Install, Apply, then
 restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui": true`.
 
-## 4. SonoBus, and Tailscale only if asked for
+## 4. SonoBus and Tailscale
 
 **Real time** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
 from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to
 join the band's studio under the musician's StudioSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.
 
-**Play along** and **Jam** (the Play/Jam tab: off by default, Settings > Advanced) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. Only set this up if the person asks for those.
-Bandmates don't join the host's tailnet; the host **shares one machine** with them.
+**Play along** and **Jam** (the Play/Jam tab: off by default, Settings > Advanced) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. So does the producer's NINJAM route. Tailscale goes in for everyone; the server is only the host's, if they ask for those.
+Everyone signs in to the group's one account (James's choice). Otherwise the host **shares one machine** with each bandmate, as below.
 
 | OS | Install | CLI |
 |---|---|---|
@@ -137,7 +137,7 @@ Bandmates don't join the host's tailnet; the host **shares one machine** with th
   account or sign in for them. macOS asks to **add VPN configurations** (and, for the standalone package, to allow a
   system extension): both must be allowed.
 - **Host:** in the admin console (login.tailscale.com/admin/machines), the server machine's **...** menu > **Share**,
-  then invite each bandmate by email or send them the link. The host's Tailscale IP (100.x.y.z) is on that page.
+  then invite each bandmate by email or send them the link. The host's Tailscale name is on that page.
 - **Bandmate:** open the share link while signed in and accept. Check: `tailscale status` lists the host's machine,
   and `tailscale ping <host IP>` answers. A share is one-way (they reach the host, not the reverse), which is all
   Live needs: everyone connects to the host's server.

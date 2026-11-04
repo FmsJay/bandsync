@@ -155,7 +155,7 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
     producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
   end
-  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route if you have one both of you can reach; connect it on the Play tab first.")
+  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route, reached over Tailscale; set it on the Play tab first (Settings > Advanced shows it).")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
   ImGui.SetItemTooltip(ctx, "Back to your own transport.")

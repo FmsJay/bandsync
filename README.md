@@ -171,9 +171,9 @@ By hand:
 4. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
    Restore pages, needs it.
 5. Optional extras:
-   - **Tailscale** isn't part of setup. Only *Play along* and *Jam* want it (they reach the NINJAM server on the host's
-     machine; show the Play/Jam tab in Settings > Advanced), or someone whose router stops SonoBus (Settings > Advanced >
-     Can't hear each other?). Simplest: everyone signs in to one Tailscale account.
+   - **Tailscale** comes with the installers, and everyone signs in to one account. *Play along*, *Jam* and the producer's
+     NINJAM route reach the NINJAM server on the host's machine through it (show the Play/Jam tab in Settings > Advanced),
+     and it gets round a router that stops SonoBus (Settings > Advanced > Can't hear each other?).
    - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**, each person signed in
      with their **own** Google account (two computers on one account lose files: "Lost and Found"). The host makes a
      `StudioSync` folder in My Drive and shares it with everyone as Editor; each collaborator adds it to their own Drive
@@ -435,7 +435,7 @@ The **Play/Jam** page (Settings > Advanced shows it) has starting together and t
   SonoBus's public server only introduces peers, and the audio goes directly between you, unencrypted.
 - **Jam**: classic NINJAM, everyone one interval late.
 
-The host enters `<Tailscale IP>:2049` and clicks *Save for the studio*; everyone else clicks **Connect**, which adds
+The host enters `<Tailscale name>:2049` (a name stays; a 100.x address can change) and clicks *Save for the studio*; everyone else clicks **Connect**, which adds
 ReaNINJAM to their master track with everything filled in (one more Connect click in its window).
 The host also sets the server folder (the one with `ninjamsrv` and `bandsync.cfg`) once; the host's Connect starts
 the server if it isn't running.

@@ -463,11 +463,23 @@ function services.join_asks(me)
   return ask
 end
 
--- This machine's Tailscale address (100.x.y.z), or nil when Tailscale isn't installed or signed in.
-function services.tailscale_ip()
-  local exe = first_existing({ "C:/Program Files/Tailscale/tailscale.exe", "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+local function tailscale_exe()
+  return first_existing({ "C:/Program Files/Tailscale/tailscale.exe", "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
     "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale", "/usr/bin/tailscale" })
+end
+function services.tailscale_installed() return tailscale_exe() ~= nil end
+-- From `tailscale status --json --peers=false`: this machine's name, if the tailnet's names work ("pc.tail1234.ts.net", no last dot).
+function services.tailscale_name_in(json)
+  if not json:find('"MagicDNSEnabled":%s*true') then return nil end
+  return json:match('"Self":%s*{.-"DNSName":%s*"([^"]-)%.?"')
+end
+-- How others reach this machine over Tailscale: its name (a 100.x address changes: the PC's did), or that address if the
+-- tailnet has names turned off; nil when Tailscale isn't installed or signed in.
+function services.tailscale_address()
+  local exe = tailscale_exe()
   if not exe then return nil end
+  local name = services.tailscale_name_in(reaper.ExecProcess(q(exe) .. " status --json --peers=false", 5000) or "")
+  if name and name ~= "" then return name end
   local out = reaper.ExecProcess(q(exe) .. " ip -4", 5000) or "" -- "0\n100.97.210.49\n"
   return out:match("^0\n%s*(100%.%d+%.%d+%.%d+)")
 end

@@ -29,5 +29,5 @@ Bandmates reach the server through a Tailscale **share** of this machine (admin 
 *Share*), so they don't need to join the host's tailnet. Shared-in users arrive from 100.x addresses, which the
 ACL above already accepts.
 
-Then, in **StudioSync - Panel > Live**, the host enters `<this machine's Tailscale IP>:2049` and clicks
+Then, in **StudioSync - Panel > Live**, the host enters `<this machine's Tailscale name>:2049` and clicks
 **Save for the band**; everyone else's panel picks the address up from the shared folder.

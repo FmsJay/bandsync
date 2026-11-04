@@ -323,7 +323,7 @@ local TIPS = {
   ["Real time (SonoBus, lowest delay)"] = "Hear each other right away, peer to peer (best on wired internet, not too far apart).",
   ["Jam (NINJAM intervals)"] = "Classic NINJAM: everyone hears everyone one interval late.",
   ["Leave"] = "Leave: SonoBus stops (it stays on its track, sending nothing) or ReaNINJAM disconnects.",
-  ["##server"] = "The host's Tailscale address and NINJAM port, e.g. 100.64.0.1:2049.",
+  ["##server"] = "The host's Tailscale name and NINJAM port, e.g. my-pc.tail1234.ts.net:2049.",
   ["Save for the studio"] = "Everyone's Connect uses this address.",
   ["##ninjamdir"] = "The folder holding ninjamsrv and bandsync.cfg (host only).",
   ["Use server folder"] = "Remember this NINJAM server folder (host only).",
@@ -1287,7 +1287,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
     return
   end
   ImGui.SeparatorText(ctx, "Server")
-  ImGui.TextDisabled(ctx, "Play along and Jam go through a NINJAM server on one computer, which the others have to be able to reach. As it comes, the server only lets in addresses from Tailscale, which is the easy way: both of you install it and sign in to one account.")
+  ImGui.TextDisabled(ctx, "Play along and Jam go through a NINJAM server on one computer, which the others have to be able to reach. The server only lets in addresses from Tailscale, which StudioSync's installer sets up: everyone signs in to the one account.")
   ImGui.SetNextItemWidth(ctx, 220)
   local changed, v = ImGui.InputTextWithHint(ctx, "##server", "its address:2049", live_server, ImGui.InputTextFlags_None)
   if changed then live_server = v end
@@ -1870,6 +1870,7 @@ local function maint_rows()
       return { "keys", #undo.keys_left(dir) == 0, "yellow", undo.key_name() .. " never rolls back a collaborator's work",
         undo.key_name() .. " can roll back a collaborator's work: it isn't set to StudioSync's Undo yet." }
     end)(),
+    { "tailscale", services.tailscale_installed(), "yellow", "Tailscale is installed", "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
   }
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", b.role == "host" and "Play along server address not set (needs Tailscale signed in)."
@@ -2264,7 +2265,7 @@ function ui.settings_advanced()
     ImGui.BulletText(ctx, "Configure SonoBus (Home) shows each person and how their connection is doing. Disconnect and connect again.")
     ImGui.BulletText(ctx, "Wired internet, rather than Wi-Fi.")
     ImGui.BulletText(ctx, "Forward a UDP port on your router to this computer. SonoBus's options can fix the port it uses.")
-    ImGui.BulletText(ctx, "A strict router or a work network can stop computers reaching each other directly. A VPN between you gets around that: Tailscale is free, and both of you install it and sign in to one account.")
+    ImGui.BulletText(ctx, "A strict router or a work network can stop computers reaching each other directly. A VPN between you gets around that: Tailscale comes with StudioSync, so check everyone's signed in to the one account.")
     if ImGui.SmallButton(ctx, "Get Tailscale") then
       if reaper.CF_ShellExecute then reaper.CF_ShellExecute("https://tailscale.com/download") else band.msg("tailscale.com/download") end
     end

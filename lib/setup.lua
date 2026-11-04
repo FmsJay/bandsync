@@ -117,13 +117,13 @@ function setup.all(cfg, b, proj, st, start_sync, play_along)
   if play_along and b.role == "host" then
     local lfile = setup.live_file(cfg, b)
     local data = band.read_json(lfile) or {}
-    if (data.server or "") == "" then
-      local ip = services.tailscale_ip()
-      if ip then
-        data.server, data.by = ip .. ":2049", cfg.user
+    if (data.server or "") == "" or (data.server):match("^100%.") then -- (a saved 100.x may have moved on: 0.57.1)
+      local addr = services.tailscale_address()
+      if addr then
+        data.server, data.by = addr .. ":2049", cfg.user
         band.write_json(lfile, data)
         notes[#notes + 1] = "Live server address set to " .. data.server
-      else notes[#notes + 1] = "Tailscale isn't installed or signed in here, so the Live server address is still empty" end
+      elseif (data.server or "") == "" then notes[#notes + 1] = "Tailscale isn't installed or signed in here, so the Live server address is still empty" end
     end
     if not st.ninjam then
       local ok, why = services.ensure_ninjam()

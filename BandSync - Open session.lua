@@ -8,7 +8,8 @@ local band = require("band")
 local cfg = band.settings()
 if not cfg then return end
 local b = band.binding(0)
-if reaper.GetExtState(band.SECTION, "open_other") ~= "" then -- the panel's "Open another song": the chooser, then a new tab
+if reaper.GetExtState(band.SECTION, "open project") ~= "" then b = nil -- (the panel's Projects page: that one, in a tab of its own)
+elseif reaper.GetExtState(band.SECTION, "open_other") ~= "" then -- the panel's "Open another song": the chooser, then a new tab
   reaper.DeleteExtState(band.SECTION, "open_other", false)
   b = nil
 end
@@ -112,11 +113,20 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
     song, s.host, running and "" or ", Live sync started"))
 end
 
+do
+  local want = reaper.GetExtState(band.SECTION, "open project")
+  if want ~= "" then
+    reaper.DeleteExtState(band.SECTION, "open project", false)
+    local song, room = want:match("^(.-)|(.*)$")
+    b = nil
+    return open_song(song or want, room)
+  end
+end
 if b then return open_song(b.song) end
 if #band.songs(cfg) == 0 then -- (the first thing a new bandmate sees: say what has to happen, not just that nothing's here)
   return band.msg("Nothing from the group has arrived in your shared folder yet (" .. cfg.root .. ").\n\n" ..
     "Ask the host to open REAPER: their StudioSync panel shows a \"Let you in\" button for your computer. The group's " ..
-    "projects appear here once the folder syncs (Setup > Health shows whether it's connected).")
+    "projects appear here once the folder syncs (Settings > Health shows whether it's connected).")
 end
 -- straight into the main room: side rooms are made and visited from the panel's Rooms page
 require("chooser").open(cfg, { title = "Open a group project", action = "Open" },

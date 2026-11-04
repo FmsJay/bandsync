@@ -97,6 +97,19 @@ function tools.join_requests(ctx, ImGui, b)
         else ok, why = services.add_device(d.id, d.name, binfo.id) end
         if ok then
           require("removal").let_in(b.root or reaper.GetExtState(band.SECTION, "sync_root"), d.id) -- (taken out before, and back)
+          do -- a kept version of what's open, from before they arrived
+            local root = b.root or reaper.GetExtState(band.SECTION, "sync_root")
+            local recall = require("recall")
+            local base = { root = reaper.GetExtState(band.SECTION, "sync_root"), user = reaper.GetExtState(band.SECTION, "user") }
+            for i = 0, math.huge do
+              local p = reaper.EnumProjects(i)
+              if not p then break end
+              local tb = band.binding(p)
+              if tb and band.for_tab(base, tb).root == root then
+                pcall(recall.save, p, { root = root, user = base.user }, tb.song, tb.room, "before " .. tostring(d.name) .. " joined", true)
+              end
+            end
+          end
           let_at[d.id .. (d.folder or "")] = reaper.time_precise()
         end
         band.log(ok and ("let '" .. tostring(d.name) .. "' into " .. (d.band or binfo.name) .. ": the projects reach them now")
@@ -169,7 +182,7 @@ function tools.put_back_bar(ctx, ImGui, song)
   if pb.song and song and pb.song ~= song then return end -- (another song's, in another tab: laptop, 0.42.4)
   if pb.at and os.time() - pb.at > 600 then return end -- (old news: it's still in Setup > Console. Mac, 0.42.4)
   if ImGui.SmallButton(ctx, "OK##putback") then reaper.DeleteExtState(band.SECTION, "put back", false) end -- (first: a panel docked short showed the text, and no way to dismiss it)
-  ImGui.SetItemTooltip(ctx, "Hide this. Every undone edit is also in Setup > Log.")
+  ImGui.SetItemTooltip(ctx, "Hide this. Every undone edit is also in Settings > Console.")
   ImGui.SameLine(ctx)
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
   ImGui.TextWrapped(ctx, "Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or ""))

@@ -77,7 +77,7 @@ function page.realtime(ctx, ImGui, proj)
   local chg, gv = ImGui.Checkbox(ctx, "Guest", g)
   if chg then guest.set(proj, gv) end
   ImGui.SetItemTooltip(ctx, "For someone joining with only SonoBus (a singer at home): they hear your whole mix, and what they sing\n" ..
-    "is recorded on the Real time track whenever you record. Send them the group's SonoBus link (Configure SonoBus).")
+    "is recorded on the Real time track whenever you record. Send them your group's SonoBus link (Configure SonoBus).")
   if g then
     local d = guest.delay(proj)
     local label = d and string.format("Measure again (%d ms)", d) or "Measure their delay"

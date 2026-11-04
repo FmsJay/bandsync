@@ -105,6 +105,28 @@ local function recording(root)
   return false
 end
 
+-- Groups this computer has left, or that were closed: nothing syncs, the copy stays until you delete it (the Groups page).
+function groups.old()
+  local t = band.json_decode(reaper.GetExtState(band.SECTION, "old groups"))
+  return type(t) == "table" and t or {}
+end
+function groups.remember_old(root, name, id)
+  local t = groups.old()
+  for _, o in ipairs(t) do if o.root == root then return end end
+  t[#t + 1] = { root = root, name = name, id = id, at = os.time() }
+  reaper.SetExtState(band.SECTION, "old groups", band.json_encode(t), true)
+end
+-- A folder taken off the list: the copy was deleted, or it stays and nobody needs telling.
+function groups.forget_old(root)
+  local t = {}
+  for _, o in ipairs(groups.old()) do if o.root ~= root then t[#t + 1] = o end end
+  reaper.SetExtState(band.SECTION, "old groups", band.json_encode(t), true)
+end
+function groups.is_old(root)
+  for _, o in ipairs(groups.old()) do if o.root == root then return true end end
+  return false
+end
+
 -- This computer out of a group. `over`: it's closed, or nobody's left in it, so it may be the last group here, which then stays the current one.
 function groups.leave(root, me, over)
   if not over and groups.role(root, me) == "owner" then return nil, "You own this. Make someone else the owner first (their card in Who's here), or close it." end
@@ -119,6 +141,7 @@ function groups.leave(root, me, over)
   end
   local id = require("services").my_device_id()
   if id then require("removal").left(root, me, id) end
+  groups.remember_old(root, info.name, info.id)
   local leaving = band.json_decode(reaper.GetExtState(band.SECTION, "leaving"))
   leaving = type(leaving) == "table" and leaving or {}
   leaving[#leaving + 1] = { id = info.id, at = os.time() }
@@ -156,7 +179,7 @@ function groups.tick(now)
   local me = reaper.GetExtState(band.SECTION, "user")
   for _, g in ipairs(band.bands()) do
     local key = "group closed " .. g.id
-    if reaper.GetExtState(band.SECTION, key) == "" then
+    if reaper.GetExtState(band.SECTION, key) == "" and not groups.is_old(g.root) then
       local e = band.read_json(g.root .. "/_band/closed.json")
       if type(e) == "table" and e.by and groups.role(g.root, e.by) ~= "member" then
         if groups.leave(g.root, me, true) then -- (not: something's recording. The next look does it)
@@ -167,7 +190,7 @@ function groups.tick(now)
         local days = services.days_quiet(g.id)
         if days and days >= groups.QUIET_DAYS then
           said_quiet[g.id] = true
-          band.log(string.format("nobody in %s has been online for %d days. It may have been closed, or you taken out: you can leave it in Setup > Options", g.name, days))
+          band.log(string.format("nobody in %s has been online for %d days. It may have been closed, or you taken out: you can leave it on the Groups page", g.name, days))
         end
       end
     end

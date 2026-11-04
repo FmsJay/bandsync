@@ -12,24 +12,18 @@ local b = band.binding(proj) or {}
 
 -- a new song must be prepared first (takes into lanes, FLAC, unique track names...): much harder to tidy once the
 -- band has it, so there is no "publish as it is"
-if not b.song then
-  local todo = {}
-  for _, r in ipairs(require("prep").scan(proj, cfg, nil)) do
-    if r.key == "format" and r.todo ~= nil then
-      -- only a setting, nothing recorded changes: done here, without a question
-      reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true)
-      reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", band.srate(proj), true)
-      reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
-    elseif r.todo ~= nil and r.on and r.key ~= "autostart" then todo[#todo + 1] = "  - " .. r.title end
-  end
-  if #todo > 0 then
-    if reaper.MB("This project needs preparing for StudioSync first:\n\n" .. table.concat(todo, "\n") ..
-        "\n\nOK opens the checklist (you choose what changes). Publish again when it's done.", "StudioSync", 1) == 1 then
-      local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Prepare session.lua", true)
-      if id > 0 then reaper.Main_OnCommand(id, 0) end
-    end
-    return
-  end
+if not b.song and reaper.GetExtState(band.SECTION, "prepared " .. tostring(proj)) == "" then
+  -- nothing goes to the group that hasn't been through the checklist (James, 2026-11-03): its last button comes back here
+  reaper.SetExtState(band.SECTION, "share after prepare", "1", false)
+  local id = reaper.AddRemoveReaScript(true, 0, dir .. "/BandSync - Prepare session.lua", true)
+  if id > 0 then reaper.Main_OnCommand(id, 0) end
+  return
+end
+reaper.DeleteExtState(band.SECTION, "prepared " .. tostring(proj), false)
+if not b.song then -- (only a setting, nothing recorded changes: done here, without a question)
+  reaper.GetSetProjectInfo_String(proj, "RECORD_FORMAT", band.FLAC, true)
+  reaper.GetSetProjectInfo(proj, "PROJECT_SRATE", band.srate(proj), true)
+  reaper.GetSetProjectInfo(proj, "PROJECT_SRATE_USE", 1, true)
 end
 
 local projname = reaper.GetProjectName(proj)
@@ -76,4 +70,4 @@ reaper.SetProjExtState(proj, band.SECTION, "timeline", band.json_encode({ band.c
 reaper.Main_SaveProject(proj, false)
 local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
 if not (beat and reaper.time_precise() - beat < 5) then band.start_live(dir) end
-return band.log(string.format("published '%s': Live sync is sending the project to the group (collaborators: Setup > Health > Open another project)", song))
+return band.log(string.format("published '%s': Live sync is sending the project to the group (collaborators: it's on their Projects page)", song))

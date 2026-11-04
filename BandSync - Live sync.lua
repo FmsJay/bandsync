@@ -193,6 +193,7 @@ end
 -- Something to redo (you just pressed undo): the band's changes wait up to 30 s, as any undo point of theirs would
 -- take your redo away (laptop, block K: Ctrl+Z, then Ctrl+Shift+Z did nothing). A new action of yours ends the wait.
 local redo_seen, redo_at = nil, 0
+local undo_top = reaper.Undo_CanRedo2(proj) -- what was on top of REAPER's redo list at the last look
 local function redo_pending()
   local r = reaper.Undo_CanRedo2(proj)
   if r ~= redo_seen then redo_seen, redo_at = r, reaper.time_precise() end
@@ -214,7 +215,7 @@ local function poll()
       tune_left = 0
       band.log(#set > 0 and ("Syncthing's group folder tuned for live use: " .. table.concat(set, ", ")) or "Syncthing is answering")
     elseif tune_left == 0 then
-      band.log("Syncthing: " .. tostring(err) .. " (Setup > Health shows whether the shared folder syncs)")
+      band.log("Syncthing: " .. tostring(err) .. " (Settings > Health shows whether the shared folder syncs)")
     end
   end
   local s = band.read_json(band.session_path(cfg, b.song)) or last_session
@@ -418,10 +419,7 @@ local function poll()
       elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
     end
     if not more then -- then the other songs here, one a pass: each keeps a copy a bandmate can open from Drive
-      local ss = require("songsync")
-      local songs = ss.keep_all() and band.songs(cfg) or {}
-      if not ss.keep_all() then for s in pairs(ss.wanted(cfg)) do songs[#songs + 1] = s end; table.sort(songs) end
-      local ok, n, m = pcall(drive.upkeep, cfg, droot, songs, b.song, 1.0)
+      local ok, n, m = pcall(drive.upkeep, cfg, droot, require("songsync").here(cfg), b.song, 1.0)
       if ok then moved, more = moved + n, more or m
       elseif drive_said ~= tostring(n) then drive_said = tostring(n); band.log("Google Drive copy: " .. tostring(n)) end
     end
@@ -436,6 +434,7 @@ local function poll()
     local peers = presence.peers(cfg, b.song, b.room)
     presence.pings(proj, peers)
     local follow = reaper.GetExtState(band.SECTION, "follow " .. tostring(proj))
+    if follow == "" and reaper.GetExtState(band.SECTION, "follow driver") ~= "" and driver ~= cfg.user then follow = driver or "" end
     if follow ~= "" then presence.follow(proj, peers, follow) end
     -- tracks in the colour of who's working on them, if this machine wants that (lib/people.lua; shown here only)
     if now - paint_at > 1 then paint_at = now; require("people").paint(proj, cfg, peers, who.tracks) end
@@ -453,8 +452,12 @@ local function poll()
     playing = reaper.GetPlayStateEx(proj) & 1 == 1 or nil, recording = reaper.GetPlayStateEx(proj) & 4 == 4 or nil,
     front = reaper.EnumProjects(-1) == proj, mirror = s and s.sync == "mirror" and require("mirror").root(proj) or nil,
     editing = require("presence").editing(proj), view = require("presence").view(proj), ping = require("presence").my_ping(proj),
-    last_track = select(2, reaper.GetProjExtState(proj, band.SECTION, "last_track")) }
-  local fingerprint = band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
+    last_track = select(2, reaper.GetProjExtState(proj, band.SECTION, "last_track")),
+    follow = reaper.GetExtState(band.SECTION, "follow " .. tostring(proj)), follow_driver = reaper.GetExtState(band.SECTION, "follow driver") ~= "" or nil,
+    listen = reaper.GetExtState(band.SECTION, "listen " .. tostring(proj)) }
+  if info.follow == "" then info.follow = nil end
+  if info.listen == "" then info.listen = nil end
+  local fingerprint = tostring(info.follow) .. tostring(info.follow_driver) .. tostring(info.listen) .. band.json_encode(sync.holdings(proj)) .. tostring(driver) .. info.pending .. tostring(hold) .. band.json_encode(armed) ..
     tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror) ..
     band.json_encode({ info.editing, info.view, info.ping or false }) .. info.last_track
   if fingerprint ~= status_json or now - last_status > 15 then
@@ -474,8 +477,16 @@ local key = tostring(proj)
 local fired, seen_ev, quick_at = {}, {}, 0
 -- The newest cue wins: an older one (a second copy arriving through the regular poll, say) is ignored.
 local cue_at = -math.huge
+-- Whose play, pause and stop this tab follows: "follow <proj>" holds a name, "follow driver" (kept) means whoever drives. Real time mode's
+-- side by side follows everyone. (lib/presence.lua moves the view along too.)
+local function follows(name)
+  local who_ = reaper.GetExtState(band.SECTION, "follow " .. key)
+  if who_ ~= "" then return who_ == name end
+  return reaper.GetExtState(band.SECTION, "follow driver") ~= "" and sync.driver_name == name
+end
 local function take_cue(ev)
-  if not ev or (ev.id and fired[ev.id]) or (ev.follow and not side_bars()) or (ev.at or 0) < cue_at then return end
+  if not ev or (ev.id and fired[ev.id]) or (ev.at or 0) < cue_at then return end
+  if ev.follow and not side_bars() and not follows(ev.lead) then return end
   cue_at, transport = ev.at or cue_at, ev
 end
 
@@ -574,6 +585,7 @@ local function tick_body() -- returns true to keep going
         band.log(string.format("stopped together (%s) at %.3f s, %s", tostring(transport.user), at_pos,
           tnow >= fire and "by time" or string.format("by position (theirs: %.3f s)", transport.pos)))
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. "stopped together (" .. tostring(transport.user) .. ")", false)
+        if transport.pause and transport.pos then reaper.SetEditCurPos2(proj, transport.pos, false, false) end -- (paused: you're where they paused)
       else
         local _, from = together.plan(transport, cfg.user, tnow) -- a few ms (or seconds) late: as far in as time has gone
         if reaper.GetPlayStateEx(proj) ~= 0 then reaper.OnStopButtonEx(proj) end
@@ -603,16 +615,22 @@ local function tick_body() -- returns true to keep going
     click = nil
   end
   local lagbars = side_bars()
-  if lagbars then
+  local someone_follows = false -- (a cue file per press only when somebody's there to read it)
+  if not lagbars then
+    for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
+      someone_follows = someone_follows or st.follow == cfg.user or (st.follow_driver and sync.driver_name == cfg.user)
+    end
+  end
+  if lagbars or someone_follows then
     local ps = reaper.GetPlayStateEx(proj)
     local playing, pos, tp = ps & 1 == 1, reaper.GetPlayPosition2Ex(proj), reaper.time_precise()
     if tp >= side.quiet_until then
       local jumped = playing and side.playing and math.abs(pos - (side.pos + (tp - side.t))) > 0.5 -- a seek while playing
       if playing ~= side.playing or jumped then
         local ev = playing and { type = "start", pos = pos, countin = 0, rec = ps & 4 == 4 or nil }
-          or { type = "stop", pos = side.pos + (tp - side.t) } -- where the song was when you stopped
+          or { type = "stop", pos = side.pos + (tp - side.t), pause = ps & 2 == 2 or nil } -- where the song was when you stopped
         ev.at, ev.lead, ev.follow = together.now(), cfg.user, true
-        ev.lag = together.bars_after(proj, pos, lagbars)
+        ev.lag = together.bars_after(proj, pos, lagbars or 0)
         sync.post(cfg, b.song, b.room, ev)
         fired[ev.id], cue_at = true, math.max(cue_at, ev.at)
         reaper.SetExtState(band.SECTION, "together " .. key, os.date("%H:%M:%S ") .. (playing and string.format("you %s from %.2f s: the group follows %.1f s behind",
@@ -626,7 +644,12 @@ local function tick_body() -- returns true to keep going
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
   -- Real time mode: only what's armed feeds SonoBus (lib/live.lua rt_sends), checked about once a second
-  if now - rt_at > 1 then rt_at = now; pcall(live.rt_sends, proj); pcall(live.join_check, proj); pcall(sync.follow_claims, proj, cfg, b.song, b.room) end
+  if now - rt_at > 1 then
+    rt_at = now
+    local ok, e = pcall(require("hear").answer_listeners, proj, cfg, b)
+    if not ok then band.log("listen: " .. tostring(e)) end
+    pcall(live.rt_sends, proj); pcall(live.join_check, proj); pcall(sync.follow_claims, proj, cfg, b.song, b.room)
+  end
   -- live MIDI view (lib/livemidi.lua): our notes go out as we play them; bandmates' show up as they play theirs
   if reaper.EnumProjects(-1) == proj then livemidi.send_tick(proj, cfg, b, st & 4 ~= 0) end -- (input goes to the tab in front)
   if st & 4 == 0 and now - midi_view_at > 0.5 then
@@ -637,6 +660,15 @@ local function tick_body() -- returns true to keep going
   local every = reaper.GetPlayStateEx(proj) & 1 == 1 and 2 -- playing: a pass can stall REAPER ~0.5 s (seen on the laptop)
     or (lagbars or now - stopped_at < 8 or require("bgrender").waiting() or require("prints").waiting()) and 0.5 or 2 -- side by side, just after a recording, or with a print on its way: look often
   local redo = reaper.Undo_CanRedo2(proj)
+  -- REAPER's own undo (Edit > Undo, or a key not set to StudioSync's) just rolled back a change StudioSync made, a collaborator's or the group's:
+  -- that would undo their work too. Put it back, and undo your own last change instead, as Ctrl+Z does.
+  if redo and redo:find("^BandSync") and redo ~= undo_top then
+    reaper.Undo_DoRedo2(proj)
+    local ok, res, why = pcall(function() return require("undo").step(proj, cfg, b, false, {}) end)
+    if not ok then band.log("undo: " .. tostring(res)) elseif res then band.log(res) elseif why then band.log(why) end
+    redo = reaper.Undo_CanRedo2(proj)
+  end
+  undo_top = redo
   if redo and redo:find("^BandSync") then -- you just undid one of BandSync's changes: keep undoing if you like
     undo_since = undo_since or now
     if not undo_said then undo_said = true; band.log("you undid a StudioSync change: Live sync waits 30 s (or until you do something else) so you can keep undoing") end

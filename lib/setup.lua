@@ -101,7 +101,7 @@ end
 
 -- Every fix that needs no human. start_sync starts Live sync (an action, so the panel passes how to run it).
 -- Returns what it did, as short notes.
-function setup.all(cfg, b, proj, st, start_sync)
+function setup.all(cfg, b, proj, st, start_sync, play_along)
   local notes = {}
   if not st.folder then
     local ok, why = services.ensure_syncthing()
@@ -112,7 +112,7 @@ function setup.all(cfg, b, proj, st, start_sync)
     start_sync()
     notes[#notes + 1] = "Live sync started"
   end
-  if b.role == "host" then
+  if play_along and b.role == "host" then
     local lfile = setup.live_file(cfg, b)
     local data = band.read_json(lfile) or {}
     if (data.server or "") == "" then
@@ -130,7 +130,7 @@ function setup.all(cfg, b, proj, st, start_sync)
   end
   if not st.sonobus then
     local link, why = setup.sonobus(cfg, b, proj, false)
-    notes[#notes + 1] = link and "SonoBus added to the master track (off until you press Same room)" or why
+    notes[#notes + 1] = link and "SonoBus added (off until you switch on Real time mode)" or why
   end
   return notes
 end

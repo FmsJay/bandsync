@@ -13,8 +13,8 @@ local songsync = {}
 
 local BEGIN, END = "// BandSync: what this computer downloads (written by BandSync, up to the line below)", "// BandSync end"
 songsync.BAND_WIDE = { "/_*", "/plugins", "/drummaps" }
-songsync.LISTING = { "/*/session.json", "/*/folder.json", "/*/live.json", "/*/invites", "/*/rooms/*/room.json",
-  "/*/rooms/*/summary", "/*/rooms/*/status" }
+songsync.LISTING = { "/*/session.json", "/*/folder.json", "/*/live.json", "/*/invites", "/*/chat", "/*/rooms/*/room.json",
+  "/*/rooms/*/summary", "/*/rooms/*/status", "/*/rooms/*/chat" }
 
 -- The block's lines for the songs wanted here. Pure.
 function songsync.block(wanted)
@@ -30,8 +30,20 @@ function songsync.block(wanted)
   return out
 end
 
--- The ignore file's text with BandSync's block replaced (or added at the end; nil wanted = taken out). Pure.
-function songsync.merge(text, wanted)
+-- A computer keeping every song, with some deleted here (lib/localcopy.lua): everything comes, but those only as a listing. Pure.
+function songsync.block_except(gone)
+  local out = { BEGIN }
+  for _, p in ipairs(songsync.LISTING) do out[#out + 1] = "!" .. p end
+  local list = {}
+  for s in pairs(gone) do list[#list + 1] = s end
+  table.sort(list)
+  for _, s in ipairs(list) do out[#out + 1] = "(?d)/" .. s .. "/*" end
+  out[#out + 1] = END
+  return out
+end
+
+-- The ignore file's text with BandSync's block replaced (or added at the end; nil wanted = taken out). `gone`: keep everything but these. Pure.
+function songsync.merge(text, wanted, gone)
   local keep, inside = {}, false
   text = (text or ""):gsub("^\239\187\191", "") -- (a byte-order mark would hide the first line: an editor's, or PowerShell's)
   for line in ((text or "") .. "\n"):gmatch("(.-)\r?\n") do
@@ -40,9 +52,9 @@ function songsync.merge(text, wanted)
     elseif not inside then keep[#keep + 1] = line end
   end
   while #keep > 0 and keep[#keep] == "" do keep[#keep] = nil end
-  if wanted then
+  if wanted or (gone and next(gone)) then
     if #keep > 0 then keep[#keep + 1] = "" end
-    for _, l in ipairs(songsync.block(wanted)) do keep[#keep + 1] = l end
+    for _, l in ipairs(wanted and songsync.block(wanted) or songsync.block_except(gone)) do keep[#keep + 1] = l end
   end
   return #keep > 0 and (table.concat(keep, "\n") .. "\n") or ""
 end
@@ -86,7 +98,7 @@ function songsync.apply(cfg)
   if not cfg or not cfg.root or cfg.root == "" then return false end
   local path = cfg.root .. "/.stignore"
   local old = band.read(path) or ""
-  local new = songsync.merge(old, not songsync.keep_all() and songsync.wanted(cfg) or nil)
+  local new = songsync.merge(old, not songsync.keep_all() and songsync.wanted(cfg) or nil, songsync.keep_all() and songsync.gone() or nil)
   if new == old then return false end
   band.write_atomic(path, new)
   pcall(function() require("services").rescan(band.info(cfg.root).id) end)
@@ -96,9 +108,40 @@ end
 -- A song opened here (open, publish, Live sync): from now on it comes in full.
 function songsync.want(cfg, song)
   if not song or song == "" then return end
+  local gone = songsync.gone()
+  if gone[song] then gone[song] = nil; songsync.save_gone(gone) end
   local set = songsync.wanted(cfg)
   if not set[song] then set[song] = true; songsync.save(set) end
   songsync.apply(cfg)
+end
+
+-- The songs whose copy was deleted here (lib/localcopy.lua): by name, on this computer. Opening one brings it back.
+function songsync.gone()
+  local set = {}
+  for s in reaper.GetExtState(band.SECTION, "projects gone"):gmatch("[^|]+") do set[s] = true end
+  return set
+end
+function songsync.save_gone(set)
+  local list = {}
+  for s in pairs(set) do list[#list + 1] = s end
+  table.sort(list)
+  reaper.SetExtState(band.SECTION, "projects gone", table.concat(list, "|"), true)
+end
+-- The songs here in full (the Drive copy's upkeep goes by this: a song deleted here must not come back from Drive by itself).
+function songsync.here(cfg)
+  local out, gone = {}, songsync.gone()
+  if songsync.keep_all() then
+    for _, s in ipairs(band.songs(cfg)) do if not gone[s] then out[#out + 1] = s end end
+  else
+    for s in pairs(songsync.wanted(cfg)) do if not gone[s] then out[#out + 1] = s end end
+    table.sort(out)
+  end
+  return out
+end
+-- Whether a song's whole copy is meant to be here.
+function songsync.is_here(cfg, song)
+  if songsync.gone()[song] then return false end
+  return songsync.keep_all() or songsync.wanted(cfg)[song] == true
 end
 
 -- Stop downloading a song here (its files stay until removed by hand).

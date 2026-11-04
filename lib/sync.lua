@@ -280,6 +280,17 @@ function sync.released(cfg, song, room)
   local r = band.read_json(sync.room_dir(cfg, song, room) .. "/released.json")
   return type(r) == "table" and r or {}
 end
+-- An admin gives someone a claim: their own claims file has one writer (them), so this is a file of its own, read as theirs by
+-- sync.authority at once, even while they're away. Their Live sync folds it into their own file (sync.follow_claims) and removes it.
+function sync.give_claims(cfg, song, room, user, tracks)
+  local dir = sync.room_dir(cfg, song, room) .. "/claims"
+  reaper.RecursiveCreateDirectory(dir, 0)
+  local now = os.date("!%Y-%m-%dT%H:%M:%SZ")
+  local since = {}
+  for _, n in ipairs(tracks) do since["tracks:" .. n:lower()] = now end
+  band.write_json(string.format("%s/given-%s-%s.json", dir, (user:gsub("[^%w%-_ ]", "")), os.date("!%Y%m%d-%H%M%S")),
+    { user = user, by = cfg.user, tracks = tracks, regions = {}, times = {}, since = since, time = now, given = true })
+end
 function sync.release_claims(cfg, song, room, user)
   local r = sync.released(cfg, song, room)
   r[user] = os.date("!%Y-%m-%dT%H:%M:%SZ")
@@ -288,6 +299,26 @@ end
 -- Keep my claims on the tracks I claimed when they're renamed (a claim is by name; the track's id says which one
 -- it was), and drop them if the driver released them while I was away. Run by Live sync every few seconds.
 function sync.follow_claims(proj, cfg, song, room)
+  do -- claims an admin gave me, into my own file
+    local dir, prefix = sync.room_dir(cfg, song, room) .. "/claims", "given-" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. "-"
+    for _, f in ipairs(band.files(dir, ".json")) do
+      if f:sub(1, #prefix) == prefix then
+        local g, c = band.read_json(dir .. "/" .. f), sync.my_claims(cfg, song, room)
+        if type(g) == "table" and c then
+          c.tracks = c.tracks or {}
+          for _, n in ipairs(g.tracks or {}) do
+            local have = false
+            for _, m in ipairs(c.tracks) do have = have or m:lower() == n:lower() end
+            if not have then c.tracks[#c.tracks + 1] = n end
+          end
+          -- (dated as given: folding it in must not make it newer than a claim someone made since)
+          sync.set_claims(cfg, song, room, c)
+          os.remove(dir .. "/" .. f)
+          band.log(tostring(g.by) .. " gave you " .. table.concat(g.tracks or {}, ", ") .. ": yours to change now")
+        end
+      end
+    end
+  end
   local c = sync.my_claims(cfg, song, room)
   if not c or #(c.tracks or {}) + #(c.regions or {}) + #(c.times or {}) == 0 then return end
   local gone = sync.released(cfg, song, room)[cfg.user]
@@ -328,8 +359,9 @@ end
 --   "driver"  only the driver changes what the band has (claims are kept, but don't count while it's on)
 --   "claims"  the default: the driver, and everyone on what they've claimed
 --   "open"    anyone changes anything nobody has claimed (the newest change wins), the tempo map and markers too
+--   "admins"  only the group's owner and admins, and everyone on what's been claimed for them (lib/groups.lua; an admin can give a claim)
 -- Changes someone may not make are put back where the band has them, never kept on their machine only.
-sync.MODES = { driver = true, claims = true, open = true }
+sync.MODES = { driver = true, claims = true, open = true, admins = true }
 function sync.mode(cfg, song, room)
   local m = band.read_json(sync.room_dir(cfg, song, room) .. "/mode.json")
   return type(m) == "table" and sync.MODES[m.mode] and m.mode or "claims"
@@ -406,6 +438,10 @@ function sync.authority(cfg, song, room, s)
   sync.is_claimed = claimed -- (sync.maker_may)
   return function(user, track, pos, take, drv) -- drv: the driver to judge by (an event's own time), else today's
       if mode == "driver" then return user == (drv or driver) end
+      if mode == "admins" then
+        if claimed(track, pos) then return owner(track, pos, drv) == user end
+        return require("groups").may_manage(cfg.root, user)
+      end
       if owner(track, pos, drv) == user then return true end
       -- open: anything nobody claimed, by anyone, the song's tempo map, markers and settings too (James, 2026-10-31:
       -- Open means open; before, those stayed the driver's)
@@ -1032,7 +1068,7 @@ end
 -- 0.40.3 the maker beat a bandmate's claim too, and nothing showed it (James, 2026-11-01: "it gets confusing"); new
 -- tracks are now claimed by their maker (mirror.watch), and the Claims card lists the unclaimed ones you made.
 function sync.maker_may(oid, user, name, pos, mode)
-  return mode ~= "driver" and require("mirror").is_creator(oid, user) and not (sync.is_claimed and sync.is_claimed(name, pos))
+  return mode ~= "driver" and mode ~= "admins" and require("mirror").is_creator(oid, user) and not (sync.is_claimed and sync.is_claimed(name, pos))
 end
 
 -- Add tracks to my claims. -> true, or nil and why.
@@ -1463,7 +1499,7 @@ function sync.write_status(proj, cfg, song, room, info)
       and not sync.name_clash_said then
     sync.name_clash_said = true
     sync.put_back("another computer is also using the name " .. cfg.user .. ", so your changes and theirs get mixed up. " ..
-      "Change the name on one of them: Setup > Options > Change name")
+      "Change the name on one of them: Settings > You")
   end
   info.machine = sync.machine()
   info.user, info.time, info.version, info.room = cfg.user, os.date("!%Y-%m-%dT%H:%M:%SZ"), band.VERSION, room

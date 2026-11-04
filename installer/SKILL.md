@@ -1,15 +1,15 @@
 ---
 name: bandsync-setup
-description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, joins the host's Tailscale share for Live and the band's Google Drive folder for Solo edit, and runs the latency check. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
+description: Set up BandSync (remote band recording in REAPER) on this computer from zero, or repair/update an existing setup. Installs and configures Syncthing, REAPER, ReaPack, ReaImGui and the BandSync scripts, pairs this machine with the band's host, and the group's Google Drive folder, and runs the latency check. Use when someone says "set up BandSync", "join my band's BandSync", "install BandSync", or "BandSync isn't working on this machine".
 ---
 
 # BandSync setup
 
 **There is now a scripted installer that does steps 1-3 and most of 4-5:** `install_windows.ps1` (via
 `Install BandSync (Windows).cmd`) and `install_mac.sh` (via `Install BandSync (Mac).command`). Prefer running it,
-answering its questions as parameters (`-User -Hosting yes|no -HostId -Root`, and `-Live no` / `-Solo no` only to leave out SonoBus + Tailscale / Google Drive, which otherwise always go in; on macOS the
+answering its questions as parameters (`-User -Hosting yes|no -HostId -Root`, and `-Live no` / `-Solo no` only to leave out SonoBus / Google Drive, which otherwise always go in; on macOS the
 `BS_*` environment variables in its header), and use the steps below to explain prompts, repair, or finish what it
-lists as left for a human. Both have been run for real (Windows, and a Mac on 2026-10-31). They wait while the person signs in to Tailscale and Google Drive; any key (Return on a Mac) skips a wait.
+lists as left for a human. Both have been run for real (Windows, and a Mac on 2026-10-31). They wait while the person signs in to Google Drive; any key (Return on a Mac) skips a wait.
 
 You are installing BandSync for a musician who is probably not technical. They are at the keyboard.
 Your job is to get them from nothing to "my take landed in the host's project", explaining each
@@ -47,7 +47,7 @@ and macOS 26 (2026-10-26); the times quoted are from those runs.
 
 Ask: their name as the band should see it; whether they are the **host** (first person in the band,
 runs the always-on machine) or **joining**; if joining, nothing more when they used a bandmate's invitation (Home > Invite a bandmate: its line already holds the ID); otherwise a bandmate's **Syncthing device ID** (8 groups of 7 letters and digits, like ABCDEFG-HIJKLMN-...-1234567, 63 characters: in their BandSync panel's invitation, or in Syncthing: Actions > Show ID); whether they have a **loopback cable** (output → input)
-for the latency check; whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus, Tailscale or Google Drive: they're core, and installed without asking (James). Each waits for its own sign-in.
+for the latency check; whether they mind REAPER's **plug-in scan** (see step 2). Don't ask about SonoBus or Google Drive: they're core, and installed without asking (James). Tailscale isn't part of setup any more: only the Play tab (off by default) or a router that stops SonoBus needs it.
 
 ## 1. Syncthing (the shared folder)
 
@@ -119,14 +119,14 @@ Solo edit (versions) and History & restore tabs only exist there. ReaPack's API 
 walk them through *Extensions > ReaPack > Browse packages*, search **ReaImGui**, right-click > Install, Apply, then
 restart REAPER. Re-run the helper with `"mode": "verify"` and expect `"reaimgui": true`.
 
-## 4. SonoBus and Tailscale
+## 4. SonoBus, and Tailscale only if asked for
 
 **Real time** uses **SonoBus** (`winget install --id Sonosaurus.SonoBus --exact`; macOS: `sonobus-<ver>-mac.dmg`
 from github.com/sonosaurus/sonobus releases). Nothing else to set up: the panel's Live tab adds it already set to
 join the band's group under the musician's BandSync name. REAPER lists a new plug-in only after it restarts, so install SonoBus before REAPER's first start
 or restart REAPER after.
 
-**Play along** and **Jam** go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet.
+**Play along** and **Jam** (the Play tab: off by default, Settings > Options) go through a NINJAM server on the host's machine, reached over Tailscale so it never faces the internet. Only set this up if the person asks for those.
 Bandmates don't join the host's tailnet; the host **shares one machine** with them.
 
 | OS | Install | CLI |
@@ -199,6 +199,6 @@ published song and take records the BandSync version that made it, and opening a
 
 ## Report back
 
-End with a short summary: what was installed (versions), the device ID exchange status, whether the Tailscale share and
+End with a short summary: what was installed (versions), the device ID exchange status, and whether
 the Drive shortcut are in place, the latency result,
 and any step the user skipped, plus anything that surprised you, so the next install goes better.

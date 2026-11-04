@@ -74,7 +74,40 @@ end
 
 local picking, filter, found, used_at, used, open_now, found_all = nil, "", nil, -math.huge, {}, false, 0
 
+-- REAPER's own Add FX window, on a helper track that stays on this computer (mirror.local_track). What's picked there is read off the
+-- track, and the track goes. Closing the window without picking just takes the track away again.
+local browsing -- { tr, proj, u, since }
+local function browse(proj, u)
+  local tr = require("mirror").add_local_track(proj, "StudioSync: pick a translation", "pick")
+  reaper.SetOnlyTrackSelected(tr)
+  reaper.Main_OnCommand(40291, 0) -- Track: View FX chain for current/last touched track (empty, it opens Add FX)
+  browsing = { tr = tr, proj = proj, u = u, since = reaper.time_precise() }
+end
+local function browse_tick(cfg)
+  if not browsing then return end
+  local h = browsing
+  if not reaper.ValidatePtr2(h.proj, h.tr, "MediaTrack*") then browsing = nil; return end
+  if reaper.TrackFX_GetCount(h.tr) > 0 then
+    local ok, name = reaper.TrackFX_GetNamedConfigParm(h.tr, 0, "fx_name")
+    if not ok or name == "" then _, name = reaper.TrackFX_GetFXName(h.tr, 0, "") end
+    local js = name:match("^JS:")
+    if js then
+      local got, ident = reaper.TrackFX_GetNamedConfigParm(h.tr, 0, "fx_ident")
+      if got and ident ~= "" then name = "JS:" .. ident:gsub("^.*[/\\]Effects[/\\]", ""):gsub("\\", "/") end
+    end
+    reaper.RecursiveCreateDirectory(tdir(cfg), 0)
+    band.write_json(tfile(cfg, h.u.key), { key = h.u.key, from = h.u.name, to = name, by = cfg.user, time = os.date("!%Y-%m-%dT%H:%M:%SZ") })
+    band.log("translation for " .. (h.u.name:gsub("^%w+:%s*", "")) .. ": " .. (name:gsub("^%w+:%s*", "")))
+    reaper.DeleteTrack(h.tr)
+    browsing = nil
+  elseif reaper.time_precise() - h.since > 1 and reaper.TrackFX_GetChainVisible(h.tr) == -1 then -- (-1: its window is closed; -2 is the empty chain's Add FX up)
+    reaper.DeleteTrack(h.tr)
+    browsing = nil
+  end
+end
+
 function pp.draw(ctx, ImGui, proj, cfg)
+  browse_tick(cfg)
   if reaper.time_precise() - used_at > 3 then used_at, used = reaper.time_precise(), pp.used(proj) end
   local lists = {}
   for _, f in ipairs(band.files(cfg.root .. "/plugins", ".json")) do
@@ -114,7 +147,9 @@ function pp.draw(ctx, ImGui, proj, cfg)
       ImGui.PushID(ctx, u.key)
       local t = tmap[u.key]
       if t then ImGui.Text(ctx, (t.to:gsub("^%w+:%s*", ""))) end
-      if ImGui.SmallButton(ctx, t and "Change" or "Set") then picking, filter, found, open_now = u, "", nil, true end
+      if ImGui.SmallButton(ctx, t and "Change" or "Set") then browse(proj, u) end
+      ImGui.SetItemTooltip(ctx, "Opens REAPER's Add FX window: pick something close. Right-click for a plain list of your plug-ins instead.")
+      if ImGui.IsItemClicked(ctx, 1) then picking, filter, found, open_now = u, "", nil, true end
       if t then
         ImGui.SameLine(ctx)
         if ImGui.SmallButton(ctx, "x") and reaper.MB("Remove the group's translation for " .. (u.name:gsub("^%w+:%s*", "")) .. "?", "StudioSync", 4) == 6 then
@@ -128,6 +163,7 @@ function pp.draw(ctx, ImGui, proj, cfg)
     ImGui.EndTable(ctx)
   end
   if #used == 0 then ImGui.TextDisabled(ctx, "No plug-ins in this project yet.") end
+  if browsing then ImGui.TextColored(ctx, require("theme").YELLOW, "Pick a plug-in in REAPER's window (close it to cancel).") end
   if open_now then ImGui.OpenPopup(ctx, "Pick a translation"); open_now = false end -- (outside the table's ID scope)
   if ImGui.BeginPopupModal(ctx, "Pick a translation", true, ImGui.WindowFlags_AlwaysAutoResize) then
     ImGui.Text(ctx, "Something close to " .. (picking.name:gsub("^%w+:%s*", "")) .. ", from your plug-ins:")

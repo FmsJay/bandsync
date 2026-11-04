@@ -162,6 +162,72 @@ end
 -- Whether `name` has a pair of their own here (else they share "everyone else" with anyone else without one).
 function hear.own_pair(proj, name) return hear.pairs(proj)[name] ~= nil end
 
+-- Listen to one person: SonoBus on here, them alone in your ears. `name` nil stops, and everyone's back as they were. Their computer sees it in
+-- your status file and answers (hear.answer_listeners).
+function hear.listen(proj, cfg, b, name)
+  local key = "listen " .. tostring(proj)
+  local was = reaper.GetExtState(band.SECTION, key)
+  if name then
+    local link, why = require("setup").sonobus(cfg, b, proj, true)
+    if not link then return nil, why end
+    if was == "" then -- what you had, to put back
+      local had = {}
+      for n in pairs(hear.pairs(proj)) do had[n] = hear.is_on(proj, n) end
+      had["\0"] = hear.is_on(proj, nil)
+      reaper.SetExtState(band.SECTION, "listen had " .. tostring(proj), band.json_encode(had), false)
+    end
+    for n in pairs(hear.pairs(proj)) do hear.set_on(proj, n, n == name) end
+    hear.set_on(proj, nil, not hear.own_pair(proj, name)) -- (someone without a pair of their own shares this one)
+    reaper.SetExtState(band.SECTION, key, name, false)
+    return true
+  end
+  reaper.DeleteExtState(band.SECTION, key, false)
+  local had = band.json_decode(reaper.GetExtState(band.SECTION, "listen had " .. tostring(proj))) or {}
+  for n in pairs(hear.pairs(proj)) do hear.set_on(proj, n, had[n] ~= false) end
+  hear.set_on(proj, nil, had["\0"] ~= false)
+  reaper.DeleteExtState(band.SECTION, "listen had " .. tostring(proj), false)
+  -- Real time mode off: SonoBus goes with it
+  local live = require("live")
+  local sm, si = live.fx(proj, false, live.SONOBUS)
+  if sm and select(2, reaper.GetProjExtState(proj, band.SECTION, "side")) ~= "0" and not hear.listeners_here then reaper.TrackFX_SetOffline(sm, si, true) end
+  return true
+end
+-- Someone is listening to this computer: SonoBus comes on for as long as they do, and if they aren't playing along (following you) they have
+-- no backing of their own, so your whole mix goes to them. Called about once a second by Live sync.
+function hear.answer_listeners(proj, cfg, b)
+  local names, whole = {}, false
+  for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
+    if st.listen == cfg.user then
+      names[#names + 1] = st.user
+      whole = whole or not (st.follow == cfg.user or (st.follow_driver and require("sync").driver_name == cfg.user))
+    end
+  end
+  local key = "listeners " .. tostring(proj)
+  local now = table.concat(names, ", ")
+  local before = reaper.GetExtState(band.SECTION, key)
+  reaper.SetExtState(band.SECTION, key, now, false)
+  reaper.SetExtState(band.SECTION, "send whole mix " .. tostring(proj), whole and "1" or "", false)
+  hear.listeners_here = #names > 0 or nil
+  if now == before then return end
+  local live = require("live")
+  local sm, si = live.fx(proj, false, live.SONOBUS)
+  if #names > 0 then
+    if not sm or reaper.TrackFX_GetOffline(sm, si) then
+      local link, why = require("setup").sonobus(cfg, b, proj, true)
+      if link then reaper.SetExtState(band.SECTION, "sonobus for listeners " .. tostring(proj), "1", false)
+      else band.log(now .. " wants to listen to you, but: " .. tostring(why)) end
+    end
+    band.log(now .. " is listening to you" .. (whole and " (your whole mix)" or " (what you play)"))
+  else
+    if sm and reaper.GetExtState(band.SECTION, "sonobus for listeners " .. tostring(proj)) ~= "" and select(2, reaper.GetProjExtState(proj, band.SECTION, "side")) ~= "0"
+        and reaper.GetExtState(band.SECTION, "listen " .. tostring(proj)) == "" then
+      reaper.TrackFX_SetOffline(sm, si, true)
+    end
+    reaper.DeleteExtState(band.SECTION, "sonobus for listeners " .. tostring(proj), false)
+    band.log("nobody's listening to you now")
+  end
+end
+
 -- Their time: your backing later by ms (0 = your own time).
 function hear.delay(proj)
   local m, i = hear.mix(proj, false)

@@ -18,18 +18,36 @@ end
 
 local function stamp(cfg) return os.date("!%Y%m%d-%H%M%S") .. "-" .. (cfg.user:gsub("[^%w]", "_")) .. "-" .. math.random(1000, 9999) end
 
+-- The folders a scope shows, each with where it is in words: { { dir, where } }. This room: only its own. This project: the project's and
+-- every room's. The group: the group's and every project's, every room's. (A project with only its listing here still has its chat.)
+function chat.sources(cfg, b, sc)
+  local out = {}
+  local function project(song)
+    local dir = band.song_dir(cfg, song)
+    out[#out + 1] = { dir .. "/chat", song }
+    for _, room in ipairs(band.subdirs(dir .. "/rooms")) do out[#out + 1] = { dir .. "/rooms/" .. room .. "/chat", song .. " / " .. room } end
+  end
+  if sc == "room" then out[1] = { chat.dir(cfg, b, "room"), b.room or "main" }
+  elseif sc == "song" then project(b.song)
+  else
+    out[1] = { cfg.root .. "/_band/chat", "Group" }
+    for _, song in ipairs(band.songs(cfg)) do project(song) end
+  end
+  return out
+end
 local function load(cfg, b)
   local key = scope .. (b.song or "") .. (b.room or "")
   if cache and key == cache_key and reaper.time_precise() - cache_at < 3 then return cache end
-  local d = chat.dir(cfg, b, scope)
   local t = { msgs = {}, todo = {}, links = {} }
-  for kind in pairs(t) do
-    for _, f in ipairs(band.files(d .. "/" .. kind, ".json")) do
-      local v = band.read_json(d .. "/" .. kind .. "/" .. f)
-      if type(v) == "table" then v.file = d .. "/" .. kind .. "/" .. f; t[kind][#t[kind] + 1] = v end
+  for _, src in ipairs(chat.sources(cfg, b, scope)) do
+    for kind in pairs(t) do
+      for _, f in ipairs(band.files(src[1] .. "/" .. kind, ".json")) do
+        local v = band.read_json(src[1] .. "/" .. kind .. "/" .. f)
+        if type(v) == "table" then v.file, v.where = src[1] .. "/" .. kind .. "/" .. f, src[2]; t[kind][#t[kind] + 1] = v end
+      end
     end
-    table.sort(t[kind], function(a, x) return (a.time or "") < (x.time or "") end)
   end
+  for kind in pairs(t) do table.sort(t[kind], function(a, x) return (a.time or "") < (x.time or "") end) end
   cache, cache_at, cache_key = t, reaper.time_precise(), key
   return t
 end
@@ -91,7 +109,8 @@ function chat.draw(ctx, ImGui, cfg, b)
     if i > 1 then fits(ImGui.CalcTextSize(ctx, sc[2]) + 36) end
     if ImGui.RadioButton(ctx, sc[2], scope == sc[1]) then scope, cache = sc[1], nil end
   end
-  ImGui.SetItemTooltip(ctx, "Who sees it: everyone in this room, everyone on this project, or the whole group (every project).")
+  ImGui.SetItemTooltip(ctx, "What you see and who you're writing to. This room: only this room's. This project: the project's and all its rooms'. " ..
+    "Group: everything, from every project and room. What you write goes to the one picked here.")
   do -- drawing on the arrange view (BandSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
     -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
     -- was open, the lag on this page: James, 0.42.28)
@@ -162,6 +181,10 @@ function chat.draw(ctx, ImGui, cfg, b)
         for _, m in ipairs(t.msgs) do
           if shown(m) then
             ImGui.PushID(ctx, m.file)
+            if m.where and scope ~= "room" then -- (where it was sent from, on the left)
+              ImGui.TextColored(ctx, require("theme").ACCENT, m.where)
+              ImGui.SameLine(ctx)
+            end
             ImGui.TextDisabled(ctx, when(m.time))
             ImGui.SameLine(ctx)
             ImGui.TextWrapped(ctx, tostring(m.user) .. ": " .. tostring(m.text))

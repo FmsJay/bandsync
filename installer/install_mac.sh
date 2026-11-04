@@ -3,11 +3,11 @@
 # Run it with "Install BandSync (Mac).command" (right-click > Open the first time), or in Terminal:
 #   curl -fsSL "https://raw.githubusercontent.com/FmsJay/bandsync/main/installer/install_mac.sh?$(date +%s)" | bash
 # (the ?<time>: GitHub's cache handed out the previous installer for minutes after a release, 2026-10-31)
-# REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), SonoBus + Tailscale
+# REAPER, ReaPack, ReaImGui, Syncthing (the shared folder), StudioSync's scripts (through ReaPack), SonoBus
 # (hearing each other) and Google Drive for desktop (the band's copy). Every app comes from its official source.
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
-# BS_LIVE / BS_SOLO (no: leave out SonoBus + Tailscale / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG,
+# BS_LIVE / BS_SOLO (no: leave out SonoBus / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG,
 # BS_BAND_ID / BS_BAND_NAME (the band an invitation is for: its Syncthing folder id and name; the first band is "bandsync").
 # A bandmate's panel (Invite a collaborator) hands out the curl line above with BS_HOST_ID already in it.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
@@ -100,7 +100,8 @@ if [ -z "$FOLDER_ID" ]; then
   fi
 fi
 DRIVE_NAME="BandSync"; [ "$FOLDER_ID" != bandsync ] && DRIVE_NAME="StudioSync - $BAND_NAME"
-# SonoBus + Tailscale (hearing each other) and Google Drive (the band's copy) are part of BandSync, not asked
+# SonoBus (hearing each other) and Google Drive (the group's copy) are part of StudioSync, not asked. Tailscale isn't any more (James, 2026-11-03):
+# only the Play tab's NINJAM wants it, or someone whose router stops SonoBus (Settings > Advanced says how).
 # (James, 2026-10-31: "it feels like a core feature"); BS_LIVE=no / BS_SOLO=no still leave them out.
 LIVE="${BS_LIVE:-y}"
 SOLO="${BS_SOLO:-y}"
@@ -187,75 +188,10 @@ else say "Installing Syncthing ..."; from_dmg "$(gh_asset syncthing/syncthing-ma
 if yes "$LIVE"; then
   if have SonoBus; then ok "SonoBus is already installed"
   else say "Installing SonoBus (may ask for your password) ..."; from_dmg "$(gh_asset sonosaurus/sonobus 'mac\.dmg$')" SonoBus SonoBus; fi
-  if have Tailscale; then ok "Tailscale is already installed"
-  else
-    say "Installing Tailscale (asks for your password) ..."
-    password_note
-    curl -fsSL https://pkgs.tailscale.com/stable/Tailscale-latest-macos.pkg -o "$WORK/Tailscale.pkg" && sudo installer -pkg "$WORK/Tailscale.pkg" -target / >/dev/null && ok "Tailscale installed" || warn "Tailscale didn't install: get it from tailscale.com/download"
-  fi
 fi
 if yes "$SOLO"; then
   if have "Google Drive"; then ok "Google Drive is already installed"
   else say "Installing Google Drive for desktop (asks for your password) ..."; from_dmg https://dl.google.com/drive-file-stream/GoogleDrive.dmg GoogleDrive "Google Drive"; fi
-fi
-# Tailscale sign-in as a tagged band machine: a tagged machine's key never expires, so nobody has to sign in again
-# before a session (untagged ones sign out every 180 days). Needs the host's one-time tagOwners line (see the end).
-TS="/Applications/Tailscale.app/Contents/MacOS/Tailscale"
-TS_TAGGED=""
-if yes "$LIVE" && [ -x "$TS" ]; then
-  open -a Tailscale
-  # (a new install runs only once macOS approves its system extension: System Settings > General > Login Items &
-  # Extensions, and "Allow" for its VPN configuration. Until then every command fails, and a reset was done for nothing)
-  for i in $(seq 1 120); do
-    "$TS" status --json 2>/dev/null | grep -q '"BackendState"' && break
-    [ $i -eq 5 ] && say "Waiting for Tailscale: if macOS asks, allow its system extension (System Settings > General > Login Items & Extensions) and its VPN configuration."
-    sleep 1
-  done
-  tsst="$("$TS" status --json 2>/dev/null | tr -d '\n ')"
-  TS_RUNNING=""; echo "$tsst" | grep -q '"BackendState":"Running"' && TS_RUNNING=1
-  if echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { [ -n "$TS_RUNNING" ] && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
-    ok "Tailscale signed in, and stays signed in"; TS_TAGGED=1 # tagged, or its key expiry was turned off by hand
-  elif [ -n "$TS_RUNNING" ]; then
-    # already signed in: left exactly as it is. Re-signing in with the tag logged a Mac OUT when the tag wasn't allowed
-    # yet, and the refused tag stuck in its settings so signing in again kept failing (2026-10-28)
-    ok "Tailscale is signed in (it signs out by itself every few months: see the end to keep it signed in)"
-  else
-    say "Signing in to Tailscale: a browser page opens; sign in with the group's account there. (macOS may first ask"
-    say "to allow Tailscale's VPN configuration: click Allow.)"
-    out="$WORK/ts_up.txt"; : > "$out"
-    "$TS" up --advertise-tags=tag:bandsync --timeout=300s >"$out" 2>&1 &
-    pid=$!; url=""
-    for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
-    [ -n "$url" ] && open "$url"
-    if wait $pid; then ok "Tailscale signed in as a group machine (it stays signed in)"; TS_TAGGED=1
-    elif ! grep -qi 'tag' "$out"; then warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."
-    else
-      # the refused tag stays in Tailscale's settings and every later sign-in fails on it: clear it, then sign in plainly
-      "$TS" up --reset --advertise-tags= --timeout=120s >"$out" 2>&1 &
-      pid=$!; url=""
-      for i in $(seq 1 30); do url="$(grep -o 'https://login.tailscale.com/[^ ]*' "$out" | head -1)"; [ -n "$url" ] && break; kill -0 $pid 2>/dev/null || break; sleep 1; done
-      [ -n "$url" ] && open "$url"
-      if wait $pid; then ok "Tailscale signed in (without the group tag)"
-      else warn "Tailscale sign-in didn't finish: open Tailscale (in Applications, or its menu-bar icon) and sign in."; fi
-    fi
-  fi
-  # what still needs a person, waited for here (James, 2026-10-31: "the installer should wait for you to sign in"):
-  # signed in at all, then key expiry off, so it doesn't sign out by itself every few months. Return skips either.
-  # (plutil reads the JSON: this Mac's own KeyExpiry, not a bandmate's; a grep can't tell them apart)
-  ts_running() { [ "$("$TS" status --json 2>/dev/null | plutil -extract BackendState raw -o - - 2>/dev/null)" = Running ]; }
-  ts_expires() { "$TS" status --json 2>/dev/null | plutil -extract Self.KeyExpiry raw -o - - >/dev/null 2>&1; }
-  if [ -z "$TS_TAGGED" ] && ! ts_running; then
-    say "Sign in to Tailscale now (its menu-bar icon > Log in). Waiting for it; press Return to skip and do it later."
-    while ! ts_running; do read -t 3 -r </dev/tty && break; done
-    ts_running && ok "Tailscale signed in"
-  fi
-  if [ -z "$TS_TAGGED" ] && ts_running && ts_expires; then
-    say "One click keeps this Mac signed in to Tailscale for good. In the page that opens: this Mac's ... menu >"
-    say "Disable key expiry. Waiting for it; press Return to skip (it then signs out by itself every few months)."
-    open "https://login.tailscale.com/admin/machines"
-    while ts_expires; do read -t 3 -r </dev/tty && break; done
-    ts_expires || { ok "Tailscale stays signed in"; TS_TAGGED=1; }
-  fi
 fi
 # Google Drive: signed in, and the band's BandSync folder in My Drive (the first one makes it; everyone else adds
 # the shared one as a shortcut: Drive has no way to do that for you, so its page opens and this waits). Return skips.
@@ -466,15 +402,6 @@ else
     echo "  - Tell the collaborator whose ID you used: their StudioSync panel shows 'Let $USERNAME_BS in' (or they add your"
     echo "    Syncthing ID by hand: $MY_ID). The shared folder then arrives by itself."
   fi
-fi
-if yes "$LIVE" && [ -z "$TS_TAGGED" ]; then
-  echo "  - Tailscale (skipped above): sign in from its menu-bar icon, then at login.tailscale.com/admin/machines > this"
-  echo "    Mac > ... > Disable key expiry (otherwise it signs out every few months, maybe right before a session)."
-fi
-if yes "$LIVE" && yes "$HOSTING"; then # the first one's job, once: then bandmates' installers sign their machines in for good
-  echo "  - Tailscale, once for the whole group (if not done yet): at login.tailscale.com/admin/acls add this line inside the"
-  echo '    policy'"'"'s { }:   "tagOwners": { "tag:bandsync": ["autogroup:member"] },'
-  echo "    Then each collaborator's installer signs their machine in as a group machine that never has to sign in again."
 fi
 if yes "$SOLO" && yes "$HOSTING" && [ -n "${DRIVE_OK:-}" ]; then
   echo "  - Google Drive: share the BandSync folder in your My Drive with each collaborator (Editor), at drive.google.com."

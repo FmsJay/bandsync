@@ -17,17 +17,16 @@ For a band, or for one song with someone: it's the same thing, so name it what i
 
 1. Run the installer: **Install BandSync (Windows).cmd**, or on a Mac **Install BandSync (Mac).command** (see
    [Setup](#setup-each-person-once) if macOS blocks it). Answer *n* to "Is someone in the group already set up?" and
-   give it a name. Already have StudioSync? Press **Start a new group/session** on a project's first screen, or in
-   Setup > Options. With a project open, it offers to share it and has the invitation ready.
-2. In REAPER, open your project and press **Share this project with the group** in the StudioSync panel.
-3. On the Home page, press **Invite a collaborator**. It copies a line for them to paste: send it to each person.
+   give it a name. Already have StudioSync? Press **Start a new group/session** on the panel's **Groups** page.
+2. In REAPER, open your project and press **Share** on the **Projects** page. It goes through the Prepare checklist first.
+3. On the Groups or Home page, press **Invite**. It copies a line for them to paste: send it to each person.
 4. When they've run it, your panel shows **Let *them* in**: press it.
-5. Finished? **Close** in Setup > Options stops it on every computer. Everyone keeps their copy, and its projects stay
+5. Finished? **Close** on the Groups page stops it on every computer. Everyone keeps their copy, and its projects stay
    open as ordinary projects.
 
-Syncing needs no account: only your two computers and the shared folder, and files move while both are online. Two
-extras do: *Play along* and *Jam* use one Tailscale account for the group, and the optional Google Drive copy uses a
-Google account. REAPER keeps its own licence (reaper.fm).
+Syncing needs no account: only your two computers and the shared folder, and files move while both are online. The
+optional Google Drive copy uses a Google account. *Play along* and *Jam* (the Play tab, hidden until you switch it on) need
+a NINJAM server the others can reach, most easily over Tailscale; nothing else does. REAPER keeps its own licence (reaper.fm).
 
 ## Collaborators: start here
 
@@ -36,11 +35,10 @@ Google account. REAPER keeps its own licence (reaper.fm).
    **Syncthing device ID** (in Syncthing: Actions > Show ID) and the group's ID.)
 2. Tell them you've installed: their StudioSync panel shows **Let *you* in**. Once they press it, the group's projects
    arrive in your shared folder by themselves.
-3. In REAPER's StudioSync panel: **Join the group's project**. Its tracks arrive over the next moments.
+3. In REAPER's StudioSync panel: **Projects**, then double-click one. Its tracks arrive over the next moments.
 4. Play and record as usual. What you change reaches everyone; anything that isn't yours to change is put back,
    with the reason.
 5. To hear each other live: **Real time mode** on the Home page. Undo anything: the **Restore** page.
-6. Once: **Calibrate latency** (Setup > Health says when it's still missing).
 
 Everything below is the detail.
 
@@ -95,23 +93,23 @@ Everything below is the detail.
 - **MIDI** travels as notes. Whoever changes a MIDI part also renders a print (its sound, through their
   instrument), kept as the item's second take: "dry" is the notes, "wet" the print. A MIDI track that plays an
   instrument on another track (a MIDI send to a sampler or drum-kit track) is printed through that track, with
-  only that item feeding it. Each person picks how MIDI plays on their machine (Setup > Options): **Auto** (your
+  only that item feeding it. Each person picks how MIDI plays on their machine (Settings > Options): **Auto** (your
   instruments when every plug-in it plays through loads here, else the print), **Dry** or **Wet**. That choice
-  never changes what anyone else hears. When an instrument on another track doesn't load here, Setup > Health
+  never changes what anyone else hears. When an instrument on another track doesn't load here, Settings > Health
   names it and says you hear the group's print.
 - **Audio through a plug-in someone lacks** (an amp sim on a guitar, say) gets a wet take the same way: whoever
   changes the item renders it through the track's plug-ins, and the same Auto / Dry / Wet choice picks which plays.
   Only tracks with a plug-in that isn't on everyone's list get one, and only items with a single take. While a
   track plays a wet take, its plug-ins are switched off on that computer only, so the ones that do load there
   don't apply twice (the group still has them on).
-- **Your colour, and who's working where** (Setup > Options): everyone has a colour, their own pick or a default
+- **Your colour, and who's working where** (Settings > Options): everyone has a colour, their own pick or a default
   nobody else has, the same on every computer; drawings use it. Each computer chooses how tracks look: **Group's
   colours**; **Show who's working** (the group's colours, but a track a collaborator is editing or has claimed shows their
   colour until they're done); or **Whose track** (every track in the colour of whoever is editing it, claimed it, or
   made it). Only on that computer: the group's own colours are kept aside meanwhile, never sent or lost.
 - **Prints render in the background**: a second, hidden REAPER renders each one from a copy of the project while you
   carry on (a few seconds each, one at a time), and it's added when it's done; on Windows it runs on a desktop of its
-  own, so nothing shows or takes the keyboard. It runs with a settings folder of its own (in your temp folder): your plug-ins and effects, but none of REAPER's extensions, MIDI devices or control surfaces, and it never touches your reaper.ini or Recent projects. Where that doesn't work it renders in front as before; Setup > Options
+  own, so nothing shows or takes the keyboard. It runs with a settings folder of its own (in your temp folder): your plug-ins and effects, but none of REAPER's extensions, MIDI devices or control surfaces, and it never touches your reaper.ini or Recent projects. Where that doesn't work it renders in front as before; Settings > Options
   turns it off. BandSync adds a guard to the top of Scripts/__startup.lua so your own startup scripts don't run in it.
 - **Who prints**: whoever changed a part, when they have every plug-in it plays through. Someone who doesn't is
   covered by a collaborator in the project who does (the first by name), and **Print selected tracks here** (Claims) puts you
@@ -130,8 +128,8 @@ Everything below is the detail.
 someone in the group is already set up (if so, their Syncthing device ID: any set-up collaborator's will do; with the line
 from their panel's **Invite a collaborator**, it's already filled in) and whether you want the plug-in pack, then
 installs whatever is missing from official sources: REAPER, ReaPack, ReaImGui, js_ReaScriptAPI, SWS, Syncthing,
-SonoBus, Tailscale and Google Drive for desktop. It sets up the shared folder and pairs it with your collaborator,
-waits while you sign in to Tailscale (and switch off its key expiry) and Google Drive (and add the group's folder),
+SonoBus and Google Drive for desktop. It sets up the shared folder and pairs it with your collaborator,
+waits while you sign in to Google Drive (and add the group's folder),
 installs BandSync through ReaPack and opens the panel. At the end it lists only what's still left, such as your
 collaborator pressing *Let you in*.
 
@@ -142,18 +140,15 @@ On a Mac, macOS blocks a downloaded script the first time. Either:
   offer right-click > Open for this). A .command that came through a shared folder, Drive or email may also have lost
   its "can run" bit: run it as `bash "Install BandSync (Mac).command"` instead.
 A newly installed REAPER opens with its evaluation reminder: wait for its countdown, then *Still evaluating* (REAPER's
-own licence: reaper.fm). Tailscale asks macOS to approve its system extension (System Settings > General > Login Items & Extensions): the
-installer waits while you do.
+own licence: reaper.fm).
 
 **Or let an AI do it.** In Claude Code, on the computer being set up, point it at
 `installer/SKILL.md` ("set up BandSync using installer/SKILL.md"). It installs and configures everything below,
 explains each prompt before it appears, and asks before every download.
 
-**In the project:** the panel's first screen offers *Join the group's project* or *Share this project with the group*, and the
-Setup page's **Health** list shows what's in place for this project and machine (shared folder syncing,
-Live sync, SonoBus, the Live server, latency). **Set up everything I can** does every fix that needs no
-human: starts Syncthing and Live sync, adds SonoBus (off), and on the host fills in its Tailscale address as the
-Live server and starts the NINJAM server.
+**In the project:** with no group project open, the panel shows your **Groups**, a group's **Projects** and **Settings**. The
+Settings page's **Health** list shows what's in place for this project and machine (shared folder syncing, Live sync,
+SonoBus). **Set up everything I can** does every fix that needs no human: starts Syncthing and Live sync, and adds SonoBus (off).
 
 By hand:
 
@@ -178,11 +173,9 @@ By hand:
 5. **Install ReaImGui** (*Extensions > ReaPack > Browse packages*): the panel, and with it the Live and
    Restore pages, needs it.
 6. Optional extras:
-   - **Tailscale** is only for *Play along* and *Jam* (they reach the NINJAM server on the host's machine).
-     Syncthing, Real time mode (SonoBus) and everything else work without it. Simplest: everyone signs in to
-     the group's one Tailscale account (what the installers do; the host adds the `tag:bandsync` line they print, so
-     group machines stay signed in). Someone who keeps their own Tailscale account instead gets the server machine
-     shared with them (admin console > the machine's **...** > *Share*) and accepts the link.
+   - **Tailscale** isn't part of setup. Only *Play along* and *Jam* want it (they reach the NINJAM server on the host's
+     machine; show the Play tab in Settings > Options), or someone whose router stops SonoBus (Settings > Advanced >
+     Can't hear each other?). Simplest: everyone signs in to one Tailscale account.
    - **The Google Drive copy** (optional, recommended) needs **Google Drive for desktop**, each person signed in
      with their **own** Google account (two computers on one account lose files: "Lost and Found"). The host makes a
      `BandSync` folder in My Drive and shares it with everyone as Editor; each collaborator adds it to their own Drive
@@ -200,22 +193,22 @@ By hand:
   who drives, **Undo** / **Redo** (your own changes, for everyone; each asks first, and says if a collaborator changed the
   same thing since), **Dock** and, floating, **Full screen** and **Window** (half the screen, the next screen, back).
   Under the bar, what BandSync just did shows for a few seconds.
-- **Open collaborators' MIDI edits as they happen** (Setup > Options, off by default, this computer only): when someone's
+- **Open collaborators' MIDI edits as they happen** (Settings > Options, off by default, this computer only): when someone's
   change to a MIDI part reaches you, it opens in the MIDI editor with the notes they changed selected. A MIDI editor
   you opened yourself is left alone. Which notes are selected and which lanes an editor shows never go to the group.
 - **Background renders on a Mac** use a private copy of REAPER (about 170 MB in `~/Library/Caches/BandSync`, made once and
   again after REAPER updates) that macOS keeps in the background, with a small library that keeps its windows
-  transparent. It never touches your REAPER. Setup > Options can switch background rendering off.
+  transparent. It never touches your REAPER. Settings > Options can switch background rendering off.
 - **Wet takes in a burst**: a part is rendered once it has held still for 3 seconds, up to three at once, whichever
   changed longest ago first, so a part you're still editing doesn't hold up the others and doesn't render every step.
   A render of a version that's gone is ended. Going back to a version already printed needs no render and doesn't wait.
 - **Minimize** (top bar, or closing the panel) shrinks it to a small square over REAPER: its edge is green while sync runs, red when it doesn't, and a count in the corner says what's waiting (hover for the words). Click it and the panel opens where it was, floating or docked. Drag it and it stays there, pinned to REAPER's window; right-click to lock it, close the panel or remove the square.
-- **Themes**: Setup > Options > Look: Dark, Light, Midnight or Warm, per computer.
+- **Themes**: Settings > Options > Look: Dark, Light, Midnight or Warm, per computer.
 - **Nothing clips in a render**: prints and the final mix go through REAPER's render limiter at -0.3 dB. Only what goes over is touched, and timing stays as it was. It stops a clip, not a mix that's too hot: the final mix says so when the limiter was working.
 - **Removing someone**: the driver or the song's host has **Remove** on their card in Who's here. You get a minute to change your mind (**Keep them**), then every computer in the group stops syncing with theirs, each on its own as it comes online. Their claims go free, and what they made stays in the songs and on Restore. They keep the copy they already have, and the group's Google Drive folder is yours to take them off. Invite them again to bring them back.
 - **Pages**: **Home** (Who's here with *Take control*, Real time mode, who changes what, Local mixing, claims),
   **Rooms**, **Play** (play/record together, follow each other, how you hear each other), **Chat**, **Restore**,
-  **Plugins** and **Setup** (Health, Console, Options, Updates). A red or yellow dot on Setup means Health has
+  **Plugins** and **Settings** (Health, You, Options, Advanced, Console, Updates). A red or yellow dot on Settings means Health has
   something (red: the group can't sync until it's fixed).
 - **Docking**: click *Dock* for Bottom / Left / Right (REAPER's docker on that side; if there isn't one, BandSync
   says how to set it once). Right-click *Dock* to arm drag-to-dock (it turns green); otherwise dragging the
@@ -235,7 +228,7 @@ BandSync session they step back through your own changes only, for everyone, and
 changed the same thing since (REAPER's own undo would roll their changes back too). In any other project they're
 REAPER's normal Undo and Redo.
 
-**Your name**: Setup > Options > Change name. Who drives and your claims move over, and your tracks stay yours on
+**Your name**: Settings > You. Who drives and your claims move over, and your tracks stay yours on
 every machine (the group keeps a list of old names). Changes you made before keep the old name on the Restore page.
 
 **Drawing on the tracks**: Chat > "Draw on the tracks" (or the BandSync - Draw action). Draw over the arrange view
@@ -311,11 +304,11 @@ the original stays for everyone who has it.
 Recording and MIDI: record as usual. A new recording goes out a moment after you stop (the file is copied into
 the room's media folder once). MIDI travels as notes with a print beside it (see How it works).
 
-- **BandSync - Prepare session** (Setup > Updates, or the first screen): for a busy project, a checklist of what it
+- **BandSync - Prepare session** (Share always starts with it; Settings > Advanced for a shared project, whose changes then go to everyone): for a busy project, a checklist of what it
   needs for BandSync (takes into fixed lanes, 24-bit FLAC at one sample rate, unnamed or duplicate track names,
   files from outside the project, ripple editing off...), applied after a backup copy as one undo. Publish asks for
   it first.
-- **Drum maps** (Setup > Options): rewrite a drum track's MIDI into another drum VST's notes (named drum sounds,
+- **Drum maps** (Settings > Advanced): rewrite a drum track's MIDI into another drum VST's notes (named drum sounds,
   General MIDI plus articulations). Maps are JSON files in `<shared folder>/drummaps`.
 
 ### Working alone, and the Google Drive copy
@@ -325,7 +318,7 @@ the room's media folder once). MIDI travels as notes with a print beside it (see
 - **Both changed something while apart**: whoever changed it more times since you split wins (a tie: the later
   one), on every machine alike ([docs/clashes.md](docs/clashes.md) explains, and how other tools decide). If yours was replaced, BandSync
   says so: yours is still on the Restore page (*Undo* on theirs brings it back).
-- **The Google Drive copy** (Setup > Options): Syncthing only moves files while two machines are on at the same time.
+- **The Google Drive copy** (Settings > Options): Syncthing only moves files while two machines are on at the same time.
   Live sync also keeps a copy of the room on Google Drive (store and forward), so what someone does alone reaches the
   others even if you're never online together. Every project on your computer in full keeps its Drive copy (your
   changes and recordings; the others' come from their machines), one project at a time in the background. Opening a
@@ -340,12 +333,12 @@ Google Drive copy, and nobody in your other groups sees it. `_band/band.json` in
 Drive folder `BandSync`).
 
 - **Who runs a group**: whoever started it is its **owner**, and can make people **admins** on their cards in Who's here. Admins let people in, rename it and remove members. Only the owner can remove an admin, make someone else the owner, or close it. This trusts the people in the group: the list is a shared file, not a lock.
-- **Rename** and **Leave** (Setup > Options > Groups): a new name reaches everyone, and folder names stay as they are. Leaving stops this computer syncing it: you keep your copy, its projects stay open as ordinary projects, and someone can invite you again. The owner hands it over first, or closes it. Your only group can't be left, unless nobody in it has been online for a week: closed or removed while you were offline, nothing can reach you to say so, and the panel says so then.
-- **Start a new group/session** (Setup > Options > Groups): makes its folder beside your first group's (`StudioSync <Name>`) and its
+- **Rename**, **Close** and **Leave** (the Groups page, for any group you're in): a new name reaches everyone, and folder names stay as they are. Leaving stops this computer syncing it: you keep your copy, its projects stay open as ordinary projects, and someone can invite you again. The owner hands it over first, or closes it. Your only group can't be left, unless nobody in it has been online for a week: closed or removed while you were offline, nothing can reach you to say so, and the panel says so then.
+- **Start a new group/session** (the Groups page): makes its folder beside your first group's (`StudioSync <Name>`) and its
   own Syncthing folder, shared with nobody yet. Then *Invite a collaborator*: the invitation is for the group you're
   working in, and their installer joins that group (`BS_BAND_ID` / `BS_BAND_NAME` on a Mac, `-BandId` / `-BandName`
   on Windows). *Let them in* shares only that group's folder.
-- **Switch** (Setup > Options > Groups, or the start screen when you're in more than one): new projects, *Join the group's
+- **Switch** (Projects on a group's card, on the Groups page): new projects, *Join the group's
   project* and the project list are that group's. Project tabs keep their own group, so two groups' projects can be open at once.
 - The first person to set up a group names it in the installer.
 
@@ -353,7 +346,7 @@ Drive folder `BandSync`).
 
 Every computer gets every project's listing (a few KB: what the project chooser shows), and a project in full only once it's
 opened there, so a new collaborator's first sync isn't the whole library. Opening a project in the chooser brings the rest
-of it (the chooser says "downloaded when you open it"). Setup > Options > **Projects on this computer** lists the projects
+of it (the chooser says "downloaded when you open it"). The **Projects** page lists the projects
 here in full, with **Stop downloading** for one you're done with (its files stay until you remove them; nothing
 changes for the group), and **Keep every project on this computer** for the machine that stays on, so new collaborators
 always have somewhere to get a project from. It works through Syncthing's ignore file in the shared folder
@@ -420,7 +413,13 @@ Spitfire LABS, MeldaProduction MFreeFXBundle.
 
 ### Live: hear each other while it happens
 
-The **Play** page has three ways to hear each other:
+**Real time mode**, **Follow** and **Listen** are on Home and need nothing but SonoBus. **Follow** on someone's card: your
+playhead goes with theirs (play, pause, stop, jumps; when they record, you play along), and your view too. **Always follow the driver** does
+that for whoever's driving. **Listen** on someone's card: you hear only them, their whole mix, or with Follow on just what they're
+playing over your own copy of the song. Their computer turns SonoBus on by itself for as long as someone's listening, and says who. SonoBus
+carries sound; the notes and the take arrive through the shared folder and are swapped in when they stop, so MIDI is never sent live.
+
+The **Play** page (Settings > Options shows it) has the NINJAM ways to hear each other:
 
 - **Play along (synced)**, the default: your audio is stamped with its project position; listeners start playback
   a bar or two after you and hear you in time with the project, at any distance. What you play also lands on their
@@ -428,8 +427,8 @@ The **Play** page has three ways to hear each other:
   Uses REAPER's own ReaNINJAM and a NINJAM server the host runs (`tools/ninjam-server/README.md`), over Tailscale.
 - **Real time** (Home's **Real time mode**): hear each other as it happens, through **SonoBus** (free, GPLv3,
   sonobus.net): peer to peer, far lower delay than NINJAM, nobody runs a server. It sits on the **BandSync Real time**
-  track, fed only by your armed tracks, already in the group's group under your BandSync name (BandSync writes the group
-  into SonoBus's saved state; `lib/sonobus.lua`). The group's group and password are in `<shared folder>/sonobus.json`;
+  track, fed only by your armed tracks, already in your group's SonoBus group under your BandSync name (BandSync writes the group
+  into SonoBus's saved state; `lib/sonobus.lua`). Its name and password are in `<shared folder>/sonobus.json`;
   SonoBus's public server only introduces peers, and the audio goes directly between you, unencrypted.
 - **Jam**: classic NINJAM, everyone one interval late.
 
@@ -437,6 +436,11 @@ The host enters `<Tailscale IP>:2049` and clicks *Save for the group*; everyone 
 ReaNINJAM to their master track with everything filled in (one more Connect click in its window).
 The host also sets the server folder (the one with `ninjamsrv` and `bandsync.cfg`) once; the host's Connect starts
 the server if it isn't running.
+
+- **Deleting your local copy** (right-click a project or a folder on the Projects page): to free the space, once it's confirmed elsewhere: Google Drive holds every file, or Syncthing says another computer of the group lacks none of it. The project goes on this computer's ignore list first, so nobody else's copy is touched, and its files go to the Recycle Bin or Trash. It stays on the page, and opening it brings it back. A closed group's copy goes the same way, from the Groups page.
+- **A copy outside the group** (Restore > Save a copy outside the group): a plain REAPER project in a folder you pick, with every file it uses, as recorded or as WAVs. It opens anywhere with no StudioSync and nothing you do to it goes to anyone. Letting someone in saves a kept version of what's open first.
+- **Who controls** (Home): Only the driver, Driver + claims, Admins only (the owner and admins, and whoever an admin gave tracks to: right-click their name) or Anyone.
+- **Chat**: This room shows only this room's; This project also shows all its rooms'; Group shows everything, each message saying where it's from.
 
 ## Backups
 

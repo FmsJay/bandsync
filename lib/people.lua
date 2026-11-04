@@ -1,8 +1,8 @@
 -- Each person's colour, and tracks that show who's working on them (James, 2026-11-01).
 -- Everyone has a colour: their own pick (Setup > Options), else a default from the palette nobody has picked, the
 -- same on every machine. Drawings use it ("Mine"); tracks may too, as this machine chooses (ExtState "track colours"):
---   "band"     the band's colours only (the default)
---   "working"  the band's colours, but a track someone else is editing (its last 15 s, lib/presence.lua) or has
+--   "band"     the band's colours only
+--   "working"  the default: the band's colours, but a track someone else is editing (its last 15 s, lib/presence.lua) or has
 --              claimed shows their colour, and goes back once that ends
 --   "people"   every track in the colour of whoever is editing it, claimed it, or made it
 -- A person's colour on a track is only ever shown here: the band's colour waits in the track's P_EXT:band_colour
@@ -13,8 +13,8 @@ local band = require("band")
 local people = {}
 
 people.PALETTE = { 0xFF5A5A, 0x4CC2FF, 0x7BE07B, 0xFFC24C, 0xC88BFF, 0xFF8BD0, 0x5AE0D0, 0xFF9F5A }
-people.MODES = { { "band", "Group's colours", "Tracks keep the colours the group gave them." },
-  { "working", "Show who's working", "The group's colours, but a track someone else is editing or has claimed shows their colour until they're done." },
+people.MODES = { { "band", "Group colours", "Tracks keep the colours the group gave them." },
+  { "working", "Group colours + show who's working", "The group's colours, but a track someone else is editing or has claimed shows their colour until they're done." },
   { "people", "Whose track", "Every track in the colour of whoever is editing it, claimed it, or made it." } }
 
 local function file(root, user) return root .. "/_band/colours/" .. (user:gsub("[^%w%-_ ]", "")) .. ".json" end
@@ -71,7 +71,7 @@ function people.pick(cfg, rgb)
   end
   cache[cfg.root] = nil
 end
-function people.mode() local m = reaper.GetExtState(band.SECTION, "track colours"); return m ~= "" and m or "band" end
+function people.mode() local m = reaper.GetExtState(band.SECTION, "track colours"); return m ~= "" and m or "working" end
 
 -- Who a track shows, in this machine's mode: someone else editing it, else its claimant, else (Whose track) whoever
 -- made it. `editing`: oid -> user (bandmates' edit holds); `claims`: lower track name -> { user } (sync.authority).
@@ -123,8 +123,8 @@ function people.paint(proj, cfg, peers, claims)
   end
 end
 
--- Setup > Options: your colour and how tracks look here. (In this file: the panel is near Lua's 200-locals limit.)
-function people.options(ctx, ImGui, cfg)
+-- Settings: your colour, and how tracks look here. (In this file: the panel is near Lua's 200-locals limit.)
+function people.colour_options(ctx, ImGui, cfg)
   ImGui.SeparatorText(ctx, "Your colour")
   local mine = people.mine(cfg)
   local list = {}
@@ -154,9 +154,14 @@ function people.options(ctx, ImGui, cfg)
   next_to(70)
   if ImGui.SmallButton(ctx, "Default##colour") then people.pick(cfg, nil) end
   ImGui.TextDisabled(ctx, "Everyone sees you in it: your drawings, and tracks you're working on where they show that.")
+end
+function people.track_options(ctx, ImGui)
   ImGui.SeparatorText(ctx, "Track colours here")
-  for _, m in ipairs(people.MODES) do
-    if m[1] ~= "band" then next_to(ImGui.CalcTextSize(ctx, m[2]) + 40) end
+  for i, m in ipairs(people.MODES) do
+    if i > 1 then
+      ImGui.SameLine(ctx)
+      if ImGui.GetContentRegionAvail(ctx) < ImGui.CalcTextSize(ctx, m[2]) + 40 then ImGui.NewLine(ctx) end
+    end
     if ImGui.RadioButton(ctx, m[2] .. "##trackcolours", people.mode() == m[1]) then reaper.SetExtState(band.SECTION, "track colours", m[1], true) end
     ImGui.SetItemTooltip(ctx, m[3] .. " Only on this computer: nobody else's colours change.")
   end

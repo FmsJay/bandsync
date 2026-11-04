@@ -148,6 +148,15 @@ local function st_api(path, method)
   return string.format('curl -s -m 3 %s%s-H "X-API-Key: %s" "%s://%s%s"', tls and "-k " or "", method and ("-X " .. method .. " ") or "",
     key, tls and "https" or "http", addr, path)
 end
+-- Syncthing's REST answer, now: for what someone just asked for, not for every frame. -> the text, or nil.
+function services.ask(path, secs)
+  local cmd = st_api(path)
+  if not cmd then return nil end
+  local r = reaper.ExecProcess((cmd:gsub("%-m 3 ", "-m " .. (secs or 3) .. " ", 1)), ((secs or 3) + 1) * 1000) or ""
+  if not r:match("^0\n") then return nil end
+  local out = r:gsub("^0\n", "")
+  return out ~= "" and out or nil
+end
 -- Have Syncthing scan a folder now (it reads a changed .stignore then: lib/songsync.lua). In the background.
 function services.rescan(folder)
   local cmd = st_api("/rest/db/scan?folder=" .. folder, "POST")

@@ -18,4 +18,13 @@ local out = band.old_actions(text, "/R/Scripts", function(p) return files[p] ~= 
 assert(#out == 2, "two are old, got " .. #out)
 assert(out[1].section == 32060 and out[1].path == "/R/Scripts/BandSync/BandSync/BandSync - Undo.lua", out[1].path)
 assert(out[2].section == 0 and out[2].path:find("(tab 1)", 1, true), out[2].path)
+-- Tailscale: will this computer stay signed in?
+package.path = "lib/?.lua;" .. package.path
+reaper.GetOS = function() return "Win64" end
+local services = require("services")
+local stays = services.tailscale_stays_in
+assert(stays('{"Self":{"Tags":["tag:bandsync"],"KeyExpiry":"2027-01-01T00:00:00Z"}}') == true, "tagged")
+assert(stays('{"Self":{"DNSName":"a.b.ts.net."}}') == true, "no expiry")
+assert(stays('{"Self":{"DNSName":"a.b.ts.net.","KeyExpiry":"2027-03-04T05:06:07Z"}}') == "2027-03-04", "expires")
+assert(stays('{"Self":{"Tags":[],"KeyExpiry":"2027-03-04T05:06:07Z"}}') == "2027-03-04", "empty tags")
 print("ok")

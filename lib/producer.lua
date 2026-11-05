@@ -85,6 +85,7 @@ local function ninjam_on(proj, cfg, b, send)
     tr = rt
   end
   reaper.TrackFX_Show(tr, i, 3)
+  live.keep_hidden(proj)
   return true
 end
 
@@ -92,6 +93,7 @@ end
 -- again, whatever lost it. A Mac is different: a lost server leaves an alert no script can see or answer, and ReaNINJAM's window goes on saying "Connect..."
 -- under it even once it's connected, so each try would knock down what the last one made. There, one press, once the server answers.
 local connecting = {}
+local server_at, server_lost = {}, {}
 local function auto_connect(tab)
   local c = connecting[tab]
   if not c then c = { tries = 0, at = -math.huge }; connecting[tab] = c end
@@ -130,7 +132,7 @@ local function auto_connect(tab)
     band.log("can't reach the NINJAM server yet: if ReaNINJAM shows a box, press its OK. Trying again for a few minutes")
   elseif c.tries >= 13 and reaper.time_precise() - c.at > 30 then
     c.done = true
-    band.log("couldn't connect to the NINJAM server: press Connect in ReaNINJAM's window")
+    band.log("couldn't connect to the NINJAM server: is Tailscale on? Stop and Produce again, or press Show it on the Play page")
   end
 end
 
@@ -232,9 +234,34 @@ function producer.tick(proj, cfg, b, peers)
     reaper.DeleteExtState(band.SECTION, "ninjam connect " .. tab, false)
     connecting[tab], play_tab = nil, false
   end
-  if ninjam_up[tab] or play_tab or (producer.who(proj) and producer.via(proj) == "ninjam") then
-    if not going then auto_connect(tab) end
+  local pressing = producer.who(proj) and producer.via(proj) == "ninjam"
+  if ninjam_up[tab] or play_tab or pressing then
+    if not going then require("live").keep_hidden(proj); auto_connect(tab) end
   elseif going then ninjam_off(proj) end
+  -- the song's server moved, or (pressing Produce) has gone: everyone ends up on the one live.json names, whoever wrote it last
+  if (ninjam_up[tab] or pressing) and not going and reaper.time_precise() - (server_at[tab] or -math.huge) > 10 then
+    server_at[tab] = reaper.time_precise()
+    local live, services = require("live"), require("services")
+    local there, host = (band.read_json(require("setup").live_file(cfg, b)) or {}).server or "", reaper.GetExtState(band.SECTION, "ninjam host")
+    local lost = pressing and there == host and live.connect(false) ~= "connected"
+    server_lost[tab] = lost and (server_lost[tab] or reaper.time_precise()) or nil
+    if lost and reaper.time_precise() - server_lost[tab] > 25 and not services.answers(host) then
+      band.log("the NINJAM server's gone: running it here")
+      server_lost[tab] = nil
+      ninjam_off(proj)
+      connecting[tab] = nil
+      local ok, why = ninjam_on(proj, cfg, b, false)
+      if not ok then band.log("NINJAM server: " .. tostring(why)) end
+    elseif there ~= "" and there ~= host then
+      band.log("the NINJAM server moved to " .. there .. ": following it")
+      ninjam_off(proj)
+      ninjam_up[tab], connecting[tab] = nil, nil
+      if pressing then
+        local ok, why = ninjam_on(proj, cfg, b, false)
+        if not ok then band.log("NINJAM server: " .. tostring(why)) end
+      end
+    end
+  end
   if now ~= "" and through_ninjam then
     if reaper.GetExtState(band.SECTION, "stamping " .. tab) ~= "" then -- (they've changed routes)
       stamp.send(proj, false)
@@ -246,14 +273,6 @@ function producer.tick(proj, cfg, b, peers)
       ninjam_up[tab] = ok or nil
       if ok then band.log(now .. " hears you through the NINJAM server")
       elseif ninjam_said[tab] ~= why then ninjam_said[tab] = why; band.log(now .. " wants to hear you, but: " .. tostring(why)) end
-    elseif ninjam_up[tab] and reaper.time_precise() - (ninjam_at[tab] or -math.huge) > 10 then -- (the server moved: whoever produces me took it over)
-      ninjam_at[tab] = reaper.time_precise()
-      local there = (band.read_json(require("setup").live_file(cfg, b)) or {}).server or ""
-      if there ~= "" and there ~= reaper.GetExtState(band.SECTION, "ninjam host") then
-        band.log("the NINJAM server moved to " .. there .. ": following it")
-        ninjam_off(proj)
-        ninjam_up[tab], connecting[tab] = nil, nil
-      end
     end
   elseif now ~= "" then
     if ninjam_up[tab] then ninjam_off(proj); ninjam_up[tab] = nil end

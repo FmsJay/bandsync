@@ -498,6 +498,21 @@ function services.tailscale_up()
   end
   return ts_up
 end
+-- Will this computer stay signed in? -> true (it's tagged, or its key expiry's off), or the date it signs out on. From `tailscale status --json --peers=false`. Pure.
+-- (What a tailnet's policy says can't be read from a computer: a computer that got its tag is the proof. Trying a tag to find out once logged a Mac out: installer, 2026-10-28.)
+function services.tailscale_stays_in(json)
+  local self = json:match('"Self":%s*(%b{})') or ""
+  local tags = self:match('"Tags":%s*(%b[])')
+  if tags and tags:find("tag:", 1, true) then return true end
+  return self:match('"KeyExpiry":%s*"(%d%d%d%d%-%d%d%-%d%d)') or true
+end
+local ts_stays
+function services.tailscale_stays()
+  local exe = tailscale_exe()
+  if not exe or not services.tailscale_up() then return true end
+  if ts_stays == nil then ts_stays = services.tailscale_stays_in(reaper.ExecProcess(q(exe) .. " status --json --peers=false", 5000) or "") end
+  return ts_stays
+end
 -- From `tailscale status --json --peers=false`: this machine's name, if the tailnet's names work ("pc.tail1234.ts.net", no last dot).
 function services.tailscale_name_in(json)
   if not json:find('"MagicDNSEnabled":%s*true') then return nil end

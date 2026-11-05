@@ -119,6 +119,15 @@ function page.produce_button(ctx, ImGui, proj, cfg, b, name)
     ("Hear " .. name .. " record, on your grid, as it happens: your song plays a moment behind theirs, from your own copy, so they land right on it.\n" .. (producer.via(proj) == "stamp" and "You can talk to them between takes. " or "") .. "They needn't do anything."))
 end
 
+-- ReaNINJAM's window stays out of sight (lib/live.lua): what it says about its connection, here instead. Read once a second: it walks the window's controls.
+local njm_at, njm_said = -math.huge, nil
+function page.ninjam_line(ctx, ImGui)
+  if reaper.time_precise() - njm_at > 1 then njm_at, njm_said = reaper.time_precise(), require("live").status() end
+  if not njm_said then return end
+  ImGui.TextDisabled(ctx, "NINJAM: " .. njm_said)
+  ImGui.SetItemTooltip(ctx, "ReaNINJAM runs out of sight. Show it on the Play page (Settings > Advanced shows it) brings its window up.")
+end
+
 -- On Home, while producing or being produced.
 function page.producer(ctx, ImGui, proj, cfg, b, rows)
   local producer, theme = require("producer"), require("theme")
@@ -126,6 +135,7 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   if by ~= "" then
     ImGui.TextColored(ctx, theme.ACCENT, by .. " is producing you")
     ImGui.SetItemTooltip(ctx, "They hear what you record on their grid, a moment behind you. Nothing changes for you: record as usual.")
+    page.ninjam_line(ctx, ImGui)
     for _, st in ipairs(require("presence").peers(cfg, b.song, b.room)) do
       if st.produce == cfg.user and st.playing and reaper.GetPlayStateEx(proj) & 1 == 0 then
         ImGui.TextDisabled(ctx, st.user .. " is still listening to the end of that")
@@ -168,6 +178,7 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; StudioSync starts the server if nobody has. ReaNINJAM connects by itself on both computers.")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
+  if via == "ninjam" then page.ninjam_line(ctx, ImGui) end
   ImGui.SetItemTooltip(ctx, "Back to your own transport.")
 end
 

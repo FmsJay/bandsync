@@ -46,6 +46,32 @@ function live.toggle_click()
   return true
 end
 
+-- ReaNINJAM has no scripting of its own: everything StudioSync knows or does goes through its windows, which only exist while its editor's open. So they're
+-- open and out of sight, and what they say shows in the panel (James: no second window). Show it on the Play page brings them back, until Hide it.
+function live.keep_hidden(proj)
+  if not reaper.JS_Window_Show or reaper.GetExtState(band.SECTION, "ninjam shown " .. tostring(proj)) ~= "" then return end
+  local tr, i = live.fx(proj, false)
+  for _, w in ipairs({ reaper.JS_Window_Find(live.FX, true) or false, tr and reaper.TrackFX_GetFloatingWindow(tr, i) or false }) do
+    if w and reaper.JS_Window_IsVisible(w) then reaper.JS_Window_Show(w, "HIDE") end
+  end
+end
+function live.show_windows(proj, tr, i)
+  reaper.SetExtState(band.SECTION, "ninjam shown " .. tostring(proj), "1", false)
+  reaper.TrackFX_Show(tr, i, 3)
+  if not reaper.JS_Window_Show then return end
+  for _, w in ipairs({ reaper.JS_Window_Find(live.FX, true) or false, reaper.TrackFX_GetFloatingWindow(tr, i) or false }) do
+    if w then reaper.JS_Window_Show(w, "SHOW") end
+  end
+end
+-- What ReaNINJAM says about its connection, for the panel: "connected to <server>", "connecting", or nil (it isn't there).
+function live.status()
+  local con = reaper.JS_Window_Find and reaper.JS_Window_Find(live.FX, true)
+  if not con then return nil end
+  if not reaper.JS_Window_FindChild(con, "Disconnect", true) then return "connecting" end
+  local host = reaper.GetExtState(band.SECTION, "ninjam host"):gsub(":%d+$", "")
+  return host ~= "" and ("connected to " .. host) or "connected"
+end
+
 -- Connect, one step a call: with `open`, its Connect button brings up the host box (filled in by live.configure); that box's
 -- own Connect is pressed as soon as it's there. -> "connected", "pressing", "opening", or nil (no window, not asked to open it).
 function live.connect(open)

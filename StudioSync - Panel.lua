@@ -331,7 +331,7 @@ local TIPS = {
   ["Use server folder"] = "Remember this NINJAM server folder (host only).",
   ["Send my audio (my whole mix)"] = "Off: you listen without sending anything.",
   ["Connect"] = "Join the studio's live audio in the mode above.",
-  ["Show it"] = "Open the live plug-in's window.",
+  ["Show it"] = "Open ReaNINJAM's own window. It runs out of sight otherwise: you don't need it.",
   ["Open latest to look"] = "Open the newest Solo edit version to look at.",
   ["Check out"] = "Take a working copy to edit while the others are offline.",
   ["##soloroot"] = "Where Solo edit keeps its versions (usually the shared Google Drive folder).",
@@ -1192,7 +1192,7 @@ end
 local live = require("live")
 local live_mode, live_send, live_server = "synced", true, nil
 local services = require("services")
-local srv_at, srv_up, srv_by = 0, false, nil
+local srv_at, srv_up, srv_by, srv_addr = 0, false, nil, nil
 local LIVE_MODES = { { "synced", "Play along (synced to the project)" }, { "listen", "Real time (SonoBus, lowest delay)" }, { "jam", "Jam (NINJAM intervals)" } }
 
 local setup = require("setup")
@@ -1316,7 +1316,10 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   ImGui.SetItemTooltip(ctx, "Tries to reach the server from this computer.")
   if ui.server_said then ImGui.TextColored(ctx, ui.server_said[1] and GREEN or YELLOW, ui.server_said[2]) end
   do
-    if reaper.time_precise() - srv_at > 3 then srv_at, srv_up, srv_by = reaper.time_precise(), services.running("ninjamsrv"), (band.read_json(lfile) or {}).by end -- tasklist is slow: not every frame
+    if reaper.time_precise() - srv_at > 3 then -- tasklist is slow: not every frame
+      local now = band.read_json(lfile) or {}
+      srv_at, srv_up, srv_by, srv_addr = reaper.time_precise(), services.running("ninjamsrv"), now.by, now.server
+    end
     ImGui.TextDisabled(ctx, srv_up and "Server: running on this computer" or (live_server ~= "" and srv_by and srv_by ~= cfg.user) and ("Server: on " .. srv_by .. "'s computer") or "Server: Connect starts one on this computer")
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Host it here") then
@@ -1343,6 +1346,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
         local m2, i2 = live.fx(proj, true)
         if m2 then
           reaper.TrackFX_Show(m2, i2, 3)
+          live.keep_hidden(proj)
           reaper.SetExtState(band.SECTION, "ninjam connect " .. tostring(proj), "1", false) -- (Live sync presses Connect: lib/producer.lua)
         else band.msg("Couldn't add ReaNINJAM to the master track.") end
       end
@@ -1352,6 +1356,11 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
     -- (it may sit on any track: say which)
     local where = master == reaper.GetMasterTrack(proj) and "your master track" or ("track '" .. select(2, reaper.GetTrackName(master)) .. "'")
     ImGui.TextColored(ctx, GREEN, "ReaNINJAM is on " .. where .. ".")
+    require("page_hear").ninjam_line(ctx, ImGui)
+    local there, host = srv_addr or "", reaper.GetExtState(band.SECTION, "ninjam host")
+    if there ~= "" and host ~= "" and there ~= host then -- (Produce follows by itself: lib/producer.lua. Here it's your Jam: yours to move)
+      ImGui.TextColored(ctx, YELLOW, "The studio's server has moved to " .. there .. ": press Leave, then Connect.")
+    end
     next_to("NINJAM click on/off")
     if ImGui.SmallButton(ctx, "NINJAM click on/off") then
       if not live.toggle_click() then band.msg("Open ReaNINJAM's window first (Show it).") end
@@ -1365,9 +1374,12 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
         "in its window, click the mode button under your channel and pick \"Session mode channel\" (or restart REAPER).")
       ImGui.PopTextWrapPos(ctx)
     end
-    if ImGui.Button(ctx, "Show it") then -- also takes it off other song tabs (one ReaNINJAM per REAPER) and loads it
-      local m2, i2 = live.fx(proj, true)
-      if m2 then reaper.TrackFX_Show(m2, i2, 3) end
+    local shown = reaper.GetExtState(band.SECTION, "ninjam shown " .. tostring(proj)) ~= ""
+    if ImGui.Button(ctx, shown and "Hide it" or "Show it") then -- also takes it off other song tabs (one ReaNINJAM per REAPER) and loads it
+      if shown then reaper.DeleteExtState(band.SECTION, "ninjam shown " .. tostring(proj), false); live.keep_hidden(proj) else
+        local m2, i2 = live.fx(proj, true)
+        if m2 then live.show_windows(proj, m2, i2) end
+      end
     end
     ImGui.SameLine(ctx)
     if ImGui.Button(ctx, "Leave") and not live.close_boxes() then reaper.TrackFX_Delete(master, idx) end -- (lib/live.lua: a second press, with one of its boxes up)
@@ -1912,6 +1924,11 @@ local function maint_rows()
         undo.key_name() .. " can roll back a collaborator's work: it isn't set to StudioSync's Undo yet." }
     end)(),
     { "tailscale", services.tailscale_up(), "yellow", "Tailscale is on", services.tailscale_installed() and "Tailscale is off or not signed in: open it and turn it on. The NINJAM route needs it." or "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
+    (function()
+      local stays = services.tailscale_stays()
+      return { "tailscale stays", stays == true, "yellow", "Tailscale stays signed in here", "Tailscale signs this computer out on " .. tostring(stays) .. ": at login.tailscale.com/admin/machines, this computer > ... > Disable key expiry. " ..
+        "New computers can stay signed in by themselves: whoever owns the Tailscale network adds, once, at login.tailscale.com/admin/acls:  \"tagOwners\": { \"tag:bandsync\": [\"autogroup:member\"] }," }
+    end)(),
   }
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", "No Play along server yet: Connect on the Play page starts one on this computer." }

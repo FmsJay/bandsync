@@ -246,6 +246,14 @@ function producer.tick(proj, cfg, b, peers)
       ninjam_up[tab] = ok or nil
       if ok then band.log(now .. " hears you through the NINJAM server")
       elseif ninjam_said[tab] ~= why then ninjam_said[tab] = why; band.log(now .. " wants to hear you, but: " .. tostring(why)) end
+    elseif ninjam_up[tab] and reaper.time_precise() - (ninjam_at[tab] or -math.huge) > 10 then -- (the server moved: whoever produces me took it over)
+      ninjam_at[tab] = reaper.time_precise()
+      local there = (band.read_json(require("setup").live_file(cfg, b)) or {}).server or ""
+      if there ~= "" and there ~= reaper.GetExtState(band.SECTION, "ninjam host") then
+        band.log("the NINJAM server moved to " .. there .. ": following it")
+        ninjam_off(proj)
+        ninjam_up[tab], connecting[tab] = nil, nil
+      end
     end
   elseif now ~= "" then
     if ninjam_up[tab] then ninjam_off(proj); ninjam_up[tab] = nil end

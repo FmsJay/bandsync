@@ -545,10 +545,13 @@ end
 function services.ninjam_for(cfg, lfile, may_host, force)
   local data = band.read_json(lfile) or {}
   local server, mine = data.server or "", (data.server or "") ~= "" and data.by == cfg.user
-  reaper.SetExtState(band.SECTION, "ninjam hosting", "", false)
-  if not force and not mine then
-    if server ~= "" and (not may_host or services.answers(server)) then return server end
-    if not may_host then return nil, "nobody's started the NINJAM server for this song yet" end
+  reaper.SetExtState(band.SECTION, "ninjam hosting", mine and "1" or "", false)
+  if not force then
+    if not may_host then -- (even if the file says it's mine: it may be old news, with the one who pressed taking over right now. See producer.lua, which follows it)
+      if server ~= "" then return server end
+      return nil, "nobody's started the NINJAM server for this song yet"
+    end
+    if not mine and server ~= "" and services.answers(server) then return server end
   end
   local addr = services.tailscale_address()
   if not addr then

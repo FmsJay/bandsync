@@ -150,7 +150,8 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   if select(2, ImGui.GetContentRegionAvail(ctx)) > 130 then ImGui.SeparatorText(ctx, "Producing") end -- (in a short docker, its row is the one Talk and Stop need; "Following..." says it)
   local colour = { ok = theme.GREEN, wait = theme.YELLOW, bad = theme.RED }
   for _, l in ipairs(producer.lines(proj, name, them, require("stamp").status(), playing)) do ImGui.TextColored(ctx, colour[l[2]] or theme.GREEN, l[1]) end
-  -- (first in the row: after the Talk button, whose row changes with it, it moved from under the pointer, onto the lag drag. Mac, 0.58.10)
+  -- (first in the row, under a line either route has: it moved from under the pointer otherwise, onto the lag drag. Mac, 0.58.10)
+  if producer.via(proj) == "ninjam" then page.ninjam_line(ctx, ImGui) end
   local via = producer.via(proj)
   if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
     producer.talk(proj, false)
@@ -179,7 +180,6 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   ImGui.SetItemTooltip(ctx, "How far behind them your song runs. More gives a bad connection room; less is closer to them. It takes effect on their next start.")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
-  if via == "ninjam" then page.ninjam_line(ctx, ImGui) end
   ImGui.SetItemTooltip(ctx, "Back to your own transport.")
 end
 

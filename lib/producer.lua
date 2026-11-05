@@ -105,14 +105,16 @@ local function auto_connect(tab)
     return
   end
   if c.done and c.up and not live.connect(false) then -- (lost, with no box to say so: a Mac's alert can't be seen from here)
-    c.done, c.up, c.tries, c.pressed, c.at = false, false, 0, nil, reaper.time_precise() -- (a port check a moment old would still say it answers)
-    band.log("lost the NINJAM server: connecting again")
+    -- (gone within seconds isn't lost: a ReaNINJAM just loaded can say "connected" for a moment, and this waited 13 s and said "lost" at each start: Mac, 0.58.11)
+    local brief = reaper.time_precise() - (c.up_at or -math.huge) < 5
+    c.done, c.up, c.tries, c.pressed, c.at = false, false, 0, nil, brief and -math.huge or reaper.time_precise() -- (a port check a moment old would still say it answers)
+    if not brief then band.log("lost the NINJAM server: connecting again") end
   end
   if c.done and not c.up and live.connect(false) == "connected" then c.up = true end -- (a Mac's, once its alert's been answered)
   if c.done then return end
   if not reaper.GetOS():find("^Win") then
     local now = live.connect(false)
-    if now == "connected" then c.done, c.up = true, true
+    if now == "connected" then c.done, c.up, c.up_at = true, true, reaper.time_precise()
     elseif now ~= "pressing" and c.pressed then
       c.done = true
       band.log("NINJAM: if ReaNINJAM shows a box, press its OK to finish connecting")
@@ -124,7 +126,7 @@ local function auto_connect(tab)
   local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 10 or 30)
   if may and reaper.GetExtState(band.SECTION, "ninjam hosting") ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
   local now = live.connect(may)
-  if now == "connected" then c.done, c.tries, c.up, c.told = true, 0, true, nil
+  if now == "connected" then c.done, c.tries, c.up, c.told, c.up_at = true, 0, true, nil, reaper.time_precise()
   elseif now == "error" then c.at = reaper.time_precise()
   elseif now == "opening" then c.tries, c.at = c.tries + 1, reaper.time_precise()
   elseif c.tries == 3 and not c.told and reaper.time_precise() - c.at > 8 then

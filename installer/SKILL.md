@@ -141,9 +141,8 @@ Everyone signs in to the group's one account (James's choice). Otherwise the hos
 - **Bandmate:** open the share link while signed in and accept. Check: `tailscale status` lists the host's machine,
   and `tailscale ping <host IP>` answers. A share is one-way (they reach the host, not the reverse), which is all
   Live needs: everyone connects to the host's server.
-- **Hosting Live** (only the host): the server (`tools/ninjam-server/README.md`) must be built and its folder set in
-  *Panel > Live*. The server is built for Windows; building it on a Mac needs the Xcode Command Line Tools, so ask
-  first (see Ground rules).
+- **Hosting Live**: nothing to do. The NINJAM server ships with StudioSync and the first computer to connect runs it
+  (`tools/ninjam-server/README.md`). Windows or macOS may ask once whether to let it accept connections: allow it.
 
 Then, in REAPER: **StudioSync - Panel > Live**, pick a mode and click **Connect**; ReaNINJAM opens on the master track
 with the server and name filled in, and needs one more **Connect** in its own window. macOS: the Microphone

@@ -1,33 +1,24 @@
-# NINJAM server for StudioSync Live
+# NINJAM server for StudioSync
 
-StudioSync's Live tab uses REAPER's built-in ReaNINJAM, which talks to a NINJAM server. One person (usually
-the host, on the machine that stays on) runs the server; everyone connects to its address over Tailscale.
+Play along, Jam and Produce's NINJAM route go through a NINJAM server. It ships with StudioSync (`lib/ninjam`), so nobody
+installs or builds anything: the first computer to press Produce or Connect for a song runs it, and the others connect to
+it over Tailscale. If that computer's gone, the next one to press takes over. **Host it here** on the Play page moves it by hand.
 
-NINJAM is © Cockos, GPL v2: source at https://github.com/justinfrankel/ninjam. Nothing in StudioSync links
-against it; the server is a separate program.
+It listens on port 2049 and only accepts this computer (127.0.0.0/8) and Tailscale addresses (100.64.0.0/10), so it isn't
+open to the internet (`lib/ninjam/bandsync.cfg`). Anyone who can reach the computer over Tailscale can join without a
+password. Windows or macOS may ask once whether to let it accept connections: allow it.
 
-## Build
+It keeps running when REAPER closes, from a copy in StudioSync's own folder (`<resource>/StudioSync/ninjam`), so an update
+never has to replace a running program.
 
-- **Windows** (Visual Studio 2019+ Build Tools): clone the repo, copy `build_win.bat` into
-  `ninjam/ninjam/server/`, and run it. It produces `ninjamsrv.exe` (built and tested 2026-10-27 with MSVC 14.29).
-- **macOS / Linux**: `cd ninjam/ninjam/server && make` (macOS: `make MAC=1`, which needs the Xcode Command Line
-  Tools: `xcode-select --install`). Not yet built or tested on a Mac. Only the host needs the server: a Mac
-  bandmate connects with REAPER's own ReaNINJAM like everyone else.
+NINJAM is © Cockos, GPL v2: source at https://github.com/justinfrankel/ninjam. Nothing in StudioSync links against it;
+the server is a separate program.
 
-## Run
+## Building it (only to update what ships)
 
-```
-ninjamsrv bandsync.cfg
-```
+From commit `f4c0eff3a1d8d5f3ead470d0c7405c3ee37da24e`:
 
-`bandsync.cfg` listens on port 2049 and only accepts this machine (127.0.0.0/8) and Tailscale addresses
-(100.64.0.0/10), so it isn't open to the internet. Anyone on the band's tailnet can join by name without
-a password. Windows asks once whether to let `ninjamsrv.exe` through the firewall: allow it on private networks
-(macOS, with its firewall on: "accept incoming network connections", Allow).
-
-Bandmates reach the server through a Tailscale **share** of this machine (admin console > the machine's **...** >
-*Share*), so they don't need to join the host's tailnet. Shared-in users arrive from 100.x addresses, which the
-ACL above already accepts.
-
-Then, in **StudioSync - Panel > Live**, the host enters `<this machine's Tailscale name>:2049` and clicks
-**Save for the band**; everyone else's panel picks the address up from the shared folder.
+- **Windows** (Visual Studio 2019+ Build Tools): copy `build_win.bat` into `ninjam/server/` of that repository and run it.
+  Put the `ninjamsrv.exe` it makes in `lib/ninjam`.
+- **macOS** (Command Line Tools): `sh tools/ninjam-server/build_mac.sh` makes `lib/ninjam/ninjamsrv`, Apple Silicon and Intel.
+- **Linux**: `cd ninjam/server && make`, and set its folder as ExtState `ninjam_dir`. Not shipped: StudioSync's installers are Windows and macOS.

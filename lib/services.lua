@@ -1,6 +1,6 @@
 -- The background programs StudioSync leans on, started when a session needs them (never at login):
 --   Syncthing   moves the shared folder; Live sync makes sure it runs on every machine
---   ninjamsrv   the NINJAM server for Live; the host's Connect (panel: Live) starts it
+--   ninjamsrv   the NINJAM server: it ships in lib/ninjam, and the computer that needs it first runs it
 -- Paths can be set in ExtState (section StudioSync: syncthing_path, ninjam_dir); otherwise the usual install
 -- locations are tried.
 local band = require("band")
@@ -57,6 +57,17 @@ function services.port_open(address)
   local host, port = address:match("^(.-):(%d+)$")
   if not host then return false end
   return (background("port", "/usr/bin/nc -z -G 1 '" .. host:gsub("'", "") .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
+end
+
+-- The same, asked now and waited for (a second or so): for a button's press, not a loop.
+function services.answers(address)
+  local host, port = address:match("^(.-):(%d+)$")
+  if not host then return false end
+  host = host:gsub("[^%w%.%-]", "")
+  -- (as http, though nothing here speaks it: telnet:// ignores curl's -m once connected, and REAPER waited on it for good. And by the time it connected, since
+  -- its exit code can't tell: 28 is both "connected, and nothing came in a second" and "nobody there", which is what an offline Tailscale machine does)
+  if WIN then return (tonumber((reaper.ExecProcess('curl -s -o NUL -m 1 -w %{time_connect} "http://' .. host .. ":" .. port .. '/"', 3000) or ""):match("\n([%d%.]+)")) or 0) > 0 end
+  return (reaper.ExecProcess("/usr/bin/nc -z -G 1 " .. host .. " " .. port, 3000) or ""):match("^0\n") ~= nil
 end
 
 -- Start `path args...` in the background, hidden, in `cwd` (optional). Returns true if launched.
@@ -503,18 +514,57 @@ function services.tailscale_address()
   return out:match("^0\n%s*(100%.%d+%.%d+%.%d+)")
 end
 
--- The host's NINJAM server: <ninjam_dir>/ninjamsrv(.exe) with bandsync.cfg beside it.
+-- The NINJAM server: the one that ships (lib/ninjam), or a folder of your own in ExtState ninjam_dir.
 function services.ninjam_dir()
-  return reaper.GetExtState(band.SECTION, "ninjam_dir")
+  local own = reaper.GetExtState(band.SECTION, "ninjam_dir")
+  return own ~= "" and own or (debug.getinfo(1, "S").source:match("^@?(.*)[/\\]") .. "/ninjam")
 end
+-- It runs from a copy in StudioSync's own folder: a running program couldn't be replaced by the next update.
 function services.ensure_ninjam()
-  if services.running("ninjamsrv") then return "running" end
-  local dir = services.ninjam_dir()
-  local exe = dir ~= "" and first_existing({ dir .. "/ninjamsrv.exe", dir .. "/ninjamsrv" })
-  if not exe then return nil, "set the NINJAM server folder (the one with ninjamsrv and bandsync.cfg) on the panel's Live page" end
-  if not reaper.file_exists(dir .. "/bandsync.cfg") then return nil, "no bandsync.cfg in " .. dir end
-  if not launch(exe, { "bandsync.cfg" }, dir) then return nil, "couldn't start " .. exe end
+  if services.running("ninjamsrv", true) then return "running" end
+  local from, name = services.ninjam_dir(), WIN and "ninjamsrv.exe" or "ninjamsrv"
+  if not reaper.file_exists(from .. "/" .. name) then return nil, "there's no NINJAM server for this computer in " .. from end
+  if not reaper.file_exists(from .. "/bandsync.cfg") then return nil, "no bandsync.cfg in " .. from end
+  local dir = band.home():gsub("\\", "/") .. "/ninjam"
+  reaper.RecursiveCreateDirectory(dir, 0)
+  pcall(band.copy_atomic, from .. "/" .. name, dir .. "/" .. name) -- (one just started may not show as running yet: it holds the file)
+  pcall(band.copy_atomic, from .. "/bandsync.cfg", dir .. "/bandsync.cfg")
+  if not WIN then
+    local sh = TMP .. "/bandsync-ninjam.sh"
+    band.write_atomic(sh, "chmod +x '" .. dir .. "/" .. name .. "'; xattr -c '" .. dir .. "/" .. name .. "'\n")
+    reaper.ExecProcess("/bin/sh '" .. sh .. "'", 5000)
+  end
+  if not launch(dir .. "/" .. name, { "bandsync.cfg" }, dir) then return nil, "couldn't start " .. dir .. "/" .. name end
+  band.log("started the NINJAM server on this computer")
   return "started"
+end
+
+-- This song's NINJAM server, "name:port", or nil + why. One computer runs it: whichever needed it first and, if that one's gone, the next to ask for it.
+-- may_host: someone pressed Produce or Connect. Not whoever's only being heard: both taking over at once, each would end up alone on a server of their own.
+-- force: this computer takes it, whoever has it. shortcut: two people pressing within a sync of each other can still end up apart; pressing again settles it.
+function services.ninjam_for(cfg, lfile, may_host, force)
+  local data = band.read_json(lfile) or {}
+  local server, mine = data.server or "", (data.server or "") ~= "" and data.by == cfg.user
+  reaper.SetExtState(band.SECTION, "ninjam hosting", "", false)
+  if not force and not mine then
+    if server ~= "" and (not may_host or services.answers(server)) then return server end
+    if not may_host then return nil, "nobody's started the NINJAM server for this song yet" end
+  end
+  local addr = services.tailscale_address()
+  if not addr then
+    if server ~= "" then return server end
+    return nil, "Tailscale isn't on here, so nobody could reach a NINJAM server on this computer: open Tailscale and sign in."
+  end
+  local ok, why = services.ensure_ninjam()
+  if not ok then return nil, "NINJAM server: " .. why end
+  reaper.SetExtState(band.SECTION, "ninjam hosting", "1", false)
+  local now = addr .. ":2049"
+  if server ~= now or not mine then
+    data.server, data.by = now, cfg.user
+    band.write_json(lfile, data)
+    band.log("this song's NINJAM server now runs on this computer: " .. now)
+  end
+  return now
 end
 
 return services

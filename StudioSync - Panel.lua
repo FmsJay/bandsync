@@ -1192,7 +1192,7 @@ end
 local live = require("live")
 local live_mode, live_send, live_server = "synced", true, nil
 local services = require("services")
-local ninjam_dir_edit, srv_at, srv_up = nil, 0, false
+local srv_at, srv_up, srv_by = 0, false, nil
 local LIVE_MODES = { { "synced", "Play along (synced to the project)" }, { "listen", "Real time (SonoBus, lowest delay)" }, { "jam", "Jam (NINJAM intervals)" } }
 
 local setup = require("setup")
@@ -1235,12 +1235,8 @@ local SAME_ROOM_TIP = "Real time mode. On: you hear each other right away throug
 local server_at = 0
 -- Reach the server: curl connects, and with nothing to say it runs out of time (28) or ends clean (0); it can't connect otherwise. (Blocks up to 3 s: only on a click.)
 function ui.test_server(addr)
-  local curl = reaper.GetOS():find("^Win") and "curl" or "/usr/bin/curl" -- (ExecProcess on a Mac doesn't search the path: Mac, 0.51.12)
-  local r = reaper.ExecProcess(curl .. ' -s -m 2 "telnet://' .. addr:gsub('[^%w%.%-:]', "") .. '"', 4000) or ""
-  local rc = tonumber(r:match("^(%-?%d+)"))
-  if rc == 0 or rc == 28 or rc == 56 then return { true, "Reached it." } end
-  if rc == 6 then return { false, "That address doesn't resolve from here." } end
-  return { false, "Can't reach it (" .. tostring(rc) .. "): is the server running, and can this computer reach that address?" }
+  if services.answers(addr) then return { true, "Reached it." } end
+  return { false, "Can't reach it: is the server running, and can this computer reach that address?" }
 end
 local function section_live(part) -- part: "mode" or "rest" (docked, side by side), nil for all of it
   local lfile = band.song_dir(cfg, b.song) .. "/live.json"
@@ -1309,36 +1305,35 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   next_to("Save for the studio")
   if ImGui.SmallButton(ctx, "Save for the studio") then
     local data = band.read_json(lfile) or {} -- keep whatever else is in it
-    data.server, data.by = live_server, cfg.user
+    data.server, data.by = live_server, nil -- (typed in: a server somewhere, not this computer's to run)
     band.write_json(lfile, data)
   end
-  ImGui.SetItemTooltip(ctx, "One computer runs the NINJAM server (tools/ninjam-server); everyone connects to its address.")
+  ImGui.SetItemTooltip(ctx, "Only for a server of your own: StudioSync runs one by itself otherwise, on whichever computer needs it first.")
   next_to("Test it")
   ImGui.BeginDisabled(ctx, live_server == "")
   if ImGui.SmallButton(ctx, "Test it") then ui.server_said = ui.test_server(live_server) end
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, "Tries to reach the server from this computer.")
   if ui.server_said then ImGui.TextColored(ctx, ui.server_said[1] and GREEN or YELLOW, ui.server_said[2]) end
-  do -- the computer that has this folder runs the server: its Connect starts it if it isn't running
-    ninjam_dir_edit = ninjam_dir_edit or services.ninjam_dir()
-    ImGui.SetNextItemWidth(ctx, -150)
-    local c2, v2 = ImGui.InputTextWithHint(ctx, "##ninjamdir", "folder with ninjamsrv + bandsync.cfg", ninjam_dir_edit, ImGui.InputTextFlags_None)
-    if c2 then ninjam_dir_edit = v2 end
+  do
+    if reaper.time_precise() - srv_at > 3 then srv_at, srv_up, srv_by = reaper.time_precise(), services.running("ninjamsrv"), (band.read_json(lfile) or {}).by end -- tasklist is slow: not every frame
+    ImGui.TextDisabled(ctx, srv_up and "Server: running on this computer" or (live_server ~= "" and srv_by and srv_by ~= cfg.user) and ("Server: on " .. srv_by .. "'s computer") or "Server: Connect starts one on this computer")
     ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Use server folder") then reaper.SetExtState(band.SECTION, "ninjam_dir", (ninjam_dir_edit:gsub("\\", "/")), true) end
-    if reaper.time_precise() - srv_at > 3 then srv_at, srv_up = reaper.time_precise(), services.running("ninjamsrv") end -- tasklist is slow: not every frame
-    ImGui.TextDisabled(ctx, srv_up and "Server: running on this machine" or "Server: not running (Connect starts it)")
+    if ImGui.SmallButton(ctx, "Host it here") then
+      local server, why = services.ninjam_for(cfg, lfile, true, true)
+      if server then live_server = server else band.msg(why) end
+    end
+    ImGui.SetItemTooltip(ctx, "Runs the server on this computer and points the studio at it. Handy when the computer that had it is staying off.")
   end
   local _, s = ImGui.Checkbox(ctx, "Send my audio (my whole mix)", live_send)
   live_send = s
   ImGui.Spacing(ctx)
   local master, idx = live.fx(proj, false)
   if not master then
-    ImGui.BeginDisabled(ctx, live_server == "")
     if ImGui.Button(ctx, "Connect") then
-      if services.ninjam_dir() ~= "" then
-        local ok2, why = services.ensure_ninjam()
-        if ok2 == "started" then band.log("started the NINJAM server") elseif not ok2 then band.msg("NINJAM server: " .. why) end
+      if live_server == ((band.read_json(lfile) or {}).server or "") then -- (or an address typed in just now, not saved: that one)
+        local server, why = services.ninjam_for(cfg, lfile, true)
+        if server then live_server = server else band.msg(why) end
       end
       local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
       reaper.RecursiveCreateDirectory(sdir, 0)
@@ -1352,8 +1347,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
         else band.msg("Couldn't add ReaNINJAM to the master track.") end
       end
     end
-    ImGui.EndDisabled(ctx)
-    ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in, and connects it.")
+    ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in, and connects it. If nobody's running a server, this computer does.")
   else
     -- (it may sit on any track: say which)
     local where = master == reaper.GetMasterTrack(proj) and "your master track" or ("track '" .. select(2, reaper.GetTrackName(master)) .. "'")
@@ -1920,9 +1914,8 @@ local function maint_rows()
     { "tailscale", services.tailscale_up(), "yellow", "Tailscale is on", services.tailscale_installed() and "Tailscale is off or not signed in: open it and turn it on. The NINJAM route needs it." or "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
   }
   if ui.play_shown() then
-    rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", services.ninjam_dir() ~= "" and "Play along server address not set (needs Tailscale signed in)."
-      or "Waiting for the host to set the Play along server address." }
-    if services.ninjam_dir() ~= "" then rows[#rows + 1] = { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running (set its folder on the Play page)." } end
+    rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", "No Play along server yet: Connect on the Play page starts one on this computer." }
+    if s.hosting then rows[#rows + 1] = { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running here: Connect on the Play page starts it." } end
   end
   -- (a Mac showed its items OFFLINE while another app was in front, and nothing said why: 0.45.0)
   if reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("offlineinact", 0) ~= 0 then
@@ -2051,7 +2044,6 @@ local function home_play()
       or "Off: changes still sync, but you don't hear each other live or follow each other's play and stop.")
   end
   if on then require("page_hear").realtime(ctx, ImGui, proj) end
-  require("page_hear").producer(ctx, ImGui, proj, cfg, b, view and view.rows or {})
   local silent = reaper.GetExtState(band.SECTION, "rt silent " .. tostring(proj))
   if silent ~= "" then ImGui.TextColored(ctx, YELLOW, silent) end
   local trouble = reaper.GetExtState(band.SECTION, "rt trouble " .. tostring(proj))
@@ -2060,6 +2052,7 @@ local function home_play()
   if who_listens ~= "" then ImGui.TextColored(ctx, ACCENT, who_listens .. " is listening to you") end
 end
 local function home_who()
+  require("page_hear").producer(ctx, ImGui, proj, cfg, b, view and view.rows or {}) -- (at the top: at 560 wide it was past all three people. Mac, 0.58.5)
   heading("Who's here")
   if view.driver ~= cfg.user then -- next to the people: who drives is about them
     next_to("Take control")

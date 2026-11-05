@@ -427,7 +427,7 @@ The **Play/Jam** page (Settings > Advanced shows it) has starting together and t
 - **Play along (synced)**, the default: your audio is stamped with its project position; listeners start playback
   a bar or two after you and hear you in time with the project, at any distance. What you play also lands on their
   timeline as a placeholder on a "<name> (live)" track, replaced automatically when your real take arrives.
-  Uses REAPER's own ReaNINJAM and a NINJAM server the host runs (`tools/ninjam-server/README.md`), over Tailscale.
+  Uses REAPER's own ReaNINJAM and a NINJAM server that ships with StudioSync (`tools/ninjam-server/README.md`), over Tailscale.
 - **Real time** (Home's **Real time mode**): hear each other as it happens, through **SonoBus** (free, GPLv3,
   sonobus.net): peer to peer, far lower delay than NINJAM, nobody runs a server. It sits on the **StudioSync Real time**
   track, fed only by your armed tracks, already in your studio's SonoBus group under your StudioSync name (StudioSync writes the studio
@@ -435,10 +435,10 @@ The **Play/Jam** page (Settings > Advanced shows it) has starting together and t
   SonoBus's public server only introduces peers, and the audio goes directly between you, unencrypted.
 - **Jam**: classic NINJAM, everyone one interval late.
 
-The host enters `<Tailscale name>:2049` (a name stays; a 100.x address can change) and clicks *Save for the studio*; everyone else clicks **Connect**, which adds
-ReaNINJAM to their master track with everything filled in, and it connects by itself.
-The host also sets the server folder (the one with `ninjamsrv` and `bandsync.cfg`) once; the host's Connect starts
-the server if it isn't running.
+Everyone clicks **Connect**, which adds ReaNINJAM to their master track with everything filled in, and it connects by itself.
+The first computer to connect (or to press Produce on the NINJAM route) runs the server, and the others find it through the
+shared folder. If that computer's gone, the next one to press takes over; **Host it here** moves it by hand. A server of your
+own? Enter `<address>:2049` and click *Save for the studio*.
 
 - **Deleting your local copy** (right-click a project or a folder on the Projects page): to free the space, once it's confirmed elsewhere: Google Drive holds every file, or another computer of the studio has said it holds exactly these files (each one says so itself, every minute or so while REAPER is open). The project goes on this computer's ignore list first, so nobody else's copy is touched, and its files go to the Recycle Bin or Trash. It stays on the page, and opening it brings it back. A closed studio's copy goes the same way, from the Studios page.
 - **A copy outside the studio** (Restore > Save a copy outside the studio): a plain REAPER project in a folder you pick, with every file it uses, as recorded or as WAVs. It opens anywhere with no StudioSync and nothing you do to it goes to anyone. Letting someone in saves a kept version of what's open first.

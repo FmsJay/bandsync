@@ -3,3 +3,5 @@
 *.cmd text eol=crlf
 *.dylib binary
 lib/mac/bandsync-launch binary
+lib/ninjam/ninjamsrv binary
+lib/ninjam/ninjamsrv.exe binary

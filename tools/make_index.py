@@ -47,6 +47,11 @@ for f in sorted((ROOT / "lib" / "mac").glob("*")):  # compiled helpers (tools/ma
     rel = f"lib/mac/{f.name}"
     ET.SubElement(ver, "source", file=rel, platform="darwin").text = url(rel)
 
+for f in sorted((ROOT / "lib" / "ninjam").glob("*")):  # the NINJAM server (tools/ninjam-server): each computer gets its own
+    rel = f"lib/ninjam/{f.name}"
+    plat = {"ninjamsrv.exe": {"platform": "win64"}, "ninjamsrv": {"platform": "darwin"}}.get(f.name, {})
+    ET.SubElement(ver, "source", file=rel, **plat).text = url(rel)
+
 ET.indent(index)
 ET.ElementTree(index).write(INDEX, encoding="utf-8", xml_declaration=True)
 print(f"index.xml: StudioSync {version}, {len(ver)} entries")

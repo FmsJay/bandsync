@@ -23,9 +23,9 @@ end
 -- This machine's tab of song/room (never a Solo edit copy), or nil.
 function rooms.tab(song, room)
   for i = 0, math.huge do
-    local p = reaper.EnumProjects(i)
+    local p, f = reaper.EnumProjects(i)
     if not p then return nil end
-    local b = band.binding(p)
+    local b = f ~= "" and band.binding(p) -- (no file name: a backup left open, which carries the room it was saved from)
     if b and b.song == song and b.room == room and b.role ~= "solo" then return p end
   end
 end

@@ -97,7 +97,8 @@ function setup.check(cfg, b, proj)
   st.sync = beat ~= nil and reaper.time_precise() - beat < 5
   st.sonobus = live.fx(proj, false, live.SONOBUS) ~= nil
   st.server = (data.server or "") ~= ""
-  st.ninjam = services.ninjam_dir() == "" or services.running("ninjamsrv")
+  st.hosting = (data.server or "") ~= "" and data.by == cfg.user
+  st.ninjam = not st.hosting or services.running("ninjamsrv")
   return st
 end
 
@@ -114,21 +115,9 @@ function setup.all(cfg, b, proj, st, start_sync, play_along)
     start_sync()
     notes[#notes + 1] = "Live sync started"
   end
-  if play_along and services.ninjam_dir() ~= "" then
-    local lfile = setup.live_file(cfg, b)
-    local data = band.read_json(lfile) or {}
-    if (data.server or "") == "" or (data.server):match("^100%.") then -- (a saved 100.x may have moved on: 0.57.1)
-      local addr = services.tailscale_address()
-      if addr then
-        data.server, data.by = addr .. ":2049", cfg.user
-        band.write_json(lfile, data)
-        notes[#notes + 1] = "Live server address set to " .. data.server
-      elseif (data.server or "") == "" then notes[#notes + 1] = "Tailscale isn't installed or signed in here, so the Live server address is still empty" end
-    end
-    if not st.ninjam then
-      local ok, why = services.ensure_ninjam()
-      notes[#notes + 1] = ok and "NINJAM server started" or ("NINJAM server: " .. why)
-    end
+  if play_along and (st.hosting or not st.server) then
+    local server, why = services.ninjam_for(cfg, setup.live_file(cfg, b), true)
+    notes[#notes + 1] = server and ("NINJAM server: " .. server) or why
   end
   if not st.sonobus then
     local link, why = setup.sonobus(cfg, b, proj, false)

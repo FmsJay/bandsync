@@ -257,6 +257,9 @@ local function poll()
   -- the driver stepped away while others are still here: say so once (anyone here can Take control; the panel shows it)
   local driver_away = not alone and driver and driver ~= cfg.user
   if driver_away then for _, o in ipairs(others) do if o == driver then driver_away = false end end end
+  -- (given a moment: everyone leaving together read "anyone can Take control", then at once "you have full control": Mac, 0.58.5)
+  sync.away_at = driver_away and (sync.away_at or reaper.time_precise()) or nil
+  if driver_away and reaper.time_precise() - sync.away_at < 10 then driver_away = sync.driver_away end
   if driver_away ~= sync.driver_away then
     if driver_away then band.log(tostring(driver) .. " is driving but isn't here: anyone can Take control (StudioSync panel) to carry on") end
     sync.driver_away = driver_away
@@ -300,7 +303,7 @@ local function poll()
       local ok, sent = pcall(require("mirror").watch, proj, cfg, b.song, b.room, { can = my_can, mode = who.mode, local_mix = sync.local_mix,
         held = held, hold = hold, here = here, printers = who.printers })
       if not ok then band.log("mirror sync: " .. tostring(sent))
-      elseif sent > 0 then band.log(sent .. " change(s) went to the others") end
+      elseif sent > 0 then band.log(sent .. " change(s) went to " .. (b.room == "main" and "the others" or ("the room '" .. b.room .. "'"))) end
       mirror_took = reaper.time_precise() - now
       mirror_cc, mirror_at, mirror_due = reaper.GetProjectStateChangeCount(proj), now, false
       if hold then -- (how many are waiting, for the panel's "Holding N changes")

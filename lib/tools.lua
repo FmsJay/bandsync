@@ -208,9 +208,9 @@ function tools.put_back_bar(ctx, ImGui, song, use_mine, may)
   if pb.at and os.time() - pb.at > 600 then return end -- (old news: it's still in Setup > Console. Mac, 0.42.4)
   if ImGui.SmallButton(ctx, "OK##putback") then reaper.DeleteExtState(band.SECTION, "put back", false) end -- (first: a panel docked short showed the text, and no way to dismiss it)
   ImGui.SetItemTooltip(ctx, "Hide this. Every undone edit is also in Settings > Console.")
-  ImGui.SameLine(ctx)
   local mine = type(pb.mine) == "table" and pb.mine[1] and pb.mine
   if mine and use_mine then -- (a clash yours lost: straight back from here, not by way of the Restore page: James)
+    ImGui.SameLine(ctx)
     local yours = true
     for _, m in ipairs(mine) do yours = yours and may(m.name or "") end
     ImGui.BeginDisabled(ctx, not yours)
@@ -221,7 +221,6 @@ function tools.put_back_bar(ctx, ImGui, song, use_mine, may)
     ImGui.EndDisabled(ctx)
     ImGui.SetItemTooltip(ctx, yours and "Puts yours back, for everyone, as a new change. Theirs stays on the Restore page."
       or "It's theirs to change: they've claimed it, or it's the driver's. Ask them, or use the suggestion they'll see if you change it again.")
-    ImGui.SameLine(ctx)
   end
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
   ImGui.TextWrapped(ctx, mine and tostring(pb.text) or ("Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or "")))

@@ -60,21 +60,8 @@ local function ninjam_on(proj, cfg, b, send)
   local live, setup = require("live"), require("setup")
   local services = require("services")
   reaper.DeleteExtState(band.SECTION, "ninjam off " .. tostring(proj), false)
-  local lfile = setup.live_file(cfg, b)
-  local data = band.read_json(lfile) or {}
-  if (data.server or "") == "" and services.ninjam_dir() ~= "" then -- (this computer runs the server, and nobody's said where it is yet)
-    local addr = services.tailscale_address()
-    if addr then
-      data.server, data.by = addr .. ":2049", cfg.user
-      band.write_json(lfile, data)
-    end
-  end
-  local server = data.server or ""
-  if server == "" then return nil, "There's no NINJAM server set for this song: turn on the Play tab (Settings > Advanced) and set it there, or use the SonoBus route." end
-  if services.ninjam_dir() ~= "" then
-    local up, why = services.ensure_ninjam() -- (as the Play tab's Connect does)
-    if not up then return nil, "NINJAM server: " .. why end
-  end
+  local server, why = services.ninjam_for(cfg, setup.live_file(cfg, b), not send)
+  if not server then return nil, why end
   local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
   reaper.RecursiveCreateDirectory(sdir, 0)
   reaper.SetProjExtState(proj, band.SECTION, "live_dir", sdir)
@@ -133,7 +120,7 @@ local function auto_connect(tab)
     return
   end
   local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 10 or 30)
-  if may and require("services").ninjam_dir() ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
+  if may and reaper.GetExtState(band.SECTION, "ninjam hosting") ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
   local now = live.connect(may)
   if now == "connected" then c.done, c.tries, c.up, c.told = true, 0, true, nil
   elseif now == "error" then c.at = reaper.time_precise()

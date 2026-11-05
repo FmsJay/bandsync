@@ -431,6 +431,7 @@ local function refresh()
 end
 
 -- History: re-read only while its tab is open, and not every frame.
+local just_looked = {} -- backup tabs someone chose only to look at. (Not by pointer alone: REAPER gives a new tab a closed one's: Mac, 0.58.4)
 local entries, groups, hist_at = {}, {}, 0
 local function refresh_history()
   entries = recall.entries(cfg, b.song, b.room)
@@ -2770,11 +2771,12 @@ local function frame_app()
   if b and can then -- (an edit touching a claim, before the rest: lib/suggest.lua)
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
   end
+  for p in pairs(just_looked) do if not reaper.ValidatePtr(p, "ReaProject*") then just_looked[p] = nil end end
   if b and rooms.is_copy(proj, cfg, b) and not band.live_here(proj) then -- (lib/rooms.lua: a backup or autosave, opened by hand)
     ImGui.PushStyleColor(ctx, ImGui.Col_Text, YELLOW)
     ImGui.TextWrapped(ctx, "This is a backup or autosave of '" .. b.song .. "', not your project for it. Nothing goes in or out of it.")
     ImGui.PopStyleColor(ctx)
-    if reaper.GetExtState(band.SECTION, "just look " .. tostring(proj)) == "" then
+    if just_looked[proj] ~= tostring(reaper.GetTrack(proj, 0)) then
       if ImGui.SmallButton(ctx, "Open as a side room") then
         local p, what = rooms.from_backup(proj, cfg, b)
         if not p then band.msg(what) else
@@ -2795,7 +2797,7 @@ local function frame_app()
       end
       ImGui.SetItemTooltip(ctx, "A side room with this copy in it, yours to drive. Nobody else's project changes. From there, Bring into main offers what nobody has, and Send selected sends anything you pick.")
       ImGui.SameLine(ctx)
-      if ImGui.SmallButton(ctx, "Just look") then reaper.SetExtState(band.SECTION, "just look " .. tostring(proj), "1", false) end
+      if ImGui.SmallButton(ctx, "Just look") then just_looked[proj] = tostring(reaper.GetTrack(proj, 0)) end
       ImGui.SetItemTooltip(ctx, "Leave it as it is, for looking or for copying things out of by hand.")
     elseif (rooms.file_of(proj) or "") == "" then
       ImGui.TextDisabled(ctx, "If this really is your project, save it under a name first: File > Save project as.")

@@ -1329,7 +1329,8 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
     ImGui.SetItemTooltip(ctx, "Runs the server on this computer and points the studio at it. Handy when the computer that had it is staying off.")
     if srv_up then
       ImGui.SameLine(ctx)
-      if ImGui.SmallButton(ctx, "Stop server") then services.stop_ninjam(); srv_at = 0 end
+      -- (the running check's answer is a few seconds old: it read "running" for 8 s after. PC, 0.58.18)
+      if ImGui.SmallButton(ctx, "Stop server") then services.stop_ninjam(); srv_up, srv_at = false, reaper.time_precise() + 10 end
       ImGui.SetItemTooltip(ctx, "Stops the server on this computer: anyone connected to it drops off. It otherwise runs until the computer restarts. It starts again when someone needs it.")
     end
   end

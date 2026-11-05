@@ -94,7 +94,7 @@ function rooms.open(from, cfg, b, name, copy_dir)
   local m = rooms.meta(cfg, b.song, name)
   local src = not copy_dir and m and m.parent and rooms.tab(b.song, m.parent) or from -- (copy_dir: made from `from` itself, a backup, wherever the room's own tab is)
   local src_file = file_of(src) or ""
-  if src_file == "" then return nil, "Save this project first." end
+  if src_file == "" and not copy_dir then return nil, "Save this project first." end
   local path = (copy_dir or src_file:gsub("\\", "/"):match("^(.*)/")) .. "/" .. b.song .. " - " .. name:gsub("[^%w%-_ ]", "") .. " (room).rpp"
   local fresh = not reaper.file_exists(path)
   if fresh then reaper.Main_SaveProjectEx(src, path, 0) end -- a copy; the open project keeps its own file
@@ -149,10 +149,12 @@ function rooms.own_files(cfg, song) -- this computer's usual places for the song
   local here = (band.home() .. "/" .. song .. "/"):gsub("\\", "/"):lower()
   return { here .. song:lower() .. ".rpp", here .. song:lower() .. " - " .. tostring(cfg.user):lower() .. ".rpp" }
 end
+rooms.file_of = file_of
 function rooms.is_copy(proj, cfg, b)
   if not b or b.role == "solo" then return false end
   local f = file_of(proj) or ""
-  if f == "" or reaper.GetExtState(band.SECTION, band.autosync_key(f)) == "1" or reaper.GetExtState(band.SECTION, "autosync " .. f:lower()) == "1" then return false end
+  if f == "" then return true end -- (REAPER opens an .rpp-bak with no file name, "[Unsaved]": only a backup is bound and has none. Mac, 0.58.3)
+  if reaper.GetExtState(band.SECTION, band.autosync_key(f)) == "1" or reaper.GetExtState(band.SECTION, "autosync " .. f:lower()) == "1" then return false end
   local low = f:gsub("\\", "/"):lower()
   if low:find(" (room).rpp", 1, true) then return false end
   if low == reaper.GetExtState(band.SECTION, "project file " .. b.song):gsub("\\", "/"):lower() then return false end

@@ -1623,7 +1623,7 @@ end
 local function section_merge()
   if merge.why then ImGui.TextColored(ctx, YELLOW, merge.why); return end
   local parent = merge.parent
-  if #merge.bring == 0 and #merge.clash == 0 then ImGui.TextDisabled(ctx, "Nothing here that '" .. parent .. "' doesn't have."); return end
+  if #merge.bring == 0 and #merge.clash == 0 then ImGui.TextDisabled(ctx, "No new changes here for '" .. parent .. "'. For anything older, or deleted there: select it and use Send selected."); return end
   ImGui.Text(ctx, string.format("%d change(s) to bring into '%s'", #merge.bring, parent))
   local describe = require("recall").describe
   for _, ev in ipairs(merge.bring) do ImGui.BulletText(ctx, describe({ kind = "obj", obj = ev.obj, name = ev.name, rev = ev.rev, gone = ev.gone, pos = ev.pos })) end
@@ -1925,7 +1925,7 @@ local function maint_rows()
   end
   -- (a Mac showed its items OFFLINE while another app was in front, and nothing said why: 0.45.0)
   if reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("offlineinact", 0) ~= 0 then
-    rows[#rows + 1] = { "offline when inactive", false, "yellow", "", "REAPER takes your media offline whenever another app is in front, so parts show OFFLINE then: turn off 'Set media items offline when application is not active' in Preferences > Media." }
+    rows[#rows + 1] = { "offline when inactive", false, "yellow", "", "REAPER takes your media offline whenever another app is in front, so parts show OFFLINE then. StudioSync turned this off once and it's back on: turn off 'Set media items offline when application is not active' in Preferences > Media." }
   end
   if view.newer then rows[#rows + 1] = { "update " .. view.newer, false, "yellow", "", "StudioSync " .. view.newer .. " is in use in the studio; you have " .. band.VERSION .. ": press Update below." } end
   pcall(require("drive").root, cfg) -- (what it says next is about the group it last looked at: this tab's, then. Mac, 0.51.12)
@@ -2639,14 +2639,14 @@ local function frame_app()
         "Fine for trying parts; otherwise agree who records it, or record onto a track of your own.")
     end
   end
-  if not running and band.synced_elsewhere(proj) then -- (a second copy of the song: syncing it would work on a stale one)
-    at_row("open in another tab")
-    pill("open in another tab", YELLOW, DARK, fh)
-    ImGui.SetItemTooltip(ctx, "This project is already open and syncing in another tab: work there. This tab is a second copy, not synced.")
-  elseif not running and rooms.is_copy(proj, cfg, b) then
+  if not running and rooms.is_copy(proj, cfg, b) then
     at_row("older copy")
     pill("older copy", YELLOW, DARK, fh)
     ImGui.SetItemTooltip(ctx, "A backup or autosave of this song, not your project for it. Nothing goes in or out of it.")
+  elseif not running and band.synced_elsewhere(proj) then -- (a second copy of the song: syncing it would work on a stale one)
+    at_row("open in another tab")
+    pill("open in another tab", YELLOW, DARK, fh)
+    ImGui.SetItemTooltip(ctx, "This project is already open and syncing in another tab: work there. This tab is a second copy, not synced.")
   elseif not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
     at_row("Start")
     if ImGui.Button(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
@@ -2771,7 +2771,9 @@ local function frame_app()
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
   end
   if b and rooms.is_copy(proj, cfg, b) and not band.live_here(proj) then -- (lib/rooms.lua: a backup or autosave, opened by hand)
-    ImGui.TextColored(ctx, YELLOW, "This is a backup or autosave of '" .. b.song .. "', not your project for it. Nothing goes in or out of it.")
+    ImGui.PushStyleColor(ctx, ImGui.Col_Text, YELLOW)
+    ImGui.TextWrapped(ctx, "This is a backup or autosave of '" .. b.song .. "', not your project for it. Nothing goes in or out of it.")
+    ImGui.PopStyleColor(ctx)
     if reaper.GetExtState(band.SECTION, "just look " .. tostring(proj)) == "" then
       if ImGui.SmallButton(ctx, "Open as a side room") then
         local p, what = rooms.from_backup(proj, cfg, b)
@@ -2795,6 +2797,8 @@ local function frame_app()
       ImGui.SameLine(ctx)
       if ImGui.SmallButton(ctx, "Just look") then reaper.SetExtState(band.SECTION, "just look " .. tostring(proj), "1", false) end
       ImGui.SetItemTooltip(ctx, "Leave it as it is, for looking or for copying things out of by hand.")
+    elseif (rooms.file_of(proj) or "") == "" then
+      ImGui.TextDisabled(ctx, "If this really is your project, save it under a name first: File > Save project as.")
     else
       if ImGui.SmallButton(ctx, "Make this my project") and reaper.MB("Sync this copy as your project for '" .. b.song .. "'?\n\n" ..
           "What the studio has changed since comes in over it, and any edits in it on your own tracks go to everyone.", "StudioSync", 4) == 6 then

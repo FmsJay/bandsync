@@ -1,7 +1,7 @@
 -- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.58.3", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.58.4", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -421,6 +421,30 @@ function band.live_here(proj) -- Live sync's running for this tab
   local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(proj)))
   return beat ~= nil and reaper.time_precise() - beat < 5
 end
+-- REAPER's "Set media items offline when application is not active" leaves a song's parts OFFLINE and without peaks while the studio sends them in behind
+-- another app (Mac, 0.45.0). Turned off once on this computer, the first time a song syncs; turned on again by hand, it stays on (Health says so).
+function band.stay_online()
+  if not reaper.SNM_GetIntConfigVar or not reaper.BR_Win32_WritePrivateProfileString or reaper.HasExtState(band.SECTION, "stay online") then return end
+  reaper.SetExtState(band.SECTION, "stay online", "1", true)
+  if reaper.SNM_GetIntConfigVar("offlineinact", 0) == 0 then return end
+  reaper.SNM_SetIntConfigVar("offlineinact", 0)
+  reaper.BR_Win32_WritePrivateProfileString("REAPER", "offlineinact", "0", reaper.get_ini_file()) -- (in the file too, as lib/startup.lua's)
+  band.log("turned off REAPER's 'Set media items offline when application is not active', so parts stay online while the studio sends them in (Preferences > Media)")
+end
+
+-- Actions an old install left behind, from REAPER's key file: { {section, path} }. BandSync's scripts whose file's gone, and BandSync's tab launchers,
+-- whose file stays but runs a script that's gone (Mac, 0.58.3). `exists`, `read`: file_exists and "the file's text". Pure.
+function band.old_actions(text, scripts, exists, read)
+  local out = {}
+  for section, path in text:gmatch('SCR %d+ (%d+) %S+ "[^"]*" "([^"]*BandSync %- [^"]*%.lua)"') do
+    local p = band.norm(path)
+    if not p:match("^/") and not p:match("^%a:") then p = scripts .. "/" .. p end
+    local target = exists(p) and (read(p) or ""):match("dofile%(%[%[(.-)%]%]%)")
+    if not exists(p) or (target and not exists(target)) then out[#out + 1] = { section = tonumber(section), path = p } end
+  end
+  return out
+end
+
 function band.autosync_key(path) return "autosync " .. (path or ""):gsub("\\", "/"):lower() end
 
 function band.bind(proj, b)

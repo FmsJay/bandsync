@@ -13,6 +13,14 @@ do -- every action of this version is in the Actions list: an update through the
   local list = {}
   for _, f in ipairs(band.files(dir, ".lua")) do if f:match("^StudioSync %- .+%.lua$") then list[#list + 1] = dir .. "/" .. f end end
   for i, path in ipairs(list) do reaper.AddRemoveReaScript(true, 0, path, i == #list) end
+  local kb = io.open(reaper.GetResourcePath() .. "/reaper-kb.ini", "r")
+  if kb then
+    local text = kb:read("a")
+    kb:close()
+    local function read(p) local f = io.open(p, "r"); if not f then return nil end; local s = f:read("a"); f:close(); return s end
+    local old = band.old_actions(text, band.norm(reaper.GetResourcePath()) .. "/Scripts", reaper.file_exists, read)
+    for i, a in ipairs(old) do reaper.AddRemoveReaScript(false, a.section, a.path, i == #old) end
+  end
 end
 
 local REQUEST = band.home() .. "/install-request"

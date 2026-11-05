@@ -18,6 +18,10 @@ local TMP = (WIN and (os.getenv("TEMP") or os.getenv("TMP")) or os.getenv("TMPDI
 local started, last = {}, {}
 local function background(name, cmd, every)
   local file = TMP .. "/bandsync-" .. name .. ".txt"
+  -- read before starting the next run: a run truncates its file as it starts, and read after that, every call that started one handed back an answer from
+  -- long before (only port_open calls so seldom that each starts one: a closed server read as answering. Mac, 0.58.22)
+  local out = band.read(file)
+  if out and out:match("%S") then last[name] = out end
   if not started[name] or reaper.time_precise() - started[name] > every then
     started[name] = reaper.time_precise()
     -- shortcut: written in place (these outputs are a few hundred bytes); a half-written read just looks like "no answer" once
@@ -34,8 +38,6 @@ local function background(name, cmd, every)
       reaper.ExecProcess("/bin/sh '" .. sh .. "'", -1)
     end
   end
-  local out = band.read(file)
-  if out and out:match("%S") then last[name] = out end -- a run that has just started truncates the file: keep the last answer
   return last[name]
 end
 
@@ -61,9 +63,9 @@ function services.port_open(address)
   host = host:gsub("[^%w%.%-]", "") -- (and each address has its own answer: one file for all read a dead host as up)
   local name, open = "port-" .. host .. "-" .. port, nil
   if WIN then -- (as services.answers; %% is a batch file's %)
-    open = (tonumber((background(name, 'curl -s -o NUL -m 3 -w %%{time_connect} "http://' .. host .. ":" .. port .. '/"', 8) or ""):match("[%d%.]+")) or 0) > 0
+    open = (tonumber((background(name, 'curl -s -o NUL -m 3 -w %%{time_connect} "http://' .. host .. ":" .. port .. '/"', 3) or ""):match("[%d%.]+")) or 0) > 0
   else
-    open = (background(name, "/usr/bin/nc -z -G 3 '" .. host .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
+    open = (background(name, "/usr/bin/nc -z -G 3 '" .. host .. "' " .. port .. " && echo open || echo shut", 3) or ""):find("open", 1, true) ~= nil
   end
   local r = runs[name] or {}
   runs[name] = r
@@ -611,7 +613,7 @@ function services.ninjam_for(cfg, lfile, may_host, force)
   if not ok then return nil, "NINJAM server: " .. why end
   local now = addr .. ":2049"
   reaper.SetExtState(band.SECTION, "ninjam hosting", now, false)
-  if server ~= now or not mine then
+  if server ~= now or not mine or data.stopping then -- (started again after a stop: it's not stopping now)
     data.server, data.by, data.stopping = now, cfg.user, nil
     band.write_json(lfile, data)
     band.log("this song's NINJAM server now runs on this computer: " .. now)

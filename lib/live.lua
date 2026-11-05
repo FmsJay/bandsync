@@ -32,7 +32,7 @@ function live.window()
   local _, list = reaper.JS_Window_ListFind(live.FX, true)
   local closed, found, still = closed_ones(), nil, {}
   for addr in (list or ""):gmatch("[^,]+") do
-    if closed:find(addr, 1, true) then still[#still + 1] = addr
+    if ("," .. closed .. ","):find("," .. addr .. ",", 1, true) then still[#still + 1] = addr
     elseif not found then found = reaper.JS_Window_HandleFromAddress(tonumber(addr)) end
   end
   if closed ~= "" then reaper.SetExtState(band.SECTION, "ninjam closed", table.concat(still, ","), false) end
@@ -177,6 +177,7 @@ end
 -- Point ReaNINJAM at the band's server, as this person, with one local channel in `mode`.
 -- `send`: whether this channel goes out (the driver/performer sends; listeners usually don't).
 function live.configure(cfg, server, mode, send, sessiondir)
+  server = server:gsub("[%s%c]", "") -- (from the shared folder, and it goes into a settings file a line at a time)
   local path = live.ini_path()
   reaper.SetExtState(band.SECTION, "ninjam host", server, false)
   local keys = {
@@ -215,7 +216,7 @@ function live.fx(proj, add, fx)
       if not other then break end
       if other ~= proj then
         local m, x = live.fx(other, false)
-        if m and not live.close_boxes() then reaper.TrackFX_Delete(m, x); freed = freed + 1 end
+        if m and not live.close_boxes() then live.closing(); reaper.TrackFX_Delete(m, x); freed = freed + 1 end
       end
     end
   end

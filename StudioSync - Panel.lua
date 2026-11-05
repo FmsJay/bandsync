@@ -1327,6 +1327,11 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
       if server then live_server = server else band.msg(why) end
     end
     ImGui.SetItemTooltip(ctx, "Runs the server on this computer and points the studio at it. Handy when the computer that had it is staying off.")
+    if srv_up then
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Stop server") then services.stop_ninjam(); srv_at = 0 end
+      ImGui.SetItemTooltip(ctx, "Stops the server on this computer: anyone connected to it drops off. It otherwise runs until the computer restarts. It starts again when someone needs it.")
+    end
   end
   local _, s = ImGui.Checkbox(ctx, "Send my audio (my whole mix)", live_send)
   live_send = s
@@ -1334,10 +1339,12 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   local master, idx = live.fx(proj, false)
   if not master then
     if ImGui.Button(ctx, "Connect") then
+      local why
       if live_server == ((band.read_json(lfile) or {}).server or "") then -- (or an address typed in just now, not saved: that one)
-        local server, why = services.ninjam_for(cfg, lfile, true)
-        if server then live_server = server else band.msg(why) end
+        local server, said = services.ninjam_for(cfg, lfile, true)
+        if server then live_server = server else why = said end
       end
+      if why then band.msg(why) else
       local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
       reaper.RecursiveCreateDirectory(sdir, 0)
       reaper.SetProjExtState(proj, band.SECTION, "live_dir", sdir)
@@ -1349,6 +1356,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
           live.keep_hidden(proj)
           reaper.SetExtState(band.SECTION, "ninjam connect " .. tostring(proj), "1", false) -- (Live sync presses Connect: lib/producer.lua)
         else band.msg("Couldn't add ReaNINJAM to the master track.") end
+      end
       end
     end
     ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in, and connects it. If nobody's running a server, this computer does.")
@@ -1382,10 +1390,14 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
       end
     end
     ImGui.SameLine(ctx)
-    if ImGui.Button(ctx, "Leave") and not live.close_boxes() then live.closing(); reaper.TrackFX_Delete(master, idx) end -- (lib/live.lua: a second press, with one of its boxes up)
+    if ImGui.Button(ctx, "Leave") and not live.close_boxes() then
+      reaper.DeleteExtState(band.SECTION, "ninjam shown " .. tostring(proj), false)
+      live.closing()
+      reaper.TrackFX_Delete(master, idx)
+    end -- (lib/live.lua: a second press, with one of its boxes up)
   end
   ImGui.TextDisabled(ctx, "(?) about changing mode or server")
-  ImGui.SetItemTooltip(ctx, "ReaNINJAM reads its settings once per REAPER session: after changing the mode or the server, restart REAPER. " ..
+  ImGui.SetItemTooltip(ctx, "ReaNINJAM reads its mode once per REAPER session: after changing it, restart REAPER. The server follows by itself. " ..
     "Play along ideas appear when the listener disconnects (ReaNINJAM writes what it heard only then).")
 end
 
@@ -1924,12 +1936,12 @@ local function maint_rows()
         undo.key_name() .. " can roll back a collaborator's work: it isn't set to StudioSync's Undo yet." }
     end)(),
     { "tailscale", services.tailscale_up(), "yellow", "Tailscale is on", services.tailscale_installed() and "Tailscale is off or not signed in: open it and turn it on. The NINJAM route needs it." or "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
-    (function()
-      local stays = services.tailscale_stays()
-      return { "tailscale stays", stays == true, "yellow", "Tailscale stays signed in here", "Tailscale signs this computer out on " .. tostring(stays) .. ": at login.tailscale.com/admin/machines, this computer > ... > Disable key expiry. " ..
-        "New computers can stay signed in by themselves: whoever owns the Tailscale network adds, once, at login.tailscale.com/admin/acls:  \"tagOwners\": { \"tag:bandsync\": [\"autogroup:member\"] }," }
-    end)(),
   }
+  if services.tailscale_up() then
+    local stays = services.tailscale_stays()
+    rows[#rows + 1] = { "tailscale stays", stays == true, "yellow", "Tailscale stays signed in here", "Tailscale signs this computer out on " .. tostring(stays) .. ": at login.tailscale.com/admin/machines, this computer > ... > Disable key expiry. " ..
+      "New computers can stay signed in by themselves: whoever owns the Tailscale network adds, once, at login.tailscale.com/admin/acls:  \"tagOwners\": { \"tag:bandsync\": [\"autogroup:member\"] }," }
+  end
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", "No Play along server yet: Connect on the Play page starts one on this computer." }
     if s.hosting then
@@ -2805,6 +2817,9 @@ local function frame_app()
               reaper.SelectProjectInstance(copy)
               reaper.Main_OnCommand(40860, 0)
               if front ~= copy then reaper.SelectProjectInstance(front) end
+            elseif reaper.ValidatePtr(copy, "ReaProject*") then -- (closing would ask to save: it's in the room now, and pressing again here would make another room)
+              just_looked[copy] = tostring(reaper.GetTrack(copy, 0))
+              band.log("the backup's tab stays open, as it has changes: they're in the room now. Close it without saving when you like")
             end
           end)
         end

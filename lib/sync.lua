@@ -165,18 +165,6 @@ function sync.audio_follow_tempo(proj)
   end
 end
 
--- ---- arrangement: insert or remove time for everyone (the driver's edit; claims don't block it) ---------
--- Insert `len` seconds at `at` (len > 0), or remove [at, at - len) (len < 0): items, tempo markers, markers and
--- regions after it move; removed time's items, tempo markers and markers go. Stems and live placeholders stay.
--- Takes that play across an edit point are split there by whoever recorded them (opts.split(it) -> true), each on
--- their own machine: the left part keeps its id and
--- goes out as a trim, the right part is new material and goes out as a new take, already in its moved place.
--- Everyone else leaves such a take where it is until those arrive. opts.keep(it, tk) -> true keeps a moved take's
--- old snapshot, so Live sync posts its new place as an edit (a take that reaches someone late still lands right).
-local function shiftable(it)
-  local tr = reaper.GetMediaItem_Track(it)
-  return band.track_ext(tr, "band_stem") == "" and band.item_ext(it, "band_live") == ""
-end
 
 -- The driver's new timeline goes into session.json too: refreshing, or a bandmate joining later, gets it.
 function sync.session_timeline(cfg, song, tempo, markers)
@@ -519,14 +507,6 @@ local function lane_of(it)
   return math.floor(reaper.GetMediaItemInfo_Value(it, "I_FIXEDLANE"))
 end
 local function track_name(it) return base_name(select(2, reaper.GetTrackName(reaper.GetMediaItem_Track(it)))) end
--- The name the band knows this item's track by: its last synced name (a rename this person may not send stays
--- local; 2026-10-28: a guest renamed an unclaimed track and its takes' edits split them across two tracks).
-local function band_track_name(proj, it)
-  local tr = reaper.GetMediaItem_Track(it)
-  local known = ext(proj, "BandSync.tracks", select(2, reaper.GetSetMediaTrackInfo_String(tr, "GUID", "", false)))
-  local name = known:match("^([^|]*)|")
-  return (name and name ~= "") and name or track_name(it)
-end
 local function shape(it, tk)
   return string.format("%.6f|%.6f|%.6f|%s|%d|%s", reaper.GetMediaItemInfo_Value(it, "D_POSITION"), reaper.GetMediaItemInfo_Value(it, "D_LENGTH"),
     reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS"), tostring(lane_of(it)), reaper.GetMediaItemInfo_Value(it, "B_MUTE"), track_name(it))
@@ -645,13 +625,6 @@ function sync.own_takes(proj, opts)
   return out
 end
 
-local function dirs(proj, cfg, b)
-  local out = (select(2, reaper.EnumProjects(-1)):match("^(.*)[/\\]") or reaper.GetResourcePath()):gsub("\\", "/") .. "/band-out"
-  local takes = band.takes_dir(cfg, b.song, b.room)
-  reaper.RecursiveCreateDirectory(out, 0)
-  reaper.RecursiveCreateDirectory(takes, 0)
-  return out, takes
-end
 
 -- Render one take as the song prints it and post it as revision `rev` of `id`.
 --   wet: through its track's FX, volume and pan, at the item's exact extent
@@ -1233,7 +1206,7 @@ function sync.watch_timeline(proj, cfg, song, room, can)
         if tempo_off then band.apply_tempo(proj, s.tempo); require("mirror").tempo_changed(proj) end
         band.apply_markers(proj, s.markers)
         reaper.Undo_EndBlock2(proj, "StudioSync: the song's tempo map and markers", -1)
-        sig, seen = timeline_sig(proj), nil
+        sig = timeline_sig(proj)
         seen = sig
         setext(proj, band.SECTION, "timeline", sig)
         band.log("this project was behind the song: its tempo map and markers are back as the studio has them")

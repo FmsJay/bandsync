@@ -21,7 +21,7 @@ foreach ($s in $Source) {
   $target = Join-Path $Dest (($s -replace '[:\\/]+', '_').Trim('_'))
   # /E: subfolders; no /MIR or /PURGE, so nothing is ever deleted from the backup.
   # Skip Syncthing's own bookkeeping, in-progress temp files, and the test suites' throwaway songs (tests).
-  robocopy $s $target /E /R:2 /W:5 /NP /NDL /XD .stversions .stfolder tests /XF '.syncthing.*' '~syncthing~*' /LOG+:$log | Out-Null
+  robocopy $s $target /E /R:2 /W:5 /NP /NDL /XD .stversions .stfolder (Join-Path $s 'tests') /XF '.syncthing.*' '~syncthing~*' /LOG+:$log | Out-Null
   if ($LASTEXITCODE -ge 8) { $failed++ } # robocopy: 0-7 = success (with or without copies), 8+ = failure
 }
 Add-Content $log "$(Get-Date -Format s) backup finished: $failed failure(s)"

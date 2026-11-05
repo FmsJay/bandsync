@@ -209,10 +209,12 @@ function rooms.copy_takes(cfg, song, from, to, list)
   for _, t in ipairs(list) do
     local m = band.read_json(fdir .. "/" .. t.id .. ".json")
     if m and m.full and not reaper.file_exists(tdir .. "/" .. t.id .. ".json") then
+      -- (names from someone's manifest: they stay inside the room's folders)
+      local function inside(name) return type(name) == "string" and not name:find("..", 1, true) and not name:match("^[/\\]") and not name:match("^%a:") end
       for _, k in ipairs({ "full", "preview", "dry", "midi" }) do
-        if m[k] and reaper.file_exists(fdir .. "/" .. m[k]) then band.copy_atomic(fdir .. "/" .. m[k], tdir .. "/" .. m[k]) end
+        if inside(m[k]) and reaper.file_exists(fdir .. "/" .. m[k]) then band.copy_atomic(fdir .. "/" .. m[k], tdir .. "/" .. m[k]) end
       end
-      if m.fxchain and reaper.file_exists(froom .. "/" .. m.fxchain) and not reaper.file_exists(troom .. "/" .. m.fxchain) then
+      if inside(m.fxchain) and reaper.file_exists(froom .. "/" .. m.fxchain) and not reaper.file_exists(troom .. "/" .. m.fxchain) then
         reaper.RecursiveCreateDirectory((troom .. "/" .. m.fxchain):match("^(.*)/"), 0)
         band.copy_atomic(froom .. "/" .. m.fxchain, troom .. "/" .. m.fxchain)
       end

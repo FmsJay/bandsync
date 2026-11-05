@@ -62,6 +62,8 @@ local function ninjam_on(proj, cfg, b, send)
   reaper.DeleteExtState(band.SECTION, "ninjam off " .. tostring(proj), false)
   local server, why = services.ninjam_for(cfg, setup.live_file(cfg, b), not send)
   if not server then return nil, why end
+  reaper.SetExtState(band.SECTION, "ninjam host " .. tostring(proj), server, false) -- (this tab's: another song's may be elsewhere)
+  reaper.SetExtState(band.SECTION, "ninjam start " .. tostring(proj), tostring(reaper.time_precise()), false)
   local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
   reaper.RecursiveCreateDirectory(sdir, 0)
   reaper.SetProjExtState(proj, band.SECTION, "live_dir", sdir)
@@ -69,7 +71,7 @@ local function ninjam_on(proj, cfg, b, send)
   if not ok then return nil, e end
   local rt = live.rt_track(proj, true)
   local tr, i = live.fx(proj, false)
-  if tr and tr ~= rt then reaper.TrackFX_Delete(tr, i); tr = nil end
+  if tr and tr ~= rt then live.closing(); reaper.TrackFX_Delete(tr, i); tr = nil end
   if not tr then
     live.fx(proj, false) -- (REAPER runs one per process: another tab's goes first, as live.fx does)
     for p = 0, math.huge do
@@ -77,7 +79,7 @@ local function ninjam_on(proj, cfg, b, send)
       if not other then break end
       if other ~= proj then
         local m, x = live.fx(other, false)
-        if m and not live.close_boxes() then reaper.TrackFX_Delete(m, x) end
+        if m and not live.close_boxes() then live.closing(); reaper.TrackFX_Delete(m, x) end
       end
     end
     i = reaper.TrackFX_AddByName(rt, live.FX, false, -1)
@@ -95,8 +97,10 @@ end
 local connecting = {}
 local server_at, server_lost = {}, {}
 local function auto_connect(tab)
+  -- (a start is told by the time it was asked for: it may come from the panel's script, which has its own copy of this table. Mac, 0.58.13)
+  local start = reaper.GetExtState(band.SECTION, "ninjam start " .. tab)
   local c = connecting[tab]
-  if not c then c = { tries = 0, at = -math.huge }; connecting[tab] = c end
+  if not c or c.start ~= start then c = { tries = 0, at = -math.huge, start = start }; connecting[tab] = c end
   local live = require("live")
   if live.error_box() then -- (it failed, or the server went away: say it, try again)
     local said = live.close_boxes()
@@ -124,7 +128,7 @@ local function auto_connect(tab)
     return
   end
   local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 5 or 30)
-  if may and reaper.GetExtState(band.SECTION, "ninjam hosting") ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
+  if may and reaper.GetExtState(band.SECTION, "ninjam hosting") == reaper.GetExtState(band.SECTION, "ninjam host") then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
   local now = live.connect(may)
   if now == "connected" then c.done, c.tries, c.up, c.told, c.up_at = true, 0, true, nil, reaper.time_precise()
   elseif now == "error" then c.at = reaper.time_precise()
@@ -144,13 +148,14 @@ local function ninjam_off(proj)
   if live.close_boxes() then return reaper.SetExtState(band.SECTION, "ninjam off " .. tostring(proj), "1", false) end -- (not with a box of its own up: the tick does it, once that's gone)
   reaper.DeleteExtState(band.SECTION, "ninjam off " .. tostring(proj), false)
   connecting[tostring(proj)] = nil
+  reaper.DeleteExtState(band.SECTION, "ninjam shown " .. tostring(proj), false)
   local rt = live.rt_track(proj, false)
   if not rt then return end
   for i = reaper.TrackFX_GetCount(rt) - 1, 0, -1 do
     if select(2, reaper.TrackFX_GetFXName(rt, i, "")):find(live.FX, 1, true) then
+      local w = live.window() -- (its own window stays up without it)
       live.closing()
       reaper.TrackFX_Delete(rt, i)
-      local w = reaper.JS_Window_Find and reaper.JS_Window_Find(live.FX, true) -- (its own window stays up without it)
       if w then reaper.JS_WindowMessage_Post(w, "WM_CLOSE", 0, 0, 0, 0) end
     end
   end
@@ -248,7 +253,7 @@ function producer.tick(proj, cfg, b, peers)
   if (ninjam_up[tab] or pressing) and not going and reaper.time_precise() - (server_at[tab] or -math.huge) > 10 then
     server_at[tab] = reaper.time_precise()
     local live, services = require("live"), require("services")
-    local there, host = (band.read_json(require("setup").live_file(cfg, b)) or {}).server or "", reaper.GetExtState(band.SECTION, "ninjam host")
+    local there, host = (band.read_json(require("setup").live_file(cfg, b)) or {}).server or "", reaper.GetExtState(band.SECTION, "ninjam host " .. tab)
     local lost = pressing and there == host and live.connect(false) ~= "connected"
     server_lost[tab] = lost and (server_lost[tab] or reaper.time_precise()) or nil
     if lost and reaper.time_precise() - server_lost[tab] > 25 and not services.answers(host) then
@@ -258,7 +263,9 @@ function producer.tick(proj, cfg, b, peers)
       connecting[tab] = nil
       local ok, why = ninjam_on(proj, cfg, b, false)
       if not ok then band.log("NINJAM server: " .. tostring(why)) end
-    elseif there ~= "" and there ~= host then
+    elseif lost and reaper.time_precise() - server_lost[tab] > 25 then
+      server_at[tab] = reaper.time_precise() + 20 -- (it answers, and something else is wrong: asking again holds REAPER up for as long as it takes)
+    elseif there ~= "" and host ~= "" and there ~= host then
       band.log("the NINJAM server moved to " .. there .. ": following it")
       ninjam_off(proj)
       ninjam_up[tab], connecting[tab] = nil, nil

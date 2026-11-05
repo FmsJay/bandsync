@@ -1560,19 +1560,20 @@ mirror.fx_load_knobs = mirror.fx_load_knobs or {} -- chain -> its knobs at the s
 mirror.fx_open_at = {}
 mirror.cc_seen = {}
 mirror.fx_quiet = mirror.fx_quiet or {}
+local function fx_open_now(tr)
+  if reaper.TrackFX_GetChainVisible(tr) ~= -1 then return true end
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do if reaper.TrackFX_GetOpen(tr, i) then return true end end
+  return false
+end
 function mirror.note_open_fx(proj)
   local now = reaper.time_precise()
   for t = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, t)
-    local open = reaper.TrackFX_GetChainVisible(tr) ~= -1
-    for i = 0, reaper.TrackFX_GetCount(tr) - 1 do open = open or reaper.TrackFX_GetOpen(tr, i) end
-    if open then mirror.fx_open_at[tostring(tr)] = now end
+    if fx_open_now(tr) then mirror.fx_open_at[tostring(tr)] = now end
   end
 end
 function mirror.fx_was_open(tr)
-  local open = reaper.TrackFX_GetChainVisible(tr) ~= -1
-  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do open = open or reaper.TrackFX_GetOpen(tr, i) end
-  return open or reaper.time_precise() - (mirror.fx_open_at[tostring(tr)] or -math.huge) < 60
+  return fx_open_now(tr) or reaper.time_precise() - (mirror.fx_open_at[tostring(tr)] or -math.huge) < 60
 end
 mirror.first_look = mirror.first_look or {} -- project -> until when its chains may be still loading after it opened
 mirror.order_seen = mirror.order_seen or {} -- project -> its tracks' order at the last look
@@ -2329,24 +2330,6 @@ function mirror.summary(proj, cfg, room_dir, objs, media)
   band.write_json(room_dir .. "/summary/" .. (cfg.user:gsub("[^%w%-_ ]", "")) .. ".json", s)
 end
 
--- Our own change that the band's rules refuse (judged when it was made): this object goes back to the newest
--- revision before it, as the band has it.
-function mirror.repair(proj, ev, room_dir, local_mix)
-  local band = require("band")
-  local best
-  for _, f in ipairs(band.files(room_dir .. "/events", ".json")) do
-    local e = f ~= ev.id .. ".json" and f:find(".json", 1, true) and band.read_json(room_dir .. "/events/" .. f)
-    if type(e) == "table" and e.type == "obj" and e.oid == ev.oid and (e.rev or 0) < (ev.rev or 0) and
-        mirror.newer({ rev = e.rev, time = (e.time or "") .. (e.user or "") }, best and { rev = best.rev, time = (best.time or "") .. (best.user or "") }) then
-      best = e
-    end
-  end
-  if best and not best.gone then
-    local ok, h = mirror.apply(proj, best, room_dir .. "/media", local_mix)
-    if ok then remember(proj, ev.oid, ev.rev, h, best.id, (ev.time or "") .. (ev.user or "")) end
-  end
-  require("sync").put_back("a change you made just as control changed hands wasn't yours to make: it's back as the studio has it")
-end
 
 -- History's "selected tracks" scope: the tracks selected in REAPER, their plug-ins and everything on them (then or
 -- now). nil when nothing is selected.

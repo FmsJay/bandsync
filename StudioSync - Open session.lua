@@ -39,7 +39,7 @@ local function open_song(song, room) -- room: for a new tab (nil when refreshing
       local p = reaper.EnumProjects(i)
       if not p then break end
       local ob = band.binding(p)
-      if ob and ob.song == song and ob.room == room and ob.role ~= "solo" then
+      if ob and ob.song == song and ob.room == room and ob.role ~= "solo" and not require("rooms").is_copy(p, cfg, ob) then -- (a backup left open isn't the song)
         reaper.SelectProjectInstance(p)
         return band.msg("'" .. song .. "' (room " .. room .. ") is already open in another tab: switched to it.")
       end

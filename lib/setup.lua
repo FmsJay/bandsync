@@ -110,7 +110,7 @@ function setup.all(cfg, b, proj, st, start_sync, play_along)
     local ok, why = services.ensure_syncthing()
     notes[#notes + 1] = ok and "Syncthing started" or ("Syncthing: " .. why)
   end
-  if not st.sync then
+  if not st.sync and not require("rooms").is_copy(proj, cfg, b) then -- (a backup's edits would go out to everyone: lib/rooms.lua)
     reaper.DeleteExtState(band.SECTION, "stop " .. tostring(proj), false)
     start_sync()
     notes[#notes + 1] = "Live sync started"

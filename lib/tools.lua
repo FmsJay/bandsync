@@ -109,7 +109,7 @@ local function let_in(d, me)
           local p = reaper.EnumProjects(i)
           if not p then break end
           local tb = band.binding(p)
-          if tb and band.for_tab(base, tb).root == d.root then
+          if tb and band.for_tab(base, tb).root == d.root and not require("rooms").is_copy(p, base, tb) then -- (a backup left open isn't the song)
             pcall(recall.save, p, { root = d.root, user = me }, tb.song, tb.room, "before " .. tostring(d.name) .. " joined", true)
           end
         end

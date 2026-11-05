@@ -66,8 +66,9 @@ function services.answers(address)
   host = host:gsub("[^%w%.%-]", "")
   -- (as http, though nothing here speaks it: telnet:// ignores curl's -m once connected, and REAPER waited on it for good. And by the time it connected, since
   -- its exit code can't tell: 28 is both "connected, and nothing came in a second" and "nobody there", which is what an offline Tailscale machine does)
-  if WIN then return (tonumber((reaper.ExecProcess('curl -s -o NUL -m 1 -w %{time_connect} "http://' .. host .. ":" .. port .. '/"', 3000) or ""):match("\n([%d%.]+)")) or 0) > 0 end
-  return (reaper.ExecProcess("/usr/bin/nc -z -G 1 " .. host .. " " .. port, 3000) or ""):match("^0\n") ~= nil
+  -- (3 s: Tailscale's first packets to a computer that's been quiet can take over 1, and a live host then read as gone and was taken over)
+  if WIN then return (tonumber((reaper.ExecProcess('curl -s -o NUL -m 3 -w %{time_connect} "http://' .. host .. ":" .. port .. '/"', 5000) or ""):match("\n([%d%.]+)")) or 0) > 0 end
+  return (reaper.ExecProcess("/usr/bin/nc -z -G 3 " .. host .. " " .. port, 5000) or ""):match("^0\n") ~= nil
 end
 
 -- Start `path args...` in the background, hidden, in `cwd` (optional). Returns true if launched.
@@ -268,7 +269,9 @@ function services.join_band(cfg, code)
   for _, x in ipairs(band.bands()) do
     if x.id == code.band and not require("groups").is_old(x.root) then band.use_band(x.root); return x.root, "already" end
   end
-  local name = code.name ~= "" and code.name or code.band
+  -- (it comes from whoever sent the code, and goes into a folder's path and a command)
+  local name = band.clean(code.name or "")
+  if name == "" then name = code.band end
   local here = ((cfg.base or cfg).root or ""):gsub("[/\\]+$", "")
   local parent = here:match("^(.*)[/\\][^/\\]+$") or here
   local root, n = parent .. "/StudioSync " .. name, 1
@@ -488,13 +491,14 @@ end
 function services.tailscale_installed() return tailscale_exe() ~= nil end
 -- Running and signed in? Asked at most every 20 s: it's for a Health row. Pure part: services.tailscale_running_in.
 function services.tailscale_running_in(json) return json:find('"BackendState":%s*"Running"') ~= nil end
-local ts_at, ts_up = -math.huge, false
+local ts_at, ts_up, ts_json = -math.huge, false, ""
 function services.tailscale_up()
   local exe = tailscale_exe()
   if not exe then return false end
   if reaper.time_precise() - ts_at > 20 then
     ts_at = reaper.time_precise()
-    ts_up = services.tailscale_running_in(reaper.ExecProcess(q(exe) .. " status --json --peers=false", 5000) or "")
+    ts_json = reaper.ExecProcess(q(exe) .. " status --json --peers=false", 5000) or ""
+    ts_up = services.tailscale_running_in(ts_json)
   end
   return ts_up
 end
@@ -506,12 +510,8 @@ function services.tailscale_stays_in(json)
   if tags and tags:find("tag:", 1, true) then return true end
   return self:match('"KeyExpiry":%s*"(%d%d%d%d%-%d%d%-%d%d)') or true
 end
-local ts_stays
 function services.tailscale_stays()
-  local exe = tailscale_exe()
-  if not exe or not services.tailscale_up() then return true end
-  if ts_stays == nil then ts_stays = services.tailscale_stays_in(reaper.ExecProcess(q(exe) .. " status --json --peers=false", 5000) or "") end
-  return ts_stays
+  return not services.tailscale_up() or services.tailscale_stays_in(ts_json)
 end
 -- From `tailscale status --json --peers=false`: this machine's name, if the tailnet's names work ("pc.tail1234.ts.net", no last dot).
 function services.tailscale_name_in(json)
@@ -553,12 +553,17 @@ function services.ensure_ninjam()
   band.log("started the NINJAM server on this computer" .. (WIN and ": if Windows asks whether it may accept connections, allow it, or nobody can reach it" or ""))
   return "started"
 end
--- Has Windows been told it may accept connections? Until then it's up but nobody reaches it (the laptop, 0.58.11: Windows only asks once, on the host's screen). A check in the
--- background, for a Health row; a computer's own connection doesn't go through the firewall, so it can't simply try. shortcut: finds any rule for it, not whether it allows.
+-- Does Windows let it accept connections? Until it does it's up but nobody reaches it (the laptop, 0.58.11: Windows only asks once, on the host's screen). A check in the
+-- background, for a Health row; a computer's own connection doesn't go through the firewall, so it can't simply try. A Block rule wins: Cancel at Windows' box makes one.
 function services.firewall_knows_ninjam()
   if not WIN then return true end
-  local out = background("fw", 'netsh advfirewall firewall show rule name=all verbose | findstr /i "ninjamsrv"', 60)
-  return out == nil or out:lower():find("ninjamsrv", 1, true) ~= nil
+  local out = background("fw", [[powershell -NoProfile -Command "Get-NetFirewallApplicationFilter | Where-Object Program -like '*ninjamsrv*' | Get-NetFirewallRule | ForEach-Object Action"]], 60)
+  return out == nil or (out:find("Allow", 1, true) ~= nil and not out:find("Block", 1, true))
+end
+-- Nobody's using it, say: it otherwise runs until the computer restarts.
+function services.stop_ninjam()
+  reaper.ExecProcess(WIN and "taskkill /F /IM ninjamsrv.exe" or "/usr/bin/pkill -x ninjamsrv", 5000)
+  band.log("stopped the NINJAM server on this computer")
 end
 
 -- This song's NINJAM server, "name:port", or nil + why. One computer runs it: whichever needed it first and, if that one's gone, the next to ask for it.
@@ -567,7 +572,7 @@ end
 function services.ninjam_for(cfg, lfile, may_host, force)
   local data = band.read_json(lfile) or {}
   local server, mine = data.server or "", (data.server or "") ~= "" and data.by == cfg.user
-  reaper.SetExtState(band.SECTION, "ninjam hosting", mine and "1" or "", false)
+  if mine then reaper.SetExtState(band.SECTION, "ninjam hosting", server, false) end -- (what this computer serves: other songs may use someone else's)
   if not force then
     if not may_host then -- (even if the file says it's mine: it may be old news, with the one who pressed taking over right now. See producer.lua, which follows it)
       if server ~= "" then return server end
@@ -577,13 +582,13 @@ function services.ninjam_for(cfg, lfile, may_host, force)
   end
   local addr = services.tailscale_address()
   if not addr then
-    if server ~= "" then return server end
+    if server ~= "" and not force then return server end
     return nil, "Tailscale isn't on here, so nobody could reach a NINJAM server on this computer: open Tailscale and sign in."
   end
   local ok, why = services.ensure_ninjam()
   if not ok then return nil, "NINJAM server: " .. why end
-  reaper.SetExtState(band.SECTION, "ninjam hosting", "1", false)
   local now = addr .. ":2049"
+  reaper.SetExtState(band.SECTION, "ninjam hosting", now, false)
   if server ~= now or not mine then
     data.server, data.by = now, cfg.user
     band.write_json(lfile, data)

@@ -420,14 +420,18 @@ if ($isHost) {
 if ($wantLive) {
   # Any computer may end up running the NINJAM server. Windows only asks about it the first time it runs, mid-session, on that computer's screen, and until it's
   # answered nobody can connect. Asked now instead, for Tailscale addresses only (the server's own rule, lib/ninjam/bandsync.cfg). James's call, 2026-11-05.
-  $srvHome = if (Test-Path (Join-Path $res "BandSync")) { Join-Path $res "BandSync" } else { Join-Path $res "StudioSync" }
+  $oldHome = Join-Path $res "BandSync" # (as lib/band.lua's band.home: the old folder only if there's something in it)
+  $srvHome = if (Test-Path "$oldHome\*") { $oldHome } else { Join-Path $res "StudioSync" }
   $srv = Join-Path $srvHome "ninjam\ninjamsrv.exe"
-  $rule = "New-NetFirewallRule -DisplayName 'StudioSync NINJAM server' -Direction Inbound -Action Allow -Program '$($srv -replace "'", "''")' -RemoteAddress 100.64.0.0/10 -Profile Any"
-  Say "Letting StudioSync's NINJAM server accept connections over Tailscale: Windows asks for permission once."
-  try {
-    Start-Process powershell -Verb RunAs -Wait -WindowStyle Hidden -ArgumentList @("-NoProfile", "-Command", $rule)
-    Ok "The NINJAM server can accept connections over Tailscale"
-  } catch { Warn "Skipped: if this computer ever runs the NINJAM server, Windows asks then. Allow it." }
+  $already = @(Get-NetFirewallRule -DisplayName 'StudioSync NINJAM server' -ErrorAction SilentlyContinue | Get-NetFirewallApplicationFilter | Where-Object { $_.Program -eq $srv }).Count -gt 0
+  if ($already) { Ok "The NINJAM server can already accept connections over Tailscale" } else {
+    $rule = "New-NetFirewallRule -DisplayName 'StudioSync NINJAM server' -Direction Inbound -Action Allow -Program '$($srv -replace "'", "''")' -RemoteAddress 100.64.0.0/10 -Profile Any -ErrorAction Stop"
+    Say "Letting StudioSync's NINJAM server accept connections over Tailscale: Windows asks for permission once."
+    try {
+      $done = Start-Process powershell -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList @("-NoProfile", "-Command", $rule)
+      if ($done.ExitCode -eq 0) { Ok "The NINJAM server can accept connections over Tailscale" } else { Warn "Windows wouldn't add that: if this computer ever runs the NINJAM server, Windows asks then. Allow it." }
+    } catch { Warn "Skipped: if this computer ever runs the NINJAM server, Windows asks then. Allow it." }
+  }
   $ts = "$env:ProgramFiles\Tailscale\tailscale.exe"
   # sign in as a tagged group machine: a tagged machine's key never expires, so nobody has to sign in again before a
   # session (untagged ones sign out every 180 days). Needs the host's one-time tagOwners line (below).

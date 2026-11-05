@@ -1,7 +1,7 @@
 -- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.58.16", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.58.17", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -424,8 +424,9 @@ end
 -- REAPER's "Set media items offline when application is not active" leaves a song's parts OFFLINE and without peaks while the studio sends them in behind
 -- another app (Mac, 0.45.0). Turned off once on this computer, the first time a song syncs; turned on again by hand, it stays on (Health says so).
 function band.stay_online()
-  if not reaper.SNM_GetIntConfigVar or not reaper.BR_Win32_WritePrivateProfileString or reaper.HasExtState(band.SECTION, "stay online") then return end
-  reaper.SetExtState(band.SECTION, "stay online", "1", true)
+  local mark = band.home() .. "/stay-online" -- (a file: a kept ExtState is only written at a clean exit, and a crash then undid someone turning it back on)
+  if not reaper.SNM_GetIntConfigVar or not reaper.BR_Win32_WritePrivateProfileString or reaper.file_exists(mark) then return end
+  band.write_atomic(mark, "turned off once: yours from here on\n")
   if reaper.SNM_GetIntConfigVar("offlineinact", 0) == 0 then return end
   reaper.SNM_SetIntConfigVar("offlineinact", 0)
   reaper.BR_Win32_WritePrivateProfileString("REAPER", "offlineinact", "0", reaper.get_ini_file()) -- (in the file too, as lib/startup.lua's)
@@ -632,32 +633,6 @@ function band.render(n, s)
   for k, v in pairs(saved_s) do reaper.GetSetProjectInfo_String(0, k, v, true) end
 end
 
--- ---- _trash: what was deleted or replaced stays recoverable; dated, so old files can be cleaned up ----------
-function band.to_trash(from_dir, to_dir, f)
-  reaper.RecursiveCreateDirectory(to_dir, 0)
-  os.remove(to_dir .. "/" .. f)
-  if not os.rename(from_dir .. "/" .. f, to_dir .. "/" .. f) then return false end
-  local idx = band.read_json(to_dir .. "/index.json") or {}
-  idx[f] = os.date("!%Y-%m-%d")
-  band.write_json(to_dir .. "/index.json", idx)
-  return true
-end
--- Delete trash files older than `days` (by the date they went in), except those `keep(f)` says are needed (kept
--- restore points' audio). Returns how many went.
-function band.empty_trash(dir, days, keep)
-  local idx = band.read_json(dir .. "/index.json") or {}
-  local y, m, d = os.date("!%Y-%m-%d"):match("(%d+)-(%d+)-(%d+)")
-  local today = os.time({ year = tonumber(y), month = tonumber(m), day = tonumber(d), hour = 12 })
-  local n = 0
-  for f, date in pairs(idx) do
-    local fy, fm, fd = date:match("(%d+)-(%d+)-(%d+)")
-    if fy and not (keep and keep(f)) and (today - os.time({ year = tonumber(fy), month = tonumber(fm), day = tonumber(fd), hour = 12 })) / 86400 >= days then
-      if os.remove(dir .. "/" .. f) or not reaper.file_exists(dir .. "/" .. f) then idx[f] = nil; n = n + 1 end
-    end
-  end
-  band.write_json(dir .. "/index.json", idx)
-  return n
-end
 
 -- ---- items, tracks, P_EXT tags --------------------------------------------------------------
 
@@ -725,16 +700,6 @@ function band.follow_tempo(item, take)
   end
 end
 
--- Point a take at a better file (preview -> full). Length, position and offsets are left alone.
-function band.swap_source(take, path)
-  local src = take and reaper.PCM_Source_CreateFromFile(path)
-  if not src then return false end
-  local old = reaper.GetMediaItemTake_Source(take)
-  reaper.SetMediaItemTake_Source(take, src)
-  reaper.PCM_Source_Destroy(old) -- the API leaves the old source to the caller
-  reaper.UpdateItemInProject(reaper.GetMediaItemTake_Item(take))
-  return true
-end
 
 function band.find_track(proj, name, skip_stems)
   local lname = name:lower()
@@ -761,21 +726,6 @@ function band.new_track(proj, name)
   return tr
 end
 
--- Copy a synced file into proj's recording folder and return the copy's path, so the project never
--- depends on the shared folder: it may mount after REAPER loads, and a sync client can't update files
--- REAPER holds open. "stems/v5/01.flac" becomes "<record path>/bandsync/v5_01.flac". An unsaved
--- project has no folder of its own, so it keeps the original path.
-function band.localize(proj, path)
-  if reaper.GetProjectName(proj) == "" then return path end
-  local dir = norm(reaper.GetProjectPathEx(proj)) .. "/bandsync"
-  local parent, name = path:match("([^/]+)/([^/]+)$")
-  local dst = dir .. "/" .. parent .. "_" .. name
-  if not reaper.file_exists(dst) then
-    reaper.RecursiveCreateDirectory(dir, 0)
-    band.copy_atomic(path, dst)
-  end
-  return dst
-end
 
 -- ---- stems ----------------------------------------------------------------------------------
 
@@ -861,19 +811,6 @@ local function add_take_to(best, t, path)
   return best, take
 end
 
-local function add_as_take(proj, t, path)
-  local tr = band.dest_track(proj, t.track, t.wet)
-  if not tr then return nil end
-  local best, overlap = nil, 0
-  for i = 0, reaper.CountTrackMediaItems(tr) - 1 do
-    local it = reaper.GetTrackMediaItem(tr, i)
-    local p = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
-    local o = math.min(p + reaper.GetMediaItemInfo_Value(it, "D_LENGTH"), t.pos + t.len) - math.max(p, t.pos)
-    if o > overlap then best, overlap = it, o end
-  end
-  if not best then return band.add_item(tr, path, t.pos, t.len) end
-  return add_take_to(best, t, path)
-end
 
 -- "mirror" (the default): rebuild the sender's structure. Passes of one sender item (same group) stay
 -- one item here, in the same lane, on a track with the same lane layout; so takes and lanes coexist
@@ -937,23 +874,8 @@ local function target(proj, t, mode)
   return tr, lane
 end
 
--- Offsets are shared relative to where a print was placed ("base"), because each project's take
--- offsets differ (a receiver's take is a print starting at the item, the sender's points into a recording).
-function band.mark_base(tk) band.set_take_ext(tk, "band_base_offs", string.format("%.9f", reaper.GetMediaItemTakeInfo_Value(tk, "D_STARTOFFS"))) end
 function band.base_offs(tk) return tonumber(band.take_ext(tk, "band_base_offs")) or 0 end
 
--- The dry companion of a "both" print: another take in the same item, tagged band_dry = id.
-local function add_dry(item, take, t, dry_path)
-  local src = dry_path and reaper.PCM_Source_CreateFromFile(dry_path)
-  if not src then return end
-  local playing = reaper.GetActiveTake(item)
-  local tk = reaper.AddTakeToMediaItem(item)
-  reaper.SetMediaItemTake_Source(tk, src)
-  reaper.SetMediaItemTakeInfo_Value(tk, "D_STARTOFFS", reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS"))
-  reaper.GetSetMediaItemTakeInfo_String(tk, "P_NAME", select(2, reaper.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)) .. " (dry)", true)
-  band.set_take_ext(tk, "band_dry", t.id)
-  reaper.SetActiveTake(playing or take) -- what was playing keeps playing; the dry print is a click away
-end
 
 -- ---- MIDI copies ------------------------------------------------------------------------------
 -- A MIDI take's notes travel with its print. Each receiver gets them as an editable MIDI item (tagged

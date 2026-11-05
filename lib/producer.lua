@@ -96,11 +96,14 @@ end
 -- under it even once it's connected, so each try would knock down what the last one made. There, one press, once the server answers.
 local connecting = {}
 local server_at, server_lost = {}, {}
+local held = {} -- server -> until when nothing connects to it: it's just been stopped on purpose (services.stop_ninjam)
 local function auto_connect(tab)
   -- (a start is told by the time it was asked for: it may come from the panel's script, which has its own copy of this table. Mac, 0.58.13)
   local start = reaper.GetExtState(band.SECTION, "ninjam start " .. tab)
   local c = connecting[tab]
   if not c or c.start ~= start then c = { tries = 0, at = -math.huge, start = start }; connecting[tab] = c end
+  -- (a server stopped on purpose: no presses while it goes. They brought ReaNINJAM's "can't connect" box and its connection box up: Mac, 0.58.21)
+  if (held[reaper.GetExtState(band.SECTION, "ninjam host")] or -math.huge) > reaper.time_precise() then return end
   local live = require("live")
   if live.error_box() then -- (it failed, or the server went away: say it, try again)
     local said = live.close_boxes()
@@ -118,7 +121,7 @@ local function auto_connect(tab)
   -- given up, but the server answers now: start again. (macOS held every connection while its firewall box waited 10 minutes for Allow, and both sides
   -- had stopped trying by then: Mac and PC, 0.58.19.) Looked at every 30 s, in the background.
   if c.done and not c.up and reaper.time_precise() > (c.next_look or 0) then
-    c.next_look = reaper.time_precise() + 30
+    c.next_look = reaper.time_precise() + 10 -- (port_open needs two runs in a row: about 20 s)
     local host = reaper.GetExtState(band.SECTION, "ninjam host")
     if host ~= "" and require("services").port_open(host) and live.connect(false) ~= "connected" then
       connecting[tab] = { tries = 0, at = -math.huge, start = c.start }
@@ -259,6 +262,7 @@ function producer.tick(proj, cfg, b, peers)
     local d = band.read_json(require("setup").live_file(cfg, b)) or {}
     if tonumber(d.stopping) and os.time() - d.stopping < 60 and (d.server or "") == reaper.GetExtState(band.SECTION, "ninjam host") and require("live").disconnect() then
       band.log("the NINJAM server is stopping: disconnected")
+      held[d.server] = reaper.time_precise() + 45
       connecting[tab] = { tries = 0, at = -math.huge, start = reaper.GetExtState(band.SECTION, "ninjam start " .. tab), done = true, next_look = reaper.time_precise() + 30 }
     end
   end

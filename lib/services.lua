@@ -52,15 +52,23 @@ function services.running(exe, fresh)
   return out:match("%d") ~= nil -- pgrep prints the pids
 end
 
--- Does something answer at "host:port"? In the background, so the answer's a few seconds old: for a loop. services.answers waits for it.
+-- Does something answer at "host:port"? In the background, for a loop (services.answers waits for it). True only once two runs in a row said so: a call
+-- hands back the previous run's answer, and the first after a while was from before a server stopped, which pressed Connect at nothing (Mac, 0.58.21).
+local runs = {}
 function services.port_open(address)
   local host, port = address:match("^(.-):(%d+)$")
   if not host then return false end
   host = host:gsub("[^%w%.%-]", "") -- (and each address has its own answer: one file for all read a dead host as up)
+  local name, open = "port-" .. host .. "-" .. port, nil
   if WIN then -- (as services.answers; %% is a batch file's %)
-    return (tonumber((background("port-" .. host .. "-" .. port, 'curl -s -o NUL -m 3 -w %%{time_connect} "http://' .. host .. ":" .. port .. '/"', 8) or ""):match("[%d%.]+")) or 0) > 0
+    open = (tonumber((background(name, 'curl -s -o NUL -m 3 -w %%{time_connect} "http://' .. host .. ":" .. port .. '/"', 8) or ""):match("[%d%.]+")) or 0) > 0
+  else
+    open = (background(name, "/usr/bin/nc -z -G 3 '" .. host .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
   end
-  return (background("port-" .. host .. "-" .. port, "/usr/bin/nc -z -G 3 '" .. host .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
+  local r = runs[name] or {}
+  runs[name] = r
+  if r.run ~= started[name] then r.run, r.n = started[name], open and (r.n or 0) + 1 or 0 end
+  return (r.n or 0) >= 2
 end
 
 -- The same, asked now and waited for (a second or so): for a button's press, not a loop.

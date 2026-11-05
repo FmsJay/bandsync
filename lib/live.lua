@@ -87,7 +87,7 @@ function live.status()
   local con = live.window()
   if not con then return nil end
   if not reaper.JS_Window_FindChild(con, "Disconnect", true) then return "connecting" end
-  local host = reaper.GetExtState(band.SECTION, "ninjam host"):gsub(":%d+$", "")
+  local host = reaper.GetExtState(band.SECTION, "ninjam host"):gsub("[:%.].*$", "") -- (the computer's name alone: a long one wrapped, and moved Produce's route button. Mac, 0.58.14)
   return host ~= "" and ("connected to " .. host) or "connected"
 end
 

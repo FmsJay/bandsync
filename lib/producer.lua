@@ -55,7 +55,8 @@ function producer.talk(proj, on)
 end
 
 -- The NINJAM route: ReaNINJAM in session mode on the Real time track, so what goes out is what's armed, not the whole mix. Connecting is one click in its window.
--- shortcut: its window's Connect stays a person's click: nothing in its ini connects by itself. Not yet tried end to end, for want of a server both can reach.
+-- Session mode plays what arrives only as each playhead reaches it, so there's no talkback on this route, even with Xmit on and both stopped.
+-- shortcut: its window's Connect stays a person's click: nothing in its ini connects by itself.
 local function ninjam_on(proj, cfg, b, send)
   local live, setup = require("live"), require("setup")
   local services = require("services")

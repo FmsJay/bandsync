@@ -377,7 +377,8 @@ local function poll()
   -- live (ReaNINJAM synced mode): received clips land as placeholders until the real takes replace them
   local live_dir = select(2, reaper.GetProjExtState(proj, band.SECTION, "live_dir"))
   if live_dir == "" and reaper.GetProjectName(proj) ~= "" then live_dir = reaper.GetProjectPathEx(proj):gsub("\\", "/") .. "/bandsync_live" end -- set up by hand: the usual place
-  if live_dir ~= "" and live.fx(proj, false) then
+  -- (not while producing: they're heard live, and a play-through's clips have no take to replace them, so the next pass plays them twice over)
+  if live_dir ~= "" and live.fx(proj, false) and not require("producer").who(proj) and reaper.GetExtState(band.SECTION, "produced by " .. tostring(proj)) == "" then
     live.note_clips(proj, live_dir) -- when each clip arrived, so only takes recorded then replace it
     local added, retired = live.place_clips(proj, live_dir), live.retire(proj)
     if added + retired > 0 then reaper.Undo_OnStateChange2(proj, "StudioSync: live placeholders") end -- one undo point, only when something changed

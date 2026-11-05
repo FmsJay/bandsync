@@ -116,7 +116,7 @@ function page.produce_button(ctx, ImGui, proj, cfg, b, name)
   end
   if on then ImGui.PopStyleColor(ctx) end
   ImGui.SetItemTooltip(ctx, on and ("You're producing " .. name .. ". Click to stop.") or
-    ("Hear " .. name .. " record, on your grid, as it happens: your song plays a moment behind theirs, from your own copy, so they land right on it.\nYou can talk to them between takes. They needn't do anything."))
+    ("Hear " .. name .. " record, on your grid, as it happens: your song plays a moment behind theirs, from your own copy, so they land right on it.\n" .. (producer.via(proj) == "stamp" and "You can talk to them between takes. " or "") .. "They needn't do anything."))
 end
 
 -- On Home, while producing or being produced.
@@ -140,11 +140,16 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   ImGui.SeparatorText(ctx, "Producing")
   local colour = { ok = theme.GREEN, wait = theme.YELLOW, bad = theme.RED }
   for _, l in ipairs(producer.lines(proj, name, them, require("stamp").status(), playing)) do ImGui.TextColored(ctx, colour[l[2]] or theme.GREEN, l[1]) end
-  local talking = producer.talking(proj)
-  if talking then ImGui.PushStyleColor(ctx, ImGui.Col_Button, theme.RED) end
-  if ImGui.SmallButton(ctx, talking and "Talking" or "Talk") then producer.talk(proj, not talking) end
-  if talking then ImGui.PopStyleColor(ctx) end
-  ImGui.SetItemTooltip(ctx, "Your first input goes to " .. name .. " right away, while you press this. It reaches them in a moment, even mid-take: \"hold on\" stops them.")
+  if producer.via(proj) == "stamp" then
+    local talking = producer.talking(proj)
+    if talking then ImGui.PushStyleColor(ctx, ImGui.Col_Button, theme.RED) end
+    if ImGui.SmallButton(ctx, talking and "Talking" or "Talk") then producer.talk(proj, not talking) end
+    if talking then ImGui.PopStyleColor(ctx) end
+    ImGui.SetItemTooltip(ctx, "Your first input goes to " .. name .. " right away, while you press this. It reaches them in a moment, even mid-take: \"hold on\" stops them.")
+  else
+    ImGui.TextDisabled(ctx, "No talkback")
+    ImGui.SetItemTooltip(ctx, "A NINJAM server only plays sound as each song reaches it, so talking between takes needs the SonoBus route.")
+  end
   page.fit(ctx, ImGui, "", 110)
   ImGui.SetNextItemWidth(ctx, 110)
   local ch, v = ImGui.DragDouble(ctx, "##producelag", producer.lag(proj), 0.05, producer.MIN_LAG, producer.MAX_LAG, "%.1f s behind")
@@ -153,9 +158,10 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   page.fit(ctx, ImGui, "Through a NINJAM server")
   local via = producer.via(proj)
   if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
+    producer.talk(proj, false)
     producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
   end
-  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route, reached over Tailscale; set it on the Play tab first (Settings > Advanced shows it).")
+  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; set it on the Play tab first (Settings > Advanced shows it). Each of you presses Connect in ReaNINJAM's window.")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
   ImGui.SetItemTooltip(ctx, "Back to your own transport.")

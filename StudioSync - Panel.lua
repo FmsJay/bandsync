@@ -2607,7 +2607,8 @@ local function frame_app()
     else label, colour = "Synced", GREEN end
     tip = "Live sync is running in this tab: your takes and changes go out, the studio's come in." .. (#lines > 0 and ("\n\n" .. table.concat(lines, "\n")) or "")
   end
-  local drives = view.driver == cfg.user and "you drive" or view.driver and (view.driver .. " drives") or "nobody drives yet"
+  local driver_gone = reaper.GetExtState(band.SECTION, "alone " .. tostring(proj)) ~= "" or reaper.GetExtState(band.SECTION, "driver_away " .. tostring(proj)) ~= "" -- (Mac, 0.58.5: "James drives" beside "you have full control")
+  local drives = view.driver == cfg.user and "you drive" or view.driver and (view.driver .. (driver_gone and " drives (away)" or " drives")) or "nobody drives yet"
   ui.status = { label = label, colour = colour, tip = tip, drives = drives }
   at_row(label)
   if ImGui.GetCursorPosX(ctx) > 17 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + 10) end -- (apart from the coloured pills: those say where you are, this how sync is going)

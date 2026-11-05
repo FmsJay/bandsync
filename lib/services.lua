@@ -52,11 +52,15 @@ function services.running(exe, fresh)
   return out:match("%d") ~= nil -- pgrep prints the pids
 end
 
--- Does something answer at "host:port"? In the background, so the answer's a few seconds old. (Macs: it's the Mac's NINJAM route that asks.)
+-- Does something answer at "host:port"? In the background, so the answer's a few seconds old: for a loop. services.answers waits for it.
 function services.port_open(address)
   local host, port = address:match("^(.-):(%d+)$")
   if not host then return false end
-  return (background("port", "/usr/bin/nc -z -G 1 '" .. host:gsub("'", "") .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
+  host = host:gsub("[^%w%.%-]", "") -- (and each address has its own answer: one file for all read a dead host as up)
+  if WIN then -- (as services.answers; %% is a batch file's %)
+    return (tonumber((background("port-" .. host .. "-" .. port, 'curl -s -o NUL -m 3 -w %%{time_connect} "http://' .. host .. ":" .. port .. '/"', 8) or ""):match("[%d%.]+")) or 0) > 0
+  end
+  return (background("port-" .. host .. "-" .. port, "/usr/bin/nc -z -G 3 '" .. host .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
 end
 
 -- The same, asked now and waited for (a second or so): for a button's press, not a loop.

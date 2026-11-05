@@ -115,6 +115,17 @@ local function auto_connect(tab)
     if not brief then band.log("lost the NINJAM server: connecting again") end
   end
   if c.done and not c.up and live.connect(false) == "connected" then c.up = true end -- (a Mac's, once its alert's been answered)
+  -- given up, but the server answers now: start again. (macOS held every connection while its firewall box waited 10 minutes for Allow, and both sides
+  -- had stopped trying by then: Mac and PC, 0.58.19.) Looked at every 30 s, in the background.
+  if c.done and not c.up and reaper.time_precise() > (c.next_look or 0) then
+    c.next_look = reaper.time_precise() + 30
+    local host = reaper.GetExtState(band.SECTION, "ninjam host")
+    if host ~= "" and require("services").port_open(host) and live.connect(false) ~= "connected" then
+      connecting[tab] = { tries = 0, at = -math.huge, start = c.start }
+      band.log("the NINJAM server answers now: connecting")
+      return
+    end
+  end
   if c.done then return end
   if not reaper.GetOS():find("^Win") then
     local now = live.connect(false)

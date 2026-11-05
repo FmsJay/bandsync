@@ -222,8 +222,14 @@ function tools.put_back_bar(ctx, ImGui, song, use_mine, may)
     ImGui.SetItemTooltip(ctx, yours and "Puts yours back, for everyone, as a new change. Theirs stays on the Restore page."
       or "It's theirs to change: they've claimed it, or it's the driver's. Ask them, or use the suggestion they'll see if you change it again.")
   end
+  local said = mine and tostring(pb.text) or ("Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or ""))
+  -- (beside the buttons when it fits, as in a short docker that's all the room there is. Wrapped beside them it ran under its own OK: Mac, 0.57.6)
+  ImGui.SameLine(ctx)
+  if ImGui.CalcTextSize(ctx, said) + 16 > ImGui.GetContentRegionAvail(ctx) then ImGui.NewLine(ctx) end
   ImGui.PushStyleColor(ctx, ImGui.Col_Text, require("theme").YELLOW)
-  ImGui.TextWrapped(ctx, mine and tostring(pb.text) or ("Undone: " .. tostring(pb.text) .. ((pb.n or 1) > 1 and string.format("  (%d edits undone)", pb.n) or "")))
+  ImGui.PushTextWrapPos(ctx, ImGui.GetWindowWidth(ctx) - 16)
+  ImGui.Text(ctx, said)
+  ImGui.PopTextWrapPos(ctx)
   ImGui.PopStyleColor(ctx)
 end
 

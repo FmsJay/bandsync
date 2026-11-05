@@ -293,7 +293,7 @@ function pp.draw(ctx, ImGui, proj, cfg)
     ImGui.TableHeadersRow(ctx)
     for _, u in ipairs(used) do
       ImGui.TableNextRow(ctx)
-      ImGui.TableNextColumn(ctx); ImGui.Text(ctx, (u.name:gsub("^%w+:%s*", "")))
+      ImGui.TableNextColumn(ctx); ImGui.TextWrapped(ctx, (u.name:gsub("^%w+:%s*", ""))) -- (cut off, "Superior Drummer 3 (" read as a name)
       ImGui.SetItemTooltip(ctx, table.concat(u.tracks, ", "))
       if not narrow then ImGui.TableNextColumn(ctx); ImGui.TextDisabled(ctx, table.concat(u.tracks, ", ")) end
       ImGui.TableNextColumn(ctx)

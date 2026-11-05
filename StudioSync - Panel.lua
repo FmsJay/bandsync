@@ -1940,7 +1940,8 @@ local function maint_rows()
   if services.tailscale_up() then
     local stays = services.tailscale_stays()
     rows[#rows + 1] = { "tailscale stays", stays == true, "yellow", "Tailscale stays signed in here", "Tailscale signs this computer out on " .. tostring(stays) .. ": at login.tailscale.com/admin/machines, this computer > ... > Disable key expiry. " ..
-      "New computers can stay signed in by themselves: whoever owns the Tailscale network adds, once, at login.tailscale.com/admin/acls:  \"tagOwners\": { \"tag:bandsync\": [\"autogroup:member\"] }," }
+      "So new computers stay signed in by themselves, whoever owns the Tailscale network adds one line at login.tailscale.com/admin/acls.",
+      copy = '"tagOwners": { "tag:bandsync": ["autogroup:member"] },' }
   end
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", "No Play along server yet: Connect on the Play page starts one on this computer." }
@@ -2009,6 +2010,11 @@ local function maint_health()
         dot(ok and GREEN or (r[3] == "red" and RED or r[3] == "grey" and GREY or YELLOW))
         ImGui.SameLine(ctx)
         ImGui.TextWrapped(ctx, ok and r[4] or r[5])
+        if not ok and r.copy then
+          if ImGui.SmallButton(ctx, "Copy the line") then ImGui.SetClipboardText(ctx, r.copy) end
+          ImGui.SetItemTooltip(ctx, r.copy)
+          ImGui.SameLine(ctx)
+        end
         if not ok and r[1] == "keys" then
           if ImGui.SmallButton(ctx, "Set " .. require("undo").key_name()) then require("undo").bind_keys(dir); maint_at = 0 end
           ImGui.SetItemTooltip(ctx, "With your own edit on top of REAPER's undo list it undoes that, as ever. With a collaborator's change on top, it undoes your own last change, not theirs.")
@@ -2720,10 +2726,10 @@ local function frame_app()
     local tx = ImGui.GetCursorScreenPos(ctx)
     local _, ty = ImGui.GetWindowPos(ctx)
     toast_place = { x = tx + 8, y = ty + y0 + (fh - ImGui.GetTextLineHeight(ctx)) / 2, w = room - need - 16 }
-  elseif ui.short then -- (no room in the bar, and no blank row to spare: over the top of the page while it's being said)
+  else -- (no room in the bar: over the top of the page while it's being said. A blank row for it cost every page 30 px, for something shown 6 s at a time)
     toast_place = { x = ImGui.GetWindowPos(ctx) + 16, w = ww - 32, over = true }
   end
-  if ww < 520 then -- (narrow, "Window" wrapped alone onto a row of its own: design review)
+  if ww < 600 then -- (narrow, "Window" wrapped alone onto a row of its own: design review)
     at_row("...")
     if ImGui.Button(ctx, "...##window") then
       local pick = band.pick({ "Sync and exit", docked and "Undock" or "Window..." })

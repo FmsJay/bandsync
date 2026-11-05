@@ -126,7 +126,7 @@ local function auto_connect(tab)
     if now == "connected" then c.done, c.up = true, true
     elseif now ~= "pressing" and c.pressed then
       c.done = true
-      band.log("NINJAM: connected, if the server's up: if ReaNINJAM shows a box, press its OK, and press Connect in its window if it still doesn't say Disconnect")
+      band.log("NINJAM: if ReaNINJAM shows a box, press its OK to finish connecting")
     elseif not c.pressed and reaper.time_precise() - c.at > 12 and reaper.GetExtState(band.SECTION, "ninjam host") ~= "" and require("services").port_open(reaper.GetExtState(band.SECTION, "ninjam host")) then
       c.pressed = live.connect(true) == "opening"
     end

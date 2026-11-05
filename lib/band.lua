@@ -1,7 +1,7 @@
 -- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.58.23", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.58.25", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -444,6 +444,12 @@ function band.old_actions(text, scripts, exists, read)
     if not exists(p) or (target and not exists(target)) then out[#out + 1] = { section = tonumber(section), path = p } end
   end
   return out
+end
+
+-- A web page in the browser.
+function band.open_url(url)
+  if reaper.CF_ShellExecute then return reaper.CF_ShellExecute(url) end
+  if reaper.GetOS():find("^Win") then os.execute('start "" "' .. url:gsub('"', "") .. '"') else os.execute("open '" .. url:gsub("'", "") .. "'") end
 end
 
 -- Text onto the clipboard, saying so. SWS's when it's there: ReaImGui's left a Mac's clipboard as it was (Health's Copy the line, 0.58.20).

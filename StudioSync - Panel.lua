@@ -170,7 +170,8 @@ local function logo(s)
     local function rim(deg, rx, ry) local t = math.rad(deg); return 18 + rx * math.cos(t), 32 + ry * math.sin(t) end
     local function half(rx, ry, col, thick) -- the half ellipse from the line
       ImGui.DrawList_PathClear(dl)
-      for i = -12, 12 do ImGui.DrawList_PathLineTo(dl, P(rim(i * 7.5, rx, ry))) end
+      local n = s >= 80 and 40 or 12 -- (more points the bigger it is: at 140 px on Settings its curves showed their corners. James, 0.58.23)
+      for i = -n, n do ImGui.DrawList_PathLineTo(dl, P(rim(i * 90 / n, rx, ry))) end
       if thick then ImGui.DrawList_PathStroke(dl, col, ImGui.DrawFlags_None, thick) else ImGui.DrawList_PathFillConvex(dl, col) end
     end
     if s >= 40 then
@@ -181,8 +182,9 @@ local function logo(s)
           local n = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
           local px, py, mx, my = -(y1 - y0) / n, (x1 - x0) / n, (x0 + x1) / 2, (y0 + y1) / 2
           local col, ax, ay, bx, by = tint(flip and 64 - mx or mx, math.floor(f[5] * 255))
-          for i = 0, 6 do
-            local t, u = i / 6, 1 - i / 6
+          local m = s >= 80 and 18 or 6
+          for i = 0, m do
+            local t, u = i / m, 1 - i / m
             local cxa, cya = mx + px * (-2 + f[4] / 2), my + py * (-2 + f[4] / 2)
             local cxb, cyb = mx + px * (-2 - f[4] / 2), my + py * (-2 - f[4] / 2)
             local nax, nay = u * u * x0 + 2 * u * t * cxa + t * t * x1, u * u * y0 + 2 * u * t * cya + t * t * y1
@@ -1942,7 +1944,7 @@ local function maint_rows()
     local stays = services.tailscale_stays()
     rows[#rows + 1] = { "tailscale stays", stays == true, "yellow", "Tailscale stays signed in here", "Tailscale signs this computer out on " .. tostring(stays) .. ": at login.tailscale.com/admin/machines, this computer > ... > Disable key expiry. " ..
       "So new computers stay signed in by themselves, whoever owns the Tailscale network adds one line at login.tailscale.com/admin/acls.",
-      copy = '"tagOwners": { "tag:bandsync": ["autogroup:member"] },' }
+      copy = '"tagOwners": { "tag:bandsync": ["autogroup:member"] },', link = { "Open Tailscale's machines", "https://login.tailscale.com/admin/machines" } }
   end
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", "No Play along server yet: Connect on the Play page starts one on this computer." }
@@ -2011,6 +2013,11 @@ local function maint_health()
         dot(ok and GREEN or (r[3] == "red" and RED or r[3] == "grey" and GREY or YELLOW))
         ImGui.SameLine(ctx)
         ImGui.TextWrapped(ctx, ok and r[4] or r[5])
+        if not ok and r.link then
+          if ImGui.SmallButton(ctx, r.link[1]) then band.open_url(r.link[2]) end
+          ImGui.SetItemTooltip(ctx, r.link[2])
+          ImGui.SameLine(ctx)
+        end
         if not ok and r.copy then
           if ImGui.SmallButton(ctx, "Copy the line") then band.copy(r.copy, ctx, ImGui) end
           ImGui.SetItemTooltip(ctx, r.copy)
@@ -2479,10 +2486,21 @@ tools.follow_button = function(name)
 end
 
 -- Floating, one button for where the window goes: Dock and Full screen were two more, and the row wrapped. Right-click arms drag-to-dock, as Dock's did.
-function ui.window_button()
+-- The page eases to where the wheel sends it, instead of jumping a few lines a notch (James, 0.58.23). Whatever moved it this frame (the wheel, here or passed up
+-- from a card that couldn't scroll, or a keyboard) is added to where it's heading; it then covers a third of the way each frame. Dragging the scrollbar is left alone.
+ui.scrolls = {}
+function ui.smooth_scroll(key)
+  local st = ui.scrolls[key]
+  local y = ImGui.GetScrollY(ctx)
+  if not st or ImGui.IsMouseDown(ctx, 0) then ui.scrolls[key] = { at = y, to = y }; return end
+  if math.abs(y - st.at) > 0.5 then st.to = math.max(0, math.min(ImGui.GetScrollMaxY(ctx), st.to + (y - st.at))) end
+  st.at = math.abs(st.to - st.at) < 1 and st.to or st.at + (st.to - st.at) * 0.35
+  if math.abs(st.at - y) > 0.5 then ImGui.SetScrollY(ctx, st.at) end
+end
+function ui.window_button(small)
   local armed = reaper.GetExtState(band.SECTION, "dock armed") ~= ""
   if armed then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
-  local clicked = ImGui.Button(ctx, "Window")
+  local clicked = (small and ImGui.SmallButton or ImGui.Button)(ctx, "Window")
   if armed then ImGui.PopStyleColor(ctx) end
   if ImGui.IsItemClicked(ctx, 1) then
     if armed then reaper.DeleteExtState(band.SECTION, "dock armed", false) else reaper.SetExtState(band.SECTION, "dock armed", "1", false) end
@@ -2512,10 +2530,10 @@ tools.dock_at = function(pos)
     dock_side = { docker = free, action = pos == 1 and 41599 or 41601, since = reaper.time_precise() } -- Docker: Show in left / right of main window
   end
 end
-tools.dock_menu = function(docked)
+tools.dock_menu = function(docked, small)
   local armed = reaper.GetExtState(band.SECTION, "dock armed") ~= ""
   if armed then ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF) end
-  if ImGui.Button(ctx, docked and "Undock" or "Dock") then
+  if (small and ImGui.SmallButton or ImGui.Button)(ctx, docked and "Undock" or "Dock") then
     if docked then dock_req = 0 else ImGui.OpenPopup(ctx, "dockside") end
   end
   if armed then ImGui.PopStyleColor(ctx) end
@@ -2717,7 +2735,8 @@ local function frame_app()
   local docked = ImGui.IsWindowDocked(ctx)
   -- the window's own buttons sit at the right end of the bar (when they fit there), apart from the session's
   local bar_min = docked or native -- (no title bar of ours to put it on: else it sits by the close button)
-  local labels = docked and { "Sync and exit", "Undock" } or { "Sync and exit", "Window" }
+  -- (Window and Dock: on the title bar when the panel has its own, else here, and never folded into "...": they went missing at some sizes. James, 0.58.23)
+  local labels = bar_min and { "Sync and exit", "Window", docked and "Undock" or "Dock" } or { "Sync and exit" }
   local need = bar_min and 2 * (fh - 6) + 28 or 0 -- (the two window icons: as a word's width, the second fell off the right edge)
   for _, l in ipairs(labels) do need = need + ImGui.CalcTextSize(ctx, l) + 28 end
   ImGui.SameLine(ctx, 0, 8)
@@ -2730,25 +2749,26 @@ local function frame_app()
   else -- (no room in the bar: over the top of the page while it's being said. A blank row for it cost every page 30 px, for something shown 6 s at a time)
     toast_place = { x = ImGui.GetWindowPos(ctx) + 16, w = ww - 32, over = true }
   end
-  if ww < 600 then -- (narrow, "Window" wrapped alone onto a row of its own: design review)
+  if ww < 600 then -- (narrow: Sync and exit folds into "...", as "Window" wrapped alone onto a row of its own: design review)
     at_row("...")
-    if ImGui.Button(ctx, "...##window") then
-      local pick = band.pick({ "Sync and exit", docked and "Undock" or "Window..." })
-      if pick == "Sync and exit" then require("leave").start(proj, cfg, b)
-      elseif pick == "Undock" then dock_req = 0
-      elseif pick then ui.window_menu() end
+    if ImGui.Button(ctx, "...##leave") then
+      if band.pick({ "Sync and exit" }) == "Sync and exit" then require("leave").start(proj, cfg, b) end
     end
-    ImGui.SetItemTooltip(ctx, "Sync and exit, and where the panel sits.")
+    ImGui.SetItemTooltip(ctx, "Sync and exit.")
   else
     if room > need + 12 then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
     else at_row("Sync and exit") end
     if ImGui.Button(ctx, "Sync and exit") then require("leave").start(proj, cfg, b) end
     ImGui.SetItemTooltip(ctx, "Leaving? Saves, gets everything you've done out to the others, says who has it, then lets you close the project or quit REAPER.")
-    at_row(docked and "Undock" or "Window")
-    if docked then tools.dock_menu(true) else ui.window_button() end
+  end
+  if bar_min then
+    at_row("Window")
+    ui.window_button()
+    at_row(docked and "Undock" or "Dock")
+    tools.dock_menu(docked)
   end
   if bar_min then ui.window_buttons(at_row, y0, fh) end
-  ImGui.SetCursorPos(ctx, 16, y0 + fh + (ui.short and 5 or 8))
+  ImGui.SetCursorPos(ctx, 16, y0 + fh + (ui.short and 2 or 5)) -- (closer to the page: more of it shows, docked above all. James, 0.58.23)
   -- narrow: the pages first, so a row arriving under them can't slide them from under the mouse (design review)
   if compact and not wide then
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_SelectableTextAlign, 0.5, 0.5)
@@ -2862,7 +2882,7 @@ local function frame_app()
     elseif want == "chat" then page = "Chat"
     elseif want:match("^history") then page = "Restore" end
   end
-  if ui.short then ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, 8, 3) end
+  if ui.short then ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, 8, 1) end
   ImGui.Separator(ctx)
   if ui.short then ImGui.PopStyleVar(ctx, 2) end -- (and the frame padding from the top of the bar)
   if not compact then
@@ -2889,6 +2909,7 @@ local function frame_app()
   end
   local was_wide = wide
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
+    ui.smooth_scroll(page)
     ImGui.PushTextWrapPos(ctx, 0) -- text wraps to the page, whatever its width
     if page == "Play/Jam" and not ui.play_shown() then page = "Home" end
     if page == "Groups" then ui.page_body(function() require("page_groups").draw_groups(ui.env) end)
@@ -2948,11 +2969,15 @@ function ui.frame_lobby()
   ImGui.SetCursorPosY(ctx, y0)
   local docked = ImGui.IsWindowDocked(ctx)
   local room = ImGui.GetContentRegionAvail(ctx)
-  local need = ImGui.CalcTextSize(ctx, docked and "Undock" or "Window") + 28 + ((docked or native) and 60 or 0)
+  local need = (docked or native) and (ImGui.CalcTextSize(ctx, "Window") + ImGui.CalcTextSize(ctx, docked and "Undock" or "Dock") + 64 + 60) or 0
   if room > need then ImGui.SetCursorPosX(ctx, ImGui.GetCursorPosX(ctx) + room - need); ImGui.SetCursorPosY(ctx, y0)
   else ImGui.SetCursorPos(ctx, 16, y0 + fh + 6); y0 = y0 + fh + 6 end
-  if docked then tools.dock_menu(true) else ui.window_button() end
   local function at_row() ImGui.SameLine(ctx, 0, 8); ImGui.SetCursorPosY(ctx, y0) end
+  if docked or native then -- (the panel's own title bar has them otherwise)
+    ui.window_button()
+    at_row()
+    tools.dock_menu(docked)
+  end
   if docked or native then ui.window_buttons(at_row, y0, fh) end
   ImGui.SetCursorPos(ctx, 16, y0 + fh + 8)
   local log = band.activity()
@@ -2965,6 +2990,7 @@ function ui.frame_lobby()
   ImGui.Separator(ctx)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowPadding, 16, 12)
   if ImGui.BeginChild(ctx, "page", 0, 0, ImGui.ChildFlags_AlwaysUseWindowPadding) then
+    ui.smooth_scroll("setup " .. tostring(page))
     ImGui.PushTextWrapPos(ctx, 0)
     if page == "Groups" then ui.page_body(function() pg.draw_groups(ui.env) end)
     elseif page == "Projects" then ui.page_body(function() pg.draw_projects(ui.env) end)
@@ -3279,6 +3305,16 @@ local function loop()
           end
         end
         local by = wy + (tbh - s) / 2
+        do -- Window and Dock, left of the two icons: always there, whatever the panel's width (James, 0.58.23)
+          local fpx = select(1, ImGui.GetStyleVar(ctx, ImGui.StyleVar_FramePadding))
+          local w2 = ImGui.CalcTextSize(ctx, "Dock") + fpx * 2
+          local w1 = ImGui.CalcTextSize(ctx, "Window") + fpx * 2
+          local right = wx + ww - pad - s * 3 - 24
+          ImGui.SetCursorScreenPos(ctx, right - w2, wy + (tbh - ImGui.GetTextLineHeight(ctx)) / 2)
+          tools.dock_menu(false, true)
+          ImGui.SetCursorScreenPos(ctx, right - w2 - 6 - w1, wy + (tbh - ImGui.GetTextLineHeight(ctx)) / 2)
+          ui.window_button(true)
+        end
         ImGui.SetCursorScreenPos(ctx, wx + ww - pad - s * 2 - 8, by)
         if ui.window_icon("##minimize", "line", s, "Minimize to a strip over REAPER. Click it and the panel opens where it was.") then ui.set_minimized("strip") end
         ImGui.SetCursorScreenPos(ctx, wx + ww - pad - s * 3 - 14, by)

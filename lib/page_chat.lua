@@ -124,41 +124,6 @@ function chat.draw(ctx, ImGui, cfg, b)
   ImGui.PopStyleVar(ctx)
   ImGui.SetItemTooltip(ctx, "What you see and who you're writing to. This room: only this room's. This project: the project's and all its rooms'. " ..
     "Studio: everything, from every project and room. What you write goes to the one picked here.")
-  do -- drawing on the arrange view (StudioSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
-    -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
-    -- was open, the lag on this page: James, 0.42.28)
-    local root = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or ""
-    local running = reaper.time_precise() - (tonumber(reaper.GetExtState(band.SECTION, "draw alive")) or -60) < 3
-    local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
-    fits(70, 24)
-    if drawing then
-      local accent = require("theme").ACCENT
-      ImGui.PushStyleColor(ctx, ImGui.Col_Button, accent); ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, accent); ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xFFFFFFFF)
-    end
-    if ImGui.SmallButton(ctx, "Draw") then
-      if drawing then reaper.DeleteExtState(band.SECTION, "draw on", false)
-      else
-        reaper.DeleteExtState(band.SECTION, "draw hidden", true)
-        reaper.SetExtState(band.SECTION, "draw on", "1", false)
-        band.start_draw(root)
-      end
-    end
-    if drawing then ImGui.PopStyleColor(ctx, 3) end
-    ImGui.SetItemTooltip(ctx, drawing and "Stop drawing (or Done on the bar, or Esc)." or "Draw on the tracks for everyone in this room: the tools show at the foot of the tracks.\n" ..
-      "A drawing stays on its bar and track however anyone scrolls or zooms.")
-    fits(130)
-    if ImGui.SmallButton(ctx, running and "Hide drawings" or "Show drawings") then
-      if running then
-        reaper.SetExtState(band.SECTION, "draw hidden", "1", true)
-        reaper.DeleteExtState(band.SECTION, "draw on", false)
-        reaper.SetExtState(band.SECTION, "draw quit", "1", false)
-      else
-        reaper.DeleteExtState(band.SECTION, "draw hidden", true)
-        band.start_draw(root)
-      end
-    end
-    ImGui.SetItemTooltip(ctx, running and "Stop showing the others' drawings on this computer. They stay for everyone else." or "Show what the others drew, over the arrange view (clicks still go to REAPER).")
-  end
   do -- whose: messages, to-dos, links, notes and drawings, one person's or everyone's
     local names, seen, only = { cfg.user }, { [cfg.user] = true }, chat.only()
     for _, list in pairs(t) do
@@ -182,6 +147,40 @@ function chat.draw(ctx, ImGui, cfg, b)
     ImGui.SetItemTooltip(ctx, "Show only one person's messages, to-dos, links, notes and drawings, on this computer.")
   end
   end
+  local function draw_buttons() -- drawing on the arrange view (StudioSync - Draw.lua): what's drawn there is the room's, seen by everyone in it
+    -- (at the right of the tab bar, so always in view: in a short dock they were only in the To: popup. James, 0.58.23)
+    -- (its toggle, from the running script's own beat: asking REAPER for the script's id rewrote its key file every frame this page
+    -- was open, the lag on this page: James, 0.42.28)
+    local root = debug.getinfo(1, "S").source:match("^@?(.*)[/\\]lib[/\\]") or ""
+    local running = reaper.time_precise() - (tonumber(reaper.GetExtState(band.SECTION, "draw alive")) or -60) < 3
+    local drawing = reaper.GetExtState(band.SECTION, "draw on") ~= ""
+    if drawing then
+      local accent = require("theme").ACCENT
+      ImGui.PushStyleColor(ctx, ImGui.Col_Tab, accent); ImGui.PushStyleColor(ctx, ImGui.Col_TabHovered, accent); ImGui.PushStyleColor(ctx, ImGui.Col_Text, 0xFFFFFFFF)
+    end
+    if ImGui.TabItemButton(ctx, drawing and "Drawing" or "Draw", ImGui.TabItemFlags_Trailing) then
+      if drawing then reaper.DeleteExtState(band.SECTION, "draw on", false)
+      else
+        reaper.DeleteExtState(band.SECTION, "draw hidden", true)
+        reaper.SetExtState(band.SECTION, "draw on", "1", false)
+        band.start_draw(root)
+      end
+    end
+    if drawing then ImGui.PopStyleColor(ctx, 3) end
+    ImGui.SetItemTooltip(ctx, drawing and "Stop drawing (or Done on the bar, or Esc)." or "Draw on the tracks for everyone in this room: the tools show at the foot of the tracks.\n" ..
+      "A drawing stays on its bar and track however anyone scrolls or zooms.")
+    if ImGui.TabItemButton(ctx, running and "Hide drawings" or "Show drawings", ImGui.TabItemFlags_Trailing) then
+      if running then
+        reaper.SetExtState(band.SECTION, "draw hidden", "1", true)
+        reaper.DeleteExtState(band.SECTION, "draw on", false)
+        reaper.SetExtState(band.SECTION, "draw quit", "1", false)
+      else
+        reaper.DeleteExtState(band.SECTION, "draw hidden", true)
+        band.start_draw(root)
+      end
+    end
+    ImGui.SetItemTooltip(ctx, running and "Stop showing the others' drawings on this computer. They stay for everyone else." or "Show what the others drew, over the arrange view (clicks still go to REAPER).")
+  end
   local function to_button()
     local now = "?"
     for _, sc in ipairs(SCOPES) do if sc[1] == scope then now = sc[2] end end
@@ -193,6 +192,7 @@ function chat.draw(ctx, ImGui, cfg, b)
   local only = chat.only()
   local function shown(v) return only == "" or v.user == only end
   if ImGui.BeginTabBar(ctx, "chat") then
+    draw_buttons()
     if ImGui.BeginTabItem(ctx, "Messages") then
       local newest = t.msgs[#t.msgs] and t.msgs[#t.msgs].file:match("[/\\]([^/\\]+)$"):sub(1, 15) or ""
       if reaper.GetExtState(band.SECTION, seen_key(b, scope)) < newest then reaper.SetExtState(band.SECTION, seen_key(b, scope), newest, true) end

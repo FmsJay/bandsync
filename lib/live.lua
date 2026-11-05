@@ -51,6 +51,7 @@ end
 function live.connect(open)
   if not reaper.JS_WindowMessage_Post then return nil end
   local box = reaper.JS_Window_Find("NINJAM Connection Configuration", true)
+  if box and not reaper.JS_Window_IsVisible(box) then box = nil end -- (on a Mac a closed one stays listed, hidden, for up to a minute)
   if box then
     -- (it only reads its ini the first time it loads in a REAPER session: a server that's moved since would never be found)
     local host, edit = reaper.GetExtState(band.SECTION, "ninjam host"), reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(box, 1025)
@@ -80,7 +81,7 @@ end
 function live.close_boxes()
   if not reaper.JS_WindowMessage_Post then return nil end
   local box, said = reaper.JS_Window_Find("NINJAM Connection Configuration", true), nil
-  if box then reaper.JS_WindowMessage_Send(box, "WM_CLOSE", 0, 0, 0, 0); said = true end
+  if box and reaper.JS_Window_IsVisible(box) then reaper.JS_WindowMessage_Send(box, "WM_CLOSE", 0, 0, 0, 0); said = true end
   local err = live.error_box()
   if err then
     local text = reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(err, 65535)

@@ -101,7 +101,8 @@ local function ninjam_on(proj, cfg, b, send)
   return true
 end
 
--- Connect presses itself: 3 tries 10 s apart (the server may still be starting), then it's left to the person. Lost later, it tries again, whatever lost it.
+-- Connect presses itself: 3 tries 10 s apart (the server may still be starting), then for about 5 minutes more, 30 s apart. On a Mac a lost server leaves
+-- an alert no script can see or answer, and nothing connects until someone presses its OK. Lost later, it all starts again, whatever lost it.
 local connecting = {}
 local function auto_connect(tab)
   local c = connecting[tab]
@@ -118,13 +119,16 @@ local function auto_connect(tab)
     band.log("lost the NINJAM server: connecting again")
   end
   if c.done then return end
-  local may = c.tries < 3 and reaper.time_precise() - c.at > 10
+  local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 10 or 30)
   if may and require("services").ninjam_dir() ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
   local now = live.connect(may)
-  if now == "connected" then c.done, c.tries, c.up = true, 0, true
+  if now == "connected" then c.done, c.tries, c.up, c.told = true, 0, true, nil
   elseif now == "error" then c.at = reaper.time_precise()
   elseif now == "opening" then c.tries, c.at = c.tries + 1, reaper.time_precise()
-  elseif not may and c.tries >= 3 and reaper.time_precise() - c.at > 10 then
+  elseif c.tries == 3 and not c.told and reaper.time_precise() - c.at > 8 then
+    c.told = true
+    band.log("can't reach the NINJAM server yet: if ReaNINJAM shows a box, press its OK. Trying again for a few minutes")
+  elseif c.tries >= 13 and reaper.time_precise() - c.at > 30 then
     c.done = true
     band.log("couldn't connect to the NINJAM server: press Connect in ReaNINJAM's window")
   end

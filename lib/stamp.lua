@@ -254,11 +254,11 @@ local function find(tr, name)
   end
 end
 -- One of them on the Real time track: the sender before SonoBus, the reader after it.
-local checked = false
+local looked = false
 local function place(tr, name, first)
   local i = find(tr, name)
-  if not checked then -- (once per run: an effect already loaded keeps the old code until it's put on again)
-    checked = true
+  if not looked then -- (once per run: an effect already loaded keeps the old code until it's put on again)
+    looked = true
     local ok, changed = stamp.install()
     if not ok then return nil end
     if changed and i then reaper.TrackFX_Delete(tr, i); i = nil end

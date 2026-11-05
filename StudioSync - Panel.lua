@@ -2093,7 +2093,10 @@ local function home_who()
         else ImGui.TextColored(ctx, RED, "project differs from yours"); ImGui.SetItemTooltip(ctx, "They have every change, yet their project isn't the same as yours: " ..
           "Settings > Health says more, and the Console names what came out different.") end
       end
-      if p.state ~= "here" and p.state ~= "offline" then tools.follow_button(p.name); ImGui.SameLine(ctx, 0, 4); ui.listen_button(p) end
+      if p.state ~= "here" and p.state ~= "offline" then
+        tools.follow_button(p.name); ImGui.SameLine(ctx, 0, 4); ui.listen_button(p); ImGui.SameLine(ctx, 0, 4)
+        require("page_hear").produce_button(ctx, ImGui, proj, cfg, b, p.user)
+      end
       if p.state ~= "here" then pcall(function() require("page_hear").person(ctx, ImGui, proj, p.name) end) end -- (hear them live or not)
       ui.person_claims(p.user, p.last_track)
       ui.leaving_row(p)

@@ -106,7 +106,11 @@ local function ninjam_off(proj)
   local rt = live.rt_track(proj, false)
   if not rt then return end
   for i = reaper.TrackFX_GetCount(rt) - 1, 0, -1 do
-    if select(2, reaper.TrackFX_GetFXName(rt, i, "")):find(live.FX, 1, true) then reaper.TrackFX_Delete(rt, i) end
+    if select(2, reaper.TrackFX_GetFXName(rt, i, "")):find(live.FX, 1, true) then
+      reaper.TrackFX_Delete(rt, i)
+      local w = reaper.JS_Window_Find and reaper.JS_Window_Find(live.FX, true) -- (its own window stays up without it)
+      if w then reaper.JS_WindowMessage_Post(w, "WM_CLOSE", 0, 0, 0, 0) end
+    end
   end
 end
 

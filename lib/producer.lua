@@ -89,7 +89,7 @@ local function ninjam_on(proj, cfg, b, send)
   return true
 end
 
--- Connect presses itself: 3 tries 10 s apart (the server may still be starting), then for about 5 minutes more, 30 s apart. Lost later, it all starts
+-- Connect presses itself: 3 tries 5 s apart (the server may still be starting), then for about 5 minutes more, 30 s apart. Lost later, it all starts
 -- again, whatever lost it. A Mac is different: a lost server leaves an alert no script can see or answer, and ReaNINJAM's window goes on saying "Connect..."
 -- under it even once it's connected, so each try would knock down what the last one made. There, one press, once the server answers.
 local connecting = {}
@@ -123,7 +123,7 @@ local function auto_connect(tab)
     end
     return
   end
-  local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 10 or 30)
+  local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 5 or 30)
   if may and reaper.GetExtState(band.SECTION, "ninjam hosting") ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
   local now = live.connect(may)
   if now == "connected" then c.done, c.tries, c.up, c.told, c.up_at = true, 0, true, nil, reaper.time_precise()
@@ -240,7 +240,10 @@ function producer.tick(proj, cfg, b, peers)
   local pressing = producer.who(proj) and producer.via(proj) == "ninjam"
   if ninjam_up[tab] or play_tab or pressing then
     if not going then require("live").keep_hidden(proj); auto_connect(tab) end
-  elseif going then ninjam_off(proj) end
+  else
+    connecting[tab], server_lost[tab] = nil, nil -- (Stop runs in the panel's script, with its own copy of these: this one kept the last session's "connected". Mac, 0.58.13)
+    if going then ninjam_off(proj) end
+  end
   -- the song's server moved, or (pressing Produce) has gone: everyone ends up on the one live.json names, whoever wrote it last
   if (ninjam_up[tab] or pressing) and not going and reaper.time_precise() - (server_at[tab] or -math.huge) > 10 then
     server_at[tab] = reaper.time_precise()

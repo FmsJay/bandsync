@@ -14,7 +14,7 @@ the Play page brings the window up.
 **Stop server** on the Play page stops it, 10 s after telling everyone on it to disconnect. That matters on a Mac: when a
 server simply goes away (its computer switched off, say), ReaNINJAM shows "Disconnected from host!", and on a Mac every
 script in REAPER, StudioSync's too, waits until someone presses its OK. A disconnect StudioSync asks for shows no box. If its
-connection box is open too, the mouse may not reach the alert: press Return, once for each.
+connection box is open too, the mouse may not reach the alert: press Return: once for the alert's OK, and once more for the connection box, which connects.
 
 It keeps running when REAPER closes, from a copy in StudioSync's own folder (`<resource>/StudioSync/ninjam`), so an update
 never has to replace a running program.

@@ -101,8 +101,9 @@ local function ninjam_on(proj, cfg, b, send)
   return true
 end
 
--- Connect presses itself: 3 tries 10 s apart (the server may still be starting), then for about 5 minutes more, 30 s apart. On a Mac a lost server leaves
--- an alert no script can see or answer, and nothing connects until someone presses its OK. Lost later, it all starts again, whatever lost it.
+-- Connect presses itself: 3 tries 10 s apart (the server may still be starting), then for about 5 minutes more, 30 s apart. Lost later, it all starts
+-- again, whatever lost it. A Mac is different: a lost server leaves an alert no script can see or answer, and ReaNINJAM's window goes on saying "Connect..."
+-- under it even once it's connected, so each try would knock down what the last one made. There, one press, once the server answers.
 local connecting = {}
 local function auto_connect(tab)
   local c = connecting[tab]
@@ -115,10 +116,22 @@ local function auto_connect(tab)
     return
   end
   if c.done and c.up and not live.connect(false) then -- (lost, with no box to say so: a Mac's alert can't be seen from here)
-    c.done, c.up, c.tries = false, false, 0
+    c.done, c.up, c.tries, c.pressed, c.at = false, false, 0, nil, reaper.time_precise() -- (a port check a moment old would still say it answers)
     band.log("lost the NINJAM server: connecting again")
   end
+  if c.done and not c.up and live.connect(false) == "connected" then c.up = true end -- (a Mac's, once its alert's been answered)
   if c.done then return end
+  if not reaper.GetOS():find("^Win") then
+    local now = live.connect(false)
+    if now == "connected" then c.done, c.up = true, true
+    elseif now ~= "pressing" and c.pressed then
+      c.done = true
+      band.log("NINJAM: connected, if the server's up: if ReaNINJAM shows a box, press its OK, and press Connect in its window if it still doesn't say Disconnect")
+    elseif not c.pressed and reaper.time_precise() - c.at > 12 and reaper.GetExtState(band.SECTION, "ninjam host") ~= "" and require("services").port_open(reaper.GetExtState(band.SECTION, "ninjam host")) then
+      c.pressed = live.connect(true) == "opening"
+    end
+    return
+  end
   local may = c.tries < 13 and reaper.time_precise() - c.at > (c.tries < 3 and 10 or 30)
   if may and require("services").ninjam_dir() ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
   local now = live.connect(may)

@@ -52,6 +52,13 @@ function services.running(exe, fresh)
   return out:match("%d") ~= nil -- pgrep prints the pids
 end
 
+-- Does something answer at "host:port"? In the background, so the answer's a few seconds old. (Macs: it's the Mac's NINJAM route that asks.)
+function services.port_open(address)
+  local host, port = address:match("^(.-):(%d+)$")
+  if not host then return false end
+  return (background("port", "/usr/bin/nc -z -G 1 '" .. host:gsub("'", "") .. "' " .. port .. " && echo open || echo shut", 8) or ""):find("open", 1, true) ~= nil
+end
+
 -- Start `path args...` in the background, hidden, in `cwd` (optional). Returns true if launched.
 local function launch(path, args, cwd)
   if WIN then

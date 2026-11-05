@@ -1932,7 +1932,10 @@ local function maint_rows()
   }
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", "No Play along server yet: Connect on the Play page starts one on this computer." }
-    if s.hosting then rows[#rows + 1] = { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running here: Connect on the Play page starts it." } end
+    if s.hosting then
+      rows[#rows + 1] = { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running here: Connect on the Play page starts it." }
+      rows[#rows + 1] = { "ninjam firewall", services.firewall_knows_ninjam(), "yellow", "Windows lets the NINJAM server accept connections", "Nobody can reach the NINJAM server on this computer until Windows allows it: answer Windows' box when it asks. If it was answered No: Windows Security > Firewall > Allow an app, ninjamsrv." }
+    end
   end
   -- (a Mac showed its items OFFLINE while another app was in front, and nothing said why: 0.45.0)
   if reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("offlineinact", 0) ~= 0 then

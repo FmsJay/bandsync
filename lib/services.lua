@@ -550,8 +550,15 @@ function services.ensure_ninjam()
     reaper.ExecProcess("/bin/sh '" .. sh .. "'", 5000)
   end
   if not launch(dir .. "/" .. name, { "bandsync.cfg" }, dir) then return nil, "couldn't start " .. dir .. "/" .. name end
-  band.log("started the NINJAM server on this computer")
+  band.log("started the NINJAM server on this computer" .. (WIN and ": if Windows asks whether it may accept connections, allow it, or nobody can reach it" or ""))
   return "started"
+end
+-- Has Windows been told it may accept connections? Until then it's up but nobody reaches it (the laptop, 0.58.11: Windows only asks once, on the host's screen). A check in the
+-- background, for a Health row; a computer's own connection doesn't go through the firewall, so it can't simply try. shortcut: finds any rule for it, not whether it allows.
+function services.firewall_knows_ninjam()
+  if not WIN then return true end
+  local out = background("fw", 'netsh advfirewall firewall show rule name=all verbose | findstr /i "ninjamsrv"', 60)
+  return out == nil or out:lower():find("ninjamsrv", 1, true) ~= nil
 end
 
 -- This song's NINJAM server, "name:port", or nil + why. One computer runs it: whichever needed it first and, if that one's gone, the next to ask for it.

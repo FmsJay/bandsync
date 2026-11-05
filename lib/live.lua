@@ -237,12 +237,12 @@ function live.join_check(proj)
   end
   reaper.SetProjExtState(proj, band.SECTION, "sonobus tries", tostring(tries + 1))
   reaper.SetProjExtState(proj, band.SECTION, "sonobus online", tostring(os.time()))
-  reaper.TrackFX_SetOffline(m, i, true) -- (loading it again is what makes "Reconnect Last" join)
-  reaper.TrackFX_SetOffline(m, i, false)
-  if tries + 1 == live.JOIN_TRIES then -- (seen on the laptop, 2026-11-04: reloads did nothing until its window had been open once)
+  if tries == 0 then -- (reloads did nothing until its window had been open, and it has to be open before the reload: PC and laptop, 0.57.1)
     reaper.TrackFX_Show(m, i, 3)
     reaper.SetProjExtState(proj, band.SECTION, "sonobus shown", "1")
   end
+  reaper.TrackFX_SetOffline(m, i, true) -- (loading it again is what makes "Reconnect Last" join)
+  reaper.TrackFX_SetOffline(m, i, false)
   band.log("SonoBus hasn't joined your studio's live audio yet: trying again")
   return "waiting"
 end

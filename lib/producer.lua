@@ -58,10 +58,20 @@ end
 -- shortcut: its window's Connect stays a person's click: nothing in its ini connects by itself. Not yet tried end to end, for want of a server both can reach.
 local function ninjam_on(proj, cfg, b, send)
   local live, setup = require("live"), require("setup")
-  local server = (band.read_json(setup.live_file(cfg, b)) or {}).server or ""
+  local services = require("services")
+  local lfile = setup.live_file(cfg, b)
+  local data = band.read_json(lfile) or {}
+  if (data.server or "") == "" and services.ninjam_dir() ~= "" then -- (this computer runs the server, and nobody's said where it is yet)
+    local addr = services.tailscale_address()
+    if addr then
+      data.server, data.by = addr .. ":2049", cfg.user
+      band.write_json(lfile, data)
+    end
+  end
+  local server = data.server or ""
   if server == "" then return nil, "There's no NINJAM server set for this song: turn on the Play tab (Settings > Advanced) and set it there, or use the SonoBus route." end
-  if b.role == "host" then
-    local up, why = require("services").ensure_ninjam() -- (as the Play tab's Connect does)
+  if services.ninjam_dir() ~= "" then
+    local up, why = services.ensure_ninjam() -- (as the Play tab's Connect does)
     if not up then return nil, "NINJAM server: " .. why end
   end
   local sdir = (reaper.GetProjectName(proj) ~= "" and reaper.GetProjectPathEx(proj) or reaper.GetResourcePath()):gsub("\\", "/") .. "/bandsync_live"
@@ -145,7 +155,7 @@ function producer.quiet_tracks(proj, names)
 end
 
 -- This computer, about once a second, on both sides of it.
-local started_sending = {}
+local started_sending, ninjam_up, ninjam_said = {}, {}, {}
 function producer.tick(proj, cfg, b, peers)
   local stamp = require("stamp")
   -- someone's producing me: stamps go out for as long as they do
@@ -165,9 +175,11 @@ function producer.tick(proj, cfg, b, peers)
     else band.log("nobody's producing you now") end
   end
   if now ~= "" and through_ninjam then
-    if was ~= now then
+    if not ninjam_up[tab] then -- (asked again until it works: the server's address can arrive after their status)
       local ok, why = ninjam_on(proj, cfg, b, true)
-      band.log(ok and (now .. " hears you through the NINJAM server: press Connect in ReaNINJAM's window") or (now .. " wants to hear you, but: " .. tostring(why)))
+      ninjam_up[tab] = ok or nil
+      if ok then band.log(now .. " hears you through the NINJAM server: press Connect in ReaNINJAM's window")
+      elseif ninjam_said[tab] ~= why then ninjam_said[tab] = why; band.log(now .. " wants to hear you, but: " .. tostring(why)) end
     end
   elseif now ~= "" then
     local live, m, i = require("live"), nil, nil
@@ -183,6 +195,7 @@ function producer.tick(proj, cfg, b, peers)
     stamp.send(proj, true, ((inp or 0) + (out or 0)) / srate * 1000)
     reaper.SetExtState(band.SECTION, "stamping " .. tab, "1", false)
   elseif was ~= "" then
+    ninjam_up[tab], ninjam_said[tab] = nil, nil
     stamp.send(proj, false)
     reaper.DeleteExtState(band.SECTION, "stamping " .. tab, false)
     if started_sending[tab] then

@@ -151,6 +151,7 @@ local drive = require("drive")
 local drive_at, drive_more, drive_said = -math.huge, false, nil
 
 local sizes, last, recording, stopped_at = {}, 0, false, 0
+local status_info -- (the status as last written: tick_body says "recording" with it, as the pass that writes it waits while recording)
 local paint_at = -math.huge -- when tracks were last coloured for who's working on them
 local claims_at = -math.huge -- when our claims on gone tracks were last looked for (sync.drop_gone_claims)
 local last_status, status_json = 0, ""
@@ -464,7 +465,7 @@ local function poll()
     tostring(info.side) .. tostring(info.playing) .. tostring(info.recording) .. tostring(info.front) .. tostring(info.mirror) ..
     band.json_encode({ info.editing, info.view, info.ping or false }) .. info.last_track
   if fingerprint ~= status_json or now - last_status > 15 then
-    status_json, last_status = fingerprint, now
+    status_json, last_status, status_info = fingerprint, now, info
     sync.write_status(proj, cfg, b.song, b.room, info)
   end
 
@@ -662,7 +663,13 @@ local function tick_body() -- returns true to keep going
     side.playing, side.pos, side.t = playing, pos, tp
   end
   local st = reaper.GetPlayStateEx(proj)
-  if st & 4 ~= 0 then recording = true
+  if st & 4 ~= 0 then
+    if not recording and status_info then
+      status_info.playing, status_info.recording, status_info.cursor = true, true, nil
+      sync.write_status(proj, cfg, b.song, b.room, status_info)
+      status_json = nil -- (and the first pass after it says it's over)
+    end
+    recording = true
   elseif recording then recording, stopped_at = false, reaper.time_precise() end
   local now = reaper.time_precise()
   -- Real time mode: only what's armed feeds SonoBus (lib/live.lua rt_sends), checked about once a second

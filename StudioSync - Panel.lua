@@ -325,7 +325,7 @@ local TIPS = {
   ["Leave"] = "Leave: SonoBus stops (it stays on its track, sending nothing) or ReaNINJAM disconnects.",
   ["##server"] = "The host's Tailscale name and NINJAM port, e.g. my-pc.tail1234.ts.net:2049.",
   ["Save for the studio"] = "Everyone's Connect uses this address.",
-  ["##ninjamdir"] = "The folder holding ninjamsrv and bandsync.cfg (host only).",
+  ["##ninjamdir"] = "The folder holding ninjamsrv and bandsync.cfg (only on the computer that runs the server).",
   ["Use server folder"] = "Remember this NINJAM server folder (host only).",
   ["Send my audio (my whole mix)"] = "Off: you listen without sending anything.",
   ["Connect"] = "Join the studio's live audio in the mode above.",
@@ -1297,14 +1297,14 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
     data.server, data.by = live_server, cfg.user
     band.write_json(lfile, data)
   end
-  ImGui.SetItemTooltip(ctx, "The host runs the NINJAM server (tools/ninjam-server); everyone connects to its address.")
+  ImGui.SetItemTooltip(ctx, "One computer runs the NINJAM server (tools/ninjam-server); everyone connects to its address.")
   next_to("Test it")
   ImGui.BeginDisabled(ctx, live_server == "")
   if ImGui.SmallButton(ctx, "Test it") then ui.server_said = ui.test_server(live_server) end
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, "Tries to reach the server from this computer.")
   if ui.server_said then ImGui.TextColored(ctx, ui.server_said[1] and GREEN or YELLOW, ui.server_said[2]) end
-  if b.role == "host" then -- the host's Connect starts the server here if it isn't running
+  do -- the computer that has this folder runs the server: its Connect starts it if it isn't running
     ninjam_dir_edit = ninjam_dir_edit or services.ninjam_dir()
     ImGui.SetNextItemWidth(ctx, -150)
     local c2, v2 = ImGui.InputTextWithHint(ctx, "##ninjamdir", "folder with ninjamsrv + bandsync.cfg", ninjam_dir_edit, ImGui.InputTextFlags_None)
@@ -1321,7 +1321,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
   if not master then
     ImGui.BeginDisabled(ctx, live_server == "")
     if ImGui.Button(ctx, "Connect") then
-      if b.role == "host" then
+      if services.ninjam_dir() ~= "" then
         local ok2, why = services.ensure_ninjam()
         if ok2 == "started" then band.log("started the NINJAM server") elseif not ok2 then band.msg("NINJAM server: " .. why) end
       end
@@ -1873,9 +1873,9 @@ local function maint_rows()
     { "tailscale", services.tailscale_installed(), "yellow", "Tailscale is installed", "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
   }
   if ui.play_shown() then
-    rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", b.role == "host" and "Play along server address not set (needs Tailscale signed in)."
+    rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", services.ninjam_dir() ~= "" and "Play along server address not set (needs Tailscale signed in)."
       or "Waiting for the host to set the Play along server address." }
-    if b.role == "host" then rows[#rows + 1] = { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running (set its folder on the Play page)." } end
+    if services.ninjam_dir() ~= "" then rows[#rows + 1] = { "ninjam", s.ninjam, "yellow", "NINJAM server is running here", "NINJAM server isn't running (set its folder on the Play page)." } end
   end
   -- (a Mac showed its items OFFLINE while another app was in front, and nothing said why: 0.45.0)
   if reaper.SNM_GetIntConfigVar and reaper.SNM_GetIntConfigVar("offlineinact", 0) ~= 0 then

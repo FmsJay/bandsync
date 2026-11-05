@@ -97,7 +97,7 @@ function setup.check(cfg, b, proj)
   st.sync = beat ~= nil and reaper.time_precise() - beat < 5
   st.sonobus = live.fx(proj, false, live.SONOBUS) ~= nil
   st.server = (data.server or "") ~= ""
-  st.ninjam = b.role ~= "host" or services.running("ninjamsrv")
+  st.ninjam = services.ninjam_dir() == "" or services.running("ninjamsrv")
   return st
 end
 
@@ -114,7 +114,7 @@ function setup.all(cfg, b, proj, st, start_sync, play_along)
     start_sync()
     notes[#notes + 1] = "Live sync started"
   end
-  if play_along and b.role == "host" then
+  if play_along and services.ninjam_dir() ~= "" then
     local lfile = setup.live_file(cfg, b)
     local data = band.read_json(lfile) or {}
     if (data.server or "") == "" or (data.server):match("^100%.") then -- (a saved 100.x may have moved on: 0.57.1)

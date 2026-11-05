@@ -127,6 +127,8 @@ function hear.route(proj, rt)
     if reaper.GetMediaTrackInfo_Value(rt, "I_NCHAN") < 2 * hear.PAIRS then reaper.SetMediaTrackInfo_Value(rt, "I_NCHAN", 2 * hear.PAIRS) end
     reaper.SetMediaTrackInfo_Value(rt, "C_MAINSEND_OFFS", 2)
     reaper.SetMediaTrackInfo_Value(rt, "C_MAINSEND_NCH", 0)
+    local vu = math.floor(reaper.GetMediaTrackInfo_Value(rt, "I_VUMODE")) -- (stereo meters read nothing past the first pair, so someone on their own "wasn't arriving": 0.57.1)
+    if vu & 30 ~= 2 then reaper.SetMediaTrackInfo_Value(rt, "I_VUMODE", (vu & ~30) | 2) end
   end
   local last = reaper.TrackFX_GetCount(m) - 1
   if i ~= last then reaper.TrackFX_CopyToTrack(m, i, m, last, true) end

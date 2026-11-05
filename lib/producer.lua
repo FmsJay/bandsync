@@ -93,11 +93,21 @@ local function ninjam_on(proj, cfg, b, send)
       end
     end
     i = reaper.TrackFX_AddByName(rt, live.FX, false, -1)
-    if i < 0 then return nil, "Couldn't add ReaNINJAM to the Real time track." end
+    if i < 0 then return nil, "ReaNINJAM won't load in this REAPER: re-scan its plug-ins (Preferences > Plug-ins > VST), or use the SonoBus route." end
     tr = rt
   end
   reaper.TrackFX_Show(tr, i, 3)
   return true
+end
+
+-- (Only the Real time track's: one the Play tab put on the master is that tab's business.)
+local function ninjam_off(proj)
+  local live = require("live")
+  local rt = live.rt_track(proj, false)
+  if not rt then return end
+  for i = reaper.TrackFX_GetCount(rt) - 1, 0, -1 do
+    if select(2, reaper.TrackFX_GetFXName(rt, i, "")):find(live.FX, 1, true) then reaper.TrackFX_Delete(rt, i) end
+  end
 end
 
 -- Start producing `name`: follow their transport, a little behind, and hear them by position.
@@ -122,6 +132,7 @@ function producer.stop(proj, cfg, b)
   reaper.DeleteExtState(band.SECTION, key(proj), false)
   if reaper.GetExtState(band.SECTION, "follow " .. tostring(proj)) == name then reaper.DeleteExtState(band.SECTION, "follow " .. tostring(proj), false) end
   require("stamp").read(proj, false)
+  ninjam_off(proj)
   local tr = talk_track(proj, false)
   if tr then reaper.DeleteTrack(tr) end
   producer.quiet_tracks(proj, {})
@@ -155,7 +166,7 @@ function producer.quiet_tracks(proj, names)
 end
 
 -- This computer, about once a second, on both sides of it.
-local started_sending, ninjam_up, ninjam_said = {}, {}, {}
+local started_sending, ninjam_up, ninjam_said, ninjam_at = {}, {}, {}, {}
 function producer.tick(proj, cfg, b, peers)
   local stamp = require("stamp")
   -- someone's producing me: stamps go out for as long as they do
@@ -175,13 +186,19 @@ function producer.tick(proj, cfg, b, peers)
     else band.log("nobody's producing you now") end
   end
   if now ~= "" and through_ninjam then
-    if not ninjam_up[tab] then -- (asked again until it works: the server's address can arrive after their status)
+    if reaper.GetExtState(band.SECTION, "stamping " .. tab) ~= "" then -- (they've changed routes)
+      stamp.send(proj, false)
+      reaper.DeleteExtState(band.SECTION, "stamping " .. tab, false)
+    end
+    if not ninjam_up[tab] and reaper.time_precise() - (ninjam_at[tab] or -math.huge) > 10 then -- (asked again until it works: the server's address can arrive after their status)
+      ninjam_at[tab] = reaper.time_precise()
       local ok, why = ninjam_on(proj, cfg, b, true)
       ninjam_up[tab] = ok or nil
       if ok then band.log(now .. " hears you through the NINJAM server: press Connect in ReaNINJAM's window")
       elseif ninjam_said[tab] ~= why then ninjam_said[tab] = why; band.log(now .. " wants to hear you, but: " .. tostring(why)) end
     end
   elseif now ~= "" then
+    if ninjam_up[tab] then ninjam_off(proj); ninjam_up[tab] = nil end
     local live, m, i = require("live"), nil, nil
     m, i = live.fx(proj, false, live.SONOBUS)
     if not m or reaper.TrackFX_GetOffline(m, i) then
@@ -195,7 +212,8 @@ function producer.tick(proj, cfg, b, peers)
     stamp.send(proj, true, ((inp or 0) + (out or 0)) / srate * 1000)
     reaper.SetExtState(band.SECTION, "stamping " .. tab, "1", false)
   elseif was ~= "" then
-    ninjam_up[tab], ninjam_said[tab] = nil, nil
+    if ninjam_up[tab] then ninjam_off(proj) end
+    ninjam_up[tab], ninjam_said[tab], ninjam_at[tab] = nil, nil, nil
     stamp.send(proj, false)
     reaper.DeleteExtState(band.SECTION, "stamping " .. tab, false)
     if started_sending[tab] then

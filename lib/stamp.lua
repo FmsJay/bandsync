@@ -28,7 +28,7 @@ chirp_n = floor(CHIRP * srate); gap_n = floor(GAP * srate); bit_n = floor(BIT_LE
 total = chirp_n + gap_n + 32 * bit_n;
 at = -1; last_k = -1; ph = 0;
 function crc8(v) local(c, i, b) (
-  c = 0; i = 23;
+  c = 165; i = 23; // (from 0, all zeros checked out: a steady tone near F0 read as "position 0", real SonoBus, 0.57.2)
   while (i >= 0) (
     b = ((v >> i) & 1) ~ ((c >> 7) & 1);
     c = (c << 1) & 255;
@@ -111,6 +111,7 @@ out_pin:14
 out_pin:15
 out_pin:16
 @init
+ext_noinit = 1; // (REAPER runs @init again when the transport starts, and this one starts just after the first bursts: it lost them and the tape. Real SonoBus, 0.57.2)
 EVERY = 0.5; CHIRP = 0.024; GAP = 0.004; BIT_LEN = 0.006; F0 = 900; F1 = 1800;
 D = 8; WAIT = floor(0.3 * srate); HOLD = srate | 0; KEEP = floor(0.5 * srate);
 n_t = floor(CHIRP * srate / D); bit_n = floor(BIT_LEN * srate); data_at = floor((CHIRP + GAP) * srate);
@@ -126,7 +127,7 @@ s_now = 0; dcount = 0; dsum = 0; lp = 0; e_lo = 0;
 best = 0; best_at = -1; look_until = -1; reading = 0; ready = 0; offset = -1; last_stamp = -1000000000000; next_offset = -1; next_from = 0;
 write_end = -1; was_active = 0; count = 0; gaps = 0;
 function crc8(v) local(c, i, b) (
-  c = 0; i = 23;
+  c = 165; i = 23; // (from 0, all zeros checked out: a steady tone near F0 read as "position 0", real SonoBus, 0.57.2)
   while (i >= 0) (
     b = ((v >> i) & 1) ~ ((c >> 7) & 1);
     c = (c << 1) & 255;
@@ -229,9 +230,11 @@ on ? (
 );
 ]]
 
+-- -> true, and whether either file had to change.
 function stamp.install()
   local dir = reaper.GetResourcePath() .. "/Effects/StudioSync"
   reaper.RecursiveCreateDirectory(dir, 0)
+  local changed = false
   for name, text in pairs({ [stamp.SEND_NAME] = stamp.SEND, [stamp.READ_NAME] = stamp.READ }) do
     local path = dir .. "/" .. name .. ".jsfx"
     if band.read(path) ~= text then
@@ -239,9 +242,10 @@ function stamp.install()
       if not f then return nil end
       f:write(text)
       f:close()
+      changed = true
     end
   end
-  return true
+  return true, changed
 end
 
 local function find(tr, name)
@@ -250,8 +254,15 @@ local function find(tr, name)
   end
 end
 -- One of them on the Real time track: the sender before SonoBus, the reader after it.
+local checked = false
 local function place(tr, name, first)
   local i = find(tr, name)
+  if not checked then -- (once per run: an effect already loaded keeps the old code until it's put on again)
+    checked = true
+    local ok, changed = stamp.install()
+    if not ok then return nil end
+    if changed and i then reaper.TrackFX_Delete(tr, i); i = nil end
+  end
   if not i then
     if not stamp.install() then return nil end
     i = reaper.TrackFX_AddByName(tr, "JS:StudioSync/" .. name .. ".jsfx", false, -1)

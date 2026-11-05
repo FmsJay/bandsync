@@ -137,7 +137,7 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   local them
   for _, r in ipairs(rows) do if r.user == name or r.name == name then them = r end end
   local playing = reaper.GetPlayStateEx(proj) & 1 == 1
-  ImGui.SeparatorText(ctx, "Producing")
+  if select(2, ImGui.GetContentRegionAvail(ctx)) > 130 then ImGui.SeparatorText(ctx, "Producing") end -- (in a short docker, its row is the one Talk and Stop need; "Following..." says it)
   local colour = { ok = theme.GREEN, wait = theme.YELLOW, bad = theme.RED }
   for _, l in ipairs(producer.lines(proj, name, them, require("stamp").status(), playing)) do ImGui.TextColored(ctx, colour[l[2]] or theme.GREEN, l[1]) end
   if producer.via(proj) == "stamp" then
@@ -161,7 +161,7 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
     producer.talk(proj, false)
     producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
   end
-  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; set it on the Play tab first (Settings > Advanced shows it). Each of you presses Connect in ReaNINJAM's window.")
+  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; set it on the Play tab first (Settings > Advanced shows it). ReaNINJAM connects by itself on both computers.")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
   ImGui.SetItemTooltip(ctx, "Back to your own transport.")

@@ -124,7 +124,7 @@ if req.mode == "reapack" then
     step("StudioSync " .. WANT .. " already installed through ReaPack", true, "left as it is")
     req.mode, req.open_panel = "verify", true -- nothing to wait for; land in the panel (it stayed shut, Mac 0.34.3)
   elseif runs_elsewhere() then
-    step("StudioSync " .. WANT .. " already runs here (not through ReaPack)", true, "left as it is: no second copy")
+    step("StudioSync " .. WANT .. " already runs here", true, "left as it is: no second copy")
     jsfx_only()
     req.mode, req.open_panel = "verify", true
   else

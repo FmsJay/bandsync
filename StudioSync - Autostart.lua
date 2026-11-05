@@ -100,7 +100,6 @@ local function loop()
     end
     if not st_up then problem = "Syncthing isn't running on this computer: nothing reaches the studio or comes in. Restart REAPER, or start Syncthing." end
   end
-  if reaper.Audio_IsRunning() ~= 1 then return say_problem(problem) end
   local front = reaper.EnumProjects(-1)
   for i = 0, 512 do
     local proj, fn = reaper.EnumProjects(i)

@@ -114,7 +114,7 @@ function chat.draw(ctx, ImGui, cfg, b)
     if ImGui.GetContentRegionAvail(ctx) < w then ImGui.NewLine(ctx) end
   end
   local t = load(cfg, b)
-  local short = select(2, ImGui.GetContentRegionAvail(ctx)) < 170
+  local short = select(2, ImGui.GetContentRegionAvail(ctx)) < 220 -- (below this the switches cost the messages a third of what they had)
   local function switches()
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 4, 1)
   for i, sc in ipairs(SCOPES) do

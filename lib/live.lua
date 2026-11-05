@@ -46,6 +46,47 @@ function live.toggle_click()
   return true
 end
 
+-- Connect, one step a call: with `open`, its Connect button brings up the host box (filled in by live.configure); that box's
+-- own Connect is pressed as soon as it's there. -> "connected", "pressing", "opening", or nil (no window, not asked to open it).
+function live.connect(open)
+  if not reaper.JS_WindowMessage_Post then return nil end
+  local box = reaper.JS_Window_Find("NINJAM Connection Configuration", true)
+  if box then
+    -- (it only reads its ini the first time it loads in a REAPER session: a server that's moved since would never be found)
+    local host, edit = reaper.GetExtState(band.SECTION, "ninjam host"), reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(box, 1025)
+    if host ~= "" and edit then reaper.JS_Window_SetTitle(edit, host) end
+    reaper.JS_WindowMessage_Post(box, "WM_COMMAND", 1, 0, 0, 0)
+    return "pressing"
+  end
+  if live.error_box() then return "error" end -- (its Connect does nothing until that's answered)
+  local con = reaper.JS_Window_Find("ReaNINJAM", true)
+  if not con then return nil end
+  if reaper.JS_Window_FindChild(con, "Disconnect", true) then return "connected" end
+  if open and reaper.JS_Window_FindChild(con, "Connect...", true) then
+    reaper.JS_WindowMessage_Post(con, "WM_COMMAND", 1072, 0, 0, 0)
+    return "opening"
+  end
+end
+
+function live.error_box() -- ("Disconnected from host!" is a Notice; "can't connect" an Error)
+  return reaper.JS_Window_Find and (reaper.JS_Window_Find("NINJAM Error", true) or reaper.JS_Window_Find("NINJAM Notice", true))
+end
+-- ReaNINJAM's own boxes wait inside its window's code, and scripts keep running under them. Take the plug-in off then, and when the box
+-- closes that code carries on with a client that's gone: REAPER crashes, every time (reaninjam.dll, 7.84). So nothing removes it while one's up.
+-- Closes them, and says what the error said. -> the error's words or true if there was a box, else nil. (Windows: on a Mac no script runs under them.)
+function live.close_boxes()
+  if not reaper.JS_WindowMessage_Post then return nil end
+  local box, said = reaper.JS_Window_Find("NINJAM Connection Configuration", true), nil
+  if box then reaper.JS_WindowMessage_Post(box, "WM_CLOSE", 0, 0, 0, 0); said = true end
+  local err = live.error_box()
+  if err then
+    local text = reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(err, 65535)
+    said = text and reaper.JS_Window_GetTitle(text) or true
+    reaper.JS_WindowMessage_Post(err, "WM_CLOSE", 0, 0, 0, 0)
+  end
+  return said
+end
+
 -- Set keys of one [section] in an ini text, keeping everything else. Pure.
 function live.ini_set(text, section, keys)
   local lines, out, in_sec, seen, found = {}, {}, false, {}, false
@@ -83,10 +124,12 @@ end
 -- `send`: whether this channel goes out (the driver/performer sends; listeners usually don't).
 function live.configure(cfg, server, mode, send, sessiondir)
   local path = live.ini_path()
+  reaper.SetExtState(band.SECTION, "ninjam host", server, false)
   local keys = {
     host = server, user = cfg.user, anon = "1", pass = "", passrem = "0",
     savelocal = "1", savelocalwav = "0", sessiondir = sessiondir,
     lc_cnt = "1",
+    mastervol = "3.981072", -- (+12 dB: each remote channel comes in at -12 dB, with no setting of its own, so people sound as they do on SonoBus)
     -- NINJAM's metronome ticks at the server's tempo all the time you're connected, transport or not: only Jam
     -- (everyone playing to NINJAM's own clock) needs it
     metromute = mode == "jam" and "0" or "1",
@@ -118,7 +161,7 @@ function live.fx(proj, add, fx)
       if not other then break end
       if other ~= proj then
         local m, x = live.fx(other, false)
-        if m then reaper.TrackFX_Delete(m, x); freed = freed + 1 end
+        if m and not live.close_boxes() then reaper.TrackFX_Delete(m, x); freed = freed + 1 end
       end
     end
   end

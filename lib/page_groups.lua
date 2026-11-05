@@ -175,8 +175,9 @@ end
 local function back_button(env)
   local song = env.project()
   if not song then return end
+  if env.wide() then env.ImGui.AlignTextToFramePadding(env.ctx) end
   if env.ImGui.SmallButton(env.ctx, "< Back to " .. song) then env.go("Home") end
-  env.ImGui.Spacing(env.ctx)
+  if env.wide() then env.ImGui.SameLine(env.ctx, 0, 14) else env.ImGui.Spacing(env.ctx) end -- (docked: it, the heading and the buttons share a row)
 end
 
 function pg.draw_groups(env)
@@ -185,7 +186,23 @@ function pg.draw_groups(env)
   local me = cfg.user
   local list = pg.live_groups()
   back_button(env)
+  local wide = env.wide()
+  local function new_ones() -- (docked: in the head row, or under a card they're below the fold)
+    pg.start_button(env, #list == 0 and "Start a studio" or "Start a new studio")
+    ImGui.SameLine(ctx)
+    pg.join_button(env)
+  end
+  if wide then ImGui.AlignTextToFramePadding(ctx) end
   env.heading("Your studios")
+  if wide then
+    ImGui.SameLine(ctx, 0, 14)
+    new_ones()
+    if #list > 0 then
+      ImGui.SameLine(ctx, 0, 14)
+      ImGui.AlignTextToFramePadding(ctx)
+      ImGui.TextDisabled(ctx, "A new studio is for different people, or a project of its own. For another song with the same people, share it in the one you have.")
+    end
+  end
   if #list == 0 then ImGui.TextDisabled(ctx, "You're not in a studio yet. Start one, or paste the join code someone sent you.") end
   local base = (cfg.base or cfg).root
   local room = ImGui.GetContentRegionAvail(ctx)
@@ -243,13 +260,13 @@ function pg.draw_groups(env)
     end
     ImGui.PopID(ctx)
   end
-  ImGui.Spacing(ctx)
-  if #list > 0 then
-    ImGui.TextDisabled(ctx, "A new studio is for different people, or a project of its own. For another song with the same people, share it in the one you have.")
+  if not wide then
+    ImGui.Spacing(ctx)
+    if #list > 0 then
+      ImGui.TextDisabled(ctx, "A new studio is for different people, or a project of its own. For another song with the same people, share it in the one you have.")
+    end
+    new_ones()
   end
-  pg.start_button(env, #list == 0 and "Start a studio" or "Start a new studio")
-  ImGui.SameLine(ctx)
-  pg.join_button(env)
   local old = groups.old()
   if #old > 0 then
     ImGui.Spacing(ctx)
@@ -388,6 +405,7 @@ function pg.draw_projects(env)
     name = name ~= "" and ("'" .. name:gsub("%.[Rr][Pp][Pp]$", "") .. "'") or "this project"
     if env.card("share") then
       ImGui.TextDisabled(ctx, "This tab isn't shared with anyone yet.")
+      if env.wide() then ImGui.SameLine(ctx, 0, 14) end -- (under it, the card took half of the smallest dock)
       ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x2E7D4FFF)
       if ImGui.Button(ctx, "Share " .. name .. " with " .. info.name) then
         band.use_band(root)
@@ -400,7 +418,10 @@ function pg.draw_projects(env)
     end
     ImGui.Spacing(ctx)
   end
+  local wide = env.wide()
+  if wide then ImGui.AlignTextToFramePadding(ctx) end
   env.heading("Projects in " .. info.name) -- (opened from another group's project, the pills still name that one: Mac, 0.51.9)
+  if wide then ImGui.SameLine(ctx, 0, 14) end
   if ImGui.Button(ctx, "New folder") then new_folder = ""; ImGui.OpenPopup(ctx, "New folder") end
   ImGui.SetItemTooltip(ctx, "A folder for projects, seen by everyone in this studio. Projects with no folder stay at the top level.")
   if ImGui.BeginPopup(ctx, "New folder") then
@@ -412,9 +433,19 @@ function pg.draw_projects(env)
     ImGui.EndPopup(ctx)
   end
   ImGui.SameLine(ctx)
-  ImGui.SetNextItemWidth(ctx, math.max(120, ImGui.GetContentRegionAvail(ctx) - 4))
+  ImGui.SetNextItemWidth(ctx, math.max(120, ImGui.GetContentRegionAvail(ctx) - (wide and 320 or 4)))
   local _, t = ImGui.InputTextWithHint(ctx, "##findp", "search: project, host, collaborator", text)
   text = t
+  local function keep_all() -- (docked: at the end of the search row; at the foot of a list it was below the fold)
+    local all = ss.keep_all()
+    ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 4, 1)
+    local ch, v = ImGui.Checkbox(ctx, "Keep every project on this computer", all)
+    ImGui.PopStyleVar(ctx)
+    if ch then reaper.SetExtState(band.SECTION, "projects keep all", v and "1" or "", true); ss.apply(cfg) end
+    ImGui.SetItemTooltip(ctx, "On: every project of this studio comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
+      "Off: every project's listing comes, and a project in full once you open it here.")
+  end
+  if wide then ImGui.SameLine(ctx, 0, 14); ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 2); keep_all() end
   local_copy_job(env)
   if #rows == 0 then
     if reaper.file_exists(root .. "/_band/band.json") then ImGui.TextDisabled(ctx, "Nothing's shared here yet.")
@@ -499,15 +530,11 @@ function pg.draw_projects(env)
     ImGui.TextDisabled(ctx, "Top level: drop here to take a project out of its folder")
     drop_target("")
   end
-  ImGui.Spacing(ctx)
-  ImGui.Separator(ctx)
-  local all = ss.keep_all()
-  ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 4, 1)
-  local ch, v = ImGui.Checkbox(ctx, "Keep every project on this computer", all)
-  ImGui.PopStyleVar(ctx)
-  if ch then reaper.SetExtState(band.SECTION, "projects keep all", v and "1" or "", true); ss.apply(cfg) end
-  ImGui.SetItemTooltip(ctx, "On: every project of this studio comes here in full (the computer that stays on, so new collaborators always have a source). A project you delete here stays away.\n" ..
-    "Off: every project's listing comes, and a project in full once you open it here.")
+  if not wide then
+    ImGui.Spacing(ctx)
+    ImGui.Separator(ctx)
+    keep_all()
+  end
 end
 
 return pg

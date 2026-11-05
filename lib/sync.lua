@@ -1213,6 +1213,7 @@ end
 -- change (track owner, region owner or driver). Changes they may not make stay local (and are locked in
 -- the first place, see apply_locks). Hold sync doesn't call this at all: the snapshots keep the last
 -- synced state, so releasing the hold sends the net result once.
+sync.timeline_looked = {}
 -- The song's tempo map and markers: the driver's changes go out, anyone else's are put back (mirror sync carries
 -- everything else; the timeline isn't a track or an item).
 function sync.watch_timeline(proj, cfg, song, room, can)
@@ -1220,6 +1221,25 @@ function sync.watch_timeline(proj, cfg, song, room, can)
   -- tempo map / markers first: if they changed, REAPER has just moved items for it, and those moves aren't edits
   local sig, seen = timeline_sig(proj), ext(proj, band.SECTION, "timeline")
   if seen ~= sig and seen ~= "" and (band.json_decode(seen) or {})[4] ~= 2 then seen = "" end -- (noted in an older format: a first look)
+  -- opened behind the song (closed without its last save, say): nothing of ours waits, and your own marker has no event coming back to you (Mac, 0.57.6)
+  if not sync.timeline_looked[proj] then
+    sync.timeline_looked[proj] = true
+    local s = room == "main" and seen == sig and band.read_json(band.session_path(cfg, song))
+    if s and type(s.tempo) == "table" and type(s.markers) == "table" and #s.tempo > 0 then
+      local function plain(x) return band.json_encode(band.json_decode(band.json_encode(x))) end
+      local tempo_off = plain(s.tempo) ~= plain(band.capture_tempo(proj))
+      if tempo_off or plain(s.markers) ~= plain(band.capture_markers(proj)) then
+        reaper.Undo_BeginBlock2(proj)
+        if tempo_off then band.apply_tempo(proj, s.tempo); require("mirror").tempo_changed(proj) end
+        band.apply_markers(proj, s.markers)
+        reaper.Undo_EndBlock2(proj, "StudioSync: the song's tempo map and markers", -1)
+        sig, seen = timeline_sig(proj), nil
+        seen = sig
+        setext(proj, band.SECTION, "timeline", sig)
+        band.log("this project was behind the song: its tempo map and markers are back as the studio has them")
+      end
+    end
+  end
   if seen ~= sig then
     require("mirror").tempo_changed(proj)
     if seen ~= "" then

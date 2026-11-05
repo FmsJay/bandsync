@@ -54,12 +54,12 @@ function producer.talk(proj, on)
   if tr then reaper.SetMediaTrackInfo_Value(tr, "B_MUTE", on and 0 or 1) end
 end
 
--- The NINJAM route: ReaNINJAM in session mode on the Real time track, so what goes out is what's armed, not the whole mix. Connecting is one click in its window.
+-- The NINJAM route: ReaNINJAM in session mode on the Real time track, so what goes out is what's armed, not the whole mix.
 -- Session mode plays what arrives only as each playhead reaches it, so there's no talkback on this route, even with Xmit on and both stopped.
--- shortcut: its window's Connect stays a person's click: nothing in its ini connects by itself.
 local function ninjam_on(proj, cfg, b, send)
   local live, setup = require("live"), require("setup")
   local services = require("services")
+  reaper.DeleteExtState(band.SECTION, "ninjam off " .. tostring(proj), false)
   local lfile = setup.live_file(cfg, b)
   local data = band.read_json(lfile) or {}
   if (data.server or "") == "" and services.ninjam_dir() ~= "" then -- (this computer runs the server, and nobody's said where it is yet)
@@ -90,7 +90,7 @@ local function ninjam_on(proj, cfg, b, send)
       if not other then break end
       if other ~= proj then
         local m, x = live.fx(other, false)
-        if m then reaper.TrackFX_Delete(m, x) end
+        if m and not live.close_boxes() then reaper.TrackFX_Delete(m, x) end
       end
     end
     i = reaper.TrackFX_AddByName(rt, live.FX, false, -1)
@@ -101,9 +101,37 @@ local function ninjam_on(proj, cfg, b, send)
   return true
 end
 
+-- Connect presses itself, once a Produce: 3 tries 10 s apart (the server may still be starting), then it's left to the person. Disconnecting by hand stays disconnected.
+local connecting = {}
+local function auto_connect(tab)
+  local c = connecting[tab]
+  if not c then c = { tries = 0, at = -math.huge }; connecting[tab] = c end
+  local live = require("live")
+  if live.error_box() then -- (it failed, or the server went away: say it, try again)
+    local said = live.close_boxes()
+    if c.said ~= said then c.said = said; band.log("NINJAM server: " .. tostring(said)) end
+    if c.up then c.done, c.up, c.tries = false, false, 0 end
+    return
+  end
+  if c.done then return end
+  local may = c.tries < 3 and reaper.time_precise() - c.at > 10
+  if may and require("services").ninjam_dir() ~= "" then require("services").ensure_ninjam() end -- (it's this computer's server, and it may be what went away)
+  local now = live.connect(may)
+  if now == "connected" then c.done, c.tries, c.up = true, 0, true
+  elseif now == "error" then c.at = reaper.time_precise()
+  elseif now == "opening" then c.tries, c.at = c.tries + 1, reaper.time_precise()
+  elseif not may and c.tries >= 3 and reaper.time_precise() - c.at > 10 then
+    c.done = true
+    band.log("couldn't connect to the NINJAM server: press Connect in ReaNINJAM's window")
+  end
+end
+
 -- (Only the Real time track's: one the Play tab put on the master is that tab's business.)
 local function ninjam_off(proj)
   local live = require("live")
+  if live.close_boxes() then return reaper.SetExtState(band.SECTION, "ninjam off " .. tostring(proj), "1", false) end -- (not with a box of its own up: the tick does it, once that's gone)
+  reaper.DeleteExtState(band.SECTION, "ninjam off " .. tostring(proj), false)
+  connecting[tostring(proj)] = nil
   local rt = live.rt_track(proj, false)
   if not rt then return end
   for i = reaper.TrackFX_GetCount(rt) - 1, 0, -1 do
@@ -190,6 +218,10 @@ function producer.tick(proj, cfg, b, peers)
     if now ~= "" then band.log(now .. " is producing you: they hear you on their grid, a moment behind")
     else band.log("nobody's producing you now") end
   end
+  local going = reaper.GetExtState(band.SECTION, "ninjam off " .. tab) ~= ""
+  if ninjam_up[tab] or (producer.who(proj) and producer.via(proj) == "ninjam") then
+    if not going then auto_connect(tab) end
+  elseif going then ninjam_off(proj) end
   if now ~= "" and through_ninjam then
     if reaper.GetExtState(band.SECTION, "stamping " .. tab) ~= "" then -- (they've changed routes)
       stamp.send(proj, false)
@@ -199,7 +231,7 @@ function producer.tick(proj, cfg, b, peers)
       ninjam_at[tab] = reaper.time_precise()
       local ok, why = ninjam_on(proj, cfg, b, true)
       ninjam_up[tab] = ok or nil
-      if ok then band.log(now .. " hears you through the NINJAM server: press Connect in ReaNINJAM's window")
+      if ok then band.log(now .. " hears you through the NINJAM server")
       elseif ninjam_said[tab] ~= why then ninjam_said[tab] = why; band.log(now .. " wants to hear you, but: " .. tostring(why)) end
     end
   elseif now ~= "" then

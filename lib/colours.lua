@@ -168,7 +168,7 @@ function colours.apply(proj, cfg, list, plan, may, only_selected)
   reaper.Undo_BeginBlock2(proj) -- (not named after StudioSync: Ctrl+Z is REAPER's own undo, and takes all of it back)
   for i, t in ipairs(list) do
     if not only_selected or reaper.IsTrackSelected(t.ptr) then
-      if may(t.name) then band.set_track_colour(t.ptr, native(plan[i])); done = done + 1 else left = left + 1 end
+      if may(t.name, t.ptr) then band.set_track_colour(t.ptr, native(plan[i])); done = done + 1 else left = left + 1 end
     end
   end
   reaper.Undo_EndBlock2(proj, "Colour tracks", 1)
@@ -240,7 +240,7 @@ function colours.apply_items(proj, cfg, scheme, stops, may)
       local name = select(2, reaper.GetTrackName(tr)):gsub(" %(band%)$", ""):gsub(" %(studio%)$", "")
       for k = 0, reaper.CountTrackMediaItems(tr) - 1 do
         local it = reaper.GetTrackMediaItem(tr, k)
-        if may(name) then
+        if may(name, tr) then
           local pos = reaper.GetMediaItemInfo_Value(it, "D_POSITION")
           last = math.max(last, pos)
           local section
@@ -259,7 +259,7 @@ function colours.apply_items(proj, cfg, scheme, stops, may)
   return #list, left
 end
 
--- The Settings card. (In this file: the panel is near Lua's 200-locals limit.) may(name): this person may change that track. timeline_ok: the driver, or anyone in Anyone.
+-- The Settings card. (In this file: the panel is near Lua's 200-locals limit.) may(name, track): this person may change that track. timeline_ok: the driver, or anyone in Anyone.
 local cache = { at = -math.huge }
 function colours.draw(ctx, ImGui, proj, cfg, may, timeline_ok)
   ImGui.SeparatorText(ctx, "Colour the project")
@@ -341,7 +341,7 @@ function colours.draw(ctx, ImGui, proj, cfg, may, timeline_ok)
     ImGui.EndCombo(ctx)
   end
   ImGui.SetItemTooltip(ctx, "Items on the tracks you may change, in the palette above. Goes to everyone.")
-  ImGui.TextDisabled(ctx, "Goes to everyone, and Ctrl+Z takes it back. Who's working still shows on top.")
+  ImGui.TextDisabled(ctx, "Goes to everyone, and " .. require("undo").key_name() .. " takes it back. Who's working still shows on top.")
 end
 function colours.run(proj, cfg, may, only_selected)
   local done, left = colours.apply(proj, cfg, cache.list, cache.plan, may, only_selected)

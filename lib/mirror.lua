@@ -1731,7 +1731,8 @@ function mirror.watch(proj, cfg, song, room, opts)
   end
   -- the first look at a project: which take plays is looked at again. (A part that arrived while the plug-in looked
   -- loaded stayed on silent notes, with its print sitting right there: laptop, 0.42.3)
-  if mirror.order_seen[order_key] == nil then
+  local first_here = mirror.order_seen[order_key] == nil
+  if first_here then
     mirror.first_look[order_key] = reaper.time_precise() + mirror.FX_LOAD_SECS
     local prints = require("prints")
     for _, o in ipairs(objs) do
@@ -1839,7 +1840,10 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- (whether track colours count here, per project: see below. "band2": 0.38 looks once more, as 0.36/0.37 kept each
   -- machine's own colour where it should have taken the band's: Bass I differed PC/laptop for good, 2026-11-01)
   local scheme = mirror.own_colours() and "own" or "band2"
-  local rescheme = select(2, reaper.GetProjExtState(proj, mirror.CSEC, "colours")) ~= scheme
+  -- (or SWS's rules may just have recoloured it: it's only switched off once a band song is in front, so a project opened or
+  -- brought forward with it on came in recoloured, and that went out as this person's change: laptop's Bass tracks, every reopen, 0.57.7)
+  local sws_ran = reaper.time_precise() - (tonumber(reaper.GetExtState(require("band").SECTION, "sws colours ran")) or -math.huge) < 5
+  local rescheme = first_here or sws_ran or select(2, reaper.GetProjExtState(proj, mirror.CSEC, "colours")) ~= scheme
   for _, o in ipairs(objs) do
     seen[o.oid] = true
     local ok, err = pcall(function()
@@ -1853,7 +1857,7 @@ function mirror.watch(proj, cfg, song, room, opts)
       if rescheme and o.kind == "track" and rev and h ~= "" then
         local ev = event_file(room_dir, evid)
         local function sans_colour(t) -- (through JSON both, as the event's was: REAPER's 0.0 reads back as 0)
-          return mirror.track_hash(band.json_decode(band.json_encode(t)), opts.local_mix, false)
+          return mirror.track_line(band.json_decode(band.json_encode(t)), opts.local_mix, false)
         end
         if ev and type(ev.state) == "table" and sans_colour(ev.state) == sans_colour(o.state) then
           if scheme ~= "own" and tonumber(ev.state.color) and not ev.state.autocolour and o.ptr
@@ -1862,7 +1866,8 @@ function mirror.watch(proj, cfg, song, room, opts)
             o.state = mirror.track_state(proj, o.ptr, opts.local_mix)
             o.hash = mirror.track_hash(o.state, opts.local_mix)
           end
-          remember(proj, o.oid, rev, o.hash, evid, kord); return
+          -- (somewhere else in the list too: that's for the look below, now the colour's out of it)
+          if (ev.state.after or "") == (o.state.after or "") then remember(proj, o.oid, rev, o.hash, evid, kord); return end
         end
       end
       -- only its place differs from the band's, and not by this person's doing: not a change, and the band's hash is
@@ -2154,6 +2159,7 @@ function mirror.watch(proj, cfg, song, room, opts)
     -- already there, 18 s on a rendered one: PC, 0.41.1)
     if made > 0 then mirror.more = true end
   end
+  local undeleted = {}
   -- gone here: deleted (sent, if allowed) or put back
   local i, gone = 0, {}
   while true do
@@ -2211,11 +2217,19 @@ function mirror.watch(proj, cfg, song, room, opts)
       else
         local who = sync.owner_of and sync.owner_of(name, last.pos)
         local to = propose(o, g.rev, who, name, last.pos, name, true)
-        put_back(o, g.rev, g.evid, { name = name, text = string.format("%s on %s isn't yours to delete: it's back%s",
-          o.kind == "track" and "that track" or "that item", name ~= "" and name or "an unnamed track", to and (", and suggested to " .. who) or "") })
+        if o.kind == "item" and not to then -- (one line for all of a track's: a deleted track's items each said so)
+          undeleted[name] = (undeleted[name] or 0) + 1
+          put_back(o, g.rev, g.evid, { name = name })
+        else
+          put_back(o, g.rev, g.evid, { name = name, text = string.format("%s on %s isn't yours to delete: it's back%s",
+            o.kind == "track" and "that track" or "that item", name ~= "" and name or "an unnamed track", to and (", and suggested to " .. who) or "") })
+        end
       end
     end)
     if not ok then say_once("err" .. g.oid, "mirror sync skipped " .. g.oid .. ": " .. tostring(err)) end
+  end
+  for name, n in pairs(undeleted) do
+    sync.put_back(string.format("%s on %s %s yours to delete: %s back", n == 1 and "that item" or (n .. " items"), name ~= "" and name or "an unnamed track", n == 1 and "isn't" or "aren't", n == 1 and "it's" or "they're"))
   end
   mirror.save_ids(proj)
   if rescheme and not mirror.more then reaper.SetProjExtState(proj, mirror.CSEC, "colours", scheme) end

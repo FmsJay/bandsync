@@ -1,7 +1,7 @@
 -- StudioSync shared library: settings, song folders, session.json, stems and take placement.
 -- Pure REAPER API, no extensions required (js_ReaScriptAPI only improves the folder picker).
 local json = require("json")
-local band = { VERSION = "0.57.6", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
+local band = { VERSION = "0.57.7", FORMAT = 1, SECTION = "BandSync", TAKES = "BandSync.takes" }
 
 -- 1 if version a is newer than b, -1 if older, 0 if equal ("0.10.0" > "0.9.1").
 function band.compare_versions(a, b)
@@ -26,16 +26,15 @@ function band.age(iso, now)
   return os.time(t) - os.time({ year = y, month = m, day = d, hour = H, min = M, sec = S, isdst = false })
 end
 
--- Warn once per run when a bandmate's file was made with a newer StudioSync than this one. Background loops
--- pass quiet = true: a modal dialog would pause every defer script until someone clicks it (it froze a
--- Live sync for 3 minutes), so they log instead and the Status window shows a banner.
+-- Say once per run when a bandmate's file was made with a newer StudioSync than this one: in the log, and Health shows it. Never a box: one
+-- pauses every defer script until someone clicks it (it froze a Live sync for 3 minutes), and came back at every open (Mac, 0.57.6).
 local warned = {}
-function band.check_version(theirs, what, quiet)
+function band.check_version(theirs, what)
   if theirs and band.compare_versions(theirs, band.VERSION) > 0 and not warned[theirs] then
     warned[theirs] = true
     local text = string.format("%s was made with StudioSync %s; you have %s. Run 'StudioSync - Update' so everyone stays compatible.",
       what, theirs, band.VERSION)
-    if quiet then band.log(text) else band.msg(text) end
+    band.log(text)
   end
 end
 
@@ -346,6 +345,7 @@ function band.sws_colours()
   if front and on then
     reaper.Main_OnCommand(id, 0)
     reaper.SetExtState(band.SECTION, "sws colour off", "1", true)
+    reaper.SetExtState(band.SECTION, "sws colours ran", tostring(reaper.time_precise()), false) -- (it may have just recoloured this tab: mirror.watch)
   elseif not front and ours then
     if not on then reaper.Main_OnCommand(id, 0) end
     reaper.DeleteExtState(band.SECTION, "sws colour off", true)

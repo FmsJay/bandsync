@@ -139,7 +139,8 @@ function pp.drums(ctx, ImGui, proj, cfg)
   local theme = require("theme")
   local dm = require("drummap")
   ImGui.SeparatorText(ctx, "Drum maps (this computer only)")
-  ImGui.TextDisabled(ctx, "Every drum plug-in has kick, snare and hats on its own notes. If a part was written for a different plug-in than yours, say which: the notes reach your plug-in on the right drums. Nobody else's project changes, and the part stays as written.")
+  local about = "Every drum plug-in has kick, snare and hats on its own notes. If a part was written for a different plug-in than yours, say which: the notes reach your plug-in on the right drums. Nobody else's project changes, and the part stays as written."
+  if select(2, ImGui.GetContentRegionAvail(ctx)) < 200 then ImGui.SetItemTooltip(ctx, about) else ImGui.TextDisabled(ctx, about) end -- (in a short docker it pushed the boxes out)
   local tr = reaper.GetSelectedTrack(proj, 0)
   if not tr then
     ImGui.TextColored(ctx, theme.YELLOW, "Select a drum track.")
@@ -272,13 +273,16 @@ function pp.draw(ctx, ImGui, proj, cfg)
     end
   end
   local tmap = pp.translations(cfg)
-  ImGui.TextDisabled(ctx, "Plug-ins in this project, who doesn't have them, and the studio's translation for them.")
+  local about = "Plug-ins in this project, who doesn't have them, and the studio's translation for them."
+  local short = select(2, ImGui.GetContentRegionAvail(ctx)) < 200
+  if not short then ImGui.TextDisabled(ctx, about) end
   if ImGui.Button(ctx, "Apply translations here") then
     band.log(pp.apply_here(proj, cfg) .. " translation(s) added on this machine (only here: they never go to the others)")
     used_at = -math.huge
   end
   ImGui.SetItemTooltip(ctx, "Adds the studio's translation right after each plug-in this machine doesn't have, so you hear something close. " ..
     "Only on this machine; the original stays in the project for everyone who has it.")
+  if short then ImGui.SameLine(ctx); ImGui.AlignTextToFramePadding(ctx); ImGui.TextDisabled(ctx, about) end -- (one row: the list has few enough as it is)
   local narrow = ImGui.GetContentRegionAvail(ctx) < 420 -- (four columns in 340 px read "Missing for" as "...": design review)
   if ImGui.BeginTable(ctx, "plugs", narrow and 3 or 4, ImGui.TableFlags_RowBg | ImGui.TableFlags_ScrollY) then
     ImGui.TableSetupScrollFreeze(ctx, 0, 1)

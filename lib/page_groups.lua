@@ -131,7 +131,7 @@ local function invite_button(env, g, id)
   local my_id = services.my_device_id()
   ImGui.BeginDisabled(ctx, not my_id)
   if ImGui.SmallButton(ctx, "Invite##" .. id) then
-    ImGui.SetClipboardText(ctx, services.invite_text(my_id, band.info(g.root)))
+    band.copy(services.invite_text(my_id, band.info(g.root)), ctx, ImGui)
     band.log("an invitation to " .. g.name .. " is on your clipboard: paste it to your collaborator. When they've run it, 'Let them in' shows on Home")
   end
   ImGui.EndDisabled(ctx)

@@ -82,6 +82,15 @@ function live.show_windows(proj, tr, i)
     if w then reaper.JS_Window_Show(w, "SHOW") end
   end
 end
+-- Disconnect as if by hand. Only a server going away shows ReaNINJAM's "Disconnected from host!" box, a MessageBox: on a Mac it holds every script, StudioSync's
+-- too, until someone presses OK (Mac, 0.58.20). A disconnect asked for leaves its status at "pre-connect", which shows none (its winclient.cpp, NJClient::GetStatus).
+function live.disconnect()
+  local con = live.window()
+  if not con or not reaper.JS_Window_FindChild(con, "Disconnect", true) then return false end
+  reaper.JS_WindowMessage_Post(con, "WM_COMMAND", 40002, 0, 0, 0) -- (ID_FILE_DISCONNECT)
+  return true
+end
+
 -- What ReaNINJAM says about its connection, for the panel: "connected to <server>", "connecting", or nil (it isn't there).
 function live.status()
   local con = live.window()

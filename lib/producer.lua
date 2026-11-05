@@ -254,6 +254,14 @@ function producer.tick(proj, cfg, b, peers)
     connecting[tab], play_tab = nil, false
   end
   local pressing = producer.who(proj) and producer.via(proj) == "ninjam"
+  -- its server's about to stop (services.stop_ninjam): off it by hand now, which shows no box, and back on by itself once it answers again
+  if ninjam_up[tab] or play_tab or pressing then
+    local d = band.read_json(require("setup").live_file(cfg, b)) or {}
+    if tonumber(d.stopping) and os.time() - d.stopping < 60 and (d.server or "") == reaper.GetExtState(band.SECTION, "ninjam host") and require("live").disconnect() then
+      band.log("the NINJAM server is stopping: disconnected")
+      connecting[tab] = { tries = 0, at = -math.huge, start = reaper.GetExtState(band.SECTION, "ninjam start " .. tab), done = true, next_look = reaper.time_precise() + 30 }
+    end
+  end
   if ninjam_up[tab] or play_tab or pressing then
     if not going then require("live").keep_hidden(proj); auto_connect(tab) end
   else

@@ -1292,7 +1292,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
       ImGui.TextDisabled(ctx, "SonoBus is ready on your master track (off: it sends nothing until you Connect).")
     end
     if sb_link then
-      if ImGui.SmallButton(ctx, "Copy join link") then ImGui.SetClipboardText(ctx, sb_link) end
+      if ImGui.SmallButton(ctx, "Copy join link") then band.copy(sb_link, ctx, ImGui) end
       ImGui.SetItemTooltip(ctx, "For joining from SonoBus's own app (outside REAPER): its paste button fills the studio in.")
     end
     return
@@ -1328,10 +1328,10 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
     end
     ImGui.SetItemTooltip(ctx, "Runs the server on this computer and points the studio at it. Handy when the computer that had it is staying off.")
     if srv_up then
-      ImGui.SameLine(ctx)
+      next_to("Stop server") -- (cut to "Stop ser" at 560 wide: Mac, 0.58.20)
       -- (the running check's answer is a few seconds old: it read "running" for 8 s after. PC, 0.58.18)
-      if ImGui.SmallButton(ctx, "Stop server") then services.stop_ninjam(); srv_up, srv_at = false, reaper.time_precise() + 10 end
-      ImGui.SetItemTooltip(ctx, "Stops the server on this computer: anyone connected to it drops off. It otherwise runs until the computer restarts. It starts again when someone needs it.")
+      if ImGui.SmallButton(ctx, "Stop server") then services.stop_ninjam(lfile); srv_up, srv_at = false, reaper.time_precise() + 15 end
+      ImGui.SetItemTooltip(ctx, "Stops the server on this computer, 10 s after everyone on it has been told to disconnect. It otherwise runs until the computer restarts. It starts again when someone needs it.")
     end
   end
   local _, s = ImGui.Checkbox(ctx, "Send my audio (my whole mix)", live_send)
@@ -2012,7 +2012,7 @@ local function maint_health()
         ImGui.SameLine(ctx)
         ImGui.TextWrapped(ctx, ok and r[4] or r[5])
         if not ok and r.copy then
-          if ImGui.SmallButton(ctx, "Copy the line") then ImGui.SetClipboardText(ctx, r.copy) end
+          if ImGui.SmallButton(ctx, "Copy the line") then band.copy(r.copy, ctx, ImGui) end
           ImGui.SetItemTooltip(ctx, r.copy)
           ImGui.SameLine(ctx)
         end
@@ -2103,7 +2103,7 @@ local function home_who()
   local my_id = services.my_device_id()
   ImGui.BeginDisabled(ctx, not my_id)
   if ImGui.SmallButton(ctx, "Invite a collaborator") then
-    ImGui.SetClipboardText(ctx, services.invite_text(my_id, band.info(cfg.root)))
+    band.copy(services.invite_text(my_id, band.info(cfg.root)), ctx, ImGui)
     band.log("an invitation is on your clipboard: paste it to your collaborator (a message, an email). It installs StudioSync " ..
       "already paired with this computer; then press 'Let them in' here when they're done.")
   end
@@ -2423,7 +2423,7 @@ local function page_setup()
     -- StudioSync's own log, newest first (REAPER's console only shows it while open)
     if ImGui.SmallButton(ctx, "Clear") then reaper.DeleteExtState(band.SECTION, band.LOG_KEY, false) end
     ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Copy") then ImGui.SetClipboardText(ctx, table.concat(band.activity(), "\n")) end
+    if ImGui.SmallButton(ctx, "Copy") then band.copy(table.concat(band.activity(), "\n"), ctx, ImGui) end
     ImGui.SetItemTooltip(ctx, "Copy the whole log, to paste it in a message when something went wrong.")
     if ImGui.BeginChild(ctx, "console", 0, 0, ImGui.ChildFlags_Borders) then
       for _, l in ipairs(band.activity()) do ImGui.TextWrapped(ctx, l) end
@@ -2988,7 +2988,7 @@ local function frame()
   ImGui.SetCursorPosY(ctx, ImGui.GetCursorPosY(ctx) + 10); ImGui.Indent(ctx, 16) -- (the window has no padding of its own)
   if err then
     ImGui.TextColored(ctx, RED, "Something went wrong in the panel: " .. err)
-    if ImGui.SmallButton(ctx, "Copy it") then ImGui.SetClipboardText(ctx, "StudioSync " .. band.VERSION .. ": " .. err) end
+    if ImGui.SmallButton(ctx, "Copy it") then band.copy("StudioSync " .. band.VERSION .. ": " .. err, ctx, ImGui) end
     ImGui.SetItemTooltip(ctx, "Copy the message, to send it to whoever looks after StudioSync.")
     ImGui.SameLine(ctx)
     if ImGui.SmallButton(ctx, "Try again") then err, last = nil, 0 end

@@ -11,6 +11,10 @@ password. Windows or macOS may ask once whether to let it accept connections: al
 REAPER's ReaNINJAM plug-in connects to it. ReaNINJAM runs with its window out of sight and its status in StudioSync's panel; **Show it** on
 the Play page brings the window up.
 
+**Stop server** on the Play page stops it, 10 s after telling everyone on it to disconnect. That matters on a Mac: when a
+server simply goes away (its computer switched off, say), ReaNINJAM shows "Disconnected from host!", and on a Mac every
+script in REAPER, StudioSync's too, waits until someone presses its OK. A disconnect StudioSync asks for shows no box.
+
 It keeps running when REAPER closes, from a copy in StudioSync's own folder (`<resource>/StudioSync/ninjam`), so an update
 never has to replace a running program.
 

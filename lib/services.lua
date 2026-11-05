@@ -564,10 +564,20 @@ function services.firewall_knows_ninjam()
   local out = background("fw", [[powershell -NoProfile -Command "Get-NetFirewallApplicationFilter | Where-Object Program -like '*ninjamsrv*' | Get-NetFirewallRule | ForEach-Object Action"]], 60)
   return out == nil or (out:find("Allow", 1, true) ~= nil and not out:find("Block", 1, true))
 end
--- Nobody's using it, say: it otherwise runs until the computer restarts.
-function services.stop_ninjam()
-  reaper.ExecProcess(WIN and "taskkill /F /IM ninjamsrv.exe" or "/usr/bin/pkill -x ninjamsrv", 5000)
-  band.log("stopped the NINJAM server on this computer")
+-- Nobody's using it, say: it otherwise runs until the computer restarts. Everyone on it is told first (live.json's `stopping`) and disconnects by hand, which shows
+-- no box: a server just gone shows ReaNINJAM's, and on a Mac that held all of StudioSync until someone pressed OK (lib/live.lua). It stops 10 s later.
+function services.stop_ninjam(lfile)
+  local data = lfile and band.read_json(lfile)
+  if data then data.stopping = os.time(); band.write_json(lfile, data) end
+  require("live").disconnect()
+  local t0 = reaper.time_precise()
+  local function later()
+    if reaper.time_precise() - t0 < 10 then return reaper.defer(later) end
+    reaper.ExecProcess(WIN and "taskkill /F /IM ninjamsrv.exe" or "/usr/bin/pkill -x ninjamsrv", 5000)
+    band.log("stopped the NINJAM server on this computer")
+  end
+  band.log("stopping the NINJAM server on this computer in 10 s: whoever's on it disconnects first")
+  reaper.defer(later)
 end
 
 -- This song's NINJAM server, "name:port", or nil + why. One computer runs it: whichever needed it first and, if that one's gone, the next to ask for it.
@@ -594,7 +604,7 @@ function services.ninjam_for(cfg, lfile, may_host, force)
   local now = addr .. ":2049"
   reaper.SetExtState(band.SECTION, "ninjam hosting", now, false)
   if server ~= now or not mine then
-    data.server, data.by = now, cfg.user
+    data.server, data.by, data.stopping = now, cfg.user, nil
     band.write_json(lfile, data)
     band.log("this song's NINJAM server now runs on this computer: " .. now)
   end

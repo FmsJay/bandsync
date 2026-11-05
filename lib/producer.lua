@@ -101,7 +101,7 @@ local function ninjam_on(proj, cfg, b, send)
   return true
 end
 
--- Connect presses itself, once a Produce: 3 tries 10 s apart (the server may still be starting), then it's left to the person. Disconnecting by hand stays disconnected.
+-- Connect presses itself: 3 tries 10 s apart (the server may still be starting), then it's left to the person. Lost later, it tries again, whatever lost it.
 local connecting = {}
 local function auto_connect(tab)
   local c = connecting[tab]
@@ -112,6 +112,10 @@ local function auto_connect(tab)
     if c.said ~= said then c.said = said; band.log("NINJAM server: " .. tostring(said)) end
     if c.up then c.done, c.up, c.tries = false, false, 0 end
     return
+  end
+  if c.done and c.up and not live.connect(false) then -- (lost, with no box to say so: a Mac's alert can't be seen from here)
+    c.done, c.up, c.tries = false, false, 0
+    band.log("lost the NINJAM server: connecting again")
   end
   if c.done then return end
   local may = c.tries < 3 and reaper.time_precise() - c.at > 10
@@ -219,7 +223,12 @@ function producer.tick(proj, cfg, b, peers)
     else band.log("nobody's producing you now") end
   end
   local going = reaper.GetExtState(band.SECTION, "ninjam off " .. tab) ~= ""
-  if ninjam_up[tab] or (producer.who(proj) and producer.via(proj) == "ninjam") then
+  local play_tab = reaper.GetExtState(band.SECTION, "ninjam connect " .. tab) ~= "" -- (the Play tab's Connect)
+  if play_tab and not require("live").fx(proj, false) then
+    reaper.DeleteExtState(band.SECTION, "ninjam connect " .. tab, false)
+    connecting[tab], play_tab = nil, false
+  end
+  if ninjam_up[tab] or play_tab or (producer.who(proj) and producer.via(proj) == "ninjam") then
     if not going then auto_connect(tab) end
   elseif going then ninjam_off(proj) end
   if now ~= "" and through_ninjam then

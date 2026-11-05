@@ -23,7 +23,7 @@ local function background(name, cmd, every)
     -- shortcut: written in place (these outputs are a few hundred bytes); a half-written read just looks like "no answer" once
     if WIN then -- through a hidden-window runner: `cmd /c` without waiting flashes a console window (seen 0.9.7)
       local bat, vbs = TMP .. "/bandsync-" .. name .. ".cmd", TMP .. "/bandsync-hidden.vbs"
-      band.write_atomic(bat, string.format('@%s > "%s" 2>nul\r\n', cmd, file))
+      pcall(band.write_atomic, bat, string.format('@%s > "%s" 2>nul\r\n', cmd, file)) -- (its last run may still hold it, from another script: the same words are there already)
       if not reaper.file_exists(vbs) then band.write_atomic(vbs, 'CreateObject("WScript.Shell").Run """" & WScript.Arguments(0) & """", 0, False\r\n') end
       reaper.ExecProcess(string.format('wscript.exe //B //Nologo "%s" "%s"', vbs, bat), -1)
     else -- through a script file too: macOS's ExecProcess doesn't honour \" inside a quoted argument, so any command
@@ -468,6 +468,18 @@ local function tailscale_exe()
     "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale", "/usr/bin/tailscale" })
 end
 function services.tailscale_installed() return tailscale_exe() ~= nil end
+-- Running and signed in? Asked at most every 20 s: it's for a Health row. Pure part: services.tailscale_running_in.
+function services.tailscale_running_in(json) return json:find('"BackendState":%s*"Running"') ~= nil end
+local ts_at, ts_up = -math.huge, false
+function services.tailscale_up()
+  local exe = tailscale_exe()
+  if not exe then return false end
+  if reaper.time_precise() - ts_at > 20 then
+    ts_at = reaper.time_precise()
+    ts_up = services.tailscale_running_in(reaper.ExecProcess(q(exe) .. " status --json --peers=false", 5000) or "")
+  end
+  return ts_up
+end
 -- From `tailscale status --json --peers=false`: this machine's name, if the tailnet's names work ("pc.tail1234.ts.net", no last dot).
 function services.tailscale_name_in(json)
   if not json:find('"MagicDNSEnabled":%s*true') then return nil end

@@ -34,6 +34,7 @@ local function say_problem(words)
   end
 end
 local st_at, st_up = -math.huge, true
+local BEHIND, loop_began = 8, reaper.time_precise()
 local function loop()
   if reaper.time_precise() - at < 2 then return reaper.defer(loop) end -- every 2 s is plenty
   at = reaper.time_precise()
@@ -101,6 +102,13 @@ local function loop()
     if not st_up then problem = "Syncthing isn't running on this computer: nothing reaches the studio or comes in. Restart REAPER, or start Syncthing." end
   end
   local front = reaper.EnumProjects(-1)
+  local started_behind, running_behind = false, 0
+  for i = 0, 512 do
+    local p = reaper.EnumProjects(i)
+    if not p then break end
+    local beat = p ~= front and tonumber(reaper.GetExtState(band.SECTION, "live " .. tostring(p)))
+    if beat and reaper.time_precise() - beat < 30 then running_behind = running_behind + 1 end
+  end
   for i = 0, 512 do
     local proj, fn = reaper.EnumProjects(i)
     if not proj then break end
@@ -110,9 +118,9 @@ local function loop()
       local beat = tonumber(reaper.GetExtState(band.SECTION, "live " .. key))
       -- (30 s, not 5: a dialog left open a few seconds pauses every script, and isn't a Live sync that stopped)
       local alive = beat and reaper.time_precise() - beat < 30
-      -- Only the tab in front is (re)started: starting a background tab meant flipping it to the front, and with more
-      -- StudioSync tabs open than Live sync has slots (17) the flipping never stopped and REAPER couldn't be clicked
-      -- (PC, 2026-10-30, 38 tabs). A background tab starts when you switch to it. Three tries, then it says so once.
+      -- The tab in front first, three tries, then it says so once. Tabs behind it follow, one a look and none of them brought forward: flipping
+      -- them to the front never stopped with 38 tabs open and REAPER couldn't be clicked (PC, 2026-10-30), and left alone, their bandmates saw
+      -- this person as offline until they switched to the tab (Mac, 0.57.6). One try each, and at most BEHIND of them.
       local n = tried[key] or { at = -1e9, n = 0 }
       tried[key] = n
       if alive then n.n = 0
@@ -121,6 +129,12 @@ local function loop()
         band.log("starting Live sync again for " .. fn)
         if not band.start_live(dir) then band.log("Live sync has no free slot for " .. fn .. ": close some StudioSync tabs (17 at most run at once)") end
         if n.n == 3 then band.log("Live sync didn't stay running for " .. fn .. " after 3 tries: press Start in the StudioSync panel") end
+      elseif proj ~= front and n.n == 0 and not started_behind and running_behind < BEHIND and reaper.time_precise() - loop_began > 20 then
+        n.at, n.n, started_behind = reaper.time_precise(), 1, true
+        reaper.SetExtState(band.SECTION, "live start for", key, false)
+        band.log("starting Live sync again for " .. fn .. " (behind the tab in front)")
+        band.start_live(dir)
+        reaper.DeleteExtState(band.SECTION, "live start for", false)
       elseif proj == front and n.n >= 3 then
         problem = problem or "Live sync stopped in this project and wouldn't start again: your changes aren't going out. Open the panel and press Start."
       end

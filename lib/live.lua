@@ -55,10 +55,10 @@ function live.connect(open)
     -- (it only reads its ini the first time it loads in a REAPER session: a server that's moved since would never be found)
     local host, edit = reaper.GetExtState(band.SECTION, "ninjam host"), reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(box, 1025)
     if host ~= "" and edit then reaper.JS_Window_SetTitle(edit, host) end
-    reaper.JS_WindowMessage_Post(box, "WM_COMMAND", 1, 0, 0, 0)
+    reaper.JS_WindowMessage_Send(box, "WM_COMMAND", 1, 0, 0, 0) -- (a posted one never reaches a box on a Mac: it sat there for good, 0.57.7)
     return "pressing"
   end
-  if live.error_box() then return "error" end -- (its Connect does nothing until that's answered)
+  if live.error_box() then return "error" end -- (its Connect does nothing until that's answered, on Windows)
   local con = reaper.JS_Window_Find("ReaNINJAM", true)
   if not con then return nil end
   if reaper.JS_Window_FindChild(con, "Disconnect", true) then return "connected" end
@@ -68,21 +68,24 @@ function live.connect(open)
   end
 end
 
-function live.error_box() -- ("Disconnected from host!" is a Notice; "can't connect" an Error)
-  return reaper.JS_Window_Find and (reaper.JS_Window_Find("NINJAM Error", true) or reaper.JS_Window_Find("NINJAM Notice", true))
+-- ("Disconnected from host!" is a Notice; "can't connect" an Error.) Windows only: on a Mac they're the system's alerts. Find goes on returning one
+-- that's gone, nothing tells a live one from it, no message closes it, Connect still works under it, and taking the plug-in off under it didn't crash.
+function live.error_box()
+  if not reaper.JS_Window_Find or not reaper.GetOS():find("^Win") then return nil end
+  return reaper.JS_Window_Find("NINJAM Error", true) or reaper.JS_Window_Find("NINJAM Notice", true)
 end
 -- ReaNINJAM's own boxes wait inside its window's code, and scripts keep running under them. Take the plug-in off then, and when the box
 -- closes that code carries on with a client that's gone: REAPER crashes, every time (reaninjam.dll, 7.84). So nothing removes it while one's up.
--- Closes them, and says what the error said. -> the error's words or true if there was a box, else nil. (Windows: on a Mac no script runs under them.)
+-- Closes them, and says what the error said. -> the error's words or true if there was a box, else nil.
 function live.close_boxes()
   if not reaper.JS_WindowMessage_Post then return nil end
   local box, said = reaper.JS_Window_Find("NINJAM Connection Configuration", true), nil
-  if box then reaper.JS_WindowMessage_Post(box, "WM_CLOSE", 0, 0, 0, 0); said = true end
+  if box then reaper.JS_WindowMessage_Send(box, "WM_CLOSE", 0, 0, 0, 0); said = true end
   local err = live.error_box()
   if err then
     local text = reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(err, 65535)
     said = text and reaper.JS_Window_GetTitle(text) or true
-    reaper.JS_WindowMessage_Post(err, "WM_CLOSE", 0, 0, 0, 0)
+    reaper.JS_WindowMessage_Send(err, "WM_CLOSE", 0, 0, 0, 0)
   end
   return said
 end

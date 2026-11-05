@@ -17,6 +17,17 @@ local cfg = band.settings()
 if not cfg then return end
 local proj = BANDSYNC_LIVE_PROJ or reaper.EnumProjects(-1) -- (set when an update reloads us: our tab, not the front one)
 BANDSYNC_LIVE_PROJ = nil
+do -- (Autostart asks for a tab behind the front one by name: starting it never has to bring it forward)
+  local asked = reaper.GetExtState(band.SECTION, "live start for")
+  if asked ~= "" then
+    reaper.DeleteExtState(band.SECTION, "live start for", false)
+    for i = 0, 512 do
+      local p = reaper.EnumProjects(i)
+      if not p then break end
+      if tostring(p) == asked then proj = p; break end
+    end
+  end
+end
 -- A side-by-side stop fires when our playhead reaches the leader's stop position, on two readings in a row: the
 -- play position can read a few hundred ms off for a moment (seen on the laptop: 6.418 -> 6.112 -> 6.446 in 2 ms).
 local past = 0
@@ -278,7 +289,9 @@ local function poll()
     -- (every second while a print renders in the background: it goes in once done, not up to 10 s later: laptop, 0.40.0)
     -- (and no oftener than a look's own time allows: at 2000 items each takes 1 s, which would be REAPER's whole time)
     local waiting = now - mirror_at > math.max(1, mirror_took * 5) and (require("bgrender").waiting() or require("prints").waiting() or require("mirror").unsettled) -- (or a part waiting its turn, or a plug-in chain to settle)
-    if (cc ~= mirror_cc or mirror_due or waiting or now - mirror_at > 10) and not mouse_down() then
+    -- (at 3,000 items a look holds REAPER up for over a second, even with nothing happening: at most a fifth of its time, unless there's more to send)
+    local room_to_look = mirror_due or now - mirror_at > mirror_took * 5
+    if room_to_look and (cc ~= mirror_cc or mirror_due or waiting or now - mirror_at > math.max(10, mirror_took * 30)) and not mouse_down() then
       local presence = require("presence")
       local held = function(oid) return presence.holder(presence.peers(cfg, b.song, b.room), oid) end -- (edit holds)
       local here = {} -- (bandmates in the song now: one of them may print what its author can't, lib/prints.lua)
@@ -747,7 +760,16 @@ tick = function()
     BANDSYNC_LIVE_PROJ = proj
     return dofile(dir .. "/StudioSync - Live sync.lua")
   end
-  if reaper.time_precise() - sws_at > 1 then sws_at = reaper.time_precise(); pcall(band.sws_colours) end -- (lib/band.lua)
+  if reaper.time_precise() - sws_at > 1 then
+    sws_at = reaper.time_precise()
+    pcall(band.sws_colours) -- (lib/band.lua)
+    pcall(require("mirror").note_open_fx, proj)
+    -- (with no audio device REAPER builds no peaks by itself: a bandmate's take stayed a blank box: Mac, 0.57.6)
+    if sync.landed_media and reaper.Audio_IsRunning() ~= 1 and reaper.EnumProjects(-1) == proj then
+      sync.landed_media = nil
+      reaper.Main_OnCommand(40047, 0) -- Peaks: Build any missing peaks
+    end
+  end
   local ok, go = pcall(tick_body)
   if not ok then
     if reaper.time_precise() - said_at > 30 then said_at = reaper.time_precise(); band.log("live sync error: " .. tostring(go)) end

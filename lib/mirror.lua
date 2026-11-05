@@ -1385,6 +1385,7 @@ function mirror.apply(proj, ev, media_dir, local_mix)
     -- what was sent (Superior Drummer on the laptop), so fingerprints never agreed and whoever claimed the track re-rendered
     -- every part. What it reads as here, and for a while as it finishes loading, isn't a change.
     mirror.fx_readback[key], mirror.fx_loading[key], mirror.fx_load_knobs[key] = h, reaper.time_precise() + mirror.FX_LOAD_SECS, mirror.fx_params(tr)
+    mirror.fx_quiet[key] = mirror.fx_load_knobs[key]
     if ev.hash then h = ev.hash end
     -- (a part that arrived before its plug-ins chose its take with nothing missing, and stayed on silent notes: laptop, 0.42.4)
     local prints = require("prints")
@@ -1497,6 +1498,7 @@ function mirror.receive(proj, ev, media_dir, local_mix, me)
   local notes_before = midiview and midiview.notes(mirror.find(proj, "item", ev.oid))
   local ok, h = mirror.apply(proj, ev, media_dir, local_mix)
   if ok then remember(proj, ev.oid, ev.rev, h, ev.id, order) end
+  if ok and ev.obj == "item" then require("sync").landed_media = true end -- (Live sync builds its peaks, if nothing else will)
   if ok and midiview then midiview.show(proj, mirror.find(proj, "item", ev.oid), notes_before) end
   -- applied, but it isn't what they have: the projects differ (only when made the same way: a change from an older
   -- StudioSync hashed fewer of a track's settings, so it always reads as different; the laptop saw 4 on its first open)
@@ -1554,6 +1556,24 @@ mirror.FX_LOAD_SECS = 60 -- how long after landing or opening a chain's data may
 mirror.fx_readback = mirror.fx_readback or {} -- chain -> what its hash reads as here, now the band's has landed
 mirror.fx_loading = mirror.fx_loading or {} -- chain -> until when it may be still loading
 mirror.fx_load_knobs = mirror.fx_load_knobs or {} -- chain -> its knobs at the start of that
+-- When each track last had a plug-in window open, looked at once a second: a change inside a plug-in's own window often moves no knob.
+mirror.fx_open_at = {}
+mirror.cc_seen = {}
+mirror.fx_quiet = mirror.fx_quiet or {}
+function mirror.note_open_fx(proj)
+  local now = reaper.time_precise()
+  for t = 0, reaper.CountTracks(proj) - 1 do
+    local tr = reaper.GetTrack(proj, t)
+    local open = reaper.TrackFX_GetChainVisible(tr) ~= -1
+    for i = 0, reaper.TrackFX_GetCount(tr) - 1 do open = open or reaper.TrackFX_GetOpen(tr, i) end
+    if open then mirror.fx_open_at[tostring(tr)] = now end
+  end
+end
+function mirror.fx_was_open(tr)
+  local open = reaper.TrackFX_GetChainVisible(tr) ~= -1
+  for i = 0, reaper.TrackFX_GetCount(tr) - 1 do open = open or reaper.TrackFX_GetOpen(tr, i) end
+  return open or reaper.time_precise() - (mirror.fx_open_at[tostring(tr)] or -math.huge) < 60
+end
 mirror.first_look = mirror.first_look or {} -- project -> until when its chains may be still loading after it opened
 mirror.order_seen = mirror.order_seen or {} -- project -> its tracks' order at the last look
 mirror.order_band = mirror.order_band or {} -- project -> a band's track landed since the last look
@@ -1718,6 +1738,12 @@ function mirror.watch(proj, cfg, song, room, opts)
   -- every 2 s for good (laptop, undoing bandmates' new tracks, 0.42.3). So a track that differs only by its place is a
   -- change only on the look where the list has changed and nothing from the band landed since the last look.
   local order_key, order = tostring(proj), {}
+  do -- (a file opened again in the same tab keeps the tab's address, and Live sync runs on through it: its tracks are all new. Then it's a first look.
+    -- Deleting the first track reads the same: a first look does no harm)
+    local had = mirror.cc_seen[order_key]
+    if had and not reaper.ValidatePtr2(proj, had, "MediaTrack*") then mirror.order_seen[order_key] = nil; sync.timeline_looked[proj] = nil end
+    mirror.cc_seen[order_key] = reaper.GetTrack(proj, 0)
+  end
   for _, o in ipairs(objs) do if o.kind == "track" then order[#order + 1] = o.oid end end
   order = table.concat(order, ",")
   local moved_here = mirror.order_seen[order_key] ~= nil and mirror.order_seen[order_key] ~= order and not mirror.order_band[order_key]
@@ -1920,6 +1946,21 @@ function mirror.watch(proj, cfg, song, room, opts)
           end
         end
       end
+      -- its data changed, but no window of it has been open, no knob moved and the plug-ins are the same: nobody did that. Superior Drummer writes
+      -- different data after every playthrough, which claimed the Drums, went to everyone and re-printed every item, each pass (PC, 0.57.5)
+      -- (its knobs as of the end of its loading, or of the last change that went out or landed)
+      if o.kind == "fx" and o.ptr and (mirror.fx_quiet[rk] == nil or reaper.time_precise() < math.max(mirror.fx_loading[rk] or 0, mirror.first_look[tostring(proj)] or 0)) then
+        mirror.fx_quiet[rk] = mirror.fx_params(o.ptr)
+      end
+      if o.kind == "fx" and rev and h ~= "" and h ~= o.hash and o.ptr and not mirror.fx_was_open(o.ptr) and mirror.fx_quiet[rk] == mirror.fx_params(o.ptr) then
+        local ev = event_file(room_dir, evid)
+        local function names(chain)
+          local t = {}
+          for _, x in ipairs(mirror.plugin_blocks(chain_lines(chain))) do t[#t + 1] = tostring(x.key) end
+          return table.concat(t, "\0")
+        end
+        if ev and type(ev.state) == "string" and names(ev.state) == names(o.state) then mirror.fx_readback[rk] = o.hash; o.hash = h end
+      end
       -- a chain with a restless plug-in: the hash can't see its knobs move, so they're looked at here
       local knobs_moved, knobs
       if o.kind == "fx" and h == o.hash and mirror.restless_in(o.state) then
@@ -2050,6 +2091,7 @@ function mirror.watch(proj, cfg, song, room, opts)
           if ev.restless then mirror.fx_knobs[rk] = knobs or mirror.fx_params(o.ptr) end
         end
         local id = sync.post(cfg, song, room, ev)
+        if o.kind == "fx" and o.ptr then mirror.fx_quiet[rk] = mirror.fx_params(o.ptr) end -- (what it's changed from, next time)
         remember(proj, o.oid, ev.rev, o.hash, id, (ev.time or "") .. me)
         if name ~= "" and not ev.auto and select(2, reaper.GetProjExtState(proj, band.SECTION, "last_track")) ~= name then
           reaper.SetProjExtState(proj, band.SECTION, "last_track", name) -- (what they're working in: Who's here)

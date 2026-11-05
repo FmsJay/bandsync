@@ -88,14 +88,14 @@ end
 -- Go to a room: its tab if open here; else the tab it had here before (its file, reopened); else a new tab made
 -- from this machine's tab of the room it came from, saved next to it (same media paths, nothing copied).
 -- `from` is the tab asking (any room of the song). Returns the tab, or nil + why. Doesn't start Live sync there.
-function rooms.open(from, cfg, b, name)
+function rooms.open(from, cfg, b, name, copy_dir)
   local p = rooms.tab(b.song, name)
   if p then reaper.SelectProjectInstance(p); return p end
   local m = rooms.meta(cfg, b.song, name)
-  local src = m and m.parent and rooms.tab(b.song, m.parent) or from
+  local src = not copy_dir and m and m.parent and rooms.tab(b.song, m.parent) or from -- (copy_dir: made from `from` itself, a backup, wherever the room's own tab is)
   local src_file = file_of(src) or ""
   if src_file == "" then return nil, "Save this project first." end
-  local path = src_file:gsub("\\", "/"):match("^(.*)/") .. "/" .. b.song .. " - " .. name:gsub("[^%w%-_ ]", "") .. " (room).rpp"
+  local path = (copy_dir or src_file:gsub("\\", "/"):match("^(.*)/")) .. "/" .. b.song .. " - " .. name:gsub("[^%w%-_ ]", "") .. " (room).rpp"
   local fresh = not reaper.file_exists(path)
   if fresh then reaper.Main_SaveProjectEx(src, path, 0) end -- a copy; the open project keeps its own file
   reaper.Main_OnCommand(40859, 0) -- File: New project tab
@@ -124,8 +124,8 @@ function rooms.bad_name(name)
   end
 end
 
--- Make a side room from the room in tab `proj` (binding b), as it is now, and go there. You drive it.
-function rooms.create(proj, cfg, b, name)
+-- Make a side room from the room in tab `proj` (binding b), as it is now, and go there. You drive it. copy_dir: see rooms.open.
+function rooms.create(proj, cfg, b, name, copy_dir)
   name = (name or ""):match("^%s*(.-)%s*$")
   local err = rooms.bad_name(name)
   if err then return nil, err end
@@ -138,7 +138,41 @@ function rooms.create(proj, cfg, b, name)
   sync.set_driver(cfg, b.song, name, cfg.user)
   band.write_json(dir .. "/room.json", { parent = b.room, by = cfg.user, time = os.date("!%Y-%m-%dT%H:%M:%SZ"), base = base,
     tempo = band.capture_tempo(proj), markers = band.capture_markers(proj) }) -- (its history starts here: sync.restore_timeline)
-  return rooms.open(proj, cfg, b, name)
+  return rooms.open(proj, cfg, b, name, copy_dir)
+end
+
+-- ---- a backup or autosave opened by hand --------------------------------------------------------------------
+-- It carries the song's binding but isn't this computer's project for it. Started as it was, the studio's newer versions came in over it and
+-- what nobody had went straight out to everyone, with no say (James, 0.57.7). So it isn't synced: it can become a side room, or be looked at.
+-- As a side room its unsent edits go out to that room alone, which is what Bring into main then offers; anything older is there to Send selected.
+function rooms.own_files(cfg, song) -- this computer's usual places for the song, lower case with forward slashes. Pure but for the settings.
+  local here = (band.home() .. "/" .. song .. "/"):gsub("\\", "/"):lower()
+  return { here .. song:lower() .. ".rpp", here .. song:lower() .. " - " .. tostring(cfg.user):lower() .. ".rpp" }
+end
+function rooms.is_copy(proj, cfg, b)
+  if not b or b.role == "solo" then return false end
+  local f = file_of(proj) or ""
+  if f == "" or reaper.GetExtState(band.SECTION, band.autosync_key(f)) == "1" or reaper.GetExtState(band.SECTION, "autosync " .. f:lower()) == "1" then return false end
+  local low = f:gsub("\\", "/"):lower()
+  if low:find(" (room).rpp", 1, true) then return false end
+  if low == reaper.GetExtState(band.SECTION, "project file " .. b.song):gsub("\\", "/"):lower() then return false end
+  for _, own in ipairs(rooms.own_files(cfg, b.song)) do if low == own then return false end end
+  return true
+end
+function rooms.from_backup(proj, cfg, b)
+  local stem = "backup " .. os.date("%m%d-%H%M")
+  local name, n = stem, 1
+  local taken = {}
+  for _, r in ipairs(rooms.list(cfg, b.song)) do taken[r.name:lower()] = true end
+  while taken[name:lower()] do n = n + 1; name = stem .. " " .. n end
+  local file = reaper.GetExtState(band.SECTION, "project file " .. b.song):gsub("\\", "/"):match("^(.*)/")
+  local dir = file or (band.home() .. "/" .. b.song):gsub("\\", "/")
+  reaper.RecursiveCreateDirectory(dir, 0)
+  local from = { }
+  for k, v in pairs(b) do from[k] = v end
+  from.room = from.room or "main"
+  local p, why = rooms.create(proj, cfg, from, name, dir)
+  return p, why or name
 end
 
 -- ---- come see ---------------------------------------------------------------------------------------------

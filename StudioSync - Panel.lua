@@ -486,7 +486,7 @@ local function section_sync()
     ImGui.TextColored(ctx, YELLOW, "this project is open and syncing in another tab: work there")
   elseif not running then -- (no Stop: a StudioSync project always syncs, or the band's copies drift apart)
     ImGui.SameLine(ctx)
-    if ImGui.SmallButton(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
+    if not require("rooms").is_copy(proj, cfg, b) and ImGui.SmallButton(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
   end
   if not tools.autostart_on(dir) and not tools.autostart_tried then -- always on: StudioSync projects start Live sync with REAPER
     tools.autostart_tried = true
@@ -1345,11 +1345,14 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
       local ok, e = live.configure(cfg, live_server, live_mode, live_send, sdir)
       if not ok then band.msg(e) else
         local m2, i2 = live.fx(proj, true)
-        if m2 then reaper.TrackFX_Show(m2, i2, 3) else band.msg("Couldn't add ReaNINJAM to the master track.") end
+        if m2 then
+          reaper.TrackFX_Show(m2, i2, 3)
+          reaper.SetExtState(band.SECTION, "ninjam connect " .. tostring(proj), "1", false) -- (Live sync presses Connect: lib/producer.lua)
+        else band.msg("Couldn't add ReaNINJAM to the master track.") end
       end
     end
     ImGui.EndDisabled(ctx)
-    ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in: click Connect in its window.")
+    ImGui.SetItemTooltip(ctx, "Adds ReaNINJAM to your master track with everything filled in, and connects it.")
   else
     -- (it may sit on any track: say which)
     local where = master == reaper.GetMasterTrack(proj) and "your master track" or ("track '" .. select(2, reaper.GetTrackName(master)) .. "'")
@@ -1828,7 +1831,7 @@ local function layout(parts, bare) -- { { fn, width } }; bare: what's in them is
   local avail, h = ImGui.GetContentRegionAvail(ctx)
   local total = 0
   for _, part in ipairs(parts) do total = total + (part[2] or 340) end
-  local scale = math.max(1, (avail - 10 * (#parts - 1)) / total) -- (fixed widths left the right of a wide docker empty: design review)
+  local scale = math.max(0.72, (avail - 10 * (#parts - 1)) / total) -- (fixed widths left the right of a wide docker empty: design review; a narrower one had them run off the right: Mac, 0.57.7)
   for i, part in ipairs(parts) do
     if i > 1 then ImGui.SameLine(ctx, 0, 10) end
     ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, theme.COLUMN)
@@ -1913,7 +1916,7 @@ local function maint_rows()
       return { "keys", #undo.keys_left(dir) == 0, "yellow", undo.key_name() .. " never rolls back a collaborator's work",
         undo.key_name() .. " can roll back a collaborator's work: it isn't set to StudioSync's Undo yet." }
     end)(),
-    { "tailscale", services.tailscale_installed(), "yellow", "Tailscale is installed", "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
+    { "tailscale", services.tailscale_up(), "yellow", "Tailscale is on", services.tailscale_installed() and "Tailscale is off or not signed in: open it and turn it on. The NINJAM route needs it." or "Tailscale isn't installed: run StudioSync's installer again, or get it from tailscale.com/download." },
   }
   if ui.play_shown() then
     rows[#rows + 1] = { "server", s.server, "yellow", "Play along server address is set", services.ninjam_dir() ~= "" and "Play along server address not set (needs Tailscale signed in)."
@@ -2366,6 +2369,7 @@ local function page_setup()
   -- (the tabs stay put: only what's under them scrolls)
   local function body(id, fn)
     if ImGui.BeginChild(ctx, id, 0, 0, 0, wide and ImGui.WindowFlags_HorizontalScrollbar or 0) then
+      if ImGui.IsWindowAppearing(ctx) then ImGui.SetScrollY(ctx, 0) end -- (the red row and the newest lines were out of sight, where it had last been left: Mac, 0.57.7)
       ImGui.PushTextWrapPos(ctx, 0)
       fn()
       ImGui.PopTextWrapPos(ctx)
@@ -2639,6 +2643,10 @@ local function frame_app()
     at_row("open in another tab")
     pill("open in another tab", YELLOW, DARK, fh)
     ImGui.SetItemTooltip(ctx, "This project is already open and syncing in another tab: work there. This tab is a second copy, not synced.")
+  elseif not running and rooms.is_copy(proj, cfg, b) then
+    at_row("older copy")
+    pill("older copy", YELLOW, DARK, fh)
+    ImGui.SetItemTooltip(ctx, "A backup or autosave of this song, not your project for it. Nothing goes in or out of it.")
   elseif not running then -- (Stop is in Settings: nobody needs it at hand, and it sat next to buttons people do press)
     at_row("Start")
     if ImGui.Button(ctx, "Start") then reaper.DeleteExtState(band.SECTION, "stop " .. key, false); band.start_live(dir) end
@@ -2668,6 +2676,7 @@ local function frame_app()
       local words = "Too short to show a page: drag the line above the docker's tabs up."
       ImGui.SameLine(ctx, 0, 16)
       ImGui.SetCursorPosY(ctx, y0 + 3)
+      if ImGui.GetContentRegionAvail(ctx) <= ImGui.CalcTextSize(ctx, words) + 240 then words = "Too short: drag it up" end -- (pressing a page showed nothing, with no hint: Mac, 0.57.7)
       if ImGui.GetContentRegionAvail(ctx) > ImGui.CalcTextSize(ctx, words) + 240 then ImGui.TextColored(ctx, YELLOW, words) else ImGui.Dummy(ctx, 0, 0) end
     end
   end
@@ -2735,7 +2744,9 @@ local function frame_app()
       if not routine(l) then say = l; break end
     end
     local saying = tools.toast_at and reaper.time_precise() - tools.toast_at < 6
-    if not (saying and say and routine(say)) then
+    local kept = band.json_decode(reaper.GetExtState(band.SECTION, "put back"))
+    local in_bar = kept and kept.text and say and say:find(kept.text, 1, true) -- (the bar says it and stays: Mac, 0.57.6)
+    if not in_bar and not (saying and say and routine(say)) then
       tools.toast_line, tools.toast_at = say, tools.toast_seen and reaper.time_precise() or -math.huge
     end
   end
@@ -2758,6 +2769,39 @@ local function frame_app()
   tools.join_requests(ctx, ImGui) -- (someone asking to join the band folder)
   if b and can then -- (an edit touching a claim, before the rest: lib/suggest.lua)
     require("suggest").bar(ctx, ImGui, proj, cfg, sync.room_dir(cfg, b.song, b.room), can, select(2, reaper.GetProjExtState(proj, band.SECTION, "local_mix")) == "1")
+  end
+  if b and rooms.is_copy(proj, cfg, b) and not band.live_here(proj) then -- (lib/rooms.lua: a backup or autosave, opened by hand)
+    ImGui.TextColored(ctx, YELLOW, "This is a backup or autosave of '" .. b.song .. "', not your project for it. Nothing goes in or out of it.")
+    if reaper.GetExtState(band.SECTION, "just look " .. tostring(proj)) == "" then
+      if ImGui.SmallButton(ctx, "Open as a side room") then
+        local p, what = rooms.from_backup(proj, cfg, b)
+        if not p then band.msg(what) else
+          band.log("this backup is now the side room '" .. what .. "': Bring into main offers what nobody has, Send selected anything else")
+          if not live_running(p) then band.start_live(dir) end
+          reaper.SetExtState(band.SECTION, "panel page", "Rooms", false)
+          room_at, merge = -math.huge, nil
+          local copy = proj
+          reaper.defer(function() -- (its own tab goes: two of a room's tabs, and rooms.tab can't tell which is which)
+            if reaper.ValidatePtr(copy, "ReaProject*") and reaper.IsProjectDirty(copy) == 0 then
+              local front = reaper.EnumProjects(-1)
+              reaper.SelectProjectInstance(copy)
+              reaper.Main_OnCommand(40860, 0)
+              if front ~= copy then reaper.SelectProjectInstance(front) end
+            end
+          end)
+        end
+      end
+      ImGui.SetItemTooltip(ctx, "A side room with this copy in it, yours to drive. Nobody else's project changes. From there, Bring into main offers what nobody has, and Send selected sends anything you pick.")
+      ImGui.SameLine(ctx)
+      if ImGui.SmallButton(ctx, "Just look") then reaper.SetExtState(band.SECTION, "just look " .. tostring(proj), "1", false) end
+      ImGui.SetItemTooltip(ctx, "Leave it as it is, for looking or for copying things out of by hand.")
+    else
+      if ImGui.SmallButton(ctx, "Make this my project") and reaper.MB("Sync this copy as your project for '" .. b.song .. "'?\n\n" ..
+          "What the studio has changed since comes in over it, and any edits in it on your own tracks go to everyone.", "StudioSync", 4) == 6 then
+        band.start_live(dir)
+      end
+      ImGui.SetItemTooltip(ctx, "For when this really is your project (the folder moved, say). Otherwise use a side room.")
+    end
   end
   tools.put_back_bar(ctx, ImGui, b and b.song, b and can and function(mine) -- (an edit of yours that was undone, and why: stays until dismissed)
     band.log(tostring(require("mirror").use_mine(proj, cfg, b.song, b.room, mine, { can = can, mode = who and who.mode,
@@ -3107,7 +3151,9 @@ local function loop()
   if minimized then open = pill_window()
   else
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_WindowTitleAlign, 0.5, 0.5) -- (the logo has the left corner)
+    ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0) -- (the little triangle in a docked window's corner is drawn in this colour as it begins)
     visible, open = ImGui.Begin(ctx, "StudioSync###StudioSync", true, flags)
+    ImGui.PopStyleColor(ctx)
     ImGui.PopStyleVar(ctx)
   end
   if visible then

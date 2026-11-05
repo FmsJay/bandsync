@@ -436,7 +436,7 @@ The **Play/Jam** page (Settings > Advanced shows it) has starting together and t
 - **Jam**: classic NINJAM, everyone one interval late.
 
 The host enters `<Tailscale name>:2049` (a name stays; a 100.x address can change) and clicks *Save for the studio*; everyone else clicks **Connect**, which adds
-ReaNINJAM to their master track with everything filled in (one more Connect click in its window).
+ReaNINJAM to their master track with everything filled in, and it connects by itself.
 The host also sets the server folder (the one with `ninjamsrv` and `bandsync.cfg`) once; the host's Connect starts
 the server if it isn't running.
 
@@ -463,6 +463,11 @@ Closing REAPER without saving (or a crash) is safe. Next to each StudioSync proj
 save, StudioSync recognises its tracks and items, brings back what changed since as the studio has it, and sends
 nothing new. Leave the file where it is. Without it, a reopened older save would show up for everyone with its
 tracks twice.
+
+A backup or autosave of a shared song, opened by hand, isn't synced: nothing goes in or out of it. The panel asks
+what it's for. **Open as a side room** puts it in a side room of its own, yours to drive. What it holds that nobody has
+goes to that room alone, ready for **Bring into main**, and **Send selected** sends anything else you pick, older versions
+included. **Just look** leaves it as it is, with **Make this my project** there for when it really is yours.
 
 ## Limits
 

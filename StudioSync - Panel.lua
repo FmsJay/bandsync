@@ -1382,7 +1382,7 @@ local function section_live(part) -- part: "mode" or "rest" (docked, side by sid
       end
     end
     ImGui.SameLine(ctx)
-    if ImGui.Button(ctx, "Leave") and not live.close_boxes() then reaper.TrackFX_Delete(master, idx) end -- (lib/live.lua: a second press, with one of its boxes up)
+    if ImGui.Button(ctx, "Leave") and not live.close_boxes() then live.closing(); reaper.TrackFX_Delete(master, idx) end -- (lib/live.lua: a second press, with one of its boxes up)
   end
   ImGui.TextDisabled(ctx, "(?) about changing mode or server")
   ImGui.SetItemTooltip(ctx, "ReaNINJAM reads its settings once per REAPER session: after changing the mode or the server, restart REAPER. " ..

@@ -8,6 +8,9 @@ It listens on port 2049 and only accepts this computer (127.0.0.0/8) and Tailsca
 open to the internet (`lib/ninjam/bandsync.cfg`). Anyone who can reach the computer over Tailscale can join without a
 password. Windows or macOS may ask once whether to let it accept connections: allow it.
 
+REAPER's ReaNINJAM plug-in connects to it. ReaNINJAM runs with its window out of sight and its status in StudioSync's panel; **Show it** on
+the Play page brings the window up.
+
 It keeps running when REAPER closes, from a copy in StudioSync's own folder (`<resource>/StudioSync/ninjam`), so an update
 never has to replace a running program.
 

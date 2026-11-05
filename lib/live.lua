@@ -24,13 +24,32 @@ function live.ini_path()
   return reaper.GetResourcePath() .. "/reaninjam.ini"
 end
 
+-- ReaNINJAM's window. (On a Mac a closed one stays listed, hidden, for a minute or more, saying what it last said: with the real one hidden too, nothing tells
+-- them apart, and a fresh start read "connected", then "lost", and waited to try again: Mac, 0.58.10. So the ones closed are noted, by live.closing.)
+local function closed_ones() return reaper.GetExtState(band.SECTION, "ninjam closed") end
+function live.window()
+  if not reaper.JS_Window_ListFind then return reaper.JS_Window_Find and reaper.JS_Window_Find(live.FX, true) end
+  local _, list = reaper.JS_Window_ListFind(live.FX, true)
+  local closed, found, still = closed_ones(), nil, {}
+  for addr in (list or ""):gmatch("[^,]+") do
+    if closed:find(addr, 1, true) then still[#still + 1] = addr
+    elseif not found then found = reaper.JS_Window_HandleFromAddress(tonumber(addr)) end
+  end
+  if closed ~= "" then reaper.SetExtState(band.SECTION, "ninjam closed", table.concat(still, ","), false) end
+  return found
+end
+function live.closing()
+  if reaper.GetOS():find("^Win") or not reaper.JS_Window_ListFind then return end
+  local _, list = reaper.JS_Window_ListFind(live.FX, true)
+  reaper.SetExtState(band.SECTION, "ninjam closed", list or "", false)
+end
+
 -- What ReaNINJAM's local channel is sending right now, read off its window: "session", "normal", "voice", or
 -- nil (no window / js_ReaScriptAPI missing). The ini only counts when ReaNINJAM first loads in a REAPER session,
 -- so an instance opened earlier can still be in Normal mode (2026-10-28: Play along streamed normal intervals,
 -- heard 0.94 s off the song).
 function live.channel_mode()
-  if not reaper.JS_Window_Find then return nil end
-  local con = reaper.JS_Window_Find("ReaNINJAM", true)
+  local con = live.window()
   if not con then return nil end
   if reaper.JS_Window_FindChild(con, "Session Mode", false) then return "session" end
   if reaper.JS_Window_FindChild(con, "Normal NINJAM", false) then return "normal" end
@@ -40,7 +59,7 @@ end
 -- ReaNINJAM's metronome mute button (its "metromute" control, id 1014): one click toggles it. Its state isn't
 -- readable, so the panel offers a toggle (an instance opened before live.configure ran keeps its own setting).
 function live.toggle_click()
-  local con = reaper.JS_Window_Find and reaper.JS_Window_Find("ReaNINJAM", true)
+  local con = live.window()
   if not con then return false end
   reaper.JS_WindowMessage_Send(con, "WM_COMMAND", 1014, 0, 0, 0)
   return true
@@ -51,7 +70,7 @@ end
 function live.keep_hidden(proj)
   if not reaper.JS_Window_Show or reaper.GetExtState(band.SECTION, "ninjam shown " .. tostring(proj)) ~= "" then return end
   local tr, i = live.fx(proj, false)
-  for _, w in ipairs({ reaper.JS_Window_Find(live.FX, true) or false, tr and reaper.TrackFX_GetFloatingWindow(tr, i) or false }) do
+  for _, w in ipairs({ live.window() or false, tr and reaper.TrackFX_GetFloatingWindow(tr, i) or false }) do
     if w and reaper.JS_Window_IsVisible(w) then reaper.JS_Window_Show(w, "HIDE") end
   end
 end
@@ -59,13 +78,13 @@ function live.show_windows(proj, tr, i)
   reaper.SetExtState(band.SECTION, "ninjam shown " .. tostring(proj), "1", false)
   reaper.TrackFX_Show(tr, i, 3)
   if not reaper.JS_Window_Show then return end
-  for _, w in ipairs({ reaper.JS_Window_Find(live.FX, true) or false, reaper.TrackFX_GetFloatingWindow(tr, i) or false }) do
+  for _, w in ipairs({ live.window() or false, reaper.TrackFX_GetFloatingWindow(tr, i) or false }) do
     if w then reaper.JS_Window_Show(w, "SHOW") end
   end
 end
 -- What ReaNINJAM says about its connection, for the panel: "connected to <server>", "connecting", or nil (it isn't there).
 function live.status()
-  local con = reaper.JS_Window_Find and reaper.JS_Window_Find(live.FX, true)
+  local con = live.window()
   if not con then return nil end
   if not reaper.JS_Window_FindChild(con, "Disconnect", true) then return "connecting" end
   local host = reaper.GetExtState(band.SECTION, "ninjam host"):gsub(":%d+$", "")
@@ -74,23 +93,28 @@ end
 
 -- Connect, one step a call: with `open`, its Connect button brings up the host box (filled in by live.configure); that box's
 -- own Connect is pressed as soon as it's there. -> "connected", "pressing", "opening", or nil (no window, not asked to open it).
+local function press_host_box()
+  local box = reaper.JS_Window_Find("NINJAM Connection Configuration", true)
+  if not box or not reaper.JS_Window_IsVisible(box) then return false end -- (on a Mac a closed one stays listed, hidden, for up to a minute)
+  -- (it only reads its ini the first time it loads in a REAPER session: a server that's moved since would never be found)
+  local host, edit = reaper.GetExtState(band.SECTION, "ninjam host"), reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(box, 1025)
+  if host ~= "" and edit then reaper.JS_Window_SetTitle(edit, host) end
+  reaper.JS_WindowMessage_Send(box, "WM_COMMAND", 1, 0, 0, 0) -- (a posted one never reaches a box on a Mac: it sat there for good, 0.57.7)
+  return true
+end
 function live.connect(open)
   if not reaper.JS_WindowMessage_Post then return nil end
-  local box = reaper.JS_Window_Find("NINJAM Connection Configuration", true)
-  if box and not reaper.JS_Window_IsVisible(box) then box = nil end -- (on a Mac a closed one stays listed, hidden, for up to a minute)
-  if box then
-    -- (it only reads its ini the first time it loads in a REAPER session: a server that's moved since would never be found)
-    local host, edit = reaper.GetExtState(band.SECTION, "ninjam host"), reaper.JS_Window_FindChildByID and reaper.JS_Window_FindChildByID(box, 1025)
-    if host ~= "" and edit then reaper.JS_Window_SetTitle(edit, host) end
-    reaper.JS_WindowMessage_Send(box, "WM_COMMAND", 1, 0, 0, 0) -- (a posted one never reaches a box on a Mac: it sat there for good, 0.57.7)
-    return "pressing"
-  end
+  if press_host_box() then return "pressing" end
   if live.error_box() then return "error" end -- (its Connect does nothing until that's answered, on Windows)
-  local con = reaper.JS_Window_Find("ReaNINJAM", true)
+  local con = live.window()
   if not con then return nil end
   if reaper.JS_Window_FindChild(con, "Disconnect", true) then return "connected" end
   if open and reaper.JS_Window_FindChild(con, "Connect...", true) then
     reaper.JS_WindowMessage_Post(con, "WM_COMMAND", 1072, 0, 0, 0)
+    -- (its box is pressed as soon as it's up, not at the next look a moment later: seen for a second otherwise, with the window itself out of sight. Mac, 0.58.10)
+    local frames = 0
+    local function press() frames = frames + 1; if not press_host_box() and frames < 30 then reaper.defer(press) end end
+    reaper.defer(press)
     return "opening"
   end
 end

@@ -150,6 +150,18 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   if select(2, ImGui.GetContentRegionAvail(ctx)) > 130 then ImGui.SeparatorText(ctx, "Producing") end -- (in a short docker, its row is the one Talk and Stop need; "Following..." says it)
   local colour = { ok = theme.GREEN, wait = theme.YELLOW, bad = theme.RED }
   for _, l in ipairs(producer.lines(proj, name, them, require("stamp").status(), playing)) do ImGui.TextColored(ctx, colour[l[2]] or theme.GREEN, l[1]) end
+  -- (first in the row: after the Talk button, whose row changes with it, it moved from under the pointer, onto the lag drag. Mac, 0.58.10)
+  local via = producer.via(proj)
+  if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
+    producer.talk(proj, false)
+    local name = producer.who(proj)
+    producer.stop(proj, cfg, b) -- (it took effect only on the next Produce, with the old route still running: Mac, 0.58.7)
+    producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
+    local ok, why = producer.start(proj, cfg, b, name)
+    if not ok then band.msg(why) end
+  end
+  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; StudioSync starts the server if nobody has. ReaNINJAM connects by itself on both computers.")
+  page.fit(ctx, ImGui, "No talkback")
   if producer.via(proj) == "stamp" then
     local talking = producer.talking(proj)
     if talking then ImGui.PushStyleColor(ctx, ImGui.Col_Button, theme.RED) end
@@ -165,17 +177,6 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   local ch, v = ImGui.DragDouble(ctx, "##producelag", producer.lag(proj), 0.05, producer.MIN_LAG, producer.MAX_LAG, "%.1f s behind")
   if ch then producer.set_lag(proj, v) end
   ImGui.SetItemTooltip(ctx, "How far behind them your song runs. More gives a bad connection room; less is closer to them. It takes effect on their next start.")
-  page.fit(ctx, ImGui, "Through a NINJAM server")
-  local via = producer.via(proj)
-  if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
-    producer.talk(proj, false)
-    local name = producer.who(proj)
-    producer.stop(proj, cfg, b) -- (it took effect only on the next Produce, with the old route still running: Mac, 0.58.7)
-    producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
-    local ok, why = producer.start(proj, cfg, b, name)
-    if not ok then band.msg(why) end
-  end
-  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; StudioSync starts the server if nobody has. ReaNINJAM connects by itself on both computers.")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
   if via == "ninjam" then page.ninjam_line(ctx, ImGui) end

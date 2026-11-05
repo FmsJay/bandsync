@@ -2718,10 +2718,13 @@ end
 
 -- What bringing a side room into its parent does, from both rooms' changes since the room was made: what only the
 -- side room changed comes in; what both changed is a clash, and the parent's stays. Pure.
-function mirror.plan_bring(side, main)
+-- `everything` (optional): the parent's newest of all time. What the side room deleted and the parent no longer has isn't a change to bring (Windows, 0.58.7: a backup listed a
+-- track gone from main long ago as "deleted").
+function mirror.plan_bring(side, main, everything)
   local bring, clash = {}, {}
   for oid, ev in pairs(side) do
-    if main[oid] then clash[#clash + 1] = ev else bring[#bring + 1] = ev end
+    if main[oid] then clash[#clash + 1] = ev
+    elseif not (ev.gone and everything and (not everything[oid] or everything[oid].gone)) then bring[#bring + 1] = ev end
   end
   local o = { track = 1, fx = 2, item = 3 } -- a new track before what sits on it
   table.sort(bring, function(a, x) return (o[a.obj] or 3) < (o[x.obj] or 3) end)

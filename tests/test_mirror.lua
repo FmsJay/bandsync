@@ -435,6 +435,13 @@ do -- a label a print adds, which REAPER takes off a comp piece on opening, isn'
   assert(not mirror.same_but_labels('POSITION 1\nNAME "dry - pass 2"', 'POSITION 2\nNAME "pass 2"'), "moved too")
   assert(not mirror.same_but_labels('NAME "dry - pass 2"', 'NAME "pass 3"'), "another name")
 end
+do -- a delete of what the parent no longer has isn't a change to bring
+  local side = { a = { oid = "a", obj = "item", gone = true }, b = { oid = "b", obj = "item", gone = true }, c = { oid = "c", obj = "item" } }
+  local bring = mirror.plan_bring(side, {}, { a = { gone = true }, b = { rev = 3 } })
+  local got = {}
+  for _, ev in ipairs(bring) do got[ev.oid] = true end
+  assert(not got.a and got.b and got.c, "only what the parent still has, and what is new")
+end
 print("ok")
 
 -- the studio's track order: the list, then what's newer than it under the track it sat under, the same on every computer

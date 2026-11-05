@@ -159,9 +159,13 @@ function page.producer(ctx, ImGui, proj, cfg, b, rows)
   local via = producer.via(proj)
   if ImGui.SmallButton(ctx, via == "stamp" and "Through SonoBus" or "Through a NINJAM server") then
     producer.talk(proj, false)
+    local name = producer.who(proj)
+    producer.stop(proj, cfg, b) -- (it took effect only on the next Produce, with the old route still running: Mac, 0.58.7)
     producer.set_via(proj, via == "stamp" and "ninjam" or "stamp")
+    local ok, why = producer.start(proj, cfg, b, name)
+    if not ok then band.msg(why) end
   end
-  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; set it on the Play tab first (Settings > Advanced shows it). ReaNINJAM connects by itself on both computers.")
+  ImGui.SetItemTooltip(ctx, "How their sound reaches you. SonoBus needs no server. A NINJAM server is a steadier route with no talkback, reached over Tailscale; StudioSync starts the server if nobody has. ReaNINJAM connects by itself on both computers.")
   page.fit(ctx, ImGui, "Stop")
   if ImGui.SmallButton(ctx, "Stop") then producer.stop(proj, cfg, b) end
   ImGui.SetItemTooltip(ctx, "Back to your own transport.")

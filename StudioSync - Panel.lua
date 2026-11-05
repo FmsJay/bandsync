@@ -1611,7 +1611,7 @@ local function look_merge(parent)
   local since = m.time
   if not since then merge = { why = "This room has no start time (made with an older StudioSync)." }; return end
   local bring, clash = mirror.plan_bring(mirror.room_newest(sync.room_dir(cfg, b.song, b.room), since),
-    mirror.room_newest(sync.room_dir(cfg, b.song, parent), since))
+    mirror.room_newest(sync.room_dir(cfg, b.song, parent), since), mirror.room_newest(sync.room_dir(cfg, b.song, parent)))
   merge = { bring = bring, clash = clash, parent = parent }
 end
 

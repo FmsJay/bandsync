@@ -181,23 +181,15 @@ local function logo(s)
           local x1, y1 = rim(f[1] + f[2], 7.5 + f[3], 25 + f[3] * 0.3)
           local n = math.sqrt((x1 - x0) ^ 2 + (y1 - y0) ^ 2)
           local px, py, mx, my = -(y1 - y0) / n, (x1 - x0) / n, (x0 + x1) / 2, (y0 + y1) / 2
-          local col, ax, ay, bx, by = tint(flip and 64 - mx or mx, math.floor(f[5] * 255))
+          local cx, cy = mx - px * f[4], my - py * f[4]
           local m = s >= 80 and 18 or 6
+          -- one convex piece, a curve and its chord, filled in one go: drawn as quads side by side, their edges showed as hatching (James, 0.58.25)
+          ImGui.DrawList_PathClear(dl)
           for i = 0, m do
             local t, u = i / m, 1 - i / m
-            local cxa, cya = mx + px * (-2 + f[4] / 2), my + py * (-2 + f[4] / 2)
-            local cxb, cyb = mx + px * (-2 - f[4] / 2), my + py * (-2 - f[4] / 2)
-            local nax, nay = u * u * x0 + 2 * u * t * cxa + t * t * x1, u * u * y0 + 2 * u * t * cya + t * t * y1
-            local nbx, nby = u * u * x0 + 2 * u * t * cxb + t * t * x1, u * u * y0 + 2 * u * t * cyb + t * t * y1
-            if ax then
-              local a1, a2 = P(ax, ay)
-              local b1, b2 = P(nax, nay)
-              local c1, c2 = P(nbx, nby)
-              local d1, d2 = P(bx, by)
-              ImGui.DrawList_AddQuadFilled(dl, a1, a2, b1, b2, c1, c2, d1, d2, col)
-            end
-            ax, ay, bx, by = nax, nay, nbx, nby
+            ImGui.DrawList_PathLineTo(dl, P(u * u * x0 + 2 * u * t * cx + t * t * x1, u * u * y0 + 2 * u * t * cy + t * t * y1))
           end
+          ImGui.DrawList_PathFillConvex(dl, tint(flip and 64 - mx or mx, math.floor(f[5] * 255)))
         end
       end
     end
@@ -218,13 +210,15 @@ local function logo(s)
     end
   end
   local px, py
-  for i = 0, 16 do -- the link: 18,20 to 46,44, as one S
-    local t, u = i / 16, 1 - i / 16
+  local n = s >= 80 and 40 or 16
+  for i = 0, n do -- the link: 18,20 to 46,44, as one S
+    local t, u = i / n, 1 - i / n
     local bx = u * u * u * 18 + 3 * u * u * t * 32 + 3 * u * t * t * 32 + t * t * t * 46
     local by = u * u * u * 20 + 3 * u * u * t * 20 + 3 * u * t * t * 44 + t * t * t * 44
     if px then
       ImGui.DrawList_AddLine(dl, X(px), Y(py), X(bx), Y(by), tint(bx, 0x50), 5.5 * k)
       ImGui.DrawList_AddLine(dl, X(px), Y(py), X(bx), Y(by), tint(bx), 3.4 * k)
+      if i < n then ImGui.DrawList_AddCircleFilled(dl, X(bx), Y(by), 1.7 * k, tint(bx)) end -- (the joints: dark pinholes between pieces, big)
     end
     px, py = bx, by
   end
@@ -2117,6 +2111,18 @@ local function home_who()
   ImGui.EndDisabled(ctx)
   ImGui.SetItemTooltip(ctx, my_id and "Copies a message with one line to paste on a Mac and one on Windows: it installs everything, " ..
     "already paired with this computer.\nWhen they've run it, 'Let them in' shows here." or "Waiting for Syncthing (it has to be running).")
+  if my_id and services.tailscale_token() ~= "" then -- (a token: Settings > Advanced)
+    next_to("Invite a guest for a day")
+    if ImGui.SmallButton(ctx, "Invite a guest for a day") then
+      local key, why = services.tailscale_guest_key()
+      if key then
+        band.copy(services.invite_text(my_id, band.info(cfg.root), key), ctx, ImGui)
+        band.log("a guest invitation is on your clipboard: it also puts their computer on your Tailscale network for a day (no account needed)")
+      else band.log("couldn't make a guest invitation: " .. tostring(why)) end
+    end
+    ImGui.SetItemTooltip(ctx, "As Invite a collaborator, and their computer joins your Tailscale network for a day without an account, so Play along and Jam reach them.\n" ..
+      "The line works once, within a day; their computer drops off once it's offline a while, and after a day at most. While it's on, your\nTailscale policy decides what it can reach: with Tailscale's starting policy that's all your computers.")
+  end
   local people, armed = {}, {}
   for i = 0, reaper.CountTracks(proj) - 1 do
     local tr = reaper.GetTrack(proj, i)
@@ -2369,6 +2375,33 @@ function ui.settings_advanced()
     end
     local ch0, v0 = switch_row("##showplay", "Show the Play/Jam tab", ui.play_shown(), "Starting together, Play along and Jam. Play along and Jam go through NINJAM, which needs a server the others can reach.\nReal time mode, Follow and Listen don't need any of it.")
     if ch0 then reaper.SetExtState(band.SECTION, "show play", v0 and "1" or "", true) end
+    do -- Tailscale's API: guests for a day, and the policy lines (lib/services.lua). Whoever runs the Tailscale network makes the token.
+      local services = require("services")
+      ImGui.Spacing(ctx)
+      if services.tailscale_token() == "" then
+        ImGui.TextDisabled(ctx, "Run the studio's Tailscale network? An access token lets StudioSync invite a guest for a day and set up its tags for you.")
+        if ImGui.SmallButton(ctx, "Make a token") then band.open_url("https://login.tailscale.com/admin/settings/keys") end
+        ImGui.SetItemTooltip(ctx, "Tailscale's Keys page: Generate access token. It lasts 1 to 90 days; copy it, then Add the token here.")
+        next_to("Add the token")
+        if ImGui.SmallButton(ctx, "Add the token") then
+          local ok, t = reaper.GetUserInputs("StudioSync: Tailscale access token", 1, "Token (tskey-api-...),extrawidth=260", "")
+          t = ok and t:match("^%s*(tskey%-api%-[%w%-]+)%s*$")
+          if t then services.set_tailscale_token(t); band.log("Tailscale access token saved on this computer")
+          elseif ok then band.log("that isn't a Tailscale access token: it starts tskey-api-") end
+        end
+      else
+        ImGui.AlignTextToFramePadding(ctx)
+        ImGui.Text(ctx, "Tailscale access token saved")
+        next_to("Set up the tags")
+        if ImGui.SmallButton(ctx, "Set up the tags") then
+          local ok, why = services.tailscale_add_tags()
+          band.log(ok and "Tailscale's policy has StudioSync's tags: new computers stay signed in, and guests can join" or ("couldn't set up the tags: " .. tostring(why)))
+        end
+        ImGui.SetItemTooltip(ctx, "Adds the tagOwners lines to the Tailscale network's policy (nothing else in it changes): computers StudioSync's installer signs in\nthen stay signed in, and 'Invite a guest for a day' works. Once is enough.")
+        next_to("Forget the token")
+        if ImGui.SmallButton(ctx, "Forget the token") then services.set_tailscale_token(""); band.log("Tailscale access token forgotten on this computer") end
+      end
+    end
     card_end()
   end
 end
@@ -3184,6 +3217,7 @@ local function pill_window()
 end
 
 local function loop()
+  require("services").tailscale_sweep_guests()
   if updated() or reload_now then -- reload in place: relaunching itself as an action is ignored (or asks to terminate instances)
     band.log("the panel reloaded for StudioSync " .. tostring(seen_disk))
     restarting = true

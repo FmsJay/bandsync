@@ -8,7 +8,8 @@
 # Uses only tools a stock Mac has (curl, hdiutil, ditto, installer): nothing here triggers the Xcode tools prompt.
 # Answers can be given up front as environment variables: BS_USER, BS_HOSTING (yes: the first one set up), BS_HOST_ID (a set-up bandmate's Syncthing ID), BS_ROOT,
 # BS_LIVE / BS_SOLO (no: leave out SonoBus + Tailscale / Google Drive; both go in unless said), BS_SCRIPTS (reapack/folder/verify), BS_TAG,
-# BS_BAND_ID / BS_BAND_NAME (the band an invitation is for: its Syncthing folder id and name; the first band is "bandsync").
+# BS_BAND_ID / BS_BAND_NAME (the band an invitation is for: its Syncthing folder id and name; the first band is "bandsync"),
+# BS_TS_KEY (a guest invitation's Tailscale key: on the inviter's Tailscale network for a day, no account; lib/services.lua).
 # A bandmate's panel (Invite a collaborator) hands out the curl line above with BS_HOST_ID already in it.
 # Testing: BS_SYNCTHING_HOME drives a separate Syncthing instance, BS_NO_REAPER stops before anything happens inside REAPER.
 # First run on a Mac 2026-10-28 (fixes in c2639a5); reviewed again for 0.34 (2026-10-31).
@@ -215,7 +216,11 @@ if yes "$LIVE" && [ -x "$TS" ]; then
   done
   tsst="$("$TS" status --json 2>/dev/null | tr -d '\n ')"
   TS_RUNNING=""; echo "$tsst" | grep -q '"BackendState":"Running"' && TS_RUNNING=1
-  if echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { [ -n "$TS_RUNNING" ] && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
+  if [ -n "${BS_TS_KEY:-}" ]; then # a guest: `login` adds the inviter's network beside any of their own (switch back from Tailscale's menu)
+    if "$TS" login --authkey="$BS_TS_KEY" --timeout=120s >/dev/null 2>&1; then ok "Tailscale joined the studio's network as a guest, for a day"
+    else warn "Tailscale couldn't join with the invitation's key (it works once, for a day): ask for a new invitation."; fi
+    TS_TAGGED=1
+  elif echo "$tsst" | grep -q '"Tags":\["tag:bandsync"' || { [ -n "$TS_RUNNING" ] && ! echo "$tsst" | grep -q '"KeyExpiry"'; }; then
     ok "Tailscale signed in, and stays signed in"; TS_TAGGED=1 # tagged, or its key expiry was turned off by hand
   elif [ -n "$TS_RUNNING" ]; then
     # already signed in: left exactly as it is. Re-signing in with the tag logged a Mac OUT when the tag wasn't allowed

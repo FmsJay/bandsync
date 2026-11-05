@@ -24,6 +24,9 @@ local inv = services.invite_text(inv_id, { id = "bandsync", name = "Chilio" })
 assert(inv:find('install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. inv_id .. " BS_BAND_ID=bandsync BS_BAND_NAME='Chilio' bash", 1, true), "Mac line")
 assert(inv:find("-File $f -HostId " .. inv_id .. " -BandId bandsync -BandName 'Chilio'", 1, true) and inv:find('"$env:TEMP\\studiosync_install.ps1"', 1, true), "Windows line")
 assert(inv:find("^Join Chilio on StudioSync"), "it says which band")
+local g = services.invite_text(inv_id, { id = "bandsync", name = "Chilio" }, "tskey-auth-kAbc123CNTRL-xyz")
+assert(g:find("BS_BAND_NAME='Chilio' BS_TS_KEY=tskey-auth-kAbc123CNTRL-xyz bash", 1, true) and g:find("-BandName 'Chilio' -TsKey tskey-auth-kAbc123CNTRL-xyz\n", 1, true), "a guest's key, in both lines")
+assert(not services.invite_text(inv_id, { id = "bandsync", name = "Chilio" }, "tskey-auth-x; rm -rf ~"):find("rm -rf", 1, true), "only a key goes into a command")
 -- the join code: on its own, in the whole message, from an old invitation's lines; nothing else reads as one
 local code = services.parse_join(services.join_code(inv_id, { id = "bandsync-night-shift-1a2b", name = "Night Shift" }))
 assert(code and code.id == inv_id and code.band == "bandsync-night-shift-1a2b" and code.name == "Night Shift", "the code")
@@ -53,4 +56,21 @@ assert(#asks == 3 and asks[2].band == "Mine" and asks[3].band == "Theirs", "a cl
 -- a band's Syncthing folder id from its name
 assert(services.band_id("The Night Shift") == "studiosync-the-night-shift" and services.band_id("  Chilio ") == "studiosync-chilio", "ids")
 assert(services.band_id("") == "studiosync-band" and services.band_id("Jazz--Trio") == "studiosync-jazz-trio", "empty, repeats")
+-- Tailscale's policy: the tagOwners lines go in once, comments and trailing commas kept; a tag in a comment or a rule doesn't count
+package.loaded.band.json_decode = function(s) local ok, v = pcall(require("json").decode, s); return ok and v or nil end
+local pol = '// Example policy {\n{\n\t"acls": [\n\t\t{"action": "accept", "src": ["tag:bandsync"], "dst": ["*:*"]},\n\t],\n}\n'
+local new = services.policy_with_tags(pol)
+assert(new and new:find('^// Example policy {\n{\n\t"tagOwners": {\n\t\t"tag:bandsync": %["autogroup:member"%],\n\t\t"tag:bandsync%-guest": %["autogroup:member"%],\n\t},\n\t"acls"'), "added after the policy's own {, not the comment's")
+assert(services.policy_with_tags(new) == nil, "nothing to add the second time")
+local half = '{\n  // "tag:bandsync-guest": [],\n  "tagOwners": {\n    "tag:bandsync": ["autogroup:admin"],\n  },\n}'
+new = services.policy_with_tags(half)
+assert(new == '{\n  // "tag:bandsync-guest": [],\n  "tagOwners": {\n\t\t"tag:bandsync-guest": ["autogroup:member"],\n    "tag:bandsync": ["autogroup:admin"],\n  },\n}', "only the missing one, into the existing tagOwners: someone's own owners stay")
+assert(services.policy_with_tags("") == nil, "no policy at all: nothing")
+-- guests more than a day old
+local now = os.time({ year = 2026, month = 11, day = 6, hour = 12, min = 0, sec = 0 })
+local devs = '{"devices": [{"id": "1", "tags": ["tag:bandsync-guest"], "created": "2026-11-05T11:00:00Z"}, {"id": "2", "tags": ["tag:bandsync-guest"], "created": "2026-11-05T13:00:00Z"},' ..
+  ' {"id": "3", "tags": ["tag:bandsync"], "created": "2020-01-01T00:00:00Z"}, {"id": "4", "created": "2020-01-01T00:00:00Z"}]}'
+local old = services.old_guests(devs, now)
+assert(#old == 1 and old[1] == "1", "only the guest from over a day ago; members and group machines stay")
+assert(#services.old_guests("", now) == 0 and #services.old_guests('{"message": "unauthorized"}', now) == 0, "no answer, an error: nobody")
 print("ok")

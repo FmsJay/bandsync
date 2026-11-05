@@ -246,8 +246,10 @@ end
 -- installer with this machine's ID already in it, so nobody types an ID (Mac, 2026-10-31: "2MOGZMD" + Return was
 -- the first try). The ?<time> keeps GitHub's cache from handing out an installer from before the last release.
 -- With the band (band.info): its folder id and name ride along, so the installer joins that band.
-function services.invite_text(id, info)
+-- `key` (services.tailscale_guest_key): a guest's, whose installer signs Tailscale in to this network for a day with it.
+function services.invite_text(id, info, key)
   info = info or { id = "bandsync", name = "the studio" }
+  key = key and key:match("^tskey%-auth%-[%w%-]+$")
   local base = "https://raw.githubusercontent.com/FmsJay/studiosync/main/installer/"
   local q1 = function(s) return "'" .. tostring(s):gsub("'", "") .. "'" end -- (band names are plain: band.clean)
   return "Join " .. info.name .. " on StudioSync.\n\n" ..
@@ -256,10 +258,11 @@ function services.invite_text(id, info)
     "New to it? Paste ONE of these:\n\n" ..
     "Mac (in Terminal):\n" ..
     'curl -fsSL "' .. base .. 'install_mac.sh?$(date +%s)" | BS_HOST_ID=' .. id .. " BS_BAND_ID=" .. info.id ..
-    " BS_BAND_NAME=" .. q1(info.name) .. " bash\n\n" ..
+    " BS_BAND_NAME=" .. q1(info.name) .. (key and (" BS_TS_KEY=" .. key) or "") .. " bash\n\n" ..
     "Windows (in PowerShell):\n" ..
     '$f="$env:TEMP\\studiosync_install.ps1"; iwr -UseBasicParsing "' .. base .. 'install_windows.ps1?$(Get-Random)" -OutFile $f; ' ..
-    "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. " -BandId " .. info.id .. " -BandName " .. q1(info.name) .. "\n\n" ..
+    "powershell -NoProfile -ExecutionPolicy Bypass -File $f -HostId " .. id .. " -BandId " .. info.id .. " -BandName " .. q1(info.name) .. (key and (" -TsKey " .. key) or "") .. "\n\n" ..
+    (key and "That line works once, within a day: it puts your computer on my Tailscale network as a guest for the day (no account needed).\n\n" or "") ..
     "When it's done, tell me: I let you in from my StudioSync panel."
 end
 
@@ -541,6 +544,125 @@ function services.tailscale_address()
   if name and name ~= "" then return name end
   local out = reaper.ExecProcess(q(exe) .. " ip -4", 5000) or "" -- "0\n100.97.210.49\n"
   return out:match("^0\n%s*(100%.%d+%.%d+%.%d+)")
+end
+
+-- Tailscale's API, optional: with an access token from whoever runs the Tailscale network (login.tailscale.com/admin/settings/keys, it lasts 1-90 days),
+-- StudioSync can let a guest in for a day and add the policy lines its tags need. The token's kept in ExtState, as Syncthing's key is in its config, and
+-- reaches curl through a config file in the user's temp folder: never on a command line, where any process can read it, or in the log.
+local GUEST_TAG = "tag:bandsync-guest"
+function services.tailscale_token() return reaper.GetExtState(band.SECTION, "tailscale_token") end
+function services.set_tailscale_token(token)
+  reaper.SetExtState(band.SECTION, "tailscale_token", token, true)
+  os.remove(TMP .. "/bandsync-ts-sweep.cfg") -- (tailscale_sweep_guests writes it again, with this one)
+end
+-- -> the HTTP status, the headers, the body; or nil + why
+local function ts_api(method, path, body, headers)
+  local token = services.tailscale_token()
+  if not token:match("^tskey%-api%-[%w%-]+$") then return nil, "no Tailscale access token: add one under Settings > Advanced" end
+  local cfgf, bodyf = TMP .. "/bandsync-ts.cfg", TMP .. "/bandsync-ts-body.txt"
+  local lines = { 'header = "Authorization: Bearer ' .. token .. '"' }
+  for _, h in ipairs(headers or {}) do lines[#lines + 1] = 'header = "' .. h:gsub('"', '\\"') .. '"' end
+  band.write_atomic(cfgf, table.concat(lines, "\n") .. "\n")
+  if body then band.write_atomic(bodyf, body) end
+  local out = run_now(string.format('curl -s -i -m 15 -X %s -K "%s" %s"https://api.tailscale.com/api/v2%s"', method, cfgf,
+    body and ('--data-binary "@' .. bodyf .. '" ') or "", path), 16)
+  os.remove(cfgf); os.remove(bodyf)
+  if not out then return nil, "no answer from Tailscale" end
+  local head, rest = "", out
+  repeat -- (a "100 Continue" block can come first)
+    local h, r = rest:match("^(HTTP/.-)\r?\n\r?\n(.*)$")
+    if h then head, rest = h, r end
+  until not h or not rest:match("^HTTP/")
+  local code = tonumber(head:match("^HTTP/%S+%s+(%d%d%d)"))
+  if not code then return nil, "no answer from Tailscale" end
+  if code >= 300 then
+    local data = band.json_decode(rest)
+    return nil, "Tailscale said " .. code .. ((type(data) == "table" and data.message) and (": " .. tostring(data.message)) or "")
+  end
+  return code, head, rest
+end
+
+-- A key that lets one computer onto the Tailscale network for a day, without an account: usable once, within 24 h; the computer it signs in is a guest
+-- (tag:bandsync-guest) that drops off once it's been offline a while, and services.tailscale_sweep_guests takes it off after a day. -> the key, or nil + why.
+function services.tailscale_guest_key()
+  local code, head, out = ts_api("POST", "/tailnet/-/keys", band.json_encode({ keyType = "auth", description = "StudioSync guest", expirySeconds = 86400,
+    capabilities = { devices = { create = { reusable = false, ephemeral = true, preauthorized = true, tags = { GUEST_TAG } } } } }), { "Content-Type: application/json" })
+  if not code then return nil, head end
+  local key = (band.json_decode(out) or {}).key
+  if type(key) == "string" and key:match("^tskey%-auth%-[%w%-]+$") then return key end
+  return nil, "Tailscale didn't hand back a key"
+end
+
+-- `text` with comments blanked out, same length: where to look for keys in a HuJSON policy. Strings stay.
+local function code_only(text)
+  local out, i, n = {}, 1, #text
+  while i <= n do
+    local c, two = text:sub(i, i), text:sub(i, i + 1)
+    if c == '"' then
+      local j = i + 1
+      while j <= n and text:sub(j, j) ~= '"' do j = j + (text:sub(j, j) == "\\" and 2 or 1) end
+      out[#out + 1] = text:sub(i, j); i = j + 1
+    elseif two == "//" or two == "/*" then
+      local j = two == "//" and (text:find("\n", i, true) or n + 1) - 1 or (select(2, text:find("*/", i + 2, true)) or n)
+      out[#out + 1] = string.rep(" ", j - i + 1); i = j + 1
+    else out[#out + 1] = c; i = i + 1 end
+  end
+  return table.concat(out)
+end
+-- A Tailscale policy (HuJSON) with the tagOwners lines StudioSync's tags need added, comments and all kept as written; nil when it has them. Pure.
+function services.policy_with_tags(text)
+  local code, add = code_only(text), {}
+  for _, tag in ipairs({ "tag:bandsync", GUEST_TAG }) do
+    if not code:find('"' .. tag:gsub("%-", "%%-") .. '"%s*:') then add[#add + 1] = '\n\t\t"' .. tag .. '": ["autogroup:member"],' end
+  end
+  if #add == 0 then return nil end
+  local at = select(2, code:find('"tagOwners"%s*:%s*{'))
+  if at then return text:sub(1, at) .. table.concat(add) .. text:sub(at + 1) end
+  at = code:find("{", 1, true)
+  if not at then return nil end
+  return text:sub(1, at) .. '\n\t"tagOwners": {' .. table.concat(add) .. "\n\t}," .. text:sub(at + 1)
+end
+-- Adds them to the tailnet's policy (only if nobody changed it meanwhile: its ETag). -> true, or nil + why
+function services.tailscale_add_tags()
+  local code, head, text = ts_api("GET", "/tailnet/-/acl", nil, { "Accept: application/hujson" })
+  if not code then return nil, head end
+  local new = services.policy_with_tags(text)
+  if not new then return true end
+  local etag = head:match("\n[Ee][Tt][Aa][Gg]:%s*([^\r\n]+)")
+  code, head = ts_api("POST", "/tailnet/-/acl", new, { "Content-Type: application/hujson", "Accept: application/hujson", etag and ("If-Match: " .. etag) or nil })
+  if not code then return nil, head end
+  band.log("added StudioSync's tags to the Tailscale network's policy")
+  return true
+end
+
+-- Guests in `json` (GET /tailnet/-/devices) that came on more than a day before `now` (seconds, UTC): their ids. Pure.
+function services.old_guests(json, now)
+  local old = {}
+  for _, d in ipairs((band.json_decode(json) or {}).devices or {}) do
+    local guest = false
+    for _, t in ipairs(type(d.tags) == "table" and d.tags or {}) do guest = guest or t == GUEST_TAG end
+    local y, mo, da, h, mi, s = tostring(d.created or ""):match("^(%d+)%-(%d+)%-(%d+)T(%d+):(%d+):(%d+)")
+    if guest and y and now - os.time({ year = tonumber(y), month = tonumber(mo), day = tonumber(da), hour = tonumber(h), min = tonumber(mi), sec = tonumber(s) }) > 86400 then old[#old + 1] = tostring(d.id) end
+  end
+  return old
+end
+local swept = {}
+-- Takes guests off after a day, while a token's set. In the background every 15 min: its config file stays in the user's temp folder meanwhile.
+function services.tailscale_sweep_guests()
+  local token = services.tailscale_token()
+  if not token:match("^tskey%-api%-[%w%-]+$") then return end
+  local cfgf = TMP .. "/bandsync-ts-sweep.cfg"
+  local curl = 'curl -s -m 10 -K "' .. cfgf .. '" '
+  if not reaper.file_exists(cfgf) then band.write_atomic(cfgf, 'header = "Authorization: Bearer ' .. token .. '"\n') end
+  local out = background("ts-devices", curl .. '"https://api.tailscale.com/api/v2/tailnet/-/devices"', 900)
+  -- (os.time reads a table as local time: both sides that way, the difference is right)
+  for _, id in ipairs(out and services.old_guests(out, os.time(os.date("!*t"))) or {}) do
+    if id:match("^%w+$") and not swept[id] then
+      swept[id] = true
+      background("ts-del-" .. id, curl .. '-X DELETE "https://api.tailscale.com/api/v2/device/' .. id .. '"', 3600)
+      band.log("took a Tailscale guest off after a day")
+    end
+  end
 end
 
 -- The NINJAM server: the one that ships (lib/ninjam), or a folder of your own in ExtState ninjam_dir.

@@ -10,6 +10,7 @@ param(
   [string]$Tag = "main",          # which StudioSync version's helper files to use (the .cmd passes its own)
   [string]$User = "", [string]$HostId = "", [string]$Root = "",
   [string]$BandId = "", [string]$BandName = "", # the band an invitation is for: its Syncthing folder id and name
+  [string]$TsKey = "",             # a guest invitation's Tailscale key: on the inviter's Tailscale network for a day, no account (lib/services.lua)
   [ValidateSet("", "yes", "no")][string]$Hosting = "", [ValidateSet("", "yes", "no")][string]$Live = "", [ValidateSet("", "yes", "no")][string]$Solo = "",
   [ValidateSet("", "yes", "no")][string]$Plugins = "", # the band plug-in pack (free, open source)
   [ValidateSet("", "yes", "no")][string]$Extras = "", # the larger extras: amp modelers, Odin 2, sforzando + Salamander piano
@@ -437,7 +438,11 @@ if ($wantLive) {
   # session (untagged ones sign out every 180 days). Needs the host's one-time tagOwners line (below).
   $tsSt = $null
   $tagged = $false
-  if (Test-Path $ts) {
+  if ((Test-Path $ts) -and $TsKey) { # a guest: `login` adds the inviter's network beside any of their own (switch back from Tailscale's menu)
+    $ErrorActionPreference = "Continue"; & $ts login "--authkey=$TsKey" --timeout=120s 2>$null | Out-Null; $code = $LASTEXITCODE; $ErrorActionPreference = "Stop"
+    if ($code -eq 0) { Ok "Tailscale joined the studio's network as a guest, for a day" } else { Warn "Tailscale couldn't join with the invitation's key (it works once, for a day): ask for a new invitation." }
+    $tagged = $true
+  } elseif (Test-Path $ts) {
     try { $ErrorActionPreference = "Continue"; $tsSt = & $ts status --json 2>$null | ConvertFrom-Json } catch { } finally { $ErrorActionPreference = "Stop" }
     # tagged, or its key expiry was turned off by hand (then it has no KeyExpiry)
     $tagged = $tsSt -and (@($tsSt.Self.Tags) -contains "tag:bandsync" -or ($tsSt.BackendState -eq "Running" -and -not $tsSt.Self.KeyExpiry))
